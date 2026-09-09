@@ -141,6 +141,21 @@
   .msg .rbtn{position:absolute;font-size:11px;color:var(--sub);background:#fff;border:1px solid var(--line);border-radius:99px;padding:2px 9px;cursor:pointer;opacity:0;transition:opacity .15s;top:-6px}
   .imgmsg{max-width:220px;max-height:220px;border-radius:10px;display:block;cursor:zoom-in;background:#f8fafc}
   @media(max-width:640px){.imgmsg{max-width:150px;max-height:150px}}
+  /* 文件消息卡片 */
+  .filecard{display:flex;align-items:center;gap:10px;width:230px;max-width:70vw;background:rgba(0,0,0,.04);border-radius:10px;padding:10px}
+  .msg.mine .filecard{background:rgba(255,255,255,.16)}
+  .filecard .fic{width:40px;height:40px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .filecard .fbody{flex:1;min-width:0}
+  .filecard .fn{font-size:12.5px;font-weight:600;word-break:break-all;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .filecard .fs{font-size:10.5px;opacity:.7;margin-top:2px}
+  .filecard .fo{display:flex;gap:6px;margin-top:7px}
+  .filecard .fo a,.filecard .fo button{font-size:11px;padding:3px 11px;border-radius:99px;border:none;cursor:pointer;text-decoration:none;display:inline-block}
+  .fc-prev{background:var(--green);color:#fff}
+  .fc-dl{background:rgba(0,0,0,.08);color:inherit}
+  .msg.mine .fc-dl{background:rgba(255,255,255,.25);color:#fff}
+  #pvFrame{display:none;width:min(900px,92vw);height:88vh;border:none;border-radius:8px;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+  #imgMask.pv #pvFrame{display:block}
+  #imgMask.pv #imgBig{display:none}
   #imgMask{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;z-index:300;cursor:zoom-out}
   #imgMask.show{display:flex}
   #imgMask img{max-width:94vw;max-height:92vh;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
@@ -254,7 +269,16 @@
         <div class="stat v-cyan"><div class="v" id="sumPending">0</div><div class="l">待打款 ¥</div></div>
         <div class="stat v-blue"><div class="v" id="sumOngoing">0</div><div class="l">在途 ¥</div></div>
       </div>
-      <div id="cardList"></div>
+      <div class="card">
+        <h3>📅 单子日历（按截止日） <input type="month" id="cardCalMonth" style="margin-left:auto;font-size:12px;padding:5px 8px"></h3>
+        <div class="cal" id="cardCal"></div>
+        <div class="flow-tip" style="margin-top:8px">点日期查看当天截止的单子；<span style="color:var(--blue)">蓝=进行中</span> · <span style="color:var(--green-dk)">绿=已完结</span> · <span style="color:var(--amber)">橙=被驳回</span></div>
+      </div>
+      <div class="card">
+        <h3>🔎 单子明细 <input id="cardQ" placeholder="搜标题 / 要求 / 台账单号" style="margin-left:auto;font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);width:180px"></h3>
+        <div id="cardChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+        <div id="cardList"></div>
+      </div>
     </div>
   </section>
 
@@ -296,6 +320,11 @@
         </div>
       </div>
       <div class="card">
+        <h3>📊 每日到账走势</h3>
+        <div id="payChart"></div>
+        <div class="flow-tip">绿条 = 当天确认打款（已到手）的金额；悬停看具体数额。<span style="color:var(--cyan)">青点 = 当天有单进入待打款</span></div>
+      </div>
+      <div class="card">
         <h3>🏦 收款方式（支付宝）</h3>
         <div class="flow-tip">管理员打款前会查看这里的信息，请确保<b>姓名与账号一致</b>，填写后立即生效。</div>
         <div style="display:flex;flex-direction:column;gap:9px">
@@ -317,7 +346,7 @@
 </nav>
 
 <div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
-<div id="imgMask" onclick="this.classList.remove('show')"><a class="dl" id="imgDl" href="#" target="_blank" onclick="event.stopPropagation()">⬇ 下载原图</a><img id="imgBig" alt="图片预览"></div>
+<div id="imgMask" onclick="closePreview()"><a class="dl" id="imgDl" href="#" target="_blank" onclick="event.stopPropagation()">⬇ 下载原图</a><img id="imgBig" alt="图片预览"><iframe id="pvFrame" title="文件预览"></iframe></div>
 <div id="toast"></div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -389,6 +418,46 @@ function openImg(src) {
   $('imgDl').href = src;
   $('imgMask').classList.add('show');
 }
+// 文件在线预览：图片/pdf/txt类/音视频 浏览器直开，其他格式转下载
+const previewIndex = {};   // fileId -> {url, name}
+const fileIcon = name => {
+  const n = (name || '').toLowerCase();
+  if (/\.(pdf)$/.test(n)) return '📕';
+  if (/\.(docx?|wps|odt)$/.test(n)) return '📘';
+  if (/\.(xlsx?|csv|et)$/.test(n)) return '📗';
+  if (/\.(pptx?|dps)$/.test(n)) return '📙';
+  if (/\.(zip|rar|7z|tar|gz)$/.test(n)) return '🗜️';
+  if (/\.(mp4|mov|avi|mkv|webm)$/.test(n)) return '🎬';
+  if (/\.(mp3|wav|m4a|flac)$/.test(n)) return '🎵';
+  if (/\.(psd|ai|cdr|sketch)$/.test(n)) return '🎨';
+  return '📄';
+};
+function openPreview(fileId) {
+  const f = previewIndex[fileId];
+  if (!f) return;
+  const name = (f.name || '').toLowerCase();
+  const mask = $('imgMask'), frame = $('pvFrame'), img = $('imgBig');
+  $('imgDl').href = f.url;
+  mask.classList.remove('pv'); img.style.display = '';
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name)) {
+    frame.src = 'about:blank';
+    img.src = f.url; img.style.display = '';
+    mask.classList.add('show');
+  } else if (/\.(pdf|txt|md|csv|log|json|html?|xml|mp4|webm|mp3|wav|m4a|ogg)$/i.test(name)) {
+    img.src = '';
+    frame.src = f.url + '&inline=1';
+    mask.classList.add('show', 'pv');
+  } else {
+    toast('该格式暂不支持在线预览，已为你打开下载');
+    const a = document.createElement('a'); a.href = f.url; a.download = f.name || ''; a.click();
+  }
+}
+function closePreview() {
+  const mask = $('imgMask');
+  mask.classList.remove('show', 'pv');
+  $('pvFrame').src = 'about:blank';
+  $('imgBig').src = '';
+}
 
 function renderConvList() {
   $('convList').innerHTML = chats.map(c => {
@@ -436,9 +505,13 @@ function renderMsgs(list) {
     }
     if (m.type === 'file') {
       const isImg = /\.(png|jpe?g|gif|webp|bmp)$/i.test(m.fileName || '');
+      previewIndex[m.fileId] = { url: dl(m.fileId), name: m.fileName || '' };
       const body = isImg
-        ? `${qref}<img class="imgmsg" src="${dl(m.fileId)}" loading="lazy" onclick="openImg('${dl(m.fileId)}')"><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}</div>`
-        : `${qref}📎 <a href="${dl(m.fileId)}" target="_blank">${esc(m.fileName)}</a> <span style="font-size:10px;opacity:.7">${fmtSize(m.fileSize)}</span><div class="tm">${fmtT(m.createdAt)}</div>`;
+        ? `${qref}<img class="imgmsg" src="${dl(m.fileId)}" loading="lazy" onclick="openPreview('${m.fileId}')"><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}</div>`
+        : `${qref}<div class="filecard"><div class="fic">${fileIcon(m.fileName)}</div><div class="fbody">
+            <div class="fn">${esc(m.fileName)}</div><div class="fs">${fmtSize(m.fileSize)}</div>
+            <div class="fo"><button class="fc-prev" onclick="openPreview('${m.fileId}')">预览</button><a class="fc-dl" href="${dl(m.fileId)}" download="${esc(m.fileName)}">下载</a></div>
+          </div></div><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}</div>`;
       return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${body}</div></div>`;
     }
     return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${qref}${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
@@ -503,10 +576,12 @@ async function sendFile(f) {
 }
 
 /* ================= 派单卡（写手侧操作） ================= */
+let cardFilterSt = '';
 async function reloadCards() {
   try {
     const j = await authFetch('/api/mycards');
     cardsMap = {}; j.cards.forEach(c => cardsMap[c._id] = c);
+    window._cards = j.cards;
     const sum = { paid: 0, pending: 0, ongoing: 0 };
     j.cards.forEach(c => {
       if (c.status === '已完成') sum.paid += c.reward;
@@ -514,11 +589,81 @@ async function reloadCards() {
       else if (['待接单', '已接单', '待审核'].includes(c.status)) sum.ongoing += c.reward;
     });
     $('sumPaid').textContent = sum.paid; $('sumPending').textContent = sum.pending; $('sumOngoing').textContent = sum.ongoing;
-    const list = j.cards.length ? j.cards.map(c => cardRow(c)).join('') : '<div class="empty">还没有派单卡，等管理员派单吧</div>';
-    $('cardList').innerHTML = list;
+    paintCardChips();
+    renderCardList();
+    if ($('cardCal')) paintCardCal();
     renderMsgs(msgs);
   } catch (e) { toast(e.message); }
 }
+function paintCardChips() {
+  const cards = window._cards || [];
+  const sts = ['全部', '待接单', '已接单', '待审核', '待打款', '已完成', '已驳回'];
+  const cnt = {};
+  cards.forEach(c => cnt[c.status] = (cnt[c.status] || 0) + 1);
+  $('cardChips').innerHTML = sts.map(s => {
+    const n = s === '全部' ? cards.length : (cnt[s] || 0);
+    return `<button class="btn btn-sm ${cardFilterSt === s ? 'btn-g' : 'btn-gh'}" onclick="cardFilterSt='${s}';paintCardChips();renderCardList()">${s}${n ? ' ' + n : ''}</button>`;
+  }).join('');
+}
+function filteredCards() {
+  const q = ($('cardQ').value || '').trim().toLowerCase();
+  return (window._cards || []).filter(c => {
+    if (cardFilterSt !== '全部' && c.status !== cardFilterSt) return false;
+    if (!q) return true;
+    return [c.title, c.requirement, c.orderNo].some(x => String(x || '').toLowerCase().includes(q));
+  });
+}
+function renderCardList() {
+  const list = filteredCards();
+  $('cardList').innerHTML = list.length ? list.map(c => cardRow(c)).join('') : '<div class="empty">没有符合条件的单子</div>';
+}
+$('cardQ').addEventListener('input', renderCardList);
+$('cardCalMonth').onchange = paintCardCal;
+function paintCardCal() {
+  const ym = $('cardCalMonth').value || cnDateStr(cnNow()).slice(0, 7);
+  if (!$('cardCalMonth').value) $('cardCalMonth').value = ym;
+  const cards = window._cards || [];
+  const grid = $('cardCal');
+  const [y, m] = ym.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const firstWd = (new Date(ym + '-01T00:00:00+08:00').getUTCDay());
+  const today = cnDateStr(cnNow());
+  const byDay = {};
+  cards.forEach(c => {
+    const d = (c.deadline || (c.createdAt ? cnDateStr(new Date(new Date(c.createdAt).getTime() + 8 * 3600 * 1000)) : '')).slice(0, 10);
+    if (!d || !d.startsWith(ym)) return;
+    (byDay[d] = byDay[d] || []).push(c);
+  });
+  let html = ['一', '二', '三', '四', '五', '六', '日'].map(w => `<div class="wd">${w}</div>`).join('');
+  html += Array.from({ length: (firstWd + 6) % 7 }, () => '<div class="cell blank"></div>').join('');
+  for (let i = 1; i <= daysInMonth; i++) {
+    const date = ym + '-' + String(i).padStart(2, '0');
+    const list = byDay[date] || [];
+    let badge = '', cls = 'sh-plan';
+    if (list.length) {
+      const active = list.filter(c => !['已完成', '已拒绝'].includes(c.status));
+      const rejected = list.filter(c => c.status === '已驳回');
+      badge = (list.length > 1 ? list.length + '单 ' : '') + (list[0].deadline ? '截 ' : '建 ');
+      if (rejected.length && !active.length) cls = 'sh-att-warn';
+      else if (!active.length) cls = 'sh-att-ok';
+    }
+    html += `<div class="cell ${date === today ? 'today' : ''}" onclick="openCardDay('${date}')" title="${date}${list.length ? '：' + list.length + '个单子' : ''}">
+      <span class="dnum">${i}</span>${list.length ? `<span class="sh ${cls}">${badge}</span>` : ''}</div>`;
+  }
+  grid.innerHTML = html;
+}
+window.openCardDay = date => {
+  const ym = $('cardCalMonth').value;
+  const list = (window._cards || []).filter(c => {
+    const d = (c.deadline || (c.createdAt ? cnDateStr(new Date(new Date(c.createdAt).getTime() + 8 * 3600 * 1000)) : '')).slice(0, 10);
+    return d === date;
+  });
+  if (!list.length) return;
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>📋 ${date} 的单子（${list.length}）</h3>
+    ${list.map(c => cardRow(c)).join('')}`;
+  $('mask').classList.add('show');
+};
 function cardRow(c) {
   let note = '';
   if (c.status === '已驳回' && c.rejectReason) note = '<div class="note warn">❌ 驳回原因：' + esc(c.rejectReason) + '</div>';
@@ -734,6 +879,36 @@ async function loadPay() {
     const j = await authFetch('/api/payroll?month=' + $('payMonth').value);
     $('pyPaid').textContent = j.totals.paid; $('pyPending').textContent = j.totals.pending; $('pyOngoing').textContent = j.totals.ongoing;
     $('payList').innerHTML = j.cards.length ? j.cards.map(c => cardRow(c)).join('') : '<div class="empty">本月暂无派单记录</div>';
+    // 每日到账柱状图（按 paidAt 归日）
+    const ym = j.month;
+    const [yy, mm] = ym.split('-').map(Number);
+    const daysCnt = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+    const byDay = {}, pendDay = {};
+    j.cards.forEach(c => {
+      if (c.status === '已完成' && c.paidAt) {
+        const d = cnDateStr(new Date(new Date(c.paidAt).getTime() + 8 * 3600 * 1000));
+        if (d.startsWith(ym)) byDay[d] = (byDay[d] || 0) + c.reward;
+      }
+      if (c.status === '待打款' && (c.approvedAt || c.submittedAt)) {
+        const d = cnDateStr(new Date(new Date(c.approvedAt || c.submittedAt).getTime() + 8 * 3600 * 1000));
+        if (d.startsWith(ym)) pendDay[d] = (pendDay[d] || 0) + c.reward;
+      }
+    });
+    const max = Math.max(...Object.values(byDay), 0.01);
+    const W = 620, H = 130, bw = W / daysCnt;
+    let svg = `<svg viewBox="0 0 ${W} ${H + 22}" width="100%" style="display:block">`;
+    for (let i = 1; i <= daysCnt; i++) {
+      const d = ym + '-' + String(i).padStart(2, '0');
+      const v = byDay[d] || 0;
+      const h = v > 0 ? Math.max(4, v / max * (H - 10)) : 0;
+      const x = (i - 1) * bw + bw * 0.15, w = bw * 0.7;
+      if (v > 0) svg += `<rect x="${x}" y="${H - h}" width="${w}" height="${h}" rx="3" fill="#07c160"><title>${d} 到账 ¥${v}</title></rect>
+        <text x="${x + w / 2}" y="${H - h - 4}" font-size="8.5" fill="#059a4e" text-anchor="middle">${v >= 1000 ? (v / 1000).toFixed(1) + 'k' : Math.round(v)}</text>`;
+      if (pendDay[d]) svg += `<circle cx="${x + w / 2}" cy="${H + 10}" r="3.5" fill="#0891b2"><title>${d} 有 ¥${pendDay[d]} 进入待打款</title></circle>`;
+      if (daysCnt <= 31 && (i % 5 === 0 || i === daysCnt)) svg += `<text x="${x + w / 2}" y="${H + 20}" font-size="8.5" fill="#94a3b8" text-anchor="middle">${i}</text>`;
+    }
+    svg += '</svg>';
+    $('payChart').innerHTML = j.cards.length ? svg : '<div class="empty">本月暂无数据</div>';
   } catch (e) { toast(e.message); }
 }
 $('payMonth').onchange = loadPay;

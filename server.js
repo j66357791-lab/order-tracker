@@ -474,6 +474,8 @@ app.post('/api/messages', auth, async (req, res) => {
 app.post('/api/files', auth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, error: '没有文件' });
+    // multer/busboy 用 latin1 解码文件名，中文会乱码，转回 utf8
+    try { req.file.originalname = Buffer.from(req.file.originalname, 'latin1').toString('utf8'); } catch (e) {}
     const peer = String(req.body?.peer || '');
     if (!ObjectId.isValid(peer)) return res.status(400).json({ ok: false, error: '无效会话' });
     const db = await getDb();
@@ -502,7 +504,7 @@ app.get('/api/files/:id/download', auth, async (req, res) => {
     }
     const inline = String(req.query.inline) === '1';
     res.setHeader('Content-Type', f.contentType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', (inline ? 'inline' : 'attachment') + '; filename="' + encodeURIComponent(f.filename) + '"');
+    res.setHeader('Content-Disposition', (inline ? 'inline' : 'attachment') + "; filename*=UTF-8''" + encodeURIComponent(f.filename));
     bucket.openDownloadStream(f._id).pipe(res);
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
