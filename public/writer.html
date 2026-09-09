@@ -5,271 +5,228 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>写手工作台 · 派单系统</title>
 <style>
-  :root{ --bg:#f1f5f9; --card:#fff; --ink:#0f172a; --sub:#64748b; --line:#e2e8f0;
-    --blue:#3b82f6; --green:#16a34a; --amber:#d97706; --red:#dc2626; --purple:#8b5cf6; }
+  :root{ --bg:#ededed; --ink:#111; --sub:#7a7a7a; --line:#dcdcdc; --green:#95ec69; --blue:#576b95; --red:#fa5151; --amber:#d97706; }
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
-  .wrap{max-width:900px;margin:0 auto;padding:16px 14px 60px}
-  header{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-  header h1{font-size:18px}
-  .badge{font-size:11px;padding:3px 8px;border-radius:99px;font-weight:600}
-  .b-green{background:#f0fdf4;color:var(--green)} .b-grey{background:#f1f5f9;color:var(--sub)}
-  .b-blue{background:#eff6ff;color:var(--blue)}
-  .grow{flex:1}
-  button{cursor:pointer;border:none;font-size:13px;border-radius:8px;padding:8px 14px}
-  .btn-p{background:var(--blue);color:#fff} .btn-p:hover{background:#2563eb}
-  .btn-g{background:#fff;border:1px solid var(--line);color:var(--ink)} .btn-g:hover{background:#f8fafc}
-  .btn-warn{background:var(--amber);color:#fff}
-  .btn-g:disabled{opacity:.5;cursor:default}
-
-  /* 绩效看板 */
-  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
-  .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
-  .stat .v{font-size:22px;font-weight:800;color:var(--green)}
-  .stat .v small{font-size:12px;font-weight:400;color:var(--sub)}
-  .stat .k{font-size:12px;color:var(--sub);margin-top:2px}
-
-  .tabs{display:flex;gap:8px;margin-bottom:12px}
-  .tabs button{background:#fff;border:1px solid var(--line);color:var(--ink)}
-  .tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
-
-  /* 我的单子 */
-  .card-item{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
-  .card-item .t{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700}
-  .st{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600;white-space:nowrap}
-  .st-待接单{background:#fffbeb;color:var(--amber)} .st-已接单{background:#eff6ff;color:var(--blue)}
-  .st-已交付{background:#f5f3ff;color:var(--purple)} .st-已完成{background:#f0fdf4;color:var(--green)}
-  .st-已拒绝{background:#fef2f2;color:var(--red)}
-  .card-item .meta{font-size:12px;color:var(--sub);margin-top:6px;line-height:1.7}
-  .card-item .reward{font-size:18px;font-weight:800;color:var(--green)}
-  .card-item .req{font-size:13px;color:var(--ink);background:#f8fafc;border-radius:8px;padding:8px 10px;margin-top:8px;white-space:pre-wrap}
-  .card-item .ops{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
-  .ono{font-family:monospace;background:#eff6ff;color:var(--blue);padding:1px 6px;border-radius:4px;font-size:12px}
-
-  /* 聊天 */
-  #chatPanel .chat-box{height:380px;overflow-y:auto;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
-  .msg{max-width:76%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;word-break:break-all}
-  .msg.me{align-self:flex-end;background:var(--blue);color:#fff}
-  .msg.them{align-self:flex-start;background:#fff;border:1px solid var(--line)}
-  .msg .fn{font-size:10px;color:var(--sub);margin-bottom:2px}
-  .msg .fname{color:var(--blue)} .msg.me .fname{color:#bfdbfe}
-  .msg.file a{color:inherit;text-decoration:underline;font-weight:600}
-  .mcard{max-width:88%;align-self:flex-start;background:#fff;border:2px solid var(--blue);border-radius:12px;padding:10px 12px;min-width:230px}
-  .mcard .fn{font-size:10px;color:var(--sub);margin-bottom:4px}
-  .mcard .t{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:13px;align-items:center}
-  .mcard .meta{font-size:12px;color:var(--sub);margin-top:5px;line-height:1.7}
-  .mcard .reward{font-size:16px;font-weight:800;color:var(--green)}
-  .composer{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
-  .composer input[type=text]{flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:13px}
-  .empty{text-align:center;color:var(--sub);font-size:13px;padding:30px 0}
-  #chatErr{font-size:12px;color:var(--red);min-height:16px;margin-top:4px}
-
+  /* 顶栏 */
+  .topbar{background:#2e2e2e;color:#fff;display:flex;align-items:center;gap:10px;padding:10px 16px}
+  .topbar h1{font-size:15px;font-weight:600}
+  .topbar .grow{flex:1}
+  .topbar .who{font-size:12px;opacity:.85}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .d-on{background:#4ade80} .d-off{background:#8a8a8a}
+  .badge{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600}
+  .b-green{background:rgba(74,222,128,.2);color:#4ade80} .b-grey{background:rgba(255,255,255,.15);color:#bbb}
+  .linkbtn{color:#bbb;font-size:12px;cursor:pointer;background:none;border:none;text-decoration:underline}
+  /* 底部导航（微信风） */
+  .tabs{display:flex;background:#f7f7f7;border-top:1px solid var(--line)}
+  .tab{flex:1;text-align:center;padding:8px 0 9px;cursor:pointer;font-size:12px;color:var(--sub);border-top:2px solid transparent}
+  .tab.on{color:#07c160;border-top-color:#07c160;font-weight:600}
+  .tab .ico{font-size:18px;display:block}
+  main{max-width:860px;margin:0 auto;min-height:calc(100vh - 100px);background:#fff}
+  .panel{display:none} .panel.on{display:block}
+  /* ===== 聊天（微信式） ===== */
+  .chat-head{padding:10px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--sub);background:#f7f7f7}
+  .chat-box{height:calc(100vh - 320px);min-height:280px;overflow-y:auto;padding:16px;background:var(--bg)}
+  .msg{display:flex;gap:8px;margin-bottom:14px;align-items:flex-start}
+  .msg.me{flex-direction:row-reverse}
+  .avatar{width:36px;height:36px;border-radius:6px;background:#c8c8c8;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .msg.me .avatar{background:#07c160}
+  .bubble{max-width:68%;padding:9px 12px;border-radius:8px;background:#fff;font-size:14px;line-height:1.5;word-break:break-all;box-shadow:0 1px 1px rgba(0,0,0,.05)}
+  .msg.me .bubble{background:var(--green)}
+  .bubble .fn{font-size:11px;color:var(--sub);margin-bottom:3px}
+  .bubble a{color:var(--blue);text-decoration:none;font-size:13px}
+  .tcard{border-left:4px solid #07c160;background:#fff;border-radius:8px;padding:10px 12px;max-width:75%;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .msg.me .tcard{border-left-color:var(--amber)}
+  .tcard .t{font-weight:700;font-size:14px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .tcard .meta{font-size:12px;color:var(--sub);margin-top:5px;line-height:1.7}
+  .st{font-size:10px;padding:2px 7px;border-radius:99px;font-weight:600;background:#f1f5f9;color:var(--sub)}
+  .st-待接单{background:#fff7e6;color:var(--amber)} .st-已接单{background:#eff6ff;color:var(--blue)}
+  .st-已交付{background:#f5f3ff;color:var(--purple,#8b5cf6)} .st-已完成{background:#f0fdf4;color:#16a34a} .st-已拒绝{background:#fef2f2;color:var(--red)}
+  .reward{color:#fa5151;font-weight:700}
+  .input-bar{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:#f7f7f7;align-items:flex-end}
+  .input-bar textarea{flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:14px;font-family:inherit;resize:none;height:40px;max-height:100px;background:#fff}
+  .ibtn{background:#fff;border:1px solid var(--line);border-radius:8px;width:40px;height:40px;font-size:17px;flex-shrink:0}
+  .send{background:#07c160;color:#fff;border:none;border-radius:8px;padding:0 18px;height:40px;font-size:14px;flex-shrink:0}
+  .err{font-size:12px;color:var(--red);padding:4px 12px}
+  /* ===== 单子 ===== */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px}
+  .stat{background:#f7f7f7;border-radius:10px;padding:12px 14px}
+  .stat .k{font-size:12px;color:var(--sub)} .stat .v{font-size:22px;font-weight:800;margin-top:4px}
+  .v.g{color:#fa5151} .v.b{color:var(--blue)}
+  .cardlist{padding:0 14px 16px;display:flex;flex-direction:column;gap:10px}
+  .oc{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fff}
+  .oc .t{font-weight:700;font-size:14px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+  .oc .meta{font-size:12px;color:var(--sub);margin-top:6px;line-height:1.8}
+  .btn-p{background:#07c160;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer}
+  .btn-o{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer}
+  .empty{padding:40px;text-align:center;color:var(--sub);font-size:13px}
+  /* ===== 考勤 ===== */
+  .sec{padding:14px;border-bottom:8px solid var(--bg)}
+  .sec h3{font-size:14px;margin-bottom:10px}
+  .sched{width:100%;border-collapse:collapse;font-size:13px}
+  .sched td{border:1px solid var(--line);padding:7px 8px;text-align:center}
+  .sched input[type=time]{border:1px solid var(--line);border-radius:6px;padding:4px 6px;width:100px;font-size:13px}
+  .clock-area{text-align:center;padding:8px 0 4px}
+  .clock-btn{width:150px;height:150px;border-radius:50%;border:none;color:#fff;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(7,193,96,.35)}
+  .clock-in{background:#07c160} .clock-out{background:#fa5151;box-shadow:0 4px 14px rgba(250,81,81,.3)}
+  .clock-tip{font-size:12px;color:var(--sub);margin-top:10px;line-height:1.8}
+  table.att{width:100%;border-collapse:collapse;font-size:13px}
+  table.att th,table.att td{border:1px solid var(--line);padding:7px 8px;text-align:center;font-size:12px}
+  .tagst{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600}
+  .ts-ok{background:#f0fdf4;color:#16a34a} .ts-warn{background:#fff7e6;color:var(--amber)} .ts-bad{background:#fef2f2;color:var(--red)}
+  /* ===== 薪酬 ===== */
+  .pay-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;padding:14px}
   /* 弹窗 */
-  .mask{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;align-items:center;justify-content:center;padding:16px}
   .mask.show{display:flex}
-  .modal{background:#fff;border-radius:14px;padding:22px;width:100%;max-width:460px;max-height:88vh;overflow:auto}
+  .modal{background:#fff;border-radius:14px;padding:22px;width:100%;max-width:440px;max-height:86vh;overflow:auto}
   .modal h2{font-size:16px;margin-bottom:14px}
-  .field{margin-bottom:12px}
-  .field label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px}
-  .field input,.field textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit}
-  .field textarea{min-height:90px;resize:vertical}
-  .formErr{color:var(--red);font-size:12px;min-height:16px;margin-bottom:8px}
-
-  #toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
-    padding:9px 18px;border-radius:99px;font-size:13px;display:none;z-index:99;max-width:80vw}
+  .modal label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px}
+  .modal .req{background:#f7f7f7;border-radius:8px;padding:10px;font-size:13px;line-height:1.7;white-space:pre-wrap}
+  .modal .btns{display:flex;gap:10px;margin-top:18px}
+  .modal .btns button{flex:1;padding:10px;font-size:14px;border-radius:8px;cursor:pointer;border:none}
+  .toast{display:none;position:fixed;top:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;padding:9px 18px;border-radius:99px;font-size:13px;z-index:99}
+  @media (max-width:640px){ .bubble{max-width:80%} .chat-box{height:calc(100vh - 360px)} }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>✍️ 写手工作台</h1>
-    <span class="badge b-grey" id="whoami">…</span>
-    <span class="badge b-grey" id="shiftBadge">未打卡</span>
-    <span class="grow"></span>
-    <button class="btn-warn" id="btnShift">上班打卡</button>
-    <button class="btn-g" id="btnNotify" title="开启浏览器通知+提示音">🔔 开通知</button>
-    <button class="btn-g" id="btnLogout">退出</button>
-  </header>
+<div class="topbar">
+  <h1>✍️ 写手工作台</h1><span class="grow"></span>
+  <span class="who" id="whoami"></span>
+  <span id="shiftBadge" class="badge b-grey">未上班</span>
+  <button class="linkbtn" onclick="localStorage.removeItem('jdy_token');localStorage.removeItem('jdy_user');location.href='/login.html'">退出</button>
+</div>
 
-  <!-- 绩效看板 -->
-  <div class="stats" id="statsRow"></div>
-
-  <div class="tabs">
-    <button id="tabCards" class="on">📋 我的单子</button>
-    <button id="tabChat">💬 聊天</button>
-  </div>
-
-  <div class="panel" id="cardsPanel"></div>
-
-  <div class="panel" id="chatPanel" style="display:none">
+<main>
+  <!-- 聊天 -->
+  <div class="panel on" id="pChat">
+    <div class="chat-head">👤 <b id="peerName">老板</b> <span class="dot d-off" id="peerDot"></span> <span id="peerOnline" style="font-size:11px">离线</span> · 新派单卡会在这里收到</div>
     <div class="chat-box" id="chatBox"></div>
-    <div class="composer">
-      <input type="text" id="msgInput" placeholder="输入消息，回车发送…">
-      <button class="btn-p" id="btnSend">发送</button>
-      <button class="btn-g" id="btnFile">📎 传文件</button>
+    <div class="err" id="chatErr"></div>
+    <div class="input-bar">
       <input type="file" id="fileInput" style="display:none">
+      <button class="ibtn" id="btnFile" title="发文件">📎</button>
+      <textarea id="msgInput" placeholder="输入消息…"></textarea>
+      <button class="send" id="btnSend">发送</button>
     </div>
-    <div id="chatErr"></div>
   </div>
+
+  <!-- 单子 -->
+  <div class="panel" id="pCards">
+    <div class="stats" id="statRow"></div>
+    <div class="cardlist" id="cardList"></div>
+  </div>
+
+  <!-- 考勤 -->
+  <div class="panel" id="pAttend">
+    <div class="sec">
+      <h3>⏰ 今日打卡</h3>
+      <div class="clock-area">
+        <button class="clock-btn clock-in" id="btnClock">上 班<br><span style="font-size:11px;font-weight:400" id="clockNow"></span></button>
+        <div class="clock-tip" id="clockTip">未排班的日期打卡按「出勤」计。<br>规则：排班开始15分钟内打卡=迟到，超15分钟=旷工；下班点前签退=早退，下班后30分钟未签退=未签退。</div>
+      </div>
+    </div>
+    <div class="sec">
+      <h3>📅 我的排班（自行排班，保存后生效）</h3>
+      <table class="sched" id="schedTable"></table>
+      <div style="text-align:right;margin-top:10px"><button class="btn-p" id="btnSaveSched">保存排班</button></div>
+    </div>
+    <div class="sec">
+      <h3>📋 本月考勤</h3>
+      <div style="font-size:12px;color:var(--sub);margin-bottom:8px">月份：<input type="month" id="attMonth" style="border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px"></div>
+      <table class="att" id="attTable"></table>
+    </div>
+  </div>
+
+  <!-- 薪酬 -->
+  <div class="panel" id="pPay">
+    <div class="sec" style="border:none">
+      <h3>💰 我的薪酬</h3>
+      <div style="font-size:12px;color:var(--sub);margin-bottom:8px">月份：<input type="month" id="payMonth" style="border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px"></div>
+      <div class="pay-cards" id="payStats"></div>
+      <table class="att" id="payTable"></table>
+    </div>
+  </div>
+</main>
+
+<div class="tabs">
+  <div class="tab on" id="tabChat" data-p="pChat"><span class="ico">💬</span>聊天</div>
+  <div class="tab" id="tabCards" data-p="pCards"><span class="ico">📋</span>单子</div>
+  <div class="tab" id="tabAttend" data-p="pAttend"><span class="ico">⏰</span>考勤</div>
+  <div class="tab" id="tabPay" data-p="pPay"><span class="ico">💰</span>薪酬</div>
 </div>
 
-<!-- 派单卡预览弹窗 -->
-<div class="mask" id="mask">
+<!-- 派单卡详情弹窗 -->
+<div class="mask" id="cardMask">
   <div class="modal">
-    <h2>派单卡详情</h2>
-    <div id="pvBody"></div>
-    <div class="formErr" id="pvErr"></div>
-    <div style="display:flex;gap:10px;margin-top:14px">
-      <button class="btn-p" id="pvAccept" style="flex:1">✓ 接单（接后锁定）</button>
-      <button class="btn-g" id="pvDecline" style="flex:1">✗ 拒绝</button>
-      <button class="btn-g" id="pvClose">关闭</button>
-    </div>
+    <h2 id="cvTitle"></h2>
+    <div id="cvBody"></div>
+    <div class="btns" id="cvBtns"></div>
   </div>
 </div>
+<div class="toast" id="toast"></div>
 
-<div id="toast"></div>
 <script src="/socket.io/socket.io.js"></script>
 <script>
-/* ================= 基础 ================= */
 const TOKEN = localStorage.getItem('jdy_token');
 const ME = JSON.parse(localStorage.getItem('jdy_user') || 'null');
 if (!TOKEN || !ME || ME.role !== 'writer') location.href = '/login.html';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-const fmt = n => Number(n||0).toLocaleString('zh-CN',{maximumFractionDigits:2});
-let toastTimer;
-function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',2600); }
-async function authFetch(url, opt={}) {
-  const r = await fetch(url, { ...opt, headers: { 'Content-Type':'application/json', Authorization:'Bearer '+TOKEN, ...(opt.headers||{}) } });
-  if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href='/login.html'; throw new Error('请重新登录'); }
-  return r.json();
+const fmt = n => Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+const r2 = n => Math.round(n * 100) / 100;
+const dl = id => `/api/files/${id}/download?token=${TOKEN}`;
+function toast(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2400); }
+function authFetch(url, opt = {}) {
+  return fetch(url, { ...opt, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...(opt.headers || {}) } })
+    .then(async r => { const j = await r.json(); if (r.status === 401) { localStorage.removeItem('jdy_token'); location.href = '/login.html'; throw new Error('登录过期'); } return j; });
 }
-function fmtSize(n){ return n>=1048576 ? (n/1048576).toFixed(1)+'MB' : (n/1024).toFixed(0)+'KB'; }
+const cnToday = () => { const d = new Date(Date.now() + 8 * 3600 * 1000); return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0'); };
+const cnHm = () => { const d = new Date(Date.now() + 8 * 3600 * 1000); return String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0'); };
+let adminId = null, cards = [], attRows = [];
 
-/* ================= 浏览器通知 + 提示音 ================= */
-let soundOn = localStorage.getItem('jdy_sound') === 'on';
-function beep() {
+/* ================= 通知与音效 ================= */
+if ('Notification' in window && Notification.permission === 'default') {
+  document.addEventListener('click', function ask() { Notification.requestPermission(); document.removeEventListener('click', ask); }, { once: true });
+}
+function ping(title, body) {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const o = ctx.createOscillator(), g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type='sine'; o.frequency.value=880;
-    g.gain.setValueAtTime(.001, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(.22, ctx.currentTime+.02);
-    g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime+.45);
-    o.start(); o.stop(ctx.currentTime+.5);
-    setTimeout(()=>ctx.close(), 800);
-  } catch(e) {}
-}
-function ping(title, body) {
-  if (soundOn) beep();
+    o.connect(g); g.connect(ctx.destination); o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(.25, ctx.currentTime); g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + .35);
+    o.start(); o.stop(ctx.currentTime + .35); setTimeout(() => ctx.close(), 500);
+  } catch (e) {}
   if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
-    try { new Notification(title, { body, icon: undefined }); } catch(e) {}
+    try { new Notification(title, { body }); } catch (e) {}
   }
+  toast(title + (body ? '：' + String(body).slice(0, 26) : ''));
 }
-$('btnNotify').onclick = async () => {
-  if (!('Notification' in window)) { toast('此浏览器不支持通知，提示音仍可用'); soundOn=true; localStorage.setItem('jdy_sound','on'); $('btnNotify').textContent='🔔 已开启'; return; }
-  const p = await Notification.requestPermission();
-  if (p === 'granted') {
-    soundOn = true; localStorage.setItem('jdy_sound','on');
-    $('btnNotify').textContent = '🔔 通知已开';
-    toast('通知+提示音已开启（标签页在后台也会弹）');
-    beep();
-  } else toast('浏览器通知被拒绝，可在地址栏权限设置里重新允许');
-};
-if (soundOn) $('btnNotify').textContent = '🔔 通知已开';
-
-/* ================= 在班打卡 ================= */
-let shift = ME.shift;
-function renderShift() {
-  $('shiftBadge').textContent = shift ? '🟢 在班' : '⚪ 未打卡';
-  $('shiftBadge').className = 'badge ' + (shift ? 'b-green' : 'b-grey');
-  $('btnShift').textContent = shift ? '下班打卡' : '上班打卡';
-}
-$('btnShift').onclick = async () => {
-  const j = await authFetch('/api/shift', { method:'POST', body: JSON.stringify({ shift: !shift }) });
-  if (j.ok) { shift = j.shift; renderShift(); toast(shift ? '已上班，管理员能看到你了，新单会实时推给你' : '已下班，注意：新派单不再推送'); }
-};
-
-/* ================= 绩效看板 ================= */
-let cards = [];
-function renderStats() {
-  const done = cards.filter(c => c.status === '已完成');
-  const delivering = cards.filter(c => ['已接单','已交付'].includes(c.status));
-  const donePay = done.reduce((s,c)=>s+c.reward,0);
-  const ingPay = delivering.reduce((s,c)=>s+c.reward,0);
-  $('statsRow').innerHTML = `
-    <div class="stat"><div class="v">${done.length}<small> 单</small></div><div class="k">已完成</div></div>
-    <div class="stat"><div class="v">${fmt(donePay)}<small> 元</small></div><div class="k">已完成报酬</div></div>
-    <div class="stat"><div class="v">${delivering.length}<small> 单</small></div><div class="k">进行中</div></div>
-    <div class="stat"><div class="v">${fmt(ingPay)}<small> 元</small></div><div class="k">在途预计报酬</div></div>
-    <div class="stat"><div class="v">${cards.filter(c=>c.status==='待接单').length}<small> 张</small></div><div class="k">待决定的新单</div></div>`;
-}
-function fileLink(c) { return c.fileId ? `<a class="ono" href="/api/files/${c.fileId}/download" style="text-decoration:none">📎 ${esc(c.fileName||'附件')}</a>` : ''; }
-function cardOps(c) {
-  if (c.status === '待接单') return `<div class="ops"><button class="btn-p" onclick="preview('${c._id}')">查看详情 / 接单</button></div>`;
-  if (c.status === '已接单') return `<div class="ops"><button class="btn-p" onclick="deliver('${c._id}')">📤 提交交付（同步给管理员）</button></div>`;
-  if (c.status === '已交付') return `<div class="ops"><span style="font-size:12px;color:var(--sub)">已交付，等待管理员结算</span></div>`;
-  return '';
-}
-function renderCards() {
-  if (!cards.length) { $('cardsPanel').innerHTML = '<div class="empty">还没有收到派单卡，打卡上线等管理员派单吧</div>'; return; }
-  $('cardsPanel').innerHTML = cards.map(c => `
-    <div class="card-item">
-      <div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
-      <div class="meta">
-        订单 <span class="ono">${esc(c.orderNo||'-')}</span> · 报酬 <span class="reward">${fmt(c.reward)}</span> 元 · 截止 ${c.deadline||'不限'}<br>
-        ${fileLink(c)}
-      </div>
-      ${c.requirement ? `<div class="req">${esc(c.requirement)}</div>` : ''}
-      ${cardOps(c)}
-    </div>`).join('');
-}
-async function loadCards() { const j = await authFetch('/api/mycards'); if (j.ok) { cards = j.cards||[]; renderCards(); renderStats(); } }
-async function deliver(id) {
-  if (!confirm('确认交付这张单子？管理员看板会同步为待结算。')) return;
-  const j = await authFetch('/api/cards/'+id+'/deliver', { method:'POST' });
-  if (j.ok) { toast('已交付，管理员看板已同步'); loadCards(); } else toast('交付失败：'+j.error);
-}
-
-/* ================= 派单卡预览 ================= */
-let pvCardId = null;
-function preview(id) {
-  const c = cards.find(x => x._id === id); if (!c) return;
-  pvCardId = id;
-  $('pvBody').innerHTML = `
-    <div class="card-item" style="margin:0">
-      <div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
-      <div class="meta">台账订单 <span class="ono">${esc(c.orderNo||'-')}</span> · 截止 ${c.deadline||'不限'}</div>
-      <div class="meta">报酬 <span class="reward">${fmt(c.reward)}</span> 元</div>
-      ${c.fileId ? `<div class="meta">附件：<a href="/api/files/${c.fileId}/download">📎 ${esc(c.fileName||'下载')}</a></div>` : ''}
-      ${c.requirement ? `<div class="req">${esc(c.requirement)}</div>` : '<div class="req">（无附加要求）</div>'}
-    </div>`;
-  const can = c.status === '待接单';
-  $('pvAccept').style.display = can ? '' : 'none';
-  $('pvDecline').style.display = can ? '' : 'none';
-  $('pvErr').textContent = '';
-  $('mask').classList.add('show');
-}
-$('pvClose').onclick = () => $('mask').classList.remove('show');
-$('pvAccept').onclick = async () => {
-  const j = await authFetch('/api/cards/'+pvCardId+'/accept', { method:'POST' });
-  if (j.ok) { $('mask').classList.remove('show'); toast('已接单！单子已锁定到你名下，交付时点「提交交付」'); loadCards(); }
-  else $('pvErr').textContent = j.error;
-};
-$('pvDecline').onclick = async () => {
-  const j = await authFetch('/api/cards/'+pvCardId+'/decline', { method:'POST' });
-  if (j.ok) { $('mask').classList.remove('show'); toast('已拒绝，可在聊天里和管理员说明原因'); loadCards(); }
-  else $('pvErr').textContent = j.error;
-};
 
 /* ================= 聊天 ================= */
-let adminId = null;
 function renderMsg(m) {
-  if (m.type === 'card') return `<div class="mcard"><div class="fn">${esc(m.fromName)} · 派单卡</div><div id="cm-${m.cardId}"></div></div>`;
-  if (m.type === 'file') return `<div class="msg ${m.from===ME.id?'me':'them'}"><div class="fn">${esc(m.fromName)}</div><div class="file"><a href="/api/files/${m.fileId}/download">📎 ${esc(m.fileName)}</a> (${fmtSize(m.fileSize)})</div></div>`;
-  return `<div class="msg ${m.from===ME.id?'me':'them'}"><div class="fn">${esc(m.fromName)}</div>${esc(m.text)}</div>`;
+  const me = m.from === ME.id;
+  const ava = esc((m.fromName || '?').slice(0, 1));
+  let inner;
+  if (m.type === 'text') inner = `<div class="bubble">${me ? '' : `<div class="fn">${esc(m.fromName)}</div>`}${esc(m.text)}</div>`;
+  else if (m.type === 'file') inner = `<div class="bubble">📎 <a href="${dl(m.fileId)}" download>${esc(m.fileName)}</a><div style="font-size:11px;color:var(--sub)">${fmt(Math.round((m.fileSize||0)/1024))} KB · 点击下载</div></div>`;
+  else if (m.type === 'card') inner = `<div class="tcard"><div class="fn" style="font-size:11px;color:var(--sub)">${esc(m.fromName)} · 派单卡</div><div id="cm-${m.cardId}"></div></div>`;
+  return `<div class="msg ${me ? 'me' : ''}"><div class="avatar">${ava}</div>${inner}</div>`;
+}
+function addMsg(m) { $('chatBox').insertAdjacentHTML('beforeend', renderMsg(m)); fillCardMsgs(); $('chatBox').scrollTop = $('chatBox').scrollHeight; }
+async function loadChat() {
+  const j = await authFetch('/api/chats');
+  const c = (j.chats || [])[0];
+  if (!c) { $('chatBox').innerHTML = '<div class="empty">暂无会话</div>'; return; }
+  adminId = c.user.id;
+  $('peerName').textContent = c.user.displayName || c.user.username;
+  $('peerDot').className = 'dot ' + (c.user.sockOnline ? 'd-on' : 'd-off');
+  $('peerOnline').textContent = c.user.sockOnline ? '在线' : '离线';
+  const mj = await authFetch('/api/messages?peer=' + adminId);
+  $('chatBox').innerHTML = (mj.messages || []).map(renderMsg).join('') || '<div class="empty">打个招呼吧～</div>';
+  await fillCardMsgs();
+  $('chatBox').scrollTop = $('chatBox').scrollHeight;
 }
 async function fillCardMsgs() {
   const slots = document.querySelectorAll('[id^="cm-"]');
@@ -277,78 +234,191 @@ async function fillCardMsgs() {
   const map = {}; cards.forEach(c => map[c._id] = c);
   slots.forEach(el => {
     const c = map[el.id.slice(3)];
-    if (!c) { el.innerHTML = '<span style="font-size:12px;color:var(--sub)">（卡片加载中…）</span>'; return; }
+    if (!c) { el.innerHTML = '<span style="font-size:12px;color:var(--sub)">（加载中…）</span>'; return; }
     el.innerHTML = `<div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
-      <div class="meta">订单 <span class="ono">${esc(c.orderNo||'-')}</span> · 报酬 <b class="reward">${fmt(c.reward)}</b> 元 · 截止 ${c.deadline||'不限'}</div>
-      ${c.status==='待接单' ? `<div style="margin-top:6px"><button class="btn-p" onclick="preview('${c._id}')">查看详情 / 接单</button></div>` : ''}`;
+      <div class="meta">订单号 <span style="font-family:monospace">${esc(c.orderNo || '-')}</span> · 报酬 <b class="reward">${fmt(c.reward)}</b> 元 · 截止 ${c.deadline || '不限'}${c.fileName ? `<br>📎 <a href="${dl(c.fileId)}" download>${esc(c.fileName)}</a>` : ''}
+      ${c.status === '待接单' ? '<br><button class="btn-p" style="margin-top:6px" onclick="preview(\'' + c._id + '\')">查看详情 / 接单</button>' : ''}</div>`;
   });
 }
-async function loadChat() {
-  const j = await authFetch('/api/chats');
-  const chat = (j.chats||[])[0];
-  if (!chat) { $('chatBox').innerHTML = '<div class="empty">暂无会话</div>'; return; }
-  adminId = chat.user.id;
-  const mj = await authFetch('/api/messages?peer=' + adminId);
-  $('chatBox').innerHTML = (mj.messages||[]).map(renderMsg).join('') || '<div class="empty">和老板打个招呼吧～</div>';
-  await fillCardMsgs();
-  $('chatBox').scrollTop = $('chatBox').scrollHeight;
-}
-function addMsg(m) {
-  $('chatBox').insertAdjacentHTML('beforeend', renderMsg(m));
-  fillCardMsgs();
-  $('chatBox').scrollTop = $('chatBox').scrollHeight;
-}
-async function sendMsg() {
-  const t = $('msgInput').value.trim();
-  if (!t || !adminId) return;
+$('btnSend').onclick = async () => {
+  const text = $('msgInput').value.trim();
+  if (!text || !adminId) return;
   $('msgInput').value = '';
-  const j = await authFetch('/api/messages', { method:'POST', body: JSON.stringify({ peer: adminId, text: t }) });
+  const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer: adminId, text }) });
   if (!j.ok) $('chatErr').textContent = j.error;
-}
-$('btnSend').onclick = sendMsg;
-$('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
+};
+$('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('btnSend').click(); } });
 $('btnFile').onclick = () => $('fileInput').click();
 $('fileInput').onchange = async () => {
   const f = $('fileInput').files[0]; if (!f || !adminId) return;
-  if (f.size > 25*1024*1024) { $('chatErr').textContent = '文件超过25MB，请走微信传'; return; }
+  if (f.size > 25 * 1024 * 1024) { $('chatErr').textContent = '文件超过25MB，请走微信传'; return; }
   $('chatErr').textContent = '上传中…';
   const fd = new FormData(); fd.append('file', f); fd.append('peer', adminId);
   try {
-    const up = await fetch('/api/files', { method:'POST', headers:{ Authorization:'Bearer '+TOKEN }, body: fd }).then(r=>r.json());
+    const up = await fetch('/api/files', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd }).then(r => r.json());
     if (!up.ok) throw new Error(up.error);
-    const j = await authFetch('/api/messages/file', { method:'POST', body: JSON.stringify({ peer: adminId, ...up }) });
+    const j = await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer: adminId, ...up }) });
     if (!j.ok) throw new Error(j.error);
     $('chatErr').textContent = '';
-  } catch (e) { $('chatErr').textContent = '上传失败：'+e.message; }
+  } catch (e) { $('chatErr').textContent = '上传失败：' + e.message; }
   $('fileInput').value = '';
 };
 
-/* ================= Tab 切换 ================= */
-$('tabCards').onclick = () => {
-  $('tabCards').classList.add('on'); $('tabChat').classList.remove('on');
-  $('cardsPanel').style.display=''; $('chatPanel').style.display='none';
+/* ================= 单子（含绩效） ================= */
+async function loadCards() {
+  const j = await authFetch('/api/mycards');
+  cards = j.cards || [];
+  const done = cards.filter(c => c.status === '已完成');
+  const paid = done.reduce((s, c) => s + c.reward, 0);
+  const delivering = cards.filter(c => c.status === '已交付');
+  const pending = delivering.reduce((s, c) => s + c.reward, 0);
+  const ongoing = cards.filter(c => c.status === '已接单' || c.status === '待接单');
+  const ong = ongoing.reduce((s, c) => s + c.reward, 0);
+  $('statRow').innerHTML = `
+    <div class="stat"><div class="k">✅ 已完成单数</div><div class="v">${done.length}</div></div>
+    <div class="stat"><div class="k">💰 累计到手</div><div class="v g">${fmt(r2(paid))}</div></div>
+    <div class="stat"><div class="k">🚚 在途单数</div><div class="v b">${ongoing.length + delivering.length}</div></div>
+    <div class="stat"><div class="k">⏳ 在途+待确认</div><div class="v">${fmt(r2(ong + pending))}</div></div>`;
+  $('cardList').innerHTML = cards.length ? cards.map(c => `
+    <div class="oc">
+      <div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
+      <div class="meta">订单号 <span style="font-family:monospace">${esc(c.orderNo || '-')}</span> · 报酬 <b class="reward">${fmt(c.reward)}</b> 元 · 截止 ${c.deadline || '不限'}${c.fileName ? ` · 📎 <a href="${dl(c.fileId)}" download>${esc(c.fileName)}</a>` : ''}
+      <br>${c.status === '待接单' ? '<button class="btn-p" onclick="preview(\'' + c._id + '\')">查看详情 / 接单</button>' : ''}
+      ${c.status === '已接单' ? '<button class="btn-p" onclick="deliver(\'' + c._id + '\')">✅ 提交交付</button>' : ''}</div>
+    </div>`).join('') : '<div class="empty">还没有派单，老板派单后会在这里和聊天里出现</div>';
+}
+async function preview(id) {
+  const c = cards.find(x => x._id === id); if (!c) return;
+  $('cvTitle').textContent = '派单卡详情';
+  $('cvBody').innerHTML = `
+    <div style="font-size:15px;font-weight:700">${esc(c.title)}</div>
+    <label>订单号</label><div class="req" style="font-family:monospace">${esc(c.orderNo || '-')}</div>
+    <label>报酬</label><div class="req" style="color:#fa5151;font-weight:700;font-size:17px">${fmt(c.reward)} 元</div>
+    <label>交付要求</label><div class="req">${esc(c.requirement || '（无）')}</div>
+    <label>截止日期</label><div class="req">${esc(c.deadline || '不限')}${c.fileName ? `<br>📎 <a href="${dl(c.fileId)}" download>${esc(c.fileName)}</a>` : ''}</div>`;
+  $('cvBtns').innerHTML = c.status === '待接单'
+    ? `<button class="btn-o" onclick="decline('${c._id}')">不接</button><button class="btn-p" onclick="accept('${c._id}')">✔ 接单</button>`
+    : `<button class="btn-o" onclick="closeCard()">关闭</button>`;
+  $('cardMask').classList.add('show');
+}
+function closeCard() { $('cardMask').classList.remove('show'); }
+async function accept(id) { await act('/api/cards/' + id + '/accept'); closeCard(); }
+async function decline(id) { await act('/api/cards/' + id + '/decline'); closeCard(); }
+async function deliver(id) {
+  if (!confirm('确认交付？交付后这张卡会同步到你老板的台账（原单自动变待结算）。')) return;
+  await act('/api/cards/' + id + '/deliver');
+}
+async function act(url) {
+  const j = await authFetch(url, { method: 'POST' });
+  if (j.ok) { toast('已更新：' + (j.card ? j.card.status : '')); loadCards(); fillCardMsgs(); }
+  else alert(j.error || '操作失败');
+}
+
+/* ================= 考勤 ================= */
+const DAYNAMES = ['日', '一', '二', '三', '四', '五', '六'];
+let schedDays = {};
+async function loadShiftAndSched() {
+  const cn = new Date(Date.now() + 8 * 3600 * 1000);
+  $('clockNow').textContent = cnHm();
+  const me = await authFetch('/api/me');
+  renderShift(me.user.shift);
+  const sj = await authFetch('/api/schedule');
+  schedDays = sj.schedule || {};
+  renderSched();
+  const today = await authFetch('/api/attendance?month=' + cnToday().slice(0, 7));
+  attRows = today.rows || [];
+  renderAtt();
+  // 今日打卡状态决定按钮
+  const t = attRows.find(r => r.date === cnToday());
+  const btn = $('btnClock');
+  if (t && t.clockIn && !t.clockOut) { btn.className = 'clock-btn clock-out'; btn.innerHTML = '下 班<br><span style="font-size:11px;font-weight:400">已上班 ' + t.clockIn + '</span>'; }
+  else if (t && t.clockOut) { btn.className = 'clock-btn clock-in'; btn.disabled = true; btn.style.opacity = .5; btn.innerHTML = '今日完<br><span style="font-size:11px;font-weight:400">' + t.clockIn + ' ~ ' + t.clockOut + '</span>'; }
+  else { btn.className = 'clock-btn clock-in'; btn.disabled = false; btn.innerHTML = '上 班<br><span style="font-size:11px;font-weight:400">' + cnHm() + '</span>'; }
+}
+function renderShift(on) {
+  $('shiftBadge').className = 'badge ' + (on ? 'b-green' : 'b-grey');
+  $('shiftBadge').textContent = on ? '● 在班' : '未上班';
+}
+$('btnClock').onclick = async () => {
+  const t = attRows.find(r => r.date === cnToday());
+  const url = (t && t.clockIn && !t.clockOut) ? '/api/attendance/clockout' : '/api/attendance/clockin';
+  const j = await authFetch(url, { method: 'POST' });
+  if (!j.ok) return alert(j.error);
+  ping(url.includes('clockin') ? '上班打卡成功' : '下班签退成功', (j.attendance ? j.attendance.status : j.status));
+  loadShiftAndSched();
 };
-$('tabChat').onclick = () => {
-  $('tabChat').classList.add('on'); $('tabCards').classList.remove('on');
-  $('chatPanel').style.display=''; $('cardsPanel').style.display='none';
-  loadChat();
+function renderSched() {
+  $('schedTable').innerHTML = '<tr><th>星期</th><th>上班</th><th>下班</th><th>休</th></tr>' +
+    [1, 2, 3, 4, 5, 6, 0].map(d => {
+      const v = schedDays[String(d)] || null;
+      return `<tr><td>周${DAYNAMES[d]}</td>
+        <td><input type="time" id="sd${d}" value="${v ? v.start : '09:00'}" ${v === null ? 'disabled' : ''}></td>
+        <td><input type="time" id="se${d}" value="${v ? v.end : '18:00'}" ${v === null ? 'disabled' : ''}></td>
+        <td><input type="checkbox" id="sr${d}" ${v === null ? 'checked' : ''}></td></tr>`;
+    }).join('');
+}
+$('btnSaveSched').onclick = async () => {
+  const days = {};
+  for (let d = 0; d <= 6; d++) {
+    days[String(d)] = $('sr' + d).checked ? null : { start: $('sd' + d).value, end: $('se' + d).value };
+  }
+  const j = await authFetch('/api/schedule', { method: 'POST', body: JSON.stringify({ days }) });
+  if (j.ok) { toast('排班已保存'); loadShiftAndSched(); }
+  else alert(j.error);
 };
+function stTag(s) {
+  const cls = (s === '出勤') ? 'ts-ok' : (s === '旷工' || s === '未签退') ? 'ts-bad' : 'ts-warn';
+  return `<span class="tagst ${cls}">${s || '-'}</span>`;
+}
+function renderAtt() {
+  $('attTable').innerHTML = '<tr><th>日期</th><th>排班</th><th>上班</th><th>下班</th><th>状态</th></tr>' +
+    (attRows.length ? attRows.map(r => `<tr><td>${r.date}</td><td>${r.planStart ? r.planStart + '~' + r.planEnd : '自由'}</td>
+      <td>${r.clockIn || '—'}</td><td>${r.clockOut || '—'}</td><td>${stTag(r.status)}</td></tr>`).join('')
+    : '<tr><td colspan="5" style="color:var(--sub)">本月暂无考勤记录</td></tr>');
+}
+$('attMonth').onchange = async () => {
+  const j = await authFetch('/api/attendance?month=' + $('attMonth').value);
+  attRows = j.rows || []; renderAtt();
+};
+$('payMonth').onchange = () => loadPay();
+async function loadPay() {
+  const month = $('payMonth').value || cnToday().slice(0, 7);
+  const j = await authFetch('/api/payroll?month=' + month);
+  const t = j.totals || {};
+  $('payStats').innerHTML = `
+    <div class="stat"><div class="k">💰 已到手（已完成）</div><div class="v g">${fmt(t.paid || 0)}</div></div>
+    <div class="stat"><div class="k">📬 待确认（已交付）</div><div class="v">${fmt(t.pending || 0)}</div></div>
+    <div class="stat"><div class="k">🚚 在途</div><div class="v b">${fmt(t.ongoing || 0)}</div></div>`;
+  $('payTable').innerHTML = '<tr><th>派单</th><th>订单号</th><th>报酬</th><th>状态</th></tr>' +
+    ((j.cards || []).length ? j.cards.map(c => `<tr><td>${esc(c.title)}</td><td style="font-family:monospace">${esc(c.orderNo || '-')}</td>
+      <td><b>${fmt(c.reward)}</b></td><td>${stTag(c.status) === '-' ? c.status : `<span class="st st-${c.status}">${c.status}</span>`}</td></tr>`).join('')
+    : '<tr><td colspan="4" style="color:var(--sub)">本月暂无派单记录</td></tr>');
+}
 
 /* ================= 实时推送 ================= */
 const socket = io({ auth: { token: TOKEN } });
 socket.on('msg', m => {
-  ping('新消息', (m.fromName||'') + '：' + (m.type==='text' ? m.text : m.type==='file' ? '[文件]'+m.fileName : '[派单卡]'));
-  if (m.type === 'card') { loadCards(); }
-  if (document.hidden || $('chatPanel').style.display === 'none') { if ($('tabChat').classList.contains('on')) loadChat(); }
-  else addMsg(m);
+  ping('新消息', (m.fromName || '') + '：' + (m.type === 'text' ? m.text : m.type === 'file' ? '[文件]' + m.fileName : '[派单卡]'));
+  if (m.type === 'card') loadCards();
+  if ($('pChat').classList.contains('on')) { addMsg(m); }
 });
 socket.on('card', c => { loadCards(); fillCardMsgs(); ping('派单卡更新', c.title + ' → ' + c.status); });
 
-/* ================= 初始化 ================= */
+/* ================= Tab切换 + 初始化 ================= */
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  $('#' + t.dataset.p).classList.add('on');
+  if (t.dataset.p === 'pAttend') loadShiftAndSched();
+  if (t.dataset.p === 'pPay') { $('payMonth').value = cnToday().slice(0, 7); loadPay(); }
+});
 $('whoami').textContent = ME.displayName || ME.username;
-renderShift();
+$('attMonth').value = cnToday().slice(0, 7);
+$('payMonth').value = cnToday().slice(0, 7);
+setInterval(() => { if ($('pAttend').classList.contains('on')) { const b = $('btnClock'); if (!b.disabled && !b.innerHTML.includes('~')) $('clockNow').textContent = cnHm(); } }, 30000);
 loadCards().then(loadChat);
-$('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href='/login.html'; };
+$('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
 </script>
 </body>
 </html>

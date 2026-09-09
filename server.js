@@ -240,7 +240,8 @@ const pairKey = (a, b) => [String(a), String(b)].sort().join(':');
 async function auth(req, res, next) {
   try {
     const h = req.headers.authorization || '';
-    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+    let token = h.startsWith('Bearer ') ? h.slice(7) : null;
+    if (!token && req.query.token) token = String(req.query.token);   // 浏览器直开下载链接用
     if (!token) return res.status(401).json({ ok: false, error: '未登录' });
     const payload = jwt.verify(token, JWT_SECRET);
     const db = await getDb();
@@ -441,7 +442,7 @@ app.post('/api/files', auth, upload.single('file'), async (req, res) => {
     res.json({ ok: true, fileId: uploadStream.id.toString(), fileName: req.file.originalname, fileSize: req.file.size });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-// 下载文件（会话双方可下）
+// 下载文件（会话双方可下；支持 ?token= 供浏览器直接打开）
 app.get('/api/files/:id/download', auth, async (req, res) => {
   try {
     const db = await getDb();
@@ -453,8 +454,9 @@ app.get('/api/files/:id/download', auth, async (req, res) => {
     if (req.user.role !== 'admin' && meta.from !== req.user.id && meta.to !== req.user.id) {
       return res.status(403).json({ ok: false, error: '无权访问该文件' });
     }
+    const inline = String(req.query.inline) === '1';
     res.setHeader('Content-Type', f.contentType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', 'attachment; filename="' + encodeURIComponent(f.filename) + '"');
+    res.setHeader('Content-Disposition', (inline ? 'inline' : 'attachment') + '; filename="' + encodeURIComponent(f.filename) + '"');
     bucket.openDownloadStream(f._id).pipe(res);
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -620,6 +622,141 @@ app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
       });
     }
     res.json({ ok: true, rows, totals: { linked, totReward: Math.round(totReward*100)/100, totShare: Math.round(totShare*100)/100, totProfit: Math.round(totProfit*100)/100 } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ===================================================================
+// 排班考勤 + 薪酬（V9）：写手自行排班，到点未打卡=旷工，到点须签退
+// ===================================================================
+// 统一用北京时间（服务器在UTC也正确）
+const cnNow = () => new Date(Date.now() + 8 * 3600 * 1000);
+const cnDateStr = d => d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+const cnTimeStr = d => String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+const toMin = hm => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
+const GRACE = 15;   // 迟到宽限15分钟
+
+// 评估某人今天的考勤状态（惰性计算：任何相关请求都会触发）
+async function evalAttendance(db, userId) {
+  const sched = await db.collection('schedules').findOne({ userId });
+  if (!sched || !sched.days) return;
+  const cn = cnNow();
+  const dow = String(cn.getUTCDay());
+  const day = sched.days[dow];
+  if (!day || !day.start || !day.end) return;
+  const date = cnDateStr(cn);
+  const nowMin = cn.getUTCHours() * 60 + cn.getUTCMinutes();
+  const startMin = toMin(day.start), endMin = toMin(day.end);
+  let att = await db.collection('attendance').findOne({ userId, date });
+  if (!att) {
+    if (nowMin > startMin + GRACE) {
+      await db.collection('attendance').insertOne({
+        userId, date, planStart: day.start, planEnd: day.end,
+        clockIn: null, clockOut: null, status: '旷工', updatedAt: new Date(),
+      });
+    }
+    return;
+  }
+  if (att.clockIn && !att.clockOut && nowMin > endMin + 30) {
+    await db.collection('attendance').updateOne({ _id: att._id }, { $set: { status: '未签退', updatedAt: new Date() } });
+  }
+}
+// 排班：写手自行设置每周班表（0=周日…6=周六；null=休）
+app.get('/api/schedule', auth, async (req, res) => {
+  const db = await getDb();
+  const uid = req.user.role === 'admin' && req.query.userId ? String(req.query.userId) : req.user.id;
+  await evalAttendance(db, uid);
+  const sched = await db.collection('schedules').findOne({ userId: uid });
+  res.json({ ok: true, schedule: sched ? sched.days : null });
+});
+app.post('/api/schedule', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const days = req.body?.days || {};
+    for (const k of Object.keys(days)) {
+      if (!['0', '1', '2', '3', '4', '5', '6'].includes(k)) return res.status(400).json({ ok: false, error: '非法星期' });
+      if (days[k] && (!/^\d{2}:\d{2}$/.test(days[k].start || '') || !/^\d{2}:\d{2}$/.test(days[k].end || ''))) {
+        return res.status(400).json({ ok: false, error: '时间格式应为 HH:MM' });
+      }
+    }
+    await db.collection('schedules').updateOne({ userId: req.user.id }, { $set: { days, updatedAt: new Date() } }, { upsert: true });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 打卡上班
+app.post('/api/attendance/clockin', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    await evalAttendance(db, req.user.id);
+    const cn = cnNow();
+    const date = cnDateStr(cn), time = cnTimeStr(cn);
+    const sched = await db.collection('schedules').findOne({ userId: req.user.id });
+    const day = sched ? sched.days[String(cn.getUTCDay())] : null;
+    const exist = await db.collection('attendance').findOne({ userId: req.user.id, date });
+    if (exist && exist.clockIn) return res.status(400).json({ ok: false, error: '今天已打过上班卡（' + exist.clockIn + '）' });
+    let status = '出勤';
+    if (day) {
+      const nowMin = cn.getUTCHours() * 60 + cn.getUTCMinutes();
+      const startMin = toMin(day.start);
+      if (nowMin > startMin + GRACE) status = '旷工';
+      else if (nowMin > startMin) status = '迟到';
+    }
+    const doc = {
+      userId: req.user.id, date, planStart: day ? day.start : null, planEnd: day ? day.end : null,
+      clockIn: time, clockOut: null, status, updatedAt: new Date(),
+    };
+    if (exist) await db.collection('attendance').updateOne({ _id: exist._id }, { $set: doc });
+    else await db.collection('attendance').insertOne(doc);
+    await db.collection('users').updateOne({ _id: req.user._id }, { $set: { shift: true } });
+    io.emit('presence', { userId: req.user.id, shift: true, sockOnline: true });
+    res.json({ ok: true, attendance: doc });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 打卡下班（到点须签退；早退会被记录）
+app.post('/api/attendance/clockout', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const cn = cnNow();
+    const date = cnDateStr(cn), time = cnTimeStr(cn);
+    const att = await db.collection('attendance').findOne({ userId: req.user.id, date });
+    if (!att || !att.clockIn) return res.status(400).json({ ok: false, error: '今天还没打上班卡' });
+    if (att.clockOut) return res.status(400).json({ ok: false, error: '今天已签退（' + att.clockOut + '）' });
+    let status = '出勤';
+    if (att.planEnd && toMin(time) < toMin(att.planEnd)) status = '早退';
+    await db.collection('attendance').updateOne({ _id: att._id }, { $set: { clockOut: time, status } });
+    await db.collection('users').updateOne({ _id: req.user._id }, { $set: { shift: false } });
+    io.emit('presence', { userId: req.user.id, shift: false, sockOnline: true });
+    res.json({ ok: true, clockOut: time, status });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 考勤记录（本人或管理员查指定写手）
+app.get('/api/attendance', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    await evalAttendance(db, req.user.id);
+    const uid = req.user.role === 'admin' && req.query.userId ? String(req.query.userId) : req.user.id;
+    const month = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? req.query.month : null;
+    const q = { userId: uid };
+    if (month) q.date = { $regex: '^' + month };
+    const rows = await db.collection('attendance').find(q).sort({ date: -1 }).limit(100).toArray();
+    res.json({ ok: true, rows });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 薪酬（按派单卡统计：已完成=已到手；已交付=待确认；其余=在途）
+app.get('/api/payroll', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const uid = req.user.role === 'admin' && req.query.userId ? String(req.query.userId) : req.user.id;
+    const month = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? req.query.month : cnDateStr(cnNow()).slice(0, 7);
+    const cards = await db.collection('cards').find({ to: uid }).sort({ createdAt: -1 }).limit(300).toArray();
+    const rows = cards.filter(c => (c.createdAt ? cnDateStr(c.createdAt) : '').startsWith(month));
+    const tot = { paid: 0, pending: 0, ongoing: 0, done: 0, delivering: 0, ongoingCnt: 0 };
+    rows.forEach(c => {
+      if (c.status === '已完成') { tot.paid += c.reward; tot.done++; }
+      else if (c.status === '已交付') { tot.pending += c.reward; tot.delivering++; }
+      else if (c.status === '已接单' || c.status === '待接单') { tot.ongoing += c.reward; tot.ongoingCnt++; }
+    });
+    ['paid', 'pending', 'ongoing'].forEach(k => tot[k] = Math.round(tot[k] * 100) / 100);
+    res.json({ ok: true, month, cards: rows, totals: tot });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
