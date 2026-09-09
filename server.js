@@ -361,17 +361,29 @@ app.post('/api/shift', auth, async (req, res) => {
 });
 
 // ---------- 聊天 ----------
-// 管理员会话列表：写手 + 未读数 + 最后一条
-app.get('/api/chats', auth, adminOnly, async (req, res) => {
+// 会话列表：管理员=全部写手（含未读/最后一条）；写手=和管理员的会话
+app.get('/api/chats', auth, async (req, res) => {
   try {
     const db = await getDb();
-    const writers = await db.collection('users').find({ role: 'writer' }).sort({ createdAt: 1 }).toArray();
+    if (req.user.role === 'admin') {
+      const writers = await db.collection('users').find({ role: 'writer' }).sort({ createdAt: 1 }).toArray();
+      const list = [];
+      for (const w of writers) {
+        const conv = pairKey(req.user.id, w._id.toString());
+        const last = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: -1 }).limit(1).toArray();
+        const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
+        list.push({ user: publicUser(w), unread, last: last[0] || null });
+      }
+      return res.json({ ok: true, chats: list });
+    }
+    // 写手：会话对象=管理员
+    const admins = await db.collection('users').find({ role: 'admin' }).toArray();
     const list = [];
-    for (const w of writers) {
-      const conv = pairKey(req.user.id, w._id.toString());
+    for (const a of admins) {
+      const conv = pairKey(req.user.id, a._id.toString());
       const last = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: -1 }).limit(1).toArray();
       const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
-      list.push({ user: publicUser(w), unread, last: last[0] || null });
+      list.push({ user: publicUser(a), unread, last: last[0] || null });
     }
     res.json({ ok: true, chats: list });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -481,7 +493,7 @@ async function insertCardMessage(db, card, fromUser, toId) {
   msg._id = r.insertedId;
   return msg;
 }
-// 创建派单卡（管理员）：报酬自定义；orderId=关联原单（联动利润与交付同步）
+// 创建派单卡（管理员）：报酬自定义；**必须关联台账订单**（联动利润与交付同步），订单号同步给写手
 app.post('/api/cards', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
@@ -497,13 +509,17 @@ app.post('/api/cards', auth, adminOnly, async (req, res) => {
     if (!title) return res.status(400).json({ ok: false, error: '标题不能为空' });
     if (!isFinite(reward) || reward < 0) return res.status(400).json({ ok: false, error: '报酬必须是≥0的数字' });
     if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return res.status(400).json({ ok: false, error: '截止日期格式应为 YYYY-MM-DD' });
-    if (orderId && !ObjectId.isValid(orderId)) return res.status(400).json({ ok: false, error: '无效的关联订单' });
+    // 订单必选：从台账拉取并绑定
+    if (!ObjectId.isValid(orderId)) return res.status(400).json({ ok: false, error: '必须选择一个台账订单才能发送派单卡' });
+    const order = await db.collection(CONFIG.collection).findOne({ _id: new ObjectId(orderId) });
+    if (!order) return res.status(404).json({ ok: false, error: '关联的台账订单不存在' });
     const target = await db.collection('users').findOne({ _id: new ObjectId(to) });
     if (!target || target.role !== 'writer') return res.status(404).json({ ok: false, error: '写手不存在' });
     const card = {
       to, toName: target.displayName, from: req.user.id, fromName: req.user.displayName,
       title, reward: Math.round(reward * 100) / 100, requirement, deadline: deadline || null,
-      orderId: orderId || null, fileId: fileId || null, fileName: fileName || null,
+      orderId, orderNo: order.orderNo, orderDate: order.date,
+      fileId: fileId || null, fileName: fileName || null,
       status: '待接单', acceptedAt: null, deliveredAt: null, finishedAt: null, createdAt: new Date(),
     };
     const r = await db.collection('cards').insertOne(card);

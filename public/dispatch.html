@@ -108,8 +108,8 @@
     <label>报酬（元）* —— 派出去的价，由你自定义</label><input id="cReward" type="number" min="0" step="0.01">
     <label>截止日期</label><input id="cDeadline" type="date">
     <label>交付要求</label><textarea id="cReq" placeholder="字数/风格/交稿格式等"></textarea>
-    <label>关联我的原单（可选——绑了才能自动算利润、写手交付后自动同步原单进度）</label>
-    <select id="cOrder"><option value="">不关联</option></select>
+    <label>关联台账订单 *（必须选一单——绑了才能自动算利润、写手交付后自动同步原单进度；订单号会同步给写手）</label>
+    <select id="cOrder"><option value="">—— 请从台账选择订单 ——</option></select>
     <label>需求附件（可选，≤25MB）</label>
     <input type="file" id="cFile">
     <div style="font-size:12px;color:var(--sub);margin-top:4px" id="cFileInfo"></div>
@@ -145,6 +145,24 @@ function authFetch(url, opt = {}) {
 function toast(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2200); }
 function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 
+/* 浏览器通知 + 提示音 */
+if ('Notification' in window && Notification.permission === 'default') {
+  document.addEventListener('click', function ask() { Notification.requestPermission(); document.removeEventListener('click', ask); }, { once: true });
+}
+function ping(title, body) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination); o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(.25, ctx.currentTime); g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + .35);
+    o.start(); o.stop(ctx.currentTime + .35); setTimeout(() => ctx.close(), 500);
+  } catch (e) {}
+  if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+    try { new Notification('📦 ' + title, { body, icon: undefined }); } catch (e) {}
+  }
+  toast(title + (body ? '：' + body.slice(0, 24) : ''));
+}
+
 (async () => {
   if (!TOKEN) { location.href = '/login.html'; return; }
   const me = await authFetch('/api/me');
@@ -155,9 +173,9 @@ function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&
   socket.on('msg', m => {
     if (currentPeer && (m.from === currentPeer || m.to === currentPeer)) { $('chatBox').insertAdjacentHTML('beforeend', renderMsg(m)); fillCardMsgs(); $('chatBox').scrollTop = $('chatBox').scrollHeight; }
     loadTeam();
-    if (m.type !== 'card') toast('新消息');
+    ping('新消息', (m.fromName || '') + '：' + (m.type === 'text' ? m.text : m.type === 'file' ? '[文件]' + m.fileName : '[派单卡]'));
   });
-  socket.on('card', () => { fillCardMsgs(); loadOverview(); });
+  socket.on('card', c => { fillCardMsgs(); loadOverview(); ping('派单卡更新', c.title + ' → ' + c.status); });
   socket.on('presence', () => loadTeam());
 
   loadTeam();
@@ -210,7 +228,7 @@ async function fillCardMsgs() {
     const c = map[el.id.slice(3)];
     if (!c) return;
     el.innerHTML = `<div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
-      <div class="meta">写手：${esc(c.toName)} · 报酬 <b style="color:var(--green)">${fmt(c.reward)}</b> 元 · 截止 ${c.deadline || '不限'}
+      <div class="meta">订单 <span style="font-family:monospace;color:var(--blue)">${esc(c.orderNo||'-')}</span> · 写手：${esc(c.toName)} · 报酬 <b style="color:var(--green)">${fmt(c.reward)}</b> 元 · 截止 ${c.deadline || '不限'}
       ${c.status === '已交付' ? `<button class="btn-p" style="padding:4px 10px;margin-left:6px" onclick="finishCard('${c._id}')">确认完成</button>` : ''}</div>`;
   });
 }
@@ -252,7 +270,7 @@ $('btnCard').onclick = async () => {
   $('cTo').value = c ? c.user.displayName : '';
   $('cTitle').value = ''; $('cReward').value = ''; $('cDeadline').value = ''; $('cReq').value = '';
   cardFile = null; $('cFile').value = ''; $('cFileInfo').textContent = '';
-  $('cOrder').innerHTML = '<option value="">不关联</option>';
+  $('cOrder').innerHTML = '<option value="">—— 请从台账选择订单 ——</option>';
   const j = await authFetch('/api/orders');
   (j.orders || []).slice(0, 100).forEach(o => {
     $('cOrder').insertAdjacentHTML('beforeend', `<option value="${o._id}">${esc(o.orderNo)}（${o.date} · ${fmt(o.amount)}元 · 分成${fmt(Math.round(o.amount*o.shareRate)/100)}）</option>`);
@@ -272,6 +290,7 @@ $('btnCardSend').onclick = async () => {
   const title = $('cTitle').value.trim(), reward = Number($('cReward').value);
   if (!title) { toast('请填标题'); return; }
   if (!isFinite(reward) || reward < 0) { toast('请填报酬金额'); return; }
+  if (!$('cOrder').value) { toast('必须从台账选择一个订单才能发派单卡'); return; }
   $('btnCardSend').disabled = true; $('btnCardSend').textContent = '发送中…';
   try {
     let fileId = null, fileName = null;

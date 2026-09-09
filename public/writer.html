@@ -9,280 +9,346 @@
     --blue:#3b82f6; --green:#16a34a; --amber:#d97706; --red:#dc2626; --purple:#8b5cf6; }
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
-  .wrap{max-width:860px;margin:0 auto;padding:16px 14px 60px}
+  .wrap{max-width:900px;margin:0 auto;padding:16px 14px 60px}
   header{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
   header h1{font-size:18px}
   .badge{font-size:11px;padding:3px 8px;border-radius:99px;font-weight:600}
   .b-green{background:#f0fdf4;color:var(--green)} .b-grey{background:#f1f5f9;color:var(--sub)}
+  .b-blue{background:#eff6ff;color:var(--blue)}
   .grow{flex:1}
   button{cursor:pointer;border:none;font-size:13px;border-radius:8px;padding:8px 14px}
   .btn-p{background:var(--blue);color:#fff} .btn-p:hover{background:#2563eb}
-  .btn-g{background:#fff;border:1px solid var(--line);color:var(--ink)}
-  .btn-danger{background:none;color:var(--red);padding:6px 10px}
+  .btn-g{background:#fff;border:1px solid var(--line);color:var(--ink)} .btn-g:hover{background:#f8fafc}
+  .btn-warn{background:var(--amber);color:#fff}
+  .btn-g:disabled{opacity:.5;cursor:default}
+
+  /* 绩效看板 */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .stat .v{font-size:22px;font-weight:800;color:var(--green)}
+  .stat .v small{font-size:12px;font-weight:400;color:var(--sub)}
+  .stat .k{font-size:12px;color:var(--sub);margin-top:2px}
+
   .tabs{display:flex;gap:8px;margin-bottom:12px}
-  .tabs button{flex:1;padding:9px;background:#fff;border:1px solid var(--line);border-radius:9px;font-size:14px}
+  .tabs button{background:#fff;border:1px solid var(--line);color:var(--ink)}
   .tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
-  .panel h3{font-size:14px;margin-bottom:10px}
-  .card-item{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
-  .card-item .t{font-weight:700;font-size:14px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
-  .card-item .meta{font-size:12px;color:var(--sub);margin-top:6px;line-height:1.7}
-  .reward{color:var(--green);font-weight:800;font-size:16px}
-  .st{font-size:11px;padding:3px 9px;border-radius:99px;font-weight:600}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+
+  /* 我的单子 */
+  .card-item{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .card-item .t{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700}
+  .st{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600;white-space:nowrap}
   .st-待接单{background:#fffbeb;color:var(--amber)} .st-已接单{background:#eff6ff;color:var(--blue)}
-  .st-已交付{background:#f0fdf4;color:var(--green)} .st-已完成{background:#f1f5f9;color:var(--sub)}
+  .st-已交付{background:#f5f3ff;color:var(--purple)} .st-已完成{background:#f0fdf4;color:var(--green)}
   .st-已拒绝{background:#fef2f2;color:var(--red)}
-  .req{margin-top:8px;font-size:13px;background:#f8fafc;border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-word}
-  .chat-box{height:52vh;overflow-y:auto;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
-  .mrow{max-width:78%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;word-break:break-word}
-  .mrow.me{align-self:flex-end;background:var(--blue);color:#fff}
-  .mrow.them{align-self:flex-start;background:#fff;border:1px solid var(--line)}
-  .mrow .fn{font-size:10px;opacity:.7;margin-bottom:2px}
-  .mfile{color:inherit;text-decoration:underline;cursor:pointer;font-weight:600}
-  .mcard{align-self:stretch;max-width:100%;background:#fff;border:1px solid var(--line);border-left:4px solid var(--purple);border-radius:10px;padding:10px 12px}
-  .mcard .t{font-weight:700;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
-  .mcard .meta{font-size:12px;color:var(--sub);margin-top:4px;line-height:1.7}
-  .composer{display:flex;gap:8px;margin-top:10px}
-  .composer input[type=text]{flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px}
+  .card-item .meta{font-size:12px;color:var(--sub);margin-top:6px;line-height:1.7}
+  .card-item .reward{font-size:18px;font-weight:800;color:var(--green)}
+  .card-item .req{font-size:13px;color:var(--ink);background:#f8fafc;border-radius:8px;padding:8px 10px;margin-top:8px;white-space:pre-wrap}
+  .card-item .ops{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+  .ono{font-family:monospace;background:#eff6ff;color:var(--blue);padding:1px 6px;border-radius:4px;font-size:12px}
+
+  /* 聊天 */
+  #chatPanel .chat-box{height:380px;overflow-y:auto;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+  .msg{max-width:76%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;word-break:break-all}
+  .msg.me{align-self:flex-end;background:var(--blue);color:#fff}
+  .msg.them{align-self:flex-start;background:#fff;border:1px solid var(--line)}
+  .msg .fn{font-size:10px;color:var(--sub);margin-bottom:2px}
+  .msg .fname{color:var(--blue)} .msg.me .fname{color:#bfdbfe}
+  .msg.file a{color:inherit;text-decoration:underline;font-weight:600}
+  .mcard{max-width:88%;align-self:flex-start;background:#fff;border:2px solid var(--blue);border-radius:12px;padding:10px 12px;min-width:230px}
+  .mcard .fn{font-size:10px;color:var(--sub);margin-bottom:4px}
+  .mcard .t{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:13px;align-items:center}
+  .mcard .meta{font-size:12px;color:var(--sub);margin-top:5px;line-height:1.7}
+  .mcard .reward{font-size:16px;font-weight:800;color:var(--green)}
+  .composer{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+  .composer input[type=text]{flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:13px}
   .empty{text-align:center;color:var(--sub);font-size:13px;padding:30px 0}
+  #chatErr{font-size:12px;color:var(--red);min-height:16px;margin-top:4px}
+
+  /* 弹窗 */
   .mask{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
   .mask.show{display:flex}
-  .modal{background:#fff;border-radius:14px;padding:20px;width:100%;max-width:440px;max-height:86vh;overflow:auto}
-  .modal h2{font-size:16px;margin-bottom:12px}
-  .modal label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px}
-  .modal input,.modal textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px}
-  .modal textarea{min-height:90px;resize:vertical}
-  .modal .btns{display:flex;gap:10px;margin-top:16px}
-  .modal .btns button{flex:1;padding:9px}
-  .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 18px;border-radius:99px;font-size:13px;display:none;z-index:99}
+  .modal{background:#fff;border-radius:14px;padding:22px;width:100%;max-width:460px;max-height:88vh;overflow:auto}
+  .modal h2{font-size:16px;margin-bottom:14px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px}
+  .field input,.field textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit}
+  .field textarea{min-height:90px;resize:vertical}
+  .formErr{color:var(--red);font-size:12px;min-height:16px;margin-bottom:8px}
+
+  #toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:9px 18px;border-radius:99px;font-size:13px;display:none;z-index:99;max-width:80vw}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>写手工作台</h1>
-    <span id="meName" class="badge b-grey"></span>
-    <span id="shiftBadge" class="badge b-grey">未上班</span>
+    <h1>✍️ 写手工作台</h1>
+    <span class="badge b-grey" id="whoami">…</span>
+    <span class="badge b-grey" id="shiftBadge">未打卡</span>
     <span class="grow"></span>
-    <button class="btn-p" id="btnShift">上班打卡</button>
+    <button class="btn-warn" id="btnShift">上班打卡</button>
+    <button class="btn-g" id="btnNotify" title="开启浏览器通知+提示音">🔔 开通知</button>
     <button class="btn-g" id="btnLogout">退出</button>
   </header>
 
+  <!-- 绩效看板 -->
+  <div class="stats" id="statsRow"></div>
+
   <div class="tabs">
-    <button id="tabCards" class="on">我的单子</button>
-    <button id="tabChat">聊天（<span id="chatBadge">0</span>）</button>
+    <button id="tabCards" class="on">📋 我的单子</button>
+    <button id="tabChat">💬 聊天</button>
   </div>
 
-  <div id="cardsPanel">
-    <div class="panel">
-      <h3>派给我的单子</h3>
-      <div id="cardList"><div class="empty">还没有派单，等管理员派单吧</div></div>
-    </div>
-  </div>
+  <div class="panel" id="cardsPanel"></div>
 
-  <div id="chatPanel" style="display:none">
-    <div class="panel">
-      <h3 id="chatTitle">与管理员聊天</h3>
-      <div class="chat-box" id="chatBox"></div>
-      <div class="composer">
-        <input type="text" id="msgInput" placeholder="输入消息…">
-        <button class="btn-g" id="btnFile">📎 文件</button>
-        <button class="btn-p" id="btnSend">发送</button>
-      </div>
+  <div class="panel" id="chatPanel" style="display:none">
+    <div class="chat-box" id="chatBox"></div>
+    <div class="composer">
+      <input type="text" id="msgInput" placeholder="输入消息，回车发送…">
+      <button class="btn-p" id="btnSend">发送</button>
+      <button class="btn-g" id="btnFile">📎 传文件</button>
       <input type="file" id="fileInput" style="display:none">
-      <div class="err" id="chatErr" style="color:var(--red);font-size:12px;margin-top:6px;min-height:14px"></div>
     </div>
+    <div id="chatErr"></div>
   </div>
 </div>
 
-<!-- 派单卡详情/预览 -->
+<!-- 派单卡预览弹窗 -->
 <div class="mask" id="mask">
   <div class="modal">
-    <h2 id="pvTitle"></h2>
-    <div class="st" id="pvStatus"></div>
-    <label>报酬</label><div class="reward" id="pvReward" style="font-size:20px"></div>
-    <label>截止日期</label><div id="pvDeadline"></div>
-    <label>交付要求</label><div class="req" id="pvReq"></div>
-    <div id="pvFileBox"></div>
-    <div class="btns" id="pvBtns"></div>
+    <h2>派单卡详情</h2>
+    <div id="pvBody"></div>
+    <div class="formErr" id="pvErr"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn-p" id="pvAccept" style="flex:1">✓ 接单（接后锁定）</button>
+      <button class="btn-g" id="pvDecline" style="flex:1">✗ 拒绝</button>
+      <button class="btn-g" id="pvClose">关闭</button>
+    </div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
 
+<div id="toast"></div>
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const $ = id => document.getElementById(id);
-const API = '/api';
+/* ================= 基础 ================= */
 const TOKEN = localStorage.getItem('jdy_token');
-let ME = null, socket = null, cards = [], unread = 0;
-
-const fmt = n => Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-function authFetch(url, opt = {}) {
-  return fetch(url, { ...opt, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...(opt.headers || {}) } })
-    .then(async r => { const j = await r.json(); if (!j.ok && r.status === 401) { location.href = '/login.html'; throw new Error('登录过期'); } return j; });
+const ME = JSON.parse(localStorage.getItem('jdy_user') || 'null');
+if (!TOKEN || !ME || ME.role !== 'writer') location.href = '/login.html';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const fmt = n => Number(n||0).toLocaleString('zh-CN',{maximumFractionDigits:2});
+let toastTimer;
+function toast(t){ const el=$('toast'); el.textContent=t; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',2600); }
+async function authFetch(url, opt={}) {
+  const r = await fetch(url, { ...opt, headers: { 'Content-Type':'application/json', Authorization:'Bearer '+TOKEN, ...(opt.headers||{}) } });
+  if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href='/login.html'; throw new Error('请重新登录'); }
+  return r.json();
 }
-function toast(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2200); }
-function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+function fmtSize(n){ return n>=1048576 ? (n/1048576).toFixed(1)+'MB' : (n/1024).toFixed(0)+'KB'; }
 
-(async () => {
-  if (!TOKEN) { location.href = '/login.html'; return; }
-  const me = await authFetch('/api/me');
-  if (!me.ok || me.user.role !== 'writer') { location.href = me.user && me.user.role === 'admin' ? '/index.html' : '/login.html'; return; }
-  ME = me.user;
-  $('meName').textContent = ME.displayName;
-  renderShift(ME.shift);
+/* ================= 浏览器通知 + 提示音 ================= */
+let soundOn = localStorage.getItem('jdy_sound') === 'on';
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type='sine'; o.frequency.value=880;
+    g.gain.setValueAtTime(.001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.22, ctx.currentTime+.02);
+    g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime+.45);
+    o.start(); o.stop(ctx.currentTime+.5);
+    setTimeout(()=>ctx.close(), 800);
+  } catch(e) {}
+}
+function ping(title, body) {
+  if (soundOn) beep();
+  if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+    try { new Notification(title, { body, icon: undefined }); } catch(e) {}
+  }
+}
+$('btnNotify').onclick = async () => {
+  if (!('Notification' in window)) { toast('此浏览器不支持通知，提示音仍可用'); soundOn=true; localStorage.setItem('jdy_sound','on'); $('btnNotify').textContent='🔔 已开启'; return; }
+  const p = await Notification.requestPermission();
+  if (p === 'granted') {
+    soundOn = true; localStorage.setItem('jdy_sound','on');
+    $('btnNotify').textContent = '🔔 通知已开';
+    toast('通知+提示音已开启（标签页在后台也会弹）');
+    beep();
+  } else toast('浏览器通知被拒绝，可在地址栏权限设置里重新允许');
+};
+if (soundOn) $('btnNotify').textContent = '🔔 通知已开';
 
-  socket = io({ auth: { token: TOKEN } });
-  socket.on('msg', m => {
-    if (m.type === 'card') { loadCards(); }
-    if (m.from !== ME.id) {
-      unread++; $('chatBadge').textContent = unread;
-      if (!$('chatPanel').style || $('chatPanel').style.display === 'none') toast('收到新消息');
-      if (!$('chatPanel').closest || getComputedStyle($('chatPanel')).display !== 'none') addMsg(m);
-    }
-  });
-  socket.on('card', c => { loadCards(); fillCardMsgs(); toast('派单卡更新：' + c.title + ' → ' + c.status); });
-  socket.on('connect', () => {});
-
-  loadCards();
-})();
-
-function renderShift(on) {
-  $('shiftBadge').textContent = on ? '● 在班中' : '未上班';
-  $('shiftBadge').className = 'badge ' + (on ? 'b-green' : 'b-grey');
-  $('btnShift').textContent = on ? '下班打卡' : '上班打卡';
+/* ================= 在班打卡 ================= */
+let shift = ME.shift;
+function renderShift() {
+  $('shiftBadge').textContent = shift ? '🟢 在班' : '⚪ 未打卡';
+  $('shiftBadge').className = 'badge ' + (shift ? 'b-green' : 'b-grey');
+  $('btnShift').textContent = shift ? '下班打卡' : '上班打卡';
 }
 $('btnShift').onclick = async () => {
-  const j = await authFetch('/api/shift', { method: 'POST', body: JSON.stringify({ shift: !ME.shift }) });
-  if (j.ok) { ME.shift = j.shift; renderShift(j.shift); toast(j.shift ? '已上班，管理员可以给你派单了' : '已下班'); }
+  const j = await authFetch('/api/shift', { method:'POST', body: JSON.stringify({ shift: !shift }) });
+  if (j.ok) { shift = j.shift; renderShift(); toast(shift ? '已上班，管理员能看到你了，新单会实时推给你' : '已下班，注意：新派单不再推送'); }
 };
 
-function renderCard(c) {
-  const act = c.status === '待接单'
-    ? `<button class="btn-p" onclick="preview('${c._id}')">查看详情 / 接单</button>`
-    : c.status === '已接单'
-      ? `<button class="btn-p" onclick="deliver('${c._id}')">提交交付</button>`
-      : '';
-  return `<div class="card-item">
-    <div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
-    <div class="meta">报酬 <span class="reward">${fmt(c.reward)}</span> 元 · 截止 ${c.deadline || '不限'}
-      ${c.fileName ? ` · 附件：<a class="mfile" href="/api/files/${c.fileId}/download" download style="color:var(--blue)">${esc(c.fileName)}</a>` : ''}</div>
-    ${c.requirement ? `<div class="req">${esc(c.requirement)}</div>` : ''}
-    ${act ? `<div style="margin-top:8px">${act}</div>` : ''}
-  </div>`;
+/* ================= 绩效看板 ================= */
+let cards = [];
+function renderStats() {
+  const done = cards.filter(c => c.status === '已完成');
+  const delivering = cards.filter(c => ['已接单','已交付'].includes(c.status));
+  const donePay = done.reduce((s,c)=>s+c.reward,0);
+  const ingPay = delivering.reduce((s,c)=>s+c.reward,0);
+  $('statsRow').innerHTML = `
+    <div class="stat"><div class="v">${done.length}<small> 单</small></div><div class="k">已完成</div></div>
+    <div class="stat"><div class="v">${fmt(donePay)}<small> 元</small></div><div class="k">已完成报酬</div></div>
+    <div class="stat"><div class="v">${delivering.length}<small> 单</small></div><div class="k">进行中</div></div>
+    <div class="stat"><div class="v">${fmt(ingPay)}<small> 元</small></div><div class="k">在途预计报酬</div></div>
+    <div class="stat"><div class="v">${cards.filter(c=>c.status==='待接单').length}<small> 张</small></div><div class="k">待决定的新单</div></div>`;
 }
-async function loadCards() {
-  const j = await authFetch('/api/mycards');
-  if (!j.ok) return;
-  cards = j.cards;
-  $('cardList').innerHTML = cards.length ? cards.map(renderCard).join('') : '<div class="empty">还没有派单，等管理员派单吧</div>';
+function fileLink(c) { return c.fileId ? `<a class="ono" href="/api/files/${c.fileId}/download" style="text-decoration:none">📎 ${esc(c.fileName||'附件')}</a>` : ''; }
+function cardOps(c) {
+  if (c.status === '待接单') return `<div class="ops"><button class="btn-p" onclick="preview('${c._id}')">查看详情 / 接单</button></div>`;
+  if (c.status === '已接单') return `<div class="ops"><button class="btn-p" onclick="deliver('${c._id}')">📤 提交交付（同步给管理员）</button></div>`;
+  if (c.status === '已交付') return `<div class="ops"><span style="font-size:12px;color:var(--sub)">已交付，等待管理员结算</span></div>`;
+  return '';
 }
+function renderCards() {
+  if (!cards.length) { $('cardsPanel').innerHTML = '<div class="empty">还没有收到派单卡，打卡上线等管理员派单吧</div>'; return; }
+  $('cardsPanel').innerHTML = cards.map(c => `
+    <div class="card-item">
+      <div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
+      <div class="meta">
+        订单 <span class="ono">${esc(c.orderNo||'-')}</span> · 报酬 <span class="reward">${fmt(c.reward)}</span> 元 · 截止 ${c.deadline||'不限'}<br>
+        ${fileLink(c)}
+      </div>
+      ${c.requirement ? `<div class="req">${esc(c.requirement)}</div>` : ''}
+      ${cardOps(c)}
+    </div>`).join('');
+}
+async function loadCards() { const j = await authFetch('/api/mycards'); if (j.ok) { cards = j.cards||[]; renderCards(); renderStats(); } }
+async function deliver(id) {
+  if (!confirm('确认交付这张单子？管理员看板会同步为待结算。')) return;
+  const j = await authFetch('/api/cards/'+id+'/deliver', { method:'POST' });
+  if (j.ok) { toast('已交付，管理员看板已同步'); loadCards(); } else toast('交付失败：'+j.error);
+}
+
+/* ================= 派单卡预览 ================= */
+let pvCardId = null;
 function preview(id) {
   const c = cards.find(x => x._id === id); if (!c) return;
-  $('pvTitle').textContent = c.title;
-  $('pvStatus').textContent = c.status; $('pvStatus').className = 'st st-' + c.status;
-  $('pvReward').textContent = fmt(c.reward) + ' 元';
-  $('pvDeadline').textContent = c.deadline || '不限';
-  $('pvReq').textContent = c.requirement || '（无附加要求）';
-  $('pvFileBox').innerHTML = c.fileId
-    ? `<label>需求附件</label><a class="mfile" href="/api/files/${c.fileId}/download" download style="color:var(--blue);font-size:13px">📎 ${esc(c.fileName)}</a>`
-    : '';
-  $('pvBtns').innerHTML = `
-    <button class="btn-g" onclick="closePv()">先不决定</button>
-    <button class="btn-g" onclick="decide('${c._id}','decline')">拒 绝</button>
-    <button class="btn-p" onclick="decide('${c._id}','accept')">接 单</button>`;
+  pvCardId = id;
+  $('pvBody').innerHTML = `
+    <div class="card-item" style="margin:0">
+      <div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
+      <div class="meta">台账订单 <span class="ono">${esc(c.orderNo||'-')}</span> · 截止 ${c.deadline||'不限'}</div>
+      <div class="meta">报酬 <span class="reward">${fmt(c.reward)}</span> 元</div>
+      ${c.fileId ? `<div class="meta">附件：<a href="/api/files/${c.fileId}/download">📎 ${esc(c.fileName||'下载')}</a></div>` : ''}
+      ${c.requirement ? `<div class="req">${esc(c.requirement)}</div>` : '<div class="req">（无附加要求）</div>'}
+    </div>`;
+  const can = c.status === '待接单';
+  $('pvAccept').style.display = can ? '' : 'none';
+  $('pvDecline').style.display = can ? '' : 'none';
+  $('pvErr').textContent = '';
   $('mask').classList.add('show');
 }
-function closePv() { $('mask').classList.remove('show'); }
-async function decide(id, act) {
-  const j = await authFetch(`/api/cards/${id}/${act}`, { method: 'POST' });
-  if (!j.ok) { alert(j.error); return; }
-  closePv(); loadCards();
-  toast(act === 'accept' ? '已接单，开工吧！' : '已拒绝，等下一个单子');
-}
-async function deliver(id) {
-  if (!confirm('确认已完成并提交交付？提交后管理员那边会同步为「待结算」。')) return;
-  const j = await authFetch(`/api/cards/${id}/deliver`, { method: 'POST' });
-  if (!j.ok) { alert(j.error); return; }
-  loadCards(); toast('已提交交付！');
-}
+$('pvClose').onclick = () => $('mask').classList.remove('show');
+$('pvAccept').onclick = async () => {
+  const j = await authFetch('/api/cards/'+pvCardId+'/accept', { method:'POST' });
+  if (j.ok) { $('mask').classList.remove('show'); toast('已接单！单子已锁定到你名下，交付时点「提交交付」'); loadCards(); }
+  else $('pvErr').textContent = j.error;
+};
+$('pvDecline').onclick = async () => {
+  const j = await authFetch('/api/cards/'+pvCardId+'/decline', { method:'POST' });
+  if (j.ok) { $('mask').classList.remove('show'); toast('已拒绝，可在聊天里和管理员说明原因'); loadCards(); }
+  else $('pvErr').textContent = j.error;
+};
 
-/* ---- 聊天 ---- */
-$('tabCards').onclick = () => {
-  $('tabCards').classList.add('on'); $('tabChat').classList.remove('on');
-  $('cardsPanel').style.display = ''; $('chatPanel').style.display = 'none';
-};
-$('tabChat').onclick = async () => {
-  $('tabChat').classList.add('on'); $('tabCards').classList.remove('on');
-  $('cardsPanel').style.display = 'none'; $('chatPanel').style.display = '';
-  unread = 0; $('chatBadge').textContent = 0;
-  const j = await authFetch('/api/chats');
-  if (j.ok && j.chats.length) { loadChat(j.chats[0].user.id); }
-  else loadChat(null);
-};
-async function loadChat(adminId) {
-  if (!adminId) { $('chatBox').innerHTML = '<div class="empty">暂无会话</div>'; return; }
-  $('chatBox').dataset.peer = adminId;
-  const j = await authFetch('/api/messages?peer=' + adminId);
-  $('chatBox').innerHTML = (j.messages || []).map(m => renderMsg(m)).join('') || '<div class="empty">打个招呼吧～</div>';
-  await fillCardMsgs();
-  $('chatBox').scrollTop = $('chatBox').scrollHeight;
+/* ================= 聊天 ================= */
+let adminId = null;
+function renderMsg(m) {
+  if (m.type === 'card') return `<div class="mcard"><div class="fn">${esc(m.fromName)} · 派单卡</div><div id="cm-${m.cardId}"></div></div>`;
+  if (m.type === 'file') return `<div class="msg ${m.from===ME.id?'me':'them'}"><div class="fn">${esc(m.fromName)}</div><div class="file"><a href="/api/files/${m.fileId}/download">📎 ${esc(m.fileName)}</a> (${fmtSize(m.fileSize)})</div></div>`;
+  return `<div class="msg ${m.from===ME.id?'me':'them'}"><div class="fn">${esc(m.fromName)}</div>${esc(m.text)}</div>`;
 }
-// 聊天里的派单卡：拉取卡片数据填充摘要
 async function fillCardMsgs() {
   const slots = document.querySelectorAll('[id^="cm-"]');
   if (!slots.length) return;
-  const j = await authFetch('/api/mycards');
-  const map = {}; (j.cards || []).forEach(c => map[c._id] = c);
+  const map = {}; cards.forEach(c => map[c._id] = c);
   slots.forEach(el => {
     const c = map[el.id.slice(3)];
-    if (!c) { el.innerHTML = '<span style="font-size:12px;color:var(--sub)">（卡片不存在）</span>'; return; }
+    if (!c) { el.innerHTML = '<span style="font-size:12px;color:var(--sub)">（卡片加载中…）</span>'; return; }
     el.innerHTML = `<div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
-      <div class="meta">报酬 <b class="reward" style="font-size:14px">${fmt(c.reward)}</b> 元 · 截止 ${c.deadline || '不限'}</div>
-      ${c.status === '待接单' ? `<div style="margin-top:6px"><button class="btn-p" onclick="preview('${c._id}')">查看详情 / 接单</button></div>` : ''}`;
+      <div class="meta">订单 <span class="ono">${esc(c.orderNo||'-')}</span> · 报酬 <b class="reward">${fmt(c.reward)}</b> 元 · 截止 ${c.deadline||'不限'}</div>
+      ${c.status==='待接单' ? `<div style="margin-top:6px"><button class="btn-p" onclick="preview('${c._id}')">查看详情 / 接单</button></div>` : ''}`;
   });
 }
-function renderMsg(m) {
-  if (m.type === 'card') {
-    return `<div class="mcard" data-mid="${m._id}"><div class="fn">${esc(m.fromName)} · 派单卡</div><div id="cm-${m.cardId}"></div></div>`;
-  }
-  const mine = m.from === ME.id;
-  const body = m.type === 'file'
-    ? `📎 <a class="mfile" href="/api/files/${m.fileId}/download" download>${esc(m.fileName)}</a> <small>(${(m.fileSize/1024/1024).toFixed(1)}MB)</small>`
-    : esc(m.text);
-  return `<div class="mrow ${mine ? 'me' : 'them'}"><div class="fn">${esc(m.fromName)}</div>${body}</div>`;
+async function loadChat() {
+  const j = await authFetch('/api/chats');
+  const chat = (j.chats||[])[0];
+  if (!chat) { $('chatBox').innerHTML = '<div class="empty">暂无会话</div>'; return; }
+  adminId = chat.user.id;
+  const mj = await authFetch('/api/messages?peer=' + adminId);
+  $('chatBox').innerHTML = (mj.messages||[]).map(renderMsg).join('') || '<div class="empty">和老板打个招呼吧～</div>';
+  await fillCardMsgs();
+  $('chatBox').scrollTop = $('chatBox').scrollHeight;
 }
 function addMsg(m) {
-  if (m.from !== ($('chatBox').dataset.peer || '') && m.to !== ($('chatBox').dataset.peer || '')) return;
   $('chatBox').insertAdjacentHTML('beforeend', renderMsg(m));
+  fillCardMsgs();
   $('chatBox').scrollTop = $('chatBox').scrollHeight;
 }
 async function sendMsg() {
-  const peer = $('chatBox').dataset.peer; if (!peer) return;
-  const text = $('msgInput').value.trim(); if (!text) return;
-  $('msgInput').value = ''; $('chatErr').textContent = '';
-  const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer, text }) });
+  const t = $('msgInput').value.trim();
+  if (!t || !adminId) return;
+  $('msgInput').value = '';
+  const j = await authFetch('/api/messages', { method:'POST', body: JSON.stringify({ peer: adminId, text: t }) });
   if (!j.ok) $('chatErr').textContent = j.error;
 }
 $('btnSend').onclick = sendMsg;
 $('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
 $('btnFile').onclick = () => $('fileInput').click();
 $('fileInput').onchange = async () => {
-  const peer = $('chatBox').dataset.peer;
-  const f = $('fileInput').files[0]; if (!f || !peer) return;
-  if (f.size > 25 * 1024 * 1024) { $('chatErr').textContent = '文件超过25MB，请走微信传'; return; }
+  const f = $('fileInput').files[0]; if (!f || !adminId) return;
+  if (f.size > 25*1024*1024) { $('chatErr').textContent = '文件超过25MB，请走微信传'; return; }
   $('chatErr').textContent = '上传中…';
-  const fd = new FormData(); fd.append('file', f); fd.append('peer', peer);
+  const fd = new FormData(); fd.append('file', f); fd.append('peer', adminId);
   try {
-    const up = await fetch('/api/files', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd }).then(r => r.json());
+    const up = await fetch('/api/files', { method:'POST', headers:{ Authorization:'Bearer '+TOKEN }, body: fd }).then(r=>r.json());
     if (!up.ok) throw new Error(up.error);
-    const j = await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer, ...up }) });
+    const j = await authFetch('/api/messages/file', { method:'POST', body: JSON.stringify({ peer: adminId, ...up }) });
     if (!j.ok) throw new Error(j.error);
     $('chatErr').textContent = '';
-  } catch (e) { $('chatErr').textContent = '上传失败：' + e.message; }
+  } catch (e) { $('chatErr').textContent = '上传失败：'+e.message; }
   $('fileInput').value = '';
 };
-$('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+
+/* ================= Tab 切换 ================= */
+$('tabCards').onclick = () => {
+  $('tabCards').classList.add('on'); $('tabChat').classList.remove('on');
+  $('cardsPanel').style.display=''; $('chatPanel').style.display='none';
+};
+$('tabChat').onclick = () => {
+  $('tabChat').classList.add('on'); $('tabCards').classList.remove('on');
+  $('chatPanel').style.display=''; $('cardsPanel').style.display='none';
+  loadChat();
+};
+
+/* ================= 实时推送 ================= */
+const socket = io({ auth: { token: TOKEN } });
+socket.on('msg', m => {
+  ping('新消息', (m.fromName||'') + '：' + (m.type==='text' ? m.text : m.type==='file' ? '[文件]'+m.fileName : '[派单卡]'));
+  if (m.type === 'card') { loadCards(); }
+  if (document.hidden || $('chatPanel').style.display === 'none') { if ($('tabChat').classList.contains('on')) loadChat(); }
+  else addMsg(m);
+});
+socket.on('card', c => { loadCards(); fillCardMsgs(); ping('派单卡更新', c.title + ' → ' + c.status); });
+
+/* ================= 初始化 ================= */
+$('whoami').textContent = ME.displayName || ME.username;
+renderShift();
+loadCards().then(loadChat);
+$('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href='/login.html'; };
 </script>
 </body>
 </html>
