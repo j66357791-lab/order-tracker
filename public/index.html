@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>订单统计系统 · 接单员</title>
+<style>
+  :root{
+    --bg:#f1f5f9; --card:#ffffff; --ink:#0f172a; --sub:#64748b;
+    --blue:#3b82f6; --blue-bg:#eff6ff; --green:#16a34a; --green-bg:#f0fdf4;
+    --amber:#d97706; --amber-bg:#fffbeb; --red:#dc2626; --red-bg:#fef2f2;
+    --line:#e2e8f0; --purple:#8b5cf6; --purple-bg:#f5f3ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+
+  /* ===== 布局：左侧快捷栏 + 主内容 ===== */
+  .layout{display:grid;grid-template-columns:236px 1fr;gap:16px;max-width:1360px;margin:0 auto;padding:20px 16px 60px;align-items:start}
+  @media(max-width:960px){.layout{grid-template-columns:1fr}}
+
+  .sidebar{display:flex;flex-direction:column;gap:12px;position:sticky;top:12px}
+  @media(max-width:960px){.sidebar{position:static}}
+  .side-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .side-card h4{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:8px;letter-spacing:.5px}
+  .side-card input,.side-card select{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;background:#fff;color:var(--ink);margin-bottom:6px}
+  .side-card button{width:100%}
+  .side-tip{font-size:11px;color:var(--sub);margin-top:6px;line-height:1.5}
+
+  .mon-nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .mon-nav button{width:32px;padding:6px 0;flex:none}
+  .mon-nav b{flex:1;text-align:center;font-size:14px;font-variant-numeric:tabular-nums}
+  .mon-list{display:flex;flex-wrap:wrap;gap:5px}
+  .mon-chip{border:1px solid var(--line);background:#fff;border-radius:14px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--ink)}
+  .mon-chip:hover{border-color:var(--blue);color:var(--blue)}
+  .mon-chip.cur{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+  .mon-chip.has::after{content:"·";color:var(--green);font-weight:900;margin-left:2px}
+
+  .q-results{max-height:180px;overflow:auto;margin-top:6px}
+  .q-item{padding:6px 8px;border:1px solid var(--line);border-radius:7px;margin-bottom:5px;cursor:pointer;font-size:12px}
+  .q-item:hover{border-color:var(--blue);background:var(--blue-bg)}
+  .q-item b{display:block}
+  .q-item span{color:var(--sub)}
+  .q-empty{font-size:11px;color:var(--sub);padding:4px 0}
+
+  .quick-form .row2{display:flex;gap:6px}
+  .quick-form .row2 input{flex:1;min-width:0}
+
+  .main{min-width:0}
+  .wrap{max-width:1180px;margin:0 auto;padding:0}
+
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+  header h1{font-size:20px;font-weight:700}
+  header .meta{font-size:12px;color:var(--sub)}
+  header .meta b{color:var(--green);font-weight:600}
+  header .meta b.offline{color:var(--red)}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kpi .label{font-size:12px;color:var(--sub)}
+  .kpi .value{font-size:22px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+  .kpi .value small{font-size:12px;font-weight:400;color:var(--sub)}
+  .kpi .sub{font-size:11px;color:var(--sub);margin-top:2px}
+  .kpi.blue .value{color:var(--blue)} .kpi.green .value{color:var(--green)}
+  .kpi.purple .value{color:var(--purple)} .kpi.amber .value{color:var(--amber)}
+
+  /* 待跟进提醒条 */
+  .todo-banner{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin-bottom:16px}
+  .todo-banner .todo-head{font-size:13px;font-weight:700;color:#92400e;margin-bottom:4px}
+  .todo-list{max-height:190px;overflow:auto}
+  .todo-item{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px dashed #fde68a;font-size:13px;flex-wrap:wrap}
+  .todo-item:first-child{border-top:none}
+  .todo-item b{color:var(--ink)}
+  .todo-meta{color:var(--sub);font-size:12px}
+  .todo-act{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px;background:#fff;margin-left:auto}
+  .todo-all-done{font-size:13px;color:var(--green);padding:6px 0}
+
+  .panels{display:grid;grid-template-columns:3fr 2fr;gap:12px;margin-bottom:16px}
+  @media(max-width:820px){.panels{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .panel h3{font-size:13px;color:var(--sub);font-weight:600;margin-bottom:12px}
+  .legend{display:flex;gap:14px;font-size:12px;color:var(--sub);margin-bottom:8px;flex-wrap:wrap}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+  .bars{display:flex;align-items:flex-end;gap:4px;height:160px;overflow-x:auto;padding-bottom:4px}
+  .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:18px}
+  .pair{display:flex;align-items:flex-end;gap:2px;height:118px}
+  .pair .bar{width:9px;border-radius:2px 2px 0 0;min-height:0}
+  .pair .bar.take{background:var(--blue)}
+  .pair .bar.done{background:var(--green)}
+  .bar-col.today .day{color:var(--purple);font-weight:700}
+  .bar-col .day{font-size:10px;color:var(--sub)}
+  .chart-foot{font-size:12px;color:var(--sub);margin-top:6px}
+  .chart-foot b{font-variant-numeric:tabular-nums}
+
+  .line-wrap{width:100%;overflow-x:auto}
+  .line-wrap svg{display:block}
+
+  .chart-tile{cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .chart-tile:hover{border-color:var(--blue);box-shadow:0 2px 12px rgba(59,130,246,.14)}
+  .tile-big{font-size:26px;font-weight:800;color:var(--green);margin:10px 0 6px}
+  .tile-big small{font-size:13px;font-weight:400;color:var(--sub)}
+  .tile-sub{font-size:12px;color:var(--sub)}
+  /* 走势弹窗：加宽 */
+  .chart-modal{width:min(1200px,96vw)}
+  .chart-modal .line-wrap{max-height:72vh;overflow:auto}
+
+  /* 日历看板 */
+  .cal-head{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}
+  .cal-head span{text-align:center;font-size:11px;color:var(--sub);font-weight:600}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cal-cell{border:1px solid var(--line);border-radius:8px;padding:6px;min-height:80px;font-size:11px;background:#fff;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .cal-cell:hover{border-color:var(--blue);box-shadow:0 2px 10px rgba(59,130,246,.15)}
+  .cal-cell.blank{visibility:hidden;cursor:default;box-shadow:none}
+  .cal-cell .cal-d{font-weight:700;font-size:12px}
+  .cal-cell .cal-vals{color:var(--sub);line-height:1.7;margin-top:3px;font-variant-numeric:tabular-nums}
+  .cal-cell.today{border:2px solid var(--purple)}
+  .cal-cell.today .cal-d{color:var(--purple)}
+  .cal-legend{font-size:11px;color:var(--sub);margin-top:8px;line-height:1.6}
+  .today-brief{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;background:var(--purple-bg);border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;margin-bottom:10px}
+  .today-brief b{font-variant-numeric:tabular-nums}
+  .today-brief .tb-take b{color:var(--blue)} .today-brief .tb-done b{color:var(--green)} .today-brief .tb-share b{color:var(--purple)}
+
+  .status-rows{display:flex;flex-direction:column;gap:10px}
+  .st-row{display:grid;grid-template-columns:76px 1fr 130px;align-items:center;gap:8px;font-size:12px}
+  .st-row .name{color:var(--ink)}
+  .st-row .track{height:14px;background:#f1f5f9;border-radius:7px;overflow:hidden}
+  .st-row .fill{height:100%;border-radius:7px}
+  .st-row .nums{color:var(--sub);text-align:right;font-variant-numeric:tabular-nums}
+  .st-row .nums b{color:var(--ink);font-weight:600}
+  .st-note{font-size:11px;color:var(--sub);margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .toolbar input,.toolbar select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;background:#fff;color:var(--ink)}
+  .toolbar input[type=search]{width:220px}
+  .toolbar .grow{flex:1}
+  button{border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer;font-weight:500}
+  .btn-primary{background:var(--blue);color:#fff}
+  .btn-primary:hover{background:#2563eb}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+  .btn-ghost:hover{background:#f8fafc}
+  .btn-danger-mini{background:none;color:var(--red);padding:4px 6px}
+  .btn-mini{background:none;color:var(--blue);padding:4px 6px}
+  button:disabled{opacity:.4;cursor:default}
+
+  .pager{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--sub)}
+  .pager select{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px;background:#fff}
+  .pager .pg{font-variant-numeric:tabular-nums;color:var(--ink)}
+  .pager button{padding:5px 12px}
+
+  .table-card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:auto}
+  table{width:100%;border-collapse:collapse;min-width:880px}
+  th,td{padding:10px 12px;text-align:left;font-size:13px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{background:#f8fafc;color:var(--sub);font-weight:600;font-size:12px;position:sticky;top:0}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  th.num{text-align:right}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#f8fafc}
+  tr.hl td{background:#fff7d6;transition:background 2.5s}
+  .tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px}
+  .tag.待开始{background:#f1f5f9;color:#475569}
+  .tag.进行中{background:var(--blue-bg);color:var(--blue)}
+  .tag.已交付,.tag.待结算{background:var(--amber-bg);color:var(--amber)}
+  .tag.已结算{background:var(--green-bg);color:var(--green)}
+  .note-cell{max-width:180px;overflow:hidden;text-overflow:ellipsis;color:var(--sub)}
+  .empty{padding:40px;text-align:center;color:var(--sub)}
+  tfoot td{background:#f8fafc;font-weight:700;border-top:2px solid var(--line)}
+
+  /* 弹窗 */
+  .mask{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:20;align-items:center;justify-content:center;padding:16px}
+  .mask.show{display:flex}
+  .modal{background:#fff;border-radius:12px;width:420px;max-width:100%;padding:20px;max-height:92vh;overflow:auto}
+  .modal.chart-modal{width:min(1200px,96vw)}
+  .modal.day-modal{width:min(1150px,96vw)}
+  .modal h2{font-size:16px;margin-bottom:14px}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field.full{grid-column:1/-1}
+  .field label{font-size:12px;color:var(--sub)}
+  .field input,.field select,.field textarea{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit}
+  .field textarea{resize:vertical;min-height:52px}
+  .field .tip{font-size:11px;color:var(--sub)}
+  .form-err{color:var(--red);font-size:12px;min-height:16px;margin:6px 0}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+  .hint{font-size:12px;color:var(--sub);margin-top:6px}
+
+  /* 日历单日大弹窗 */
+  #dayMask{z-index:30}
+  #mask{z-index:40}
+  .day-modal{width:min(1150px,96vw)}
+  .day-stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .day-stats .ds{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-size:12px;color:var(--sub)}
+  .day-stats .ds b{display:block;font-size:17px;color:var(--ink);font-variant-numeric:tabular-nums;margin-top:2px}
+  .day-stats .ds.blue b{color:var(--blue)} .day-stats .ds.green b{color:var(--green)} .day-stats .ds.purple b{color:var(--purple)}
+  .day-modal .table-card{max-height:56vh}
+  .day-modal table{min-width:840px}
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ===== 左侧快捷导航栏 ===== -->
+  <aside class="sidebar">
+    <div class="side-card">
+      <h4>📅 月份切换</h4>
+      <div class="mon-nav">
+        <button class="btn-ghost" id="monPrev">‹</button>
+        <b id="monCur">—</b>
+        <button class="btn-ghost" id="monNext">›</button>
+      </div>
+      <div class="mon-list" id="monList"></div>
+      <div class="side-tip">带 · 的月份有订单数据，点月份名可切换明细与日历</div>
+    </div>
+
+    <div class="side-card">
+      <h4>🔍 快捷查询</h4>
+      <input type="search" id="qKw" placeholder="订单号 / 备注关键词">
+      <div class="q-results" id="qResults"><div class="q-empty">输入关键词即时匹配，点结果跳到明细行</div></div>
+    </div>
+
+    <div class="side-card quick-form">
+      <h4>⚡ 快捷录入（比例默认40%）</h4>
+      <input type="text" id="qkNo" placeholder="订单编号 *">
+      <div class="row2">
+        <input type="number" id="qkAmt" placeholder="金额（元）*" min="0" step="0.01">
+        <input type="number" id="qkRate" value="40" min="1" max="100" step="0.1" title="分成比例%" style="max-width:74px">
+      </div>
+      <button class="btn-primary" id="qkSave">⚡ 一键录入</button>
+      <div class="side-tip">接单日=今天 · 分类=待开始 · 完单后到明细里改进度</div>
+    </div>
+  </aside>
+
+  <!-- ===== 主内容 ===== -->
+  <div class="main">
+    <div class="wrap">
+      <header>
+        <h1>📋 订单统计系统</h1>
+        <div class="meta">数据源：<b id="dbState">连接中…</b> · <span id="todayStr"></span> · 兼职写手接单台账</div>
+      </header>
+
+      <!-- ===== 今日待跟进 ===== -->
+      <section class="todo-banner" id="todoBanner" style="display:none">
+        <div class="todo-head">🔔 今日待跟进订单（待开始 / 进行中）—— <span id="todoCount"></span>，右侧下拉可直接更新进度</div>
+        <div class="todo-list" id="todoList"></div>
+      </section>
+
+      <!-- ===== 核心看板 ===== -->
+      <section class="kpis">
+        <div class="kpi blue"><div class="label" id="lblTake">接单金额</div><div class="value" id="kTake">0<small> 元</small></div><div class="sub" id="subTake">— 单</div></div>
+        <div class="kpi green"><div class="label" id="lblDone">完单金额</div><div class="value" id="kDone">0<small> 元</small></div><div class="sub" id="subDone">— 单</div></div>
+        <div class="kpi amber"><div class="label">待结算（已交付未结算）</div><div class="value" id="kPending">0<small> 元</small></div><div class="sub">按订单金额计</div></div>
+        <div class="kpi purple"><div class="label">已结算（我的分成）</div><div class="value" id="kSettled">0<small> 元</small></div><div class="sub">已到账口径</div></div>
+        <div class="kpi blue"><div class="label">预计总收入</div><div class="value" id="kShare">0<small> 元</small></div><div class="sub" id="subCount">— 单</div></div>
+      </section>
+
+      <section class="panels">
+        <div class="panel">
+          <h3 id="chartTitle">每日接单 / 完单金额</h3>
+          <div class="legend">
+            <span><i style="background:var(--blue)"></i>接单金额（按接单日）</span>
+            <span><i style="background:var(--green)"></i>完单金额（按完单日，待结算+已结算）</span>
+            <span style="color:#94a3b8">鼠标悬停柱子看当日数值</span>
+          </div>
+          <div class="bars" id="dailyChart"></div>
+          <div class="chart-foot" id="chartFoot"></div>
+        </div>
+        <div class="panel">
+          <h3>订单分类看板（按进度）</h3>
+          <div class="status-rows" id="statusChart"></div>
+          <div class="st-note">口径说明：<b>待结算 = 已交付未结算</b>，客户已收货、钱还没到；「已结算」才算到账。完单金额 = 待结算 + 已结算。</div>
+        </div>
+      </section>
+
+      <!-- ===== 收入走势（方块卡，点击弹窗看图） ===== -->
+      <section class="panels" style="margin-bottom:16px;grid-template-columns:1fr 1fr">
+        <div class="panel chart-tile" onclick="openChart('daily')">
+          <h3 id="tileDTitle">每日分成收入走势（预计）</h3>
+          <div class="tile-big" id="tileDVal">—</div>
+          <div class="tile-sub" id="tileDSub">点击查看走势图 →</div>
+        </div>
+        <div class="panel chart-tile" onclick="openChart('cum')">
+          <h3 id="tileCTitle">累计分成收入走势</h3>
+          <div class="tile-big" id="tileCVal">—</div>
+          <div class="tile-sub" id="tileCSub">点击查看走势图 →</div>
+        </div>
+      </section>
+
+      <!-- ===== 日历看板 ===== -->
+      <section class="panel" style="margin-bottom:16px" id="calendarCard">
+        <h3 id="calTitle">日历看板</h3>
+        <div class="today-brief" id="todayBrief"></div>
+        <div class="cal-head"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-legend">
+          口径：<b>接单金额</b> = 当日登记的接单金额汇总 · <b>完单金额</b> = 当日做完（提交待结算/已结算）订单金额汇总 · <b>预计今天完单金额收入</b> = 当日完单订单的分成合计。
+          绿色深浅 = 预计当日收入。<b>点任意日期 → 弹出当天接单明细，可直接编辑/删除。</b>
+        </div>
+      </section>
+
+      <!-- ===== 明细表 ===== -->
+      <section class="toolbar" id="tableTop">
+        <select id="fPeriodType" title="时间范围类型">
+          <option value="month">按月</option>
+          <option value="quarter">按季度</option>
+          <option value="year">按年</option>
+          <option value="day">按日</option>
+        </select>
+        <span id="periodInputs" style="display:inline-flex;gap:8px;align-items:center"></span>
+        <select id="fStatus"><option value="">全部分类</option></select>
+        <input type="search" id="fKeyword" placeholder="搜订单编号 / 备注…">
+        <span class="grow"></span>
+        <button class="btn-ghost" id="btnExport">导出 CSV</button>
+        <button class="btn-primary" id="btnAdd">＋ 新增订单</button>
+      </section>
+
+      <div class="table-card" id="tableCard">
+        <table>
+          <thead>
+            <tr>
+              <th>接单日</th><th>订单编号</th>
+              <th class="num">订单金额（元）</th><th class="num">分成比例</th><th class="num">分成金额（元）</th>
+              <th>分类</th><th>完单日</th><th>备注</th><th style="width:90px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+          <tfoot id="tfoot"></tfoot>
+        </table>
+        <div class="empty" id="emptyTip" style="display:none">暂无订单，点右上角「＋ 新增订单」或左侧「⚡ 快捷录入」</div>
+        <div class="pager" id="pager"></div>
+      </div>
+      <div class="hint">分成金额 = 订单金额 × 分成比例；「待结算」即已交付等钱的状态，「已结算」为实际到账口径。跨月订单按「接单日或完单日」落范围，两个时间视图里都能看到。</div>
+    </div>
+  </div>
+</div>
+
+<!-- 走势图弹窗（加宽） -->
+<div class="mask" id="chartMask" onclick="if(event.target===this)closeChart()">
+  <div class="modal chart-modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h2 id="chartMTitle" style="font-size:16px;font-weight:700"></h2>
+      <button class="btn-ghost" onclick="closeChart()">关闭</button>
+    </div>
+    <div class="line-wrap" id="chartMBody"></div>
+  </div>
+</div>
+
+<!-- 日历单日明细大弹窗 -->
+<div class="mask" id="dayMask" onclick="if(event.target===this)closeDayModal()">
+  <div class="modal day-modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 id="dayMTitle" style="font-size:16px;font-weight:700"></h2>
+      <button class="btn-ghost" onclick="closeDayModal()">关闭</button>
+    </div>
+    <div class="day-stats" id="dayStats"></div>
+    <div class="table-card" id="dayTableBox"></div>
+    <div class="hint" id="dayHint"></div>
+  </div>
+</div>
+
+<!-- 新增/编辑弹窗 -->
+<div class="mask" id="mask">
+  <div class="modal">
+    <h2 id="modalTitle">新增订单</h2>
+    <div class="form-grid">
+      <div class="field"><label>接单日期 *</label><input type="date" id="mDate"></div>
+      <div class="field"><label>订单编号 *</label><input type="text" id="mOrderNo" placeholder="如 DD20260907-01"></div>
+      <div class="field"><label>订单金额（元）*</label><input type="number" id="mAmount" min="0" step="0.01" placeholder="如 850"></div>
+      <div class="field"><label>分成比例（%）*</label><input type="number" id="mShare" min="0" max="100" step="0.1" placeholder="如 70"></div>
+      <div class="field full"><label>分类（订单进度）*</label><select id="mStatus"></select></div>
+      <div class="field full" id="doneDateField">
+        <label>完单日期</label>
+        <input type="date" id="mDoneDate">
+        <span class="tip">进度为「待结算 / 已结算」时必填，默认今天；改回进行中会自动清空</span>
+      </div>
+      <div class="field full"><label>备注</label><textarea id="mNote" placeholder="客户、内容类型、交接情况…（可留空）"></textarea></div>
+    </div>
+    <div class="form-err" id="formErr"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="btnCancel">取消</button>
+      <button class="btn-primary" id="btnSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= 数据层：优先后端API，连不上自动降级为浏览器本地存储 ================= */
+const API = '/api/orders';
+const LS_KEY = 'order_tracker_local';
+let USE_REMOTE = null;   // true=MongoDB, false=localStorage
+let orders = [];
+const STATUSES = ['待开始', '进行中', '待结算', '已结算'];
+const DONE_SET = new Set(['待结算', '已结算']);
+const ST_COLORS = { '待开始': '#94a3b8', '进行中': '#3b82f6', '待结算': '#d97706', '已交付': '#d97706', '已结算': '#16a34a' };
+const ST_LABEL = { '已交付': '待结算' };
+const stLabel = s => ST_LABEL[s] || s;
+
+const localDate = (d = new Date()) =>
+  d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function loadOrders() {
+  try {
+    const r = await fetch(API + '?' + Math.random(), { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) throw 0;
+    const j = await r.json();
+    orders = j.orders || [];
+    USE_REMOTE = true;
+  } catch (e) {
+    USE_REMOTE = false;
+    orders = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+  }
+  render();
+}
+
+async function saveOrder(doc, id) {
+  if (USE_REMOTE) {
+    const url = id ? `${API}/${id}` : API;
+    const r = await fetch(url, {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(doc),
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '保存失败');
+    return j.order;
+  } else {
+    return doc;
+  }
+}
+
+async function deleteOrder(id) {
+  if (USE_REMOTE) {
+    const r = await fetch(`${API}/${id}`, { method: 'DELETE' });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '删除失败');
+  } else {
+    orders = orders.filter(o => o._id !== id);
+  }
+}
+
+/* ================= 时间范围（月/季/年/日） ================= */
+let periodType = 'month';
+let page = 1, pageSize = 20;   // 明细表分页
+
+const monthDays = fMonth => {
+  const [y, m] = fMonth.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const arr = [];
+  for (let i = 1; i <= last; i++) arr.push(`${fMonth}-${String(i).padStart(2, '0')}`);
+  return arr;
+};
+
+function buildPeriodInputs() {
+  const box = document.getElementById('periodInputs');
+  const now = new Date(), y = now.getFullYear();
+  if (periodType === 'month') {
+    box.innerHTML = `<input type="month" id="fMonth">`;
+    document.getElementById('fMonth').value = sideMonth || `${y}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    document.getElementById('fMonth').onchange = () => { sideMonth = document.getElementById('fMonth').value; page = 1; render(); };
+  } else if (periodType === 'day') {
+    box.innerHTML = `<input type="date" id="fDay">`;
+    document.getElementById('fDay').value = localDate();
+    document.getElementById('fDay').onchange = () => { page = 1; render(); };
+  } else if (periodType === 'quarter') {
+    const years = dataYears();
+    box.innerHTML = `<select id="qYear">${years.map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      <select id="qQ">${[1, 2, 3, 4].map(q => `<option value="${q}" ${q === Math.floor(now.getMonth() / 3) + 1 ? 'selected' : ''}>Q${q}</option>`).join('')}</select>`;
+    document.getElementById('qYear').onchange = () => { page = 1; render(); };
+    document.getElementById('qQ').onchange = () => { page = 1; render(); };
+  } else {
+    const years = dataYears();
+    box.innerHTML = `<select id="yYear">${years.map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
+    document.getElementById('yYear').onchange = () => { page = 1; render(); };
+  }
+}
+
+function dataYears() {
+  const set = new Set([new Date().getFullYear()]);
+  orders.forEach(o => { if (o.date) set.add(Number(o.date.slice(0, 4))); });
+  return [...set].sort((a, b) => b - a);
+}
+
+function getPeriod() {
+  const now = new Date(), y = now.getFullYear();
+  if (periodType === 'month') {
+    const v = document.getElementById('fMonth').value || sideMonth || `${y}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return { gran: 'day', start: v, end: v, scopeLabel: '本月', keys: monthDays(v), keyOf: d => d, calMonth: v };
+  }
+  if (periodType === 'day') {
+    const v = document.getElementById('fDay').value || localDate();
+    return { gran: 'day', start: v, end: v, scopeLabel: '当日', keys: [v], keyOf: d => d, calMonth: null };
+  }
+  if (periodType === 'quarter') {
+    const qy = Number(document.getElementById('qYear').value), q = Number(document.getElementById('qQ').value);
+    const months = [1, 2, 3].map(i => `${qy}-${String((q - 1) * 3 + i).padStart(2, '0')}`);
+    return { gran: 'month', start: months[0], end: months[2], scopeLabel: `${qy}年Q${q}`, keys: months, keyOf: d => d.slice(0, 7), calMonth: null };
+  }
+  const yy = Number(document.getElementById('yYear').value);
+  const months = Array.from({ length: 12 }, (_, i) => `${yy}-${String(i + 1).padStart(2, '0')}`);
+  return { gran: 'month', start: `${yy}-01`, end: `${yy}-12`, scopeLabel: `${yy}年`, keys: months, keyOf: d => d.slice(0, 7), calMonth: null };
+}
+
+/* ================= 左侧栏：月份切换 ================= */
+let sideMonth = null;   // 侧栏当前月份 YYYY-MM
+function sideMonths() {
+  const set = new Set([localDate().slice(0, 7)]);
+  orders.forEach(o => {
+    if (o.date) set.add(o.date.slice(0, 7));
+    if (o.doneDate) set.add(o.doneDate.slice(0, 7));
+  });
+  return [...set].sort().reverse();
+}
+function renderSidebar() {
+  if (!sideMonth) sideMonth = localDate().slice(0, 7);
+  document.getElementById('monCur').textContent = sideMonth;
+  const has = new Set();
+  orders.forEach(o => { if (o.date) has.add(o.date.slice(0, 7)); if (o.doneDate) has.add(o.doneDate.slice(0, 7)); });
+  document.getElementById('monList').innerHTML = sideMonths().slice(0, 8).map(m =>
+    `<span class="mon-chip ${m === sideMonth ? 'cur' : ''} ${has.has(m) ? 'has' : ''}" onclick="gotoMonth('${m}')">${m}</span>`).join('');
+}
+function gotoMonth(m) {
+  sideMonth = m;
+  periodType = 'month';
+  document.getElementById('fPeriodType').value = 'month';
+  buildPeriodInputs();
+  page = 1;
+  render();
+}
+
+/* ================= 左侧栏：快捷查询（订单号/备注） ================= */
+function renderQuickSearch() {
+  const kw = document.getElementById('qKw').value.trim().toLowerCase();
+  const box = document.getElementById('qResults');
+  if (!kw) { box.innerHTML = '<div class="q-empty">输入关键词即时匹配，点结果跳到明细行</div>'; return; }
+  const hits = orders.filter(o =>
+    (o.orderNo || '').toLowerCase().includes(kw) || (o.note || '').toLowerCase().includes(kw)
+  ).slice(0, 12);
+  box.innerHTML = hits.length ? hits.map(o => `
+    <div class="q-item" onclick="jumpToOrder('${o._id}')">
+      <b>${esc(o.orderNo)}</b>
+      <span>${fmt(r2(o.amount))} 元 · ${stLabel(o.status)}${o.note ? ' · ' + esc(o.note.slice(0, 16)) : ''}</span>
+    </div>`).join('')
+    : '<div class="q-empty">没有匹配的订单（订单号和备注都搜了）</div>';
+}
+function jumpToOrder(id) {
+  const o = orders.find(x => x._id === id);
+  if (!o) return;
+  // 切到该订单所在年份视图，保证明细里能看到，再用关键词过滤定位
+  periodType = 'year';
+  document.getElementById('fPeriodType').value = 'year';
+  buildPeriodInputs();
+  document.getElementById('yYear').value = (o.date || localDate()).slice(0, 4);
+  document.getElementById('fKeyword').value = (o.orderNo || '').slice(0, 6);
+  page = 1;
+  render();
+  setTimeout(() => {
+    const card = document.getElementById('tableCard');
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const row = [...document.querySelectorAll('#tbody tr')].find(tr => tr.textContent.includes(o.orderNo));
+    if (row) { row.classList.add('hl'); setTimeout(() => row.classList.remove('hl'), 2600); }
+  }, 60);
+}
+
+/* ================= 左侧栏：快捷录入（默认比例40%） ================= */
+async function quickSave() {
+  const orderNo = document.getElementById('qkNo').value.trim();
+  const amount = parseFloat(document.getElementById('qkAmt').value);
+  const rate = parseFloat(document.getElementById('qkRate').value) || 40;
+  if (!orderNo) { alert('请填订单编号'); return; }
+  if (!(amount > 0)) { alert('请填正确的金额'); return; }
+  const doc = { date: localDate(), orderNo, amount, shareRate: rate, status: '待开始', doneDate: null, note: '' };
+  try {
+    const r = await saveOrder(doc, null);
+    const _id = r && r._id ? String(r._id) : 'loc-' + Date.now();
+    orders.unshift(Object.assign({ _id, createdAt: new Date().toISOString() }, doc));
+    persistLocal();
+    document.getElementById('qkNo').value = '';
+    document.getElementById('qkAmt').value = '';
+    page = 1;
+    render();
+    const card = document.getElementById('tableCard');
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => {
+      const row = [...document.querySelectorAll('#tbody tr')].find(tr => tr.textContent.includes(orderNo));
+      if (row) { row.classList.add('hl'); setTimeout(() => row.classList.remove('hl'), 2600); }
+    }, 80);
+  } catch (e) { alert('录入失败：' + e.message); }
+}
+
+/* ================= 汇总与渲染 ================= */
+const fmt = n => Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+const r2 = n => Math.round(n * 100) / 100;
+const share = o => o.amount * o.shareRate / 100;
+
+function render() {
+  const P = getPeriod();
+  const fStatus = document.getElementById('fStatus').value;
+  const kw = document.getElementById('fKeyword').value.trim();
+  const nLen = P.start.length;
+
+  // 跨期口径：订单按「接单日 或 完单日」落范围
+  const inP = d => d && d.slice(0, nLen) >= P.start && d.slice(0, nLen) <= P.end;
+  const kwHit = o => !kw ||
+    (o.orderNo || '').toLowerCase().includes(kw.toLowerCase()) ||
+    (o.note || '').toLowerCase().includes(kw.toLowerCase());
+  const view = orders.filter(o =>
+    (inP(o.date) || inP(o.doneDate)) &&
+    (!fStatus || o.status === fStatus || (fStatus === '待结算' && o.status === '已交付')) &&
+    kwHit(o)
+  );
+  view.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b._id > a._id ? 1 : -1));
+
+  const scope = orders.filter(o => inP(o.date) || inP(o.doneDate));
+
+  const takeList = scope.filter(o => inP(o.date));
+  const takeAmt = takeList.reduce((s, o) => s + o.amount, 0);
+  const doneList = scope.filter(o => DONE_SET.has(stLabel(o.status)) && inP(o.doneDate));
+  const doneAmt = doneList.reduce((s, o) => s + o.amount, 0);
+  const pendingAmt = scope.filter(o => stLabel(o.status) === '待结算').reduce((s, o) => s + o.amount, 0);
+  const settledShare = scope.filter(o => stLabel(o.status) === '已结算').reduce((s, o) => s + share(o), 0);
+  const totalShare = scope.reduce((s, o) => s + share(o), 0);
+
+  document.getElementById('lblTake').textContent = P.scopeLabel + '接单金额';
+  document.getElementById('lblDone').textContent = P.scopeLabel + '完单金额';
+  document.getElementById('kTake').innerHTML = fmt(r2(takeAmt)) + '<small> 元</small>';
+  document.getElementById('subTake').textContent = takeList.length + ' 单';
+  document.getElementById('kDone').innerHTML = fmt(r2(doneAmt)) + '<small> 元</small>';
+  document.getElementById('subDone').textContent = doneList.length + ' 单';
+  document.getElementById('kPending').innerHTML = fmt(r2(pendingAmt)) + '<small> 元</small>';
+  document.getElementById('kSettled').innerHTML = fmt(r2(settledShare)) + '<small> 元</small>';
+  document.getElementById('kShare').innerHTML = fmt(r2(totalShare)) + '<small> 元</small>';
+  document.getElementById('subCount').textContent = scope.length + ' 单';
+  const unitTxt = P.gran === 'day' ? '每日' : '每月';
+  document.getElementById('chartTitle').textContent = P.scopeLabel + unitTxt + '接单 / 完单金额';
+
+  // —— 明细表（分页）——
+  const tbody = document.getElementById('tbody');
+  const tfoot = document.getElementById('tfoot');
+  if (!view.length) {
+    tbody.innerHTML = ''; tfoot.innerHTML = '';
+    document.getElementById('pager').innerHTML = '';
+    document.getElementById('emptyTip').style.display = 'block';
+  } else {
+    document.getElementById('emptyTip').style.display = 'none';
+    const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(view.length / pageSize)) : 1;
+    if (page > totalPages) page = totalPages;
+    const rows = pageSize > 0 ? view.slice((page - 1) * pageSize, page * pageSize) : view;
+    tbody.innerHTML = rows.map(o => `
+      <tr>
+        <td>${o.date || ''}</td>
+        <td><b>${esc(o.orderNo)}</b></td>
+        <td class="num">${fmt(o.amount)}</td>
+        <td class="num">${o.shareRate}%</td>
+        <td class="num" style="color:var(--green);font-weight:600">${fmt(r2(share(o)))}</td>
+        <td><span class="tag ${stLabel(o.status)}">${stLabel(o.status)}</span></td>
+        <td>${o.doneDate || '—'}</td>
+        <td class="note-cell" title="${esc(o.note || '')}">${esc(o.note || '')}</td>
+        <td>
+          <button class="btn-mini" onclick="openModal('${o._id}')">编辑</button>
+          <button class="btn-danger-mini" onclick="removeOrder('${o._id}','${esc(o.orderNo)}')">删除</button>
+        </td>
+      </tr>`).join('');
+    const vTake = view.reduce((s, o) => s + o.amount, 0);
+    const vShare = view.reduce((s, o) => s + share(o), 0);
+    tfoot.innerHTML = `<tr>
+      <td colspan="2">合计 ${view.length} 单（全部页）</td>
+      <td class="num">${fmt(r2(vTake))}</td>
+      <td class="num">—</td>
+      <td class="num" style="color:var(--green)">${fmt(r2(vShare))}</td>
+      <td colspan="4"></td>
+    </tr>`;
+    renderPager(view.length, page, totalPages);
+  }
+
+  renderDailyChart(scope, P);
+  renderLineChart(scope, P);
+  renderCalendar(scope, P);
+  renderStatusChart(view.length ? view : scope);
+  renderTodo();
+  renderSidebar();
+}
+
+function renderPager(total, p, tp) {
+  const el = document.getElementById('pager');
+  const opts = [10, 20, 50, 100, 0].map(n =>
+    `<option value="${n}" ${n === pageSize ? 'selected' : ''}>${n === 0 ? '全部' : n} 条/页</option>`).join('');
+  el.innerHTML = `
+    <span>共 ${total} 条</span>
+    <select id="pgSize">${opts}</select>
+    ${pageSize > 0 ? `
+      <button class="btn-ghost" id="pgPrev" ${p <= 1 ? 'disabled' : ''}>‹ 上一页</button>
+      <span class="pg">第 ${p} / ${tp} 页</span>
+      <button class="btn-ghost" id="pgNext" ${p >= tp ? 'disabled' : ''}>下一页 ›</button>` : ''}`;
+  document.getElementById('pgSize').onchange = e => { pageSize = Number(e.target.value); page = 1; render(); };
+  const prev = document.getElementById('pgPrev');
+  if (prev) prev.onclick = () => { if (page > 1) { page--; render(); window.scrollTo(0, document.body.scrollHeight); } };
+  const next = document.getElementById('pgNext');
+  if (next) next.onclick = () => { if (page < tp) { page++; render(); window.scrollTo(0, document.body.scrollHeight); } };
+}
+
+function renderDailyChart(scope, P) {
+  const box = document.getElementById('dailyChart');
+  const byTake = {}, byDone = {};
+  scope.forEach(o => {
+    if (o.date) { const k = P.keyOf(o.date); byTake[k] = (byTake[k] || 0) + o.amount; }
+    const d = o.doneDate || (DONE_SET.has(stLabel(o.status)) ? o.date : null);
+    if (d) { const k = P.keyOf(d); byDone[k] = (byDone[k] || 0) + o.amount; }
+  });
+  const max = Math.max(...P.keys.map(k => Math.max(byTake[k] || 0, byDone[k] || 0)), 1);
+  const today = localDate();
+  box.innerHTML = P.keys.map(k => {
+    const t = byTake[k] || 0, dn = byDone[k] || 0;
+    const hT = t ? Math.max(5, Math.round(t / max * 104)) : 0;
+    const hD = dn ? Math.max(5, Math.round(dn / max * 104)) : 0;
+    return `<div class="bar-col ${k === today ? 'today' : ''}" title="${k}
+接单 ${fmt(r2(t))} 元 / 完单 ${fmt(r2(dn))} 元">
+      <div class="amt"></div>
+      <div class="pair">
+        <div class="bar take" style="height:${hT || 1}px;${t ? '' : 'background:#e2e8f0'}"></div>
+        <div class="bar done" style="height:${hD || 1}px;${dn ? '' : 'background:#e2e8f0'}"></div>
+      </div>
+      <div class="day">${P.gran === 'day' ? k.slice(8) : k.slice(5)}</div></div>`;
+  }).join('');
+  const tSum = P.keys.reduce((s, k) => s + (byTake[k] || 0), 0);
+  const dSum = P.keys.reduce((s, k) => s + (byDone[k] || 0), 0);
+  document.getElementById('chartFoot').innerHTML =
+    `区间合计：接单 <b>${fmt(r2(tSum))}</b> 元 · 完单 <b>${fmt(r2(dSum))}</b> 元（蓝柱高=接单多、绿柱高=完单多，同刻度直接比高低；悬停看精确数）`;
+}
+
+function drawLine(box, keys, values, color, dashed, unit, wide) {
+  const vmax = Math.max(...values, 1);
+  const W = wide ? Math.max(1100, keys.length * 42) : Math.max(520, keys.length * 46), H = wide ? 320 : 210;
+  const padL = 56, padR = 14, padT = 14, padB = 26;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const x = i => keys.length === 1 ? padL + iw / 2 : padL + i * iw / (keys.length - 1);
+  const y = v => padT + ih - v / vmax * ih;
+  let g = '';
+  for (let i = 0; i <= 4; i++) {
+    const gv = vmax * i / 4, gy = y(gv);
+    g += `<line x1="${padL}" y1="${gy}" x2="${W - padR}" y2="${gy}" stroke="#e2e8f0" stroke-width="1"/>
+          <text x="${padL - 6}" y="${gy + 4}" text-anchor="end" font-size="10" fill="#94a3b8">${fmt(Math.round(gv))}</text>`;
+  }
+  const path = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const today = localDate();
+  const lblStep = Math.max(1, Math.ceil(keys.length / 14));
+  const xlabels = keys.map((k, i) => i % lblStep === 0 || k === today
+    ? `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="${k === today ? '#8b5cf6' : '#94a3b8'}" font-weight="${k === today ? 700 : 400}">${k.slice(5)}</text>` : '').join('');
+  const dots = values.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="2.5" fill="${color}"><title>${keys[i]}
+${unit} ${fmt(r2(v))} 元</title></circle>`).join('');
+  box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    ${g}
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="2"${dashed ? ' stroke-dasharray="5 4"' : ''}/>
+    ${dots}
+    ${xlabels}
+  </svg>`;
+}
+
+/* ================= 收入走势：方块卡 + 点击弹窗 ================= */
+let chartData = null;
+function renderLineChart(scope, P) {
+  const daily = P.keys.map(k => scope.filter(o => P.keyOf(o.date) === k).reduce((s, o) => s + share(o), 0));
+  let acc = 0;
+  const cum = daily.map(v => r2(acc += v));
+  const unitTxt = P.gran === 'day' ? '每日' : '每月';
+  const peak = Math.max(...daily);
+  const peakIdx = daily.indexOf(peak);
+  chartData = { P, daily, cum, scope };
+  document.getElementById('tileDTitle').textContent = P.scopeLabel + unitTxt + '分成收入走势（预计）';
+  document.getElementById('tileCTitle').textContent = P.scopeLabel + unitTxt + '累计分成收入走势';
+  document.getElementById('tileDVal').innerHTML = fmt(r2(peak)) + '<small> 元</small>';
+  document.getElementById('tileDSub').textContent = peak > 0 ? `单日峰值 · ${P.keys[peakIdx]} · 点击看走势 →` : '暂无收入，点击看走势 →';
+  document.getElementById('tileCVal').innerHTML = fmt(r2(cum[cum.length - 1] || 0)) + '<small> 元</small>';
+  document.getElementById('tileCSub').textContent = '累计终点 = 预计总收入 · 点击看走势 →';
+}
+function openChart(kind) {
+  if (!chartData) return;
+  const { P, daily, cum } = chartData;
+  if (kind === 'daily') {
+    document.getElementById('chartMTitle').textContent = document.getElementById('tileDTitle').textContent;
+    drawLine(document.getElementById('chartMBody'), P.keys, daily, '#3b82f6', false, '当日分成收入', true);
+  } else {
+    document.getElementById('chartMTitle').textContent = document.getElementById('tileCTitle').textContent;
+    drawLine(document.getElementById('chartMBody'), P.keys, cum, '#16a34a', true, '累计分成收入', true);
+  }
+  document.getElementById('chartMask').classList.add('show');
+}
+function closeChart() { document.getElementById('chartMask').classList.remove('show'); }
+
+/* ================= 日历看板（点击日期弹当日明细） ================= */
+function dayStatsOf(d) {
+  const take = orders.filter(o => o.date === d);
+  const done = orders.filter(o => o.doneDate === d && DONE_SET.has(stLabel(o.status)));
+  return {
+    take, done,
+    takeAmt: take.reduce((s, o) => s + o.amount, 0),
+    doneAmt: done.reduce((s, o) => s + o.amount, 0),
+    shareAmt: done.reduce((s, o) => s + share(o), 0),
+  };
+}
+
+function renderCalendar(scope, P) {
+  const card = document.getElementById('calendarCard');
+  const grid = document.getElementById('calGrid');
+  if (!P.calMonth) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('calTitle').textContent = P.calMonth + ' 日历看板（点日期看当天接单明细）';
+
+  // 今日简报：接单金额 / 完单金额 / 预计今天完单金额收入
+  const td = dayStatsOf(localDate());
+  document.getElementById('todayBrief').innerHTML = `
+    <span class="tb-take">今日接单金额：<b>${fmt(r2(td.takeAmt))}</b> 元（${td.take.length} 单）</span>
+    <span class="tb-done">今日完单金额：<b>${fmt(r2(td.doneAmt))}</b> 元（${td.done.length} 单）</span>
+    <span class="tb-share">预计今天完单金额收入：<b>${fmt(r2(td.shareAmt))}</b> 元</span>`;
+
+  const byTake = {}, byShare = {}, byDone = {};
+  scope.forEach(o => {
+    if (o.date) byTake[o.date] = (byTake[o.date] || 0) + o.amount;
+    const dk = o.doneDate || (DONE_SET.has(stLabel(o.status)) ? o.date : null);
+    if (dk) {
+      byShare[dk] = (byShare[dk] || 0) + share(o);
+      if (DONE_SET.has(stLabel(o.status)) && o.doneDate) byDone[dk] = (byDone[dk] || 0) + o.amount;
+    }
+  });
+  const days = monthDays(P.calMonth);
+  const maxShare = Math.max(...days.map(d => byShare[d] || 0), 1);
+  const startWd = (new Date(P.calMonth + '-01').getDay() + 6) % 7;   // 周一=0
+  const today = localDate();
+  const blanks = Array.from({ length: startWd }, () => '<div class="cal-cell blank"></div>').join('');
+  const cells = days.map(d => {
+    const t = byTake[d] || 0, dn = byDone[d] || 0, sh = r2(byShare[d] || 0);
+    const alpha = sh > 0 ? (0.07 + 0.45 * (sh / maxShare)).toFixed(2) : 0;
+    return `<div class="cal-cell ${d === today ? 'today' : ''}" style="${sh > 0 ? `background:rgba(22,163,74,${alpha})` : ''}"
+      onclick="openDayModal('${d}')" title="点击查看 ${d} 当天接单明细">
+      <div class="cal-d">${Number(d.slice(8))}</div>
+      <div class="cal-vals">接 ${fmt(r2(t))}<br>完 ${fmt(r2(dn))}<br>收 ${fmt(sh)}</div>
+    </div>`;
+  }).join('');
+  grid.innerHTML = blanks + cells;
+}
+
+/* ---- 日历单日大弹窗 ---- */
+let dayModalDate = null;
+function openDayModal(d) {
+  dayModalDate = d;
+  renderDayModal();
+  document.getElementById('dayMask').classList.add('show');
+}
+function closeDayModal() { dayModalDate = null; document.getElementById('dayMask').classList.remove('show'); }
+function renderDayModal() {
+  const d = dayModalDate;
+  if (!d) return;
+  const st = dayStatsOf(d);
+  document.getElementById('dayMTitle').textContent = d + ' 当天接单情况';
+  document.getElementById('dayStats').innerHTML = `
+    <div class="ds blue">接单金额（当日登记）<b>${fmt(r2(st.takeAmt))} 元 · ${st.take.length} 单</b></div>
+    <div class="ds green">完单金额（当日做完）<b>${fmt(r2(st.doneAmt))} 元 · ${st.done.length} 单</b></div>
+    <div class="ds purple">预计完单分成收入<b>${fmt(r2(st.shareAmt))} 元</b></div>`;
+  const list = [...st.take, ...st.done.filter(o => o.date !== d)]
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const box = document.getElementById('dayTableBox');
+  if (!list.length) {
+    box.innerHTML = '<div class="empty">当天没有接单 / 完单记录</div>';
+  } else {
+    box.innerHTML = `<table>
+      <thead><tr>
+        <th>接单日</th><th>订单编号</th>
+        <th class="num">订单金额（元）</th><th class="num">分成比例</th><th class="num">分成金额（元）</th>
+        <th>分类</th><th>完单日</th><th>备注</th><th style="width:90px">操作</th>
+      </tr></thead>
+      <tbody>
+        ${list.map(o => `
+          <tr>
+            <td>${o.date || ''}</td>
+            <td><b>${esc(o.orderNo)}</b>${o.doneDate === d && o.date !== d ? ' <span class="tag 待结算" title="当天完单">当日完单</span>' : ''}</td>
+            <td class="num">${fmt(o.amount)}</td>
+            <td class="num">${o.shareRate}%</td>
+            <td class="num" style="color:var(--green);font-weight:600">${fmt(r2(share(o)))}</td>
+            <td><span class="tag ${stLabel(o.status)}">${stLabel(o.status)}</span></td>
+            <td>${o.doneDate || '—'}</td>
+            <td class="note-cell" title="${esc(o.note || '')}">${esc(o.note || '')}</td>
+            <td>
+              <button class="btn-mini" onclick="openModal('${o._id}')">编辑</button>
+              <button class="btn-danger-mini" onclick="removeOrder('${o._id}','${esc(o.orderNo)}')">删除</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+      <tfoot><tr>
+        <td colspan="2">合计 ${list.length} 单</td>
+        <td class="num">${fmt(r2(list.reduce((s, o) => s + o.amount, 0)))}</td>
+        <td class="num">—</td>
+        <td class="num" style="color:var(--green)">${fmt(r2(list.reduce((s, o) => s + share(o), 0)))}</td>
+        <td colspan="4"></td>
+      </tr></tfoot>
+    </table>`;
+  }
+  document.getElementById('dayHint').textContent = '编辑 / 删除后本弹窗自动刷新；「当日完单」标记 = 接单日在别处、当天做完的订单。';
+}
+
+function renderStatusChart(view) {
+  const box = document.getElementById('statusChart');
+  const total = view.reduce((s, o) => s + o.amount, 0) || 1;
+  box.innerHTML = STATUSES.map(st => {
+    const list = view.filter(o => stLabel(o.status) === st);
+    const amt = list.reduce((s, o) => s + o.amount, 0);
+    const pct = Math.round(amt / total * 100);
+    return `<div class="st-row">
+      <span class="name"><span class="tag ${st}">${st}</span></span>
+      <div class="track"><div class="fill" style="width:${pct}%;background:${ST_COLORS[st]}"></div></div>
+      <span class="nums"><b>${list.length}</b> 单 · ${fmt(r2(amt))} 元 · ${pct}%</span>
+    </div>`;
+  }).join('');
+}
+
+/* ================= 今日待跟进（进行中/待开始） ================= */
+function renderTodo() {
+  const banner = document.getElementById('todoBanner');
+  const list = orders.filter(o => ['待开始', '进行中'].includes(stLabel(o.status)));
+  if (!list.length) { banner.style.display = 'none'; return; }
+  banner.style.display = '';
+  document.getElementById('todoCount').textContent = list.length + ' 笔';
+  document.getElementById('todoList').innerHTML = list.map(o => `
+    <div class="todo-item">
+      <span class="tag ${stLabel(o.status)}">${stLabel(o.status)}</span>
+      <b>${esc(o.orderNo)}</b>
+      <span class="todo-meta">接单日 ${o.date} · ${fmt(o.amount)} 元 · 分成 ${fmt(r2(share(o)))} 元${o.note ? ' · ' + esc(o.note) : ''}</span>
+      <select class="todo-act" data-id="${o._id}">
+        <option value="">更新进度 →</option>
+        ${STATUSES.filter(s => s !== stLabel(o.status)).map(s => `<option value="${s}">${s}</option>`).join('')}
+      </select>
+    </div>`).join('');
+  document.querySelectorAll('.todo-act').forEach(sel => {
+    sel.onchange = () => { if (sel.value) quickUpdate(sel.dataset.id, sel.value); };
+  });
+}
+
+async function quickUpdate(id, st) {
+  const o = orders.find(x => x._id === id);
+  if (!o) return;
+  const doc = {
+    date: o.date, orderNo: o.orderNo, amount: o.amount, shareRate: o.shareRate,
+    status: st, doneDate: DONE_SET.has(st) ? (o.doneDate || localDate()) : null, note: o.note || '',
+  };
+  try {
+    await saveOrder(doc, id);
+    const i = orders.findIndex(x => x._id === id);
+    if (i > -1) orders[i] = Object.assign({}, orders[i], doc);
+    persistLocal();
+    render();
+    if (dayModalDate) renderDayModal();
+  }
+  catch (e) { alert('更新失败：' + e.message); }
+}
+
+/* ================= 交互 ================= */
+let editingId = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+function openModal(id) {
+  editingId = id || null;
+  $('formErr').textContent = '';
+  $('modalTitle').textContent = id ? '编辑订单' : '新增订单';
+  const o = id ? orders.find(x => x._id === id) : null;
+  $('mDate').value = o ? o.date : localDate();
+  $('mOrderNo').value = o ? o.orderNo : 'DD' + localDate().replace(/-/g, '') + '-';
+  $('mAmount').value = o ? o.amount : '';
+  $('mShare').value = o ? o.shareRate : '';
+  $('mStatus').value = o ? stLabel(o.status) : '进行中';
+  $('mDoneDate').value = o ? (o.doneDate || '') : localDate();
+  $('mNote').value = o ? (o.note || '') : '';
+  toggleDoneField();
+  $('mask').classList.add('show');
+  if (!id) { $('mAmount').focus(); }
+}
+function closeModal() { $('mask').classList.remove('show'); }
+
+function toggleDoneField() {
+  const done = DONE_SET.has($('mStatus').value);
+  const f = $('doneDateField');
+  f.style.opacity = done ? '1' : '.45';
+  $('mDoneDate').disabled = !done;
+  if (done && !$('mDoneDate').value) $('mDoneDate').value = localDate();
+}
+
+async function submitOrder() {
+  const st = $('mStatus').value;
+  const doc = {
+    date: $('mDate').value,
+    orderNo: $('mOrderNo').value.trim(),
+    amount: parseFloat($('mAmount').value),
+    shareRate: parseFloat($('mShare').value),
+    status: st,
+    doneDate: DONE_SET.has(st) ? ($('mDoneDate').value || localDate()) : null,
+    note: $('mNote').value.trim(),
+  };
+  const errs = [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(doc.date)) errs.push('请选择接单日期');
+  if (!doc.orderNo) errs.push('订单编号不能为空');
+  if (!(doc.amount >= 0) || isNaN(doc.amount)) errs.push('金额必须是非负数字');
+  if (!(doc.shareRate > 0 && doc.shareRate <= 100)) errs.push('分成比例须为 1-100');
+  if (DONE_SET.has(st) && !/^\d{4}-\d{2}-\d{2}$/.test(doc.doneDate)) errs.push('请填写完单日期');
+  if (errs.length) { $('formErr').textContent = errs.join('；'); return; }
+  try {
+    const r = await saveOrder(doc, editingId);
+    closeModal();
+    if (editingId) {
+      const i = orders.findIndex(x => x._id === editingId);
+      if (i > -1) orders[i] = Object.assign({}, orders[i], doc);
+    } else {
+      const _id = r && r._id ? String(r._id) : 'loc-' + Date.now();
+      orders.unshift(Object.assign({ _id, createdAt: new Date().toISOString() }, doc));
+    }
+    persistLocal();
+    render();
+    if (dayModalDate) renderDayModal();
+  } catch (e) {
+    $('formErr').textContent = e.message;
+  }
+}
+
+async function removeOrder(id, no) {
+  if (!confirm('确定删除订单「' + no + '」？删除后不可恢复。')) return;
+  try {
+    await deleteOrder(id);
+    orders = orders.filter(x => x._id !== id);
+    persistLocal();
+    render();
+    if (dayModalDate) renderDayModal();
+  } catch (e) { alert('删除失败：' + e.message); }
+}
+
+function persistLocal() { try { localStorage.setItem(LS_KEY, JSON.stringify(orders)); } catch (e) {} }
+
+function exportCSV() {
+  const rows = [['接单日期', '订单编号', '订单金额', '分成比例(%)', '分成金额', '分类', '完单日期', '备注']];
+  let ta = 0, ts = 0;
+  orders.forEach(o => {
+    rows.push([o.date, o.orderNo, o.amount, o.shareRate, share(o).toFixed(2), stLabel(o.status), o.doneDate || '', o.note || '']);
+    ta += o.amount; ts += share(o);
+  });
+  rows.push(['合计', orders.length + ' 单', ta.toFixed(2), '', ts.toFixed(2), '', '', '']);
+  const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = '订单台账_' + localDate() + '.csv';
+  a.click();
+}
+
+/* ================= 初始化 ================= */
+(function init() {
+  $('todayStr').textContent = '今天 ' + new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
+  const stSel = $('fStatus'), mSel = $('mStatus');
+  STATUSES.forEach(s => {
+    stSel.insertAdjacentHTML('beforeend', `<option value="${s}">${s}</option>`);
+    mSel.insertAdjacentHTML('beforeend', `<option value="${s}">${s}</option>`);
+  });
+  $('fPeriodType').onchange = () => { periodType = $('fPeriodType').value; page = 1; buildPeriodInputs(); render(); };
+  buildPeriodInputs();
+  $('btnAdd').onclick = () => openModal(null);
+  $('btnCancel').onclick = closeModal;
+  $('btnSave').onclick = submitOrder;
+  $('btnExport').onclick = exportCSV;
+  $('mask').onclick = e => { if (e.target === $('mask')) closeModal(); };
+  $('fStatus').onchange = () => { page = 1; render(); };
+  $('fKeyword').oninput = () => { page = 1; render(); };
+  $('mStatus').onchange = toggleDoneField;
+  $('mAmount').addEventListener('keydown', e => { if (e.key === 'Enter') submitOrder(); });
+
+  // 左侧栏
+  $('monPrev').onclick = () => {
+    const [y, m] = sideMonth.split('-').map(Number);
+    const d = new Date(y, m - 2, 1);
+    gotoMonth(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+  };
+  $('monNext').onclick = () => {
+    const [y, m] = sideMonth.split('-').map(Number);
+    const d = new Date(y, m, 1);
+    gotoMonth(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+  };
+  $('qKw').oninput = renderQuickSearch;
+  $('qkSave').onclick = quickSave;
+  $('qkAmt').addEventListener('keydown', e => { if (e.key === 'Enter') quickSave(); });
+  $('qkNo').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('qkAmt').focus(); });
+
+  loadOrders().then(() => {
+    const el = $('dbState');
+    if (USE_REMOTE) { el.textContent = 'MongoDB 云端已连接'; el.className = ''; }
+    else { el.textContent = '本地模式（未连上服务器，数据暂存本浏览器）'; el.className = 'offline'; }
+  });
+})();
+</script>
+</body>
+</html>
