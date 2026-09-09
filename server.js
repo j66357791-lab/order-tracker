@@ -63,6 +63,7 @@ async function getDb() {
       { key: { createdAt: 1 }, expireAfterSeconds: 3 * 24 * 3600 },
     ]).catch(() => {});
     db.collection('cards').createIndexes([{ key: { to: 1, createdAt: -1 } }, { key: { orderId: 1 } }]).catch(() => {});
+    db.collection('schedule_days').createIndexes([{ key: { userId: 1, date: 1 }, unique: true }]).catch(() => {});
     // 启动时清掉历史遗留的假在线标记（真实在线以内存连接表为准）
     db.collection('users').updateMany({ sockOnline: true }, { $set: { sockOnline: false } }).catch(() => {});
   }
@@ -799,15 +800,21 @@ const cnTimeStr = d => String(d.getUTCHours()).padStart(2, '0') + ':' + String(d
 const toMin = hm => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
 const GRACE = 15;   // 迟到宽限15分钟
 
+// 当天应上班次：单日排班（日历）优先，无覆盖则用每周班表
+async function dayPlan(db, userId, date, dow) {
+  const ov = await db.collection('schedule_days').findOne({ userId, date });
+  if (ov && ov.start && ov.end) return { start: ov.start, end: ov.end, override: true };
+  const sched = await db.collection('schedules').findOne({ userId });
+  const d = sched && sched.days ? sched.days[dow] : null;
+  return (d && d.start && d.end) ? { start: d.start, end: d.end, override: false } : null;
+}
+
 // 评估某人今天的考勤状态（惰性计算：任何相关请求都会触发）
 async function evalAttendance(db, userId) {
-  const sched = await db.collection('schedules').findOne({ userId });
-  if (!sched || !sched.days) return;
   const cn = cnNow();
-  const dow = String(cn.getUTCDay());
-  const day = sched.days[dow];
-  if (!day || !day.start || !day.end) return;
   const date = cnDateStr(cn);
+  const day = await dayPlan(db, userId, date, String(cn.getUTCDay()));
+  if (!day) return;
   const nowMin = cn.getUTCHours() * 60 + cn.getUTCMinutes();
   const startMin = toMin(day.start), endMin = toMin(day.end);
   let att = await db.collection('attendance').findOne({ userId, date });
@@ -854,6 +861,39 @@ app.post('/api/schedule', auth, async (req, res) => {
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
+// 单日排班（日历视图）：写手提前一天安排具体某天的班次（小时级）
+app.get('/api/schedule/days', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    if (!/^\d{4}-\d{2}$/.test(String(req.query.ym || ''))) return res.status(400).json({ ok: false, error: '月份格式应为 YYYY-MM' });
+    const uid = req.user.role === 'admin' && req.query.userId ? String(req.query.userId) : req.user.id;
+    const rows = await db.collection('schedule_days')
+      .find({ userId: uid, date: { $regex: '^' + req.query.ym } })
+      .project({ date: 1, start: 1, end: 1, _id: 0 }).toArray();
+    res.json({ ok: true, days: rows });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/schedule/day', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const date = String(req.body?.date || '');
+    const start = String(req.body?.start || '').trim();
+    const end = String(req.body?.end || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: '日期格式应为 YYYY-MM-DD' });
+    // 排班需提前一天：只允许排「明天及以后」
+    if (date <= cnDateStr(cnNow())) return res.status(400).json({ ok: false, error: '排班需提前一天，只能安排明天及以后的班次' });
+    if (!start && !end) {   // 清空 = 当天休息
+      await db.collection('schedule_days').deleteOne({ userId: req.user.id, date });
+      return res.json({ ok: true, cleared: true });
+    }
+    if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) return res.status(400).json({ ok: false, error: '时间格式应为 HH:MM' });
+    if (toMin(end) <= toMin(start)) return res.status(400).json({ ok: false, error: '下班时间要晚于上班时间' });
+    await db.collection('schedule_days').updateOne(
+      { userId: req.user.id, date },
+      { $set: { userId: req.user.id, date, start, end, updatedAt: new Date() } }, { upsert: true });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 // 打卡上班
 app.post('/api/attendance/clockin', auth, async (req, res) => {
   try {
@@ -862,7 +902,7 @@ app.post('/api/attendance/clockin', auth, async (req, res) => {
     const cn = cnNow();
     const date = cnDateStr(cn), time = cnTimeStr(cn);
     const sched = await db.collection('schedules').findOne({ userId: req.user.id });
-    const day = sched ? sched.days[String(cn.getUTCDay())] : null;
+    const day = await dayPlan(db, req.user.id, date, String(cn.getUTCDay()));
     const exist = await db.collection('attendance').findOne({ userId: req.user.id, date });
     if (exist && exist.clockIn) return res.status(400).json({ ok: false, error: '今天已打过上班卡（' + exist.clockIn + '）' });
     let status = '出勤';
