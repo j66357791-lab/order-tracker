@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>派单工作台 · 管理员</title>
+<style>
+  :root{ --bg:#f1f5f9; --card:#fff; --ink:#0f172a; --sub:#64748b; --line:#e2e8f0;
+    --blue:#3b82f6; --green:#16a34a; --amber:#d97706; --red:#dc2626; --purple:#8b5cf6; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+  .wrap{max-width:1180px;margin:0 auto;padding:16px 14px 60px}
+  header{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  header h1{font-size:18px}
+  .grow{flex:1}
+  button{cursor:pointer;border:none;font-size:13px;border-radius:8px;padding:8px 14px}
+  .btn-p{background:var(--blue);color:#fff} .btn-p:hover{background:#2563eb}
+  .btn-g{background:#fff;border:1px solid var(--line);color:var(--ink)} .btn-g:hover{background:#f8fafc}
+  .layout{display:grid;grid-template-columns:280px 1fr;gap:14px}
+  @media(max-width:760px){.layout{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .panel h3{font-size:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+  .wrow{display:flex;align-items:center;gap:8px;padding:10px 8px;border-radius:9px;cursor:pointer;border:1px solid transparent}
+  .wrow:hover{background:#f8fafc}
+  .wrow.on{border-color:var(--blue);background:#eff6ff}
+  .wrow .nm{font-weight:600;font-size:13px}
+  .wrow .info{font-size:11px;color:var(--sub)}
+  .dot{width:8px;height:8px;border-radius:99px;background:#cbd5e1;flex:none}
+  .dot.on{background:var(--green)}
+  .ubadge{background:var(--red);color:#fff;font-size:10px;border-radius:99px;padding:1px 7px;margin-left:auto}
+  .empty{text-align:center;color:var(--sub);font-size:13px;padding:26px 8px;line-height:1.8}
+  .chat-box{height:48vh;overflow-y:auto;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+  .mrow{max-width:74%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;word-break:break-word}
+  .mrow.me{align-self:flex-end;background:var(--blue);color:#fff}
+  .mrow.them{align-self:flex-start;background:#fff;border:1px solid var(--line)}
+  .mrow .fn{font-size:10px;opacity:.7;margin-bottom:2px}
+  .mfile{color:inherit;text-decoration:underline;cursor:pointer;font-weight:600}
+  .mcard{align-self:stretch;max-width:100%;background:#fff;border:1px solid var(--line);border-left:4px solid var(--purple);border-radius:10px;padding:10px 12px}
+  .mcard .t{font-weight:700;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+  .mcard .meta{font-size:12px;color:var(--sub);margin-top:4px;line-height:1.7}
+  .st{font-size:11px;padding:3px 9px;border-radius:99px;font-weight:600}
+  .st-待接单{background:#fffbeb;color:var(--amber)} .st-已接单{background:#eff6ff;color:var(--blue)}
+  .st-已交付{background:#f0fdf4;color:var(--green)} .st-已完成{background:#f1f5f9;color:var(--sub)}
+  .st-已拒绝{background:#fef2f2;color:var(--red)}
+  .composer{display:flex;gap:8px}
+  .composer input[type=text]{flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th,td{padding:9px 10px;text-align:left;font-size:12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--sub);font-weight:600;background:#f8fafc}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .profit-plus{color:var(--green);font-weight:700} .profit-minus{color:var(--red);font-weight:700}
+  .mask{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .mask.show{display:flex}
+  .modal{background:#fff;border-radius:14px;padding:20px;width:100%;max-width:460px;max-height:88vh;overflow:auto}
+  .modal h2{font-size:16px;margin-bottom:12px}
+  .modal label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px}
+  .modal input,.modal textarea,.modal select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+  .modal textarea{min-height:90px;resize:vertical}
+  .modal .btns{display:flex;gap:10px;margin-top:16px}
+  .modal .btns button{flex:1;padding:9px}
+  .code-item{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px}
+  .code-item code{background:#f1f5f9;padding:3px 8px;border-radius:6px;font-family:monospace;letter-spacing:1px}
+  .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 18px;border-radius:99px;font-size:13px;display:none;z-index:99}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>派单工作台</h1>
+    <span class="grow"></span>
+    <button class="btn-g" id="btnInvites">邀请码管理</button>
+    <button class="btn-g" onclick="location.href='/index.html'">← 返回看板</button>
+    <button class="btn-g" id="btnLogout">退出</button>
+  </header>
+
+  <div class="layout">
+    <div class="panel">
+      <h3>写手 <span style="font-size:11px;color:var(--sub)" id="teamStat"></span></h3>
+      <div id="teamList"><div class="empty">还没有写手。<br>点右上角「邀请码管理」生成邀请码发给写手注册。</div></div>
+      <h3 style="margin-top:16px">派单总览</h3>
+      <div style="font-size:12px;color:var(--sub);margin-bottom:4px" id="ovTotals"></div>
+      <div style="max-height:260px;overflow:auto">
+        <table id="ovTable"><thead><tr><th>单子</th><th>写手</th><th class="num">报酬</th><th class="num">利润</th><th>状态</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3 id="chatTitle">聊天</h3>
+      <div class="chat-box" id="chatBox"><div class="empty">← 先从左边选一个写手</div></div>
+      <div class="composer">
+        <input type="text" id="msgInput" placeholder="输入消息…">
+        <button class="btn-g" id="btnCard" disabled>📋 派单卡</button>
+        <button class="btn-g" id="btnFile" disabled>📎 文件</button>
+        <button class="btn-p" id="btnSend" disabled>发送</button>
+      </div>
+      <input type="file" id="fileInput" style="display:none">
+      <div style="color:var(--red);font-size:12px;margin-top:6px;min-height:14px" id="chatErr"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 派单卡表单 -->
+<div class="mask" id="cardMask">
+  <div class="modal">
+    <h2>创建派单卡</h2>
+    <label>派给</label><input id="cTo" disabled>
+    <label>单子标题 *</label><input id="cTitle" placeholder="如：某品牌公众号推文 2000字">
+    <label>报酬（元）* —— 派出去的价，由你自定义</label><input id="cReward" type="number" min="0" step="0.01">
+    <label>截止日期</label><input id="cDeadline" type="date">
+    <label>交付要求</label><textarea id="cReq" placeholder="字数/风格/交稿格式等"></textarea>
+    <label>关联我的原单（可选——绑了才能自动算利润、写手交付后自动同步原单进度）</label>
+    <select id="cOrder"><option value="">不关联</option></select>
+    <label>需求附件（可选，≤25MB）</label>
+    <input type="file" id="cFile">
+    <div style="font-size:12px;color:var(--sub);margin-top:4px" id="cFileInfo"></div>
+    <div class="btns">
+      <button class="btn-g" onclick="closeCard()">取消</button>
+      <button class="btn-p" id="btnCardSend">发出派单卡</button>
+    </div>
+  </div>
+</div>
+
+<!-- 邀请码 -->
+<div class="mask" id="invMask">
+  <div class="modal">
+    <h2>邀请码管理</h2>
+    <button class="btn-p" id="btnGenInvite" style="margin-bottom:10px">＋ 生成新邀请码</button>
+    <div id="invList"></div>
+    <div class="btns"><button class="btn-g" onclick="document.getElementById('invMask').classList.remove('show')">关闭</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const TOKEN = localStorage.getItem('jdy_token');
+let ME = null, socket = null, chats = [], currentPeer = null, cardFile = null;
+
+const fmt = n => Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+function authFetch(url, opt = {}) {
+  return fetch(url, { ...opt, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...(opt.headers || {}) } })
+    .then(async r => { const j = await r.json(); if (!j.ok && r.status === 401) { location.href = '/login.html'; throw new Error('登录过期'); } return j; });
+}
+function toast(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2200); }
+function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+
+(async () => {
+  if (!TOKEN) { location.href = '/login.html'; return; }
+  const me = await authFetch('/api/me');
+  if (!me.ok || me.user.role !== 'admin') { location.href = '/login.html'; return; }
+  ME = me.user;
+
+  socket = io({ auth: { token: TOKEN } });
+  socket.on('msg', m => {
+    if (currentPeer && (m.from === currentPeer || m.to === currentPeer)) { $('chatBox').insertAdjacentHTML('beforeend', renderMsg(m)); fillCardMsgs(); $('chatBox').scrollTop = $('chatBox').scrollHeight; }
+    loadTeam();
+    if (m.type !== 'card') toast('新消息');
+  });
+  socket.on('card', () => { fillCardMsgs(); loadOverview(); });
+  socket.on('presence', () => loadTeam());
+
+  loadTeam();
+  loadOverview();
+})();
+
+function renderShiftInfo(u) {
+  if (!u.shift) return '<span style="color:var(--sub)">未上班</span>';
+  return u.sockOnline ? '<span style="color:var(--green)">● 在班在线</span>' : '<span style="color:var(--amber)">● 在班（离线）</span>';
+}
+async function loadTeam() {
+  const j = await authFetch('/api/chats');
+  if (!j.ok) return;
+  chats = j.chats;
+  const onShift = chats.filter(c => c.user.shift).length;
+  $('teamStat').textContent = chats.length ? `共${chats.length}人 · 在班${onShift}人` : '';
+  $('teamList').innerHTML = chats.length ? chats.map(c => `
+    <div class="wrow ${c.user.id === currentPeer ? 'on' : ''}" onclick="openChat('${c.user.id}')">
+      <span class="dot ${c.user.shift && c.user.sockOnline ? 'on' : ''}"></span>
+      <div><div class="nm">${esc(c.user.displayName)}</div><div class="info">${renderShiftInfo(c.user)}</div></div>
+      ${c.unread ? `<span class="ubadge">${c.unread}</span>` : ''}
+    </div>`).join('') : $('teamList').innerHTML || '';
+}
+async function openChat(peerId) {
+  currentPeer = peerId;
+  const c = chats.find(x => x.user.id === peerId);
+  $('chatTitle').textContent = '与 ' + (c ? c.user.displayName : '') + ' 聊天';
+  ['btnCard', 'btnFile', 'btnSend'].forEach(id => $(id).disabled = false);
+  loadTeam();
+  const j = await authFetch('/api/messages?peer=' + peerId);
+  $('chatBox').dataset.peer = peerId;
+  $('chatBox').innerHTML = (j.messages || []).map(m => renderMsg(m)).join('') || '<div class="empty">聊两句，或直接甩一张派单卡</div>';
+  await fillCardMsgs();
+  $('chatBox').scrollTop = $('chatBox').scrollHeight;
+}
+function renderMsg(m) {
+  if (m.type === 'card') return `<div class="mcard"><div class="fn">${esc(m.fromName)} · 派单卡</div><div id="cm-${m.cardId}"><span style="font-size:12px;color:var(--sub)">加载中…</span></div></div>`;
+  const mine = m.from === ME.id;
+  const body = m.type === 'file'
+    ? `📎 <a class="mfile" href="/api/files/${m.fileId}/download" download>${esc(m.fileName)}</a> <small>(${(m.fileSize/1024/1024).toFixed(1)}MB)</small>`
+    : esc(m.text);
+  return `<div class="mrow ${mine ? 'me' : 'them'}"><div class="fn">${esc(m.fromName)}</div>${body}</div>`;
+}
+async function fillCardMsgs() {
+  const slots = document.querySelectorAll('[id^="cm-"]');
+  if (!slots.length) return;
+  const j = await authFetch('/api/dispatch/overview');
+  const map = {}; (j.rows || []).forEach(c => map[c._id] = c);
+  slots.forEach(el => {
+    const c = map[el.id.slice(3)];
+    if (!c) return;
+    el.innerHTML = `<div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
+      <div class="meta">写手：${esc(c.toName)} · 报酬 <b style="color:var(--green)">${fmt(c.reward)}</b> 元 · 截止 ${c.deadline || '不限'}
+      ${c.status === '已交付' ? `<button class="btn-p" style="padding:4px 10px;margin-left:6px" onclick="finishCard('${c._id}')">确认完成</button>` : ''}</div>`;
+  });
+}
+async function finishCard(id) {
+  const j = await authFetch(`/api/cards/${id}/finish`, { method: 'POST' });
+  if (!j.ok) { alert(j.error); return; }
+  fillCardMsgs(); loadOverview(); toast('已确认完成');
+}
+async function sendMsg() {
+  const peer = $('chatBox').dataset.peer; if (!peer) return;
+  const text = $('msgInput').value.trim(); if (!text) return;
+  $('msgInput').value = ''; $('chatErr').textContent = '';
+  const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer, text }) });
+  if (!j.ok) $('chatErr').textContent = j.error;
+}
+$('btnSend').onclick = sendMsg;
+$('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
+$('btnFile').onclick = () => $('fileInput').click();
+$('fileInput').onchange = async () => {
+  const peer = $('chatBox').dataset.peer;
+  const f = $('fileInput').files[0]; if (!f || !peer) return;
+  if (f.size > 25 * 1024 * 1024) { $('chatErr').textContent = '文件超过25MB，请让对方走网盘'; return; }
+  $('chatErr').textContent = '上传中…';
+  const fd = new FormData(); fd.append('file', f); fd.append('peer', peer);
+  try {
+    const up = await fetch('/api/files', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd }).then(r => r.json());
+    if (!up.ok) throw new Error(up.error);
+    const j = await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer, ...up }) });
+    if (!j.ok) throw new Error(j.error);
+    $('chatErr').textContent = '';
+  } catch (e) { $('chatErr').textContent = '上传失败：' + e.message; }
+  $('fileInput').value = '';
+};
+
+/* ---- 派单卡创建 ---- */
+$('btnCard').onclick = async () => {
+  const peer = $('chatBox').dataset.peer; if (!peer) return;
+  const c = chats.find(x => x.user.id === peer);
+  $('cTo').value = c ? c.user.displayName : '';
+  $('cTitle').value = ''; $('cReward').value = ''; $('cDeadline').value = ''; $('cReq').value = '';
+  cardFile = null; $('cFile').value = ''; $('cFileInfo').textContent = '';
+  $('cOrder').innerHTML = '<option value="">不关联</option>';
+  const j = await authFetch('/api/orders');
+  (j.orders || []).slice(0, 100).forEach(o => {
+    $('cOrder').insertAdjacentHTML('beforeend', `<option value="${o._id}">${esc(o.orderNo)}（${o.date} · ${fmt(o.amount)}元 · 分成${fmt(Math.round(o.amount*o.shareRate)/100)}）</option>`);
+  });
+  $('cardMask').classList.add('show');
+};
+function closeCard() { $('cardMask').classList.remove('show'); }
+$('cFile').onchange = () => {
+  const f = $('cFile').files[0]; cardFile = null; $('cFileInfo').textContent = '';
+  if (!f) return;
+  if (f.size > 25 * 1024 * 1024) { $('cFileInfo').textContent = '超过25MB，请压缩后上传'; $('cFile').value = ''; return; }
+  $('cFileInfo').textContent = `已选：${f.name}（${(f.size/1024/1024).toFixed(1)}MB）`;
+  cardFile = f;
+};
+$('btnCardSend').onclick = async () => {
+  const peer = $('chatBox').dataset.peer; if (!peer) return;
+  const title = $('cTitle').value.trim(), reward = Number($('cReward').value);
+  if (!title) { toast('请填标题'); return; }
+  if (!isFinite(reward) || reward < 0) { toast('请填报酬金额'); return; }
+  $('btnCardSend').disabled = true; $('btnCardSend').textContent = '发送中…';
+  try {
+    let fileId = null, fileName = null;
+    if (cardFile) {
+      const fd = new FormData(); fd.append('file', cardFile); fd.append('peer', peer);
+      const up = await fetch('/api/files', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd }).then(r => r.json());
+      if (!up.ok) throw new Error(up.error);
+      fileId = up.fileId; fileName = up.fileName;
+    }
+    const j = await authFetch('/api/cards', { method: 'POST', body: JSON.stringify({
+      to: peer, title, reward, requirement: $('cReq').value.trim(),
+      deadline: $('cDeadline').value, orderId: $('cOrder').value, fileId, fileName,
+    }) });
+    if (!j.ok) throw new Error(j.error);
+    closeCard(); fillCardMsgs(); loadOverview();
+    toast('派单卡已发出，写手端实时收到');
+  } catch (e) { alert('发送失败：' + e.message); }
+  $('btnCardSend').disabled = false; $('btnCardSend').textContent = '发出派单卡';
+};
+
+/* ---- 派单总览（利润联动） ---- */
+async function loadOverview() {
+  const j = await authFetch('/api/dispatch/overview');
+  if (!j.ok) return;
+  const t = j.totals;
+  $('ovTotals').innerHTML = `已关联原单 ${t.linked} 张：原单分成 <b>${fmt(t.totShare)}</b> − 派出报酬 <b>${fmt(t.totReward)}</b> = 利润 <b style="color:${t.totProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(t.totProfit)}</b> 元`;
+  $('ovTable').querySelector('tbody').innerHTML = j.rows.length ? j.rows.map(r => `
+    <tr>
+      <td>${esc(r.title)}${r.orderNo ? `<div style="font-size:10px;color:var(--sub)">关联 ${esc(r.orderNo)}</div>` : '<div style="font-size:10px;color:var(--sub)">未关联原单</div>'}</td>
+      <td>${esc(r.toName)}</td>
+      <td class="num">${fmt(r.reward)}</td>
+      <td class="num ${r.profit == null ? '' : r.profit >= 0 ? 'profit-plus' : 'profit-minus'}">${r.profit == null ? '—' : fmt(r.profit)}</td>
+      <td><span class="st st-${r.status}">${r.status}</span></td>
+    </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--sub)">还没有派单</td></tr>';
+}
+
+/* ---- 邀请码 ---- */
+$('btnInvites').onclick = async () => { $('invMask').classList.add('show'); loadInvites(); };
+$('btnGenInvite').onclick = async () => {
+  const j = await authFetch('/api/invites', { method: 'POST', body: JSON.stringify({ count: 1 }) });
+  if (j.ok) { toast('已生成，点击码可复制'); loadInvites(); }
+};
+async function loadInvites() {
+  const j = await authFetch('/api/invites');
+  if (!j.ok) return;
+  $('invList').innerHTML = j.invites.length ? j.invites.map(i => `
+    <div class="code-item">
+      <code style="cursor:pointer" onclick="navigator.clipboard.writeText('${i.code}').then(()=>toast('已复制：${i.code}'))" title="点击复制">${i.code}</code>
+      <span style="font-size:11px;color:var(--sub)">${i.usedBy ? '已使用' : '未使用'}</span>
+    </div>`).join('') : '<div class="empty">还没有邀请码，点上面按钮生成</div>';
+}
+$('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+</script>
+</body>
+</html>

@@ -233,7 +233,7 @@
     <div class="wrap">
       <header>
         <h1>📋 订单统计系统</h1>
-        <div class="meta">数据源：<b id="dbState">连接中…</b> · <span id="todayStr"></span> · 兼职写手接单台账</div>
+        <div class="meta">数据源：<b id="dbState">连接中…</b> · <span id="todayStr"></span> · 兼职写手接单台账 · <a href="#" onclick="localStorage.removeItem('jdy_token');localStorage.removeItem('jdy_user');location.href='/login.html';return false" style="color:var(--sub)">退出登录</a></div>
       </header>
 
       <!-- ===== 今日待跟进 ===== -->
@@ -307,6 +307,7 @@
         <select id="fStatus"><option value="">全部分类</option></select>
         <input type="search" id="fKeyword" placeholder="搜订单编号 / 备注…">
         <span class="grow"></span>
+        <a class="btn-ghost" href="/dispatch.html" style="text-decoration:none;display:inline-flex;align-items:center">派单工作台 →</a>
         <button class="btn-ghost" id="btnExport">导出 CSV</button>
         <button class="btn-primary" id="btnAdd">＋ 新增订单</button>
       </section>
@@ -382,6 +383,12 @@
 
 <script>
 /* ================= 数据层：优先后端API，连不上自动降级为浏览器本地存储 ================= */
+/* V7 登录门卫：本页仅管理员可用，未登录/写手一律跳登录页 */
+const TOKEN = localStorage.getItem('jdy_token');
+const ME = JSON.parse(localStorage.getItem('jdy_user') || 'null');
+if (!TOKEN || !ME || ME.role !== 'admin') location.href = '/login.html';
+const AH = () => ({ Authorization: 'Bearer ' + TOKEN });
+
 const API = '/api/orders';
 const LS_KEY = 'order_tracker_local';
 let USE_REMOTE = null;   // true=MongoDB, false=localStorage
@@ -397,7 +404,8 @@ const localDate = (d = new Date()) =>
 
 async function loadOrders() {
   try {
-    const r = await fetch(API + '?' + Math.random(), { signal: AbortSignal.timeout(6000) });
+    const r = await fetch(API + '?' + Math.random(), { signal: AbortSignal.timeout(6000), headers: AH() });
+    if (r.status === 401) { localStorage.removeItem('jdy_token'); location.href = '/login.html'; return; }
     if (!r.ok) throw 0;
     const j = await r.json();
     orders = j.orders || [];
@@ -414,7 +422,7 @@ async function saveOrder(doc, id) {
     const url = id ? `${API}/${id}` : API;
     const r = await fetch(url, {
       method: id ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...AH() },
       body: JSON.stringify(doc),
     });
     const j = await r.json();
@@ -427,7 +435,7 @@ async function saveOrder(doc, id) {
 
 async function deleteOrder(id) {
   if (USE_REMOTE) {
-    const r = await fetch(`${API}/${id}`, { method: 'DELETE' });
+    const r = await fetch(`${API}/${id}`, { method: 'DELETE', headers: AH() });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || '删除失败');
   } else {
