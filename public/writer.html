@@ -409,7 +409,7 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
   document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
   t.classList.add('on');
-  $('#' + t.dataset.p).classList.add('on');
+  $(t.dataset.p).classList.add('on');
   if (t.dataset.p === 'pAttend') loadShiftAndSched();
   if (t.dataset.p === 'pPay') { $('payMonth').value = cnToday().slice(0, 7); loadPay(); }
 });
@@ -418,7 +418,6 @@ $('attMonth').value = cnToday().slice(0, 7);
 $('payMonth').value = cnToday().slice(0, 7);
 setInterval(() => { if ($('pAttend').classList.contains('on')) { const b = $('btnClock'); if (!b.disabled && !b.innerHTML.includes('~')) $('clockNow').textContent = cnHm(); } }, 30000);
 loadCards().then(loadChat);
-$('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
 </script>
 </body>
 </html>
