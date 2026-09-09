@@ -124,8 +124,25 @@
   .card-bub .cb-meta b{color:var(--amber)}
   .card-bub .cb-req{font-size:12px;color:var(--sub);background:var(--bg);border-radius:8px;padding:7px 9px;margin-bottom:6px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
   .card-bub .cb-ops{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap}
-  #chatInputBar{display:flex;gap:8px;padding:10px 12px;background:#fff;border-top:1px solid var(--line);flex-shrink:0;align-items:center}
-  #chatInput{flex:1;border-radius:99px;padding:10px 15px}
+  #chatInputBar{display:flex;flex-direction:column;gap:0;background:#fff;border-top:1px solid var(--line);flex-shrink:0}
+  #quoteBar{display:none;align-items:center;gap:8px;padding:7px 14px;background:var(--bg);border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)}
+  #quoteBar.show{display:flex}
+  #quoteBar .qb-txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #quoteBar .qb-x{border:none;background:transparent;color:var(--sub);cursor:pointer;font-size:14px;padding:2px 6px}
+  .input-row{display:flex;gap:8px;padding:10px 12px;align-items:flex-end}
+  #chatInput{flex:1;border-radius:14px;padding:9px 14px;resize:none;min-height:44px;max-height:132px;line-height:1.5;font-size:14px}
+  #dragOver{display:none;position:absolute;inset:0;background:rgba(7,193,96,.12);border:2px dashed var(--green);border-radius:12px;z-index:30;align-items:center;justify-content:center;font-size:15px;color:var(--green-dk);font-weight:600;pointer-events:none}
+  #chatRight{position:relative}
+  #chatRight.dragging #dragOver{display:flex}
+  .qref{background:rgba(0,0,0,.05);border-left:3px solid var(--green);border-radius:6px;padding:5px 8px;margin-bottom:6px;font-size:11px;color:var(--sub);cursor:pointer;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .msg.mine .qref{background:rgba(255,255,255,.18);color:#eafff3;border-left-color:#eafff3}
+  .qref:hover{filter:brightness(.96)}
+  .msg .rbtn{position:absolute;font-size:11px;color:var(--sub);background:#fff;border:1px solid var(--line);border-radius:99px;padding:2px 9px;cursor:pointer;opacity:0;transition:opacity .15s;top:-6px}
+  .msg:not(.mine) .rbtn{right:6px}
+  .msg.mine .rbtn{left:6px}
+  .msg:hover .rbtn{opacity:1}
+  .msg.flash .bub{animation:flashbg 1.2s}
+  @keyframes flashbg{0%,60%{background:var(--amber-bg)}100%{}}
   .icon-btn{width:38px;height:38px;border-radius:50%;border:none;background:var(--grey-bg);font-size:17px;cursor:pointer;flex-shrink:0;transition:background .15s}
   .icon-btn:hover{background:#e2e8f0}
 
@@ -192,11 +209,15 @@
       <div id="chatRight">
         <div id="chatHead"><span class="dot d-off" id="peerDot"></span><span id="peerName">选择会话</span><span class="sub" id="peerSt"></span></div>
         <div id="chatBox"><div class="empty">左侧选择会话开始沟通</div></div>
+        <div id="dragOver">📥 松手发送 · 文件夹需确认</div>
         <div id="chatInputBar">
-          <button class="icon-btn" id="btnFile" title="发文件">📎</button>
-          <input id="chatInput" placeholder="输入消息，回车发送…">
-          <button class="icon-btn" id="btnSend" style="background:var(--green);color:#fff" title="发送">➤</button>
-          <input type="file" id="fileInput" style="display:none">
+          <div id="quoteBar"><span>↩</span><span class="qb-txt" id="quoteTxt"></span><button class="qb-x" onclick="clearQuote()">✕</button></div>
+          <div class="input-row">
+            <button class="icon-btn" id="btnFile" title="发文件">📎</button>
+            <textarea id="chatInput" rows="1" placeholder="输入消息，回车发送 · Shift+回车换行 · 支持粘贴/拖入截图和文件"></textarea>
+            <button class="icon-btn" id="btnSend" style="background:var(--green);color:#fff" title="发送">➤</button>
+            <input type="file" id="fileInput" style="display:none">
+          </div>
         </div>
       </div>
     </div>
@@ -246,6 +267,15 @@
           <div class="stat v-blue"><div class="v" id="pyOngoing">0</div><div class="l">在途 ¥</div></div>
         </div>
       </div>
+      <div class="card">
+        <h3>🏦 收款方式（支付宝）</h3>
+        <div class="flow-tip">管理员打款前会查看这里的信息，请确保<b>姓名与账号一致</b>，填写后立即生效。</div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <input id="aliName" placeholder="支付宝实名姓名" maxlength="40">
+          <input id="aliAccount" placeholder="支付宝账号（手机号或邮箱）" maxlength="60">
+        </div>
+        <div style="text-align:right;margin-top:10px"><button class="btn btn-g btn-sm" id="btnAli">保存收款方式</button></div>
+      </div>
       <div id="payList"></div>
     </div>
   </section>
@@ -294,6 +324,36 @@ let chats = [], currentPeer = null, msgs = [], cardsMap = {};
 function cacheKey() { return 'jdy_msg_' + (ME ? ME.id : USER.id) + '_' + (currentPeer || 'none'); }
 function loadCache() { try { return JSON.parse(localStorage.getItem(cacheKey()) || '[]'); } catch (e) { return []; } }
 function saveCache(arr) { try { localStorage.setItem(cacheKey(), JSON.stringify(arr.slice(-600))); } catch (e) {} }
+// 统一的消息入列：按 _id 去重（防止 socket 推送与请求响应竞态导致消息显示两条）
+function addMsg(m) {
+  if (!m || !m._id) return false;
+  if (msgs.find(x => String(x._id) === String(m._id))) return false;
+  msgs.push(m); saveCache(msgs);
+  return true;
+}
+
+/* ================= 引用回复 ================= */
+let quoteTarget = null;
+function msgPreview(m) {
+  if (!m) return '';
+  if (m.type === 'text') return m.text || '';
+  if (m.type === 'file') return '[文件] ' + (m.fileName || '');
+  if (m.type === 'card') return '[派单卡] ' + ((cardsMap[m.cardId] || {}).title || '');
+  return '';
+}
+function setQuote(m) {
+  quoteTarget = m;
+  $('quoteTxt').textContent = (m.fromName || '') + '：' + msgPreview(m).slice(0, 60);
+  $('quoteBar').classList.add('show');
+  $('chatInput').focus();
+}
+function clearQuote() { quoteTarget = null; $('quoteBar').classList.remove('show'); }
+function jumpToMsg(id) {
+  const el = document.querySelector('.msg[data-mid="' + id + '"]');
+  if (!el) return toast('原消息不在当前记录里');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+}
 
 function renderConvList() {
   $('convList').innerHTML = chats.map(c => {
@@ -332,14 +392,17 @@ function renderMsgs(list) {
   if (!currentPeer) return;
   if (!list.length) { $('chatBox').innerHTML = '<div class="empty">还没有消息，打个招呼吧</div>'; return; }
   $('chatBox').innerHTML = list.map(m => {
+    const mine = m.from === ME.id;
+    const qref = m.replyTo && m.replyTo.id ? '<div class="qref" onclick="jumpToMsg(\'' + m.replyTo.id + '\')">↩ ' + esc(m.replyTo.fromName || '') + '：' + esc(m.replyTo.preview || '') + '</div>' : '';
+    const rbtn = m.type !== 'card' ? '<button class="rbtn" onclick="setQuote(msgs.find(x=>String(x._id)===\'' + m._id + '\'))">引用</button>' : '';
     if (m.type === 'card') {
       const c = cardsMap[m.cardId];
-      return `<div class="msg ${m.from === ME.id ? 'mine' : ''}">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「单子」页）</div>'}</div>`;
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「单子」页）</div>'}</div>`;
     }
     if (m.type === 'file') {
-      return `<div class="msg ${m.from === ME.id ? 'mine' : ''}"><div class="bub">📎 <a href="${dl(m.fileId)}" target="_blank">${esc(m.fileName)}</a> <span style="font-size:10px;opacity:.7">${fmtSize(m.fileSize)}</span><div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${qref}📎 <a href="${dl(m.fileId)}" target="_blank">${esc(m.fileName)}</a> <span style="font-size:10px;opacity:.7">${fmtSize(m.fileSize)}</span><div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
     }
-    return `<div class="msg ${m.from === ME.id ? 'mine' : ''}"><div class="bub">${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
+    return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${qref}${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
   }).join('');
   $('chatBox').scrollTop = $('chatBox').scrollHeight;
 }
@@ -377,21 +440,25 @@ async function openChat(peer) {
 async function sendText() {
   const t = $('chatInput').value.trim();
   if (!t || !currentPeer) return;
-  $('chatInput').value = '';
+  $('chatInput').value = ''; autoGrow();
+  const replyTo = quoteTarget ? { id: String(quoteTarget._id), fromName: quoteTarget.fromName || '', preview: msgPreview(quoteTarget).slice(0, 80), type: quoteTarget.type || 'text' } : null;
+  clearQuote();
   try {
-    const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer: currentPeer, text: t }) });
-    msgs.push(j.message); saveCache(msgs); renderMsgs(msgs);
+    const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer: currentPeer, text: t, replyTo }) });
+    if (addMsg(j.message)) renderMsgs(msgs);
   } catch (e) { toast(e.message); $('chatInput').value = t; }
 }
 async function sendFile(f) {
   if (!f || !currentPeer) return;
   if (f.size > 25 * 1024 * 1024) return toast('文件不能超过25MB');
   toast('上传中：' + f.name + '…', 8000);
+  const replyTo = quoteTarget ? { id: String(quoteTarget._id), fromName: quoteTarget.fromName || '', preview: msgPreview(quoteTarget).slice(0, 80), type: quoteTarget.type || 'text' } : null;
+  clearQuote();
   const fd = new FormData(); fd.append('file', f); fd.append('peer', currentPeer);
   try {
     const up = await authFetch('/api/files', { method: 'POST', body: fd });
-    const j = await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer: currentPeer, fileId: up.fileId, fileName: up.fileName, fileSize: up.fileSize }) });
-    msgs.push(j.message); saveCache(msgs); renderMsgs(msgs);
+    const j = await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer: currentPeer, fileId: up.fileId, fileName: up.fileName, fileSize: up.fileSize, replyTo }) });
+    if (addMsg(j.message)) renderMsgs(msgs);
     toast('发送成功');
   } catch (e) { toast('上传失败：' + e.message); }
 }
@@ -574,7 +641,7 @@ socket.on('reconnect', () => { $('connBar').classList.remove('on'); });
 
 socket.on('msg', m => {
   if (currentPeer && (m.from === currentPeer || m.to === currentPeer)) {
-    if (!msgs.find(x => x._id === m._id)) { msgs.push(m); saveCache(msgs); renderMsgs(msgs); }
+    if (addMsg(m)) renderMsgs(msgs);
   }
   loadChats().catch(() => {});
   if (m.type === 'file') toast((m.fromName || '') + ' 发来文件：' + m.fileName);
@@ -595,16 +662,96 @@ socket.on('presence', p => {
 });
 
 /* ================= 输入事件 ================= */
+function autoGrow() {
+  const el = $('chatInput');
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 132) + 'px';
+}
 $('btnSend').onclick = sendText;
-$('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
+$('chatInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
+});
+$('chatInput').addEventListener('input', autoGrow);
 $('btnFile').onclick = () => $('fileInput').click();
 $('fileInput').onchange = e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value = ''; };
+
+// 微信/QQ截图：Ctrl+V 粘贴图片直接发送
+document.addEventListener('paste', e => {
+  if (!$('pChat').classList.contains('on') || !currentPeer) return;
+  const items = (e.clipboardData || window.clipboardData)?.items || [];
+  for (const it of items) {
+    if (it.type && it.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = it.getAsFile();
+      if (blob) {
+        const ext = (it.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+        sendFile(new File([blob], '截图_' + cnDateStr(cnNow()).replaceAll('-', '') + '_' + cnHm().replace(':', '') + '.' + ext, { type: it.type }));
+      }
+      return;
+    }
+  }
+});
+
+// 拖拽发送：文件直接发；文件夹递归收集后二次确认
+let dragDepth = 0;
+function entryFiles(entry) {
+  return new Promise(resolve => {
+    if (!entry) return resolve([]);
+    if (entry.isFile) {
+      entry.file(f => resolve([f]), () => resolve([]));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      const readBatch = () => reader.readEntries(async ents => {
+        if (!ents.length) {
+          const sub = [];
+          for (const en of all) sub.push(...await entryFiles(en));
+          return resolve(sub);
+        }
+        all.push(...ents); readBatch();
+      }, () => resolve([]));
+      readBatch();
+    } else resolve([]);
+  });
+}
+const chatRight = $('chatRight');
+chatRight.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; chatRight.classList.add('dragging'); });
+chatRight.addEventListener('dragover', e => e.preventDefault());
+chatRight.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; chatRight.classList.remove('dragging'); } });
+chatRight.addEventListener('drop', async e => {
+  e.preventDefault(); dragDepth = 0; chatRight.classList.remove('dragging');
+  if (!currentPeer) return toast('先选择会话');
+  const items = [...(e.dataTransfer.items || [])];
+  const entries = items.map(it => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+  let files = [];
+  if (entries.length && entries.some(en => en.isDirectory)) {
+    for (const en of entries) files.push(...await entryFiles(en));
+    files = files.filter(f => f.size <= 25 * 1024 * 1024);
+    if (!files.length) return toast('文件夹里没有可发送的文件（单个≤25MB）');
+    if (!confirm('文件夹「' + (entries[0].name) + '」共 ' + files.length + ' 个文件（总计 ' + fmtSize(files.reduce((s, f) => s + f.size, 0)) + '），确认全部发送？')) return;
+  } else {
+    files = [...(e.dataTransfer.files || [])];
+  }
+  toast('开始发送 ' + files.length + ' 个文件…', 6000);
+  for (const f of files) await sendFile(f);
+});
+
+// 支付宝收款方式
+$('btnAli').onclick = async () => {
+  try {
+    await authFetch('/api/me/alipay', { method: 'PUT', body: JSON.stringify({ name: $('aliName').value.trim(), account: $('aliAccount').value.trim() }) });
+    toast('收款方式已保存 ✅');
+  } catch (e) { toast(e.message); }
+};
+function paintAlipay() {
+  if (ME && ME.alipay) { $('aliName').value = ME.alipay.name || ''; $('aliAccount').value = ME.alipay.account || ''; }
+}
 
 /* ================= 启动 ================= */
 (async () => {
   const j = await authFetch('/api/me');
   ME = j.user;
-  paintMe();
+  paintMe(); paintAlipay();
   loadChats().catch(e => toast(e.message));
   reloadCards().catch(() => {});
   setInterval(() => { $('clockNow').textContent = cnHm(); }, 1000);

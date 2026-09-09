@@ -137,7 +137,16 @@ app.get('/api/orders', auth, adminOnly, async (req, res) => {
     if (!orders) {
       orders = await db.collection(CONFIG.collection)
         .find(query).sort({ date: -1, _id: -1 }).limit(500).toArray();
-      orders = orders.map(o => ({ ...o, status: normalizeStatus(o.status) }));
+      // 附带分单信息（该订单绑定的派单卡：写手/报酬/卡状态）
+      const ids = orders.map(o => o._id.toString());
+      const dmap = {};
+      if (ids.length) {
+        const cards = await db.collection('cards')
+          .find({ orderId: { $in: ids } })
+          .project({ orderId: 1, toName: 1, reward: 1, status: 1 }).toArray();
+        cards.forEach(c => { if (c.orderId && !dmap[c.orderId]) dmap[c.orderId] = { cardId: c._id.toString(), toName: c.toName || '', reward: c.reward || 0, status: c.status }; });
+      }
+      orders = orders.map(o => ({ ...o, status: normalizeStatus(o.status), dispatch: dmap[o._id.toString()] || null }));
       cacheSet(JSON.stringify(query), orders);
     }
     res.json({ ok: true, orders });
@@ -250,7 +259,26 @@ function signToken(u) {
 }
 function publicUser(u) {
   return { id: u._id.toString(), username: u.username, role: u.role,
-           displayName: u.displayName, shift: !!u.shift, sockOnline: !!u.sockOnline };
+           displayName: u.displayName, shift: !!u.shift, sockOnline: !!u.sockOnline,
+           alipay: u.alipay || null };
+}
+// 写手绑定收款方式（支付宝：姓名+账号）
+app.put('/api/me/alipay', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const name = String(req.body?.name || '').slice(0, 40).trim();
+    const account = String(req.body?.account || '').slice(0, 60).trim();
+    if (!name || !account) return res.status(400).json({ ok: false, error: '姓名和支付宝账号都必填' });
+    await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { alipay: { name, account, updatedAt: new Date() } } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 引用消息字段清洗（text/file消息均可带）
+function cleanReplyTo(rt) {
+  if (!rt || typeof rt !== 'object') return null;
+  const id = String(rt.id || '').slice(0, 40);
+  if (!id) return null;
+  return { id, fromName: String(rt.fromName || '').slice(0, 40), preview: String(rt.preview || '').slice(0, 80), type: String(rt.type || 'text') };
 }
 const pairKey = (a, b) => [String(a), String(b)].sort().join(':');
 
@@ -264,7 +292,7 @@ async function auth(req, res, next) {
     const db = await getDb();
     const u = await db.collection('users').findOne({ _id: new ObjectId(payload.id) });
     if (!u) return res.status(401).json({ ok: false, error: '账号不存在' });
-    req.user = { _id: u._id, id: u._id.toString(), role: u.role, username: u.username, displayName: u.displayName };
+    req.user = { _id: u._id, id: u._id.toString(), role: u.role, username: u.username, displayName: u.displayName, alipay: u.alipay || null };
     next();
   } catch (e) {
     res.status(401).json({ ok: false, error: '登录已过期，请重新登录' });
@@ -433,7 +461,7 @@ app.post('/api/messages', auth, async (req, res) => {
     const msg = {
       conversation: pairKey(req.user.id, peer),
       from: req.user.id, fromName: req.user.displayName, to: peer,
-      type: 'text', text, read: false, createdAt: new Date(),
+      type: 'text', text, replyTo: cleanReplyTo(req.body?.replyTo), read: false, createdAt: new Date(),
     };
     const r = await db.collection('messages').insertOne(msg);
     msg._id = r.insertedId;
@@ -492,7 +520,7 @@ app.post('/api/messages/file', auth, async (req, res) => {
     const msg = {
       conversation: pairKey(req.user.id, peer),
       from: req.user.id, fromName: req.user.displayName, to: peer,
-      type: 'file', fileId, fileName, fileSize, read: false, createdAt: new Date(),
+      type: 'file', fileId, fileName, fileSize, replyTo: cleanReplyTo(req.body?.replyTo), read: false, createdAt: new Date(),
     };
     const r = await db.collection('messages').insertOne(msg);
     msg._id = r.insertedId;
@@ -675,6 +703,23 @@ async function payHandler(req, res) {
 }
 app.post('/api/cards/:id/pay', auth, adminOnly, payHandler);
 app.post('/api/cards/:id/finish', auth, adminOnly, payHandler);   // 兼容旧客户端
+// 管理员：补台账同步（对账发现「已给写手打款但台账还没标已结算」时一键同步）
+app.post('/api/cards/:id/syncorder', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
+    if (!card) return res.status(404).json({ ok: false, error: '派单卡不存在' });
+    if (card.status !== '已完成') return res.status(400).json({ ok: false, error: '只有已完成的卡片才需要补同步' });
+    if (!card.orderId || !ObjectId.isValid(card.orderId)) return res.status(400).json({ ok: false, error: '该卡片未关联台账订单' });
+    const r = await db.collection(CONFIG.collection).findOneAndUpdate(
+      { _id: new ObjectId(card.orderId) },
+      { $set: { status: '已结算', doneDate: card.doneDate || localToday(), updatedAt: new Date() } },
+      { returnDocument: 'after' });
+    cacheClear();
+    notify(card.to, 'card', card);
+    res.json({ ok: true, syncedOrder: r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 // 管理员：派单总览（含利润联动：原单分成 - 派单报酬；支持 q 关键词 / status 筛选）
 app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
   try {
@@ -694,7 +739,7 @@ app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
       const profit = order ? Math.round((share - c.reward) * 100) / 100 : null;
       if (order) { linked++; totReward += c.reward; totShare += share; totProfit += profit; }
       const row = {
-        _id: c._id.toString(), title: c.title, toName: c.toName, reward: c.reward,
+        _id: c._id.toString(), title: c.title, to: c.to, toName: c.toName, reward: c.reward,
         status: c.status, deadline: c.deadline, createdAt: c.createdAt,
         submittedAt: c.submittedAt || null, submitNote: c.submitNote || null,
         rejectReason: c.rejectReason || null,
@@ -709,6 +754,38 @@ app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
       rows.push(row);
     }
     res.json({ ok: true, rows, totals: { linked, totReward: Math.round(totReward*100)/100, totShare: Math.round(totShare*100)/100, totProfit: Math.round(totProfit*100)/100 } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// 管理员：财务对账——台账到账状态 × 派单卡打款状态 交叉核对
+// type: needPay = 台账已结算(客户已到账)但卡还没打款 → 提醒审批打款
+//       needReview = 台账已结算但卡还停在待审核 → 提醒先审核
+//       unsynced  = 卡已完成(已给写手打款)但台账还没标已结算 → 提醒补台账
+app.get('/api/dispatch/reconcile', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const cards = (await db.collection('cards').find({})
+      .sort({ createdAt: -1 }).limit(500).toArray()).map(normCard);
+    const out = [];
+    for (const c of cards) {
+      if (!c.orderId || !ObjectId.isValid(c.orderId)) continue;
+      if (!['待审核', '待打款', '已完成'].includes(c.status)) continue;
+      const order = await db.collection(CONFIG.collection).findOne({ _id: new ObjectId(c.orderId) });
+      if (!order) continue;
+      const oStatus = normalizeStatus(order.status);
+      let type = null;
+      if (oStatus === '已结算' && c.status === '待打款') type = 'needPay';
+      else if (oStatus === '已结算' && c.status === '待审核') type = 'needReview';
+      else if (oStatus !== '已结算' && c.status === '已完成') type = 'unsynced';
+      if (!type) continue;
+      out.push({
+        type,
+        card: { _id: c._id.toString(), title: c.title, to: c.to, toName: c.toName, reward: c.reward, status: c.status, orderNo: c.orderNo },
+        order: { _id: order._id.toString(), orderNo: order.orderNo, amount: order.amount, status: oStatus, doneDate: order.doneDate || null },
+      });
+    }
+    out.sort((a, b) => (a.type === 'needReview' ? -1 : a.type === 'needPay' ? 0 : 1) - (b.type === 'needReview' ? -1 : b.type === 'needPay' ? 0 : 1));
+    res.json({ ok: true, items: out });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 

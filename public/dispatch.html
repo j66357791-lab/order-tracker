@@ -117,8 +117,34 @@
   .card-bub .cb-meta b{color:var(--amber)}
   .card-bub .cb-req{font-size:12px;color:var(--sub);background:var(--bg);border-radius:8px;padding:7px 9px;margin-bottom:6px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
   .card-bub .cb-ops{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap}
-  #chatInputBar{display:flex;gap:8px;padding:10px 12px;background:#fff;border-top:1px solid var(--line);flex-shrink:0;align-items:center}
-  #chatInput{flex:1;border-radius:99px;padding:10px 15px}
+  #chatInputBar{display:flex;flex-direction:column;gap:0;background:#fff;border-top:1px solid var(--line);flex-shrink:0}
+  #quoteBar{display:none;align-items:center;gap:8px;padding:7px 14px;background:var(--bg);border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)}
+  #quoteBar.show{display:flex}
+  #quoteBar .qb-txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #quoteBar .qb-x{border:none;background:transparent;color:var(--sub);cursor:pointer;font-size:14px;padding:2px 6px}
+  .input-row{display:flex;gap:8px;padding:10px 12px;align-items:flex-end}
+  #chatInput{flex:1;border-radius:14px;padding:9px 14px;resize:none;min-height:44px;max-height:132px;line-height:1.5;font-size:14px}
+  #dragOver{display:none;position:absolute;inset:0;background:rgba(59,130,246,.12);border:2px dashed var(--blue);border-radius:12px;z-index:30;align-items:center;justify-content:center;font-size:15px;color:var(--blue);font-weight:600;pointer-events:none}
+  #chatRight{position:relative}
+  #chatRight.dragging #dragOver{display:flex}
+  .qref{background:rgba(0,0,0,.05);border-left:3px solid var(--blue);border-radius:6px;padding:5px 8px;margin-bottom:6px;font-size:11px;color:var(--sub);cursor:pointer;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .msg.mine .qref{background:rgba(255,255,255,.18);color:#eafff3;border-left-color:#eafff3}
+  .msg .rbtn{position:absolute;font-size:11px;color:var(--sub);background:#fff;border:1px solid var(--line);border-radius:99px;padding:2px 9px;cursor:pointer;opacity:0;transition:opacity .15s;top:-6px}
+  .msg:not(.mine) .rbtn{right:6px}
+  .msg.mine .rbtn{left:6px}
+  .msg:hover .rbtn{opacity:1}
+  .msg.flash .bub{animation:flashbg 1.2s}
+  @keyframes flashbg{0%,60%{background:var(--amber-bg)}100%{}}
+
+  /* 财务对账 */
+  .recon-item{background:var(--card);border-radius:14px;padding:13px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(17,24,39,.06);border-left:4px solid var(--line)}
+  .recon-item.t-needReview{border-left-color:var(--purple)}
+  .recon-item.t-needPay{border-left-color:var(--cyan)}
+  .recon-item.t-unsynced{border-left-color:var(--amber)}
+  .recon-item .rt{font-size:13px;font-weight:600;margin-bottom:5px}
+  .recon-item .rd{font-size:12px;color:var(--sub);display:flex;flex-wrap:wrap;gap:4px 14px;margin-bottom:8px}
+  .recon-item .rd b{color:var(--ink)}
+  .stab .warnnum{display:inline-block;min-width:15px;height:15px;border-radius:99px;background:var(--cyan);color:#fff;font-size:10px;text-align:center;line-height:15px;padding:0 4px;margin-left:4px;vertical-align:1px}
   .icon-btn{width:38px;height:38px;border-radius:50%;border:none;background:var(--grey-bg);font-size:17px;cursor:pointer;flex-shrink:0;transition:background .15s}
   .icon-btn:hover{background:#e2e8f0}
 
@@ -171,6 +197,7 @@
 <div class="subtabs">
   <div class="stab on" data-v="vChat">💬 聊天/派单<span class="reddot" id="tabUnread" style="display:none">0</span></div>
   <div class="stab" data-v="vOver">📋 派单总览</div>
+  <div class="stab" data-v="vRecon">💰 财务对账<span class="warnnum" id="reconNum" style="display:none">0</span></div>
 </div>
 
 <main class="main">
@@ -184,11 +211,15 @@
           <button class="btn btn-g btn-sm" id="btnNewCard">＋ 发派单卡</button>
         </div>
         <div id="chatBox"><div class="empty">左侧选择写手，开始沟通 / 派单</div></div>
+        <div id="dragOver">📥 松手发送 · 文件夹需确认</div>
         <div id="chatInputBar">
-          <button class="icon-btn" id="btnFile" title="发文件">📎</button>
-          <input id="chatInput" placeholder="输入消息，回车发送…">
-          <button class="icon-btn" id="btnSend" style="background:var(--green);color:#fff" title="发送">➤</button>
-          <input type="file" id="fileInput" style="display:none">
+          <div id="quoteBar"><span>↩</span><span class="qb-txt" id="quoteTxt"></span><button class="qb-x" onclick="clearQuote()">✕</button></div>
+          <div class="input-row">
+            <button class="icon-btn" id="btnFile" title="发文件">📎</button>
+            <textarea id="chatInput" rows="1" placeholder="输入消息，回车发送 · Shift+回车换行 · 支持粘贴/拖入截图和文件"></textarea>
+            <button class="icon-btn" id="btnSend" style="background:var(--green);color:#fff" title="发送">➤</button>
+            <input type="file" id="fileInput" style="display:none">
+          </div>
         </div>
       </div>
     </div>
@@ -212,6 +243,17 @@
         </select>
       </div>
       <div id="ovList"></div>
+    </div>
+  </section>
+
+  <!-- 财务对账 -->
+  <section id="vRecon" class="panel scroll">
+    <div class="wrap">
+      <div class="flow-tip">💡 交叉核对<b>台账到账状态</b> × <b>派单卡打款状态</b>：客户的钱到账了（台账=已结算），就该给写手打款了；给写手打完款（卡=已完成），台账也得标已结算。</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn btn-gh btn-sm" id="btnReconRefresh">🔄 刷新核对</button>
+      </div>
+      <div id="reconList"><div class="empty">加载中…</div></div>
     </div>
   </section>
 </main>
@@ -249,6 +291,36 @@ let chats = [], currentPeer = null, msgs = [], cardsAll = {};
 function cacheKey() { return 'jdy_msg_' + (ME ? ME.id : USER.id) + '_' + (currentPeer || 'none'); }
 function loadCache() { try { return JSON.parse(localStorage.getItem(cacheKey()) || '[]'); } catch (e) { return []; } }
 function saveCache(arr) { try { localStorage.setItem(cacheKey(), JSON.stringify(arr.slice(-600))); } catch (e) {} }
+// 统一的消息入列：按 _id 去重（防止 socket 推送与请求响应竞态导致消息显示两条）
+function addMsg(m) {
+  if (!m || !m._id) return false;
+  if (msgs.find(x => String(x._id) === String(m._id))) return false;
+  msgs.push(m); saveCache(msgs);
+  return true;
+}
+
+/* ================= 引用回复 ================= */
+let quoteTarget = null;
+function msgPreview(m) {
+  if (!m) return '';
+  if (m.type === 'text') return m.text || '';
+  if (m.type === 'file') return '[文件] ' + (m.fileName || '');
+  if (m.type === 'card') return '[派单卡] ' + ((cardsAll[m.cardId] || {}).title || '');
+  return '';
+}
+function setQuote(m) {
+  quoteTarget = m;
+  $('quoteTxt').textContent = (m.fromName || '') + '：' + msgPreview(m).slice(0, 60);
+  $('quoteBar').classList.add('show');
+  $('chatInput').focus();
+}
+function clearQuote() { quoteTarget = null; $('quoteBar').classList.remove('show'); }
+function jumpToMsg(id) {
+  const el = document.querySelector('.msg[data-mid="' + id + '"]');
+  if (!el) return toast('原消息不在当前记录里');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+}
 
 function renderConvList() {
   $('convList').innerHTML = chats.map(c => {
@@ -289,14 +361,17 @@ function renderMsgs(list) {
   if (!currentPeer) return;
   if (!list.length) { $('chatBox').innerHTML = '<div class="empty">还没有消息，打个招呼吧</div>'; return; }
   $('chatBox').innerHTML = list.map(m => {
+    const mine = m.from === ME.id;
+    const qref = m.replyTo && m.replyTo.id ? '<div class="qref" onclick="jumpToMsg(\'' + m.replyTo.id + '\')">↩ ' + esc(m.replyTo.fromName || '') + '：' + esc(m.replyTo.preview || '') + '</div>' : '';
+    const rbtn = m.type !== 'card' ? '<button class="rbtn" onclick="setQuote(msgs.find(x=>String(x._id)===\'' + m._id + '\'))">引用</button>' : '';
     if (m.type === 'card') {
       const c = cardsAll[m.cardId];
-      return `<div class="msg ${m.from === ME.id ? 'mine' : ''}">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「派单总览」）</div>'}</div>`;
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「派单总览」）</div>'}</div>`;
     }
     if (m.type === 'file') {
-      return `<div class="msg ${m.from === ME.id ? 'mine' : ''}"><div class="bub">📎 <a href="${dl(m.fileId)}" target="_blank">${esc(m.fileName)}</a> <span style="font-size:10px;opacity:.7">${fmtSize(m.fileSize)}</span><div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${qref}📎 <a href="${dl(m.fileId)}" target="_blank">${esc(m.fileName)}</a> <span style="font-size:10px;opacity:.7">${fmtSize(m.fileSize)}</span><div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
     }
-    return `<div class="msg ${m.from === ME.id ? 'mine' : ''}"><div class="bub">${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
+    return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${qref}${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
   }).join('');
   $('chatBox').scrollTop = $('chatBox').scrollHeight;
 }
@@ -332,21 +407,25 @@ async function openChat(peer) {
 async function sendText() {
   const t = $('chatInput').value.trim();
   if (!t || !currentPeer) return;
-  $('chatInput').value = '';
+  $('chatInput').value = ''; autoGrow();
+  const replyTo = quoteTarget ? { id: String(quoteTarget._id), fromName: quoteTarget.fromName || '', preview: msgPreview(quoteTarget).slice(0, 80), type: quoteTarget.type || 'text' } : null;
+  clearQuote();
   try {
-    const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer: currentPeer, text: t }) });
-    msgs.push(j.message); saveCache(msgs); renderMsgs(msgs);
+    const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer: currentPeer, text: t, replyTo }) });
+    if (addMsg(j.message)) renderMsgs(msgs);
   } catch (e) { toast(e.message); $('chatInput').value = t; }
 }
 async function sendFile(f) {
   if (!f || !currentPeer) return;
   if (f.size > 25 * 1024 * 1024) return toast('文件不能超过25MB');
   toast('上传中：' + f.name + '…', 8000);
+  const replyTo = quoteTarget ? { id: String(quoteTarget._id), fromName: quoteTarget.fromName || '', preview: msgPreview(quoteTarget).slice(0, 80), type: quoteTarget.type || 'text' } : null;
+  clearQuote();
   const fd = new FormData(); fd.append('file', f); fd.append('peer', currentPeer);
   try {
     const up = await authFetch('/api/files', { method: 'POST', body: fd });
-    const j = await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer: currentPeer, fileId: up.fileId, fileName: up.fileName, fileSize: up.fileSize }) });
-    msgs.push(j.message); saveCache(msgs); renderMsgs(msgs);
+    const j = await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer: currentPeer, fileId: up.fileId, fileName: up.fileName, fileSize: up.fileSize, replyTo }) });
+    if (addMsg(j.message)) renderMsgs(msgs);
     toast('发送成功');
   } catch (e) { toast('上传失败：' + e.message); }
 }
@@ -356,9 +435,15 @@ async function cardAct(id, path, body, okMsg) {
   try {
     const j = await authFetch('/api/cards/' + id + '/' + path, { method: 'POST', body: JSON.stringify(body || {}) });
     toast(okMsg);
-    await Promise.all([loadChats(), loadOverview()]);
+    await Promise.all([loadChats(), loadOverview(), loadRecon()]);
     if (j.syncedOrder) toast(okMsg + '（台账单已同步为「' + j.syncedOrder.status + '」）');
   } catch (e) { toast(e.message); }
+}
+// 查写手收款信息（优先会话缓存，缺失再拉团队）
+function alipayOf(uid) {
+  const c = chats.find(x => x.user.id === uid);
+  if (c && c.user.alipay && c.user.alipay.account) return c.user.alipay;
+  return null;
 }
 window.actApprove = id => { if (confirm('审核通过？通过后该单进入「待打款」，台账订单自动变为「待结算」')) cardAct(id, 'approve', {}, '审核通过 ✅'); };
 window.actReject = id => {
@@ -366,7 +451,53 @@ window.actReject = id => {
   if (reason === null) return;
   cardAct(id, 'reject', { reason }, '已驳回，写手可重新做单');
 };
-window.actPay = id => { if (confirm('确认已打款？台账订单将自动变为「已结算」')) cardAct(id, 'pay', {}, '打款完成 💸'); };
+window.actPay = id => {
+  const row = (window._ovRows || []).find(r => r._id === id)
+    || ((window._reconItems || []).find(i => i.card._id === id) || {}).card || {};
+  const ali = alipayOf(row.to);
+  let msg = '确认已打款 ¥' + row.reward + ' 给 ' + row.toName + '？\n台账订单将自动变为「已结算」';
+  if (ali) msg = '💸 打款前请核对收款方式：\n\n收款人：' + ali.name + '\n支付宝账号：' + ali.account + '\n\n' + msg;
+  else msg = '⚠️ 该写手未绑定收款方式，请线下与其确认。\n\n' + msg;
+  if (confirm(msg)) cardAct(id, 'pay', {}, '打款完成 💸');
+};
+window.actSync = id => { if (confirm('将该卡关联的台账订单标记为「已结算」？')) cardAct(id, 'syncorder', {}, '台账已同步 ✅'); };
+
+/* ================= 财务对账 ================= */
+async function loadRecon() {
+  try {
+    const j = await authFetch('/api/dispatch/reconcile');
+    const items = j.items || [];
+    const badge = $('reconNum');
+    badge.style.display = items.length ? 'inline-block' : 'none';
+    badge.textContent = items.length > 99 ? '99+' : items.length;
+    window._reconItems = items;
+    if (!$('vRecon').classList.contains('on')) return;
+    paintRecon(items);
+  } catch (e) { if ($('vRecon').classList.contains('on')) toast(e.message); }
+}
+function paintRecon(items) {
+  const MAP = {
+    needReview: { t: '🔔 台账已到账，但这单还在「待审核」', c: 't-needReview', ops: id => `<button class="btn btn-g btn-sm" onclick="actApprove('${id}')">✔ 审核通过</button><button class="btn btn-r btn-sm" onclick="actReject('${id}')">✖ 驳回</button>` },
+    needPay: { t: '💰 客户已到账，可以给写手打款了', c: 't-needPay', ops: id => `<button class="btn btn-cy btn-sm" onclick="actPay('${id}')">💸 确认打款</button>` },
+    unsynced: { t: '⚠️ 已给写手打款，但台账还没标已结算', c: 't-unsynced', ops: id => `<button class="btn btn-gh btn-sm" onclick="actSync('${id}')">🔄 补台账同步</button>` },
+  };
+  $('reconList').innerHTML = items.length ? items.map(it => {
+    const m = MAP[it.type];
+    const ali = alipayOf(it.card.to);
+    return `<div class="recon-item ${m.c}">
+      <div class="rt">${m.t}</div>
+      <div class="rd">
+        <span>🃏 <b>${esc(it.card.title)}</b></span>
+        <span>写手 ${esc(it.card.toName)}</span>
+        <span>报酬 <b>¥${it.card.reward}</b></span>
+        <span>台账单 ${esc(it.order.orderNo)}（¥${it.order.amount} · ${stPill(it.order.status)}）</span>
+        ${ali ? '<span>收款：' + esc(ali.name) + '（' + esc(ali.account) + '）</span>' : '<span style="color:var(--red)">写手未绑定收款方式</span>'}
+      </div>
+      <div class="ops" style="display:flex;gap:8px;justify-content:flex-end">${m.ops(it.card._id)}</div>
+    </div>`;
+  }).join('') : '<div class="empty">✅ 台账与派单卡状态全部一致，没有待处理的差异</div>';
+}
+$('btnReconRefresh').onclick = loadRecon;
 
 /* ================= 派单总览 ================= */
 async function loadOverview() {
@@ -374,6 +505,12 @@ async function loadOverview() {
     const j = await authFetch('/api/dispatch/overview');
     window._ovRows = j.rows;
     $('ovProfit').textContent = j.totals.totProfit; $('ovReward').textContent = j.totals.totReward; $('ovShare').textContent = j.totals.totShare;
+    // 状态筛选选项带上数量，一眼看清各环节压了多少单
+    const cnt = {};
+    j.rows.forEach(r => cnt[r.status] = (cnt[r.status] || 0) + 1);
+    [...$('ovSt').options].forEach(op => {
+      if (op.value) op.textContent = op.value + (cnt[op.value] ? '（' + cnt[op.value] + '）' : '');
+    });
     paintOverview();
   } catch (e) { toast(e.message); }
 }
@@ -527,6 +664,7 @@ document.querySelectorAll('.stab').forEach(t => t.onclick = () => {
   t.classList.add('on');
   $(t.dataset.v).classList.add('on');
   if (t.dataset.v === 'vOver') loadOverview();
+  if (t.dataset.v === 'vRecon') loadRecon();
 });
 
 /* ================= 实时推送 + 稳定性 ================= */
@@ -548,7 +686,7 @@ socket.on('reconnect', () => $('connBar').classList.remove('on'));
 
 socket.on('msg', m => {
   if (currentPeer && (m.from === currentPeer || m.to === currentPeer)) {
-    if (!msgs.find(x => x._id === m._id)) { msgs.push(m); saveCache(msgs); renderMsgs(msgs); }
+    if (addMsg(m)) renderMsgs(msgs);
   }
   loadChats().catch(() => {});
   if (m.type === 'file') toast((m.fromName || '') + ' 发来文件：' + m.fileName);
@@ -557,6 +695,7 @@ socket.on('card', c => {
   cardsAll[c._id] = c;
   renderMsgs(msgs);
   if ($('vOver').classList.contains('on')) loadOverview();
+  loadRecon().catch(() => {});
   toast('派单卡更新：' + c.title + ' → ' + c.status);
 });
 socket.on('presence', p => {
@@ -572,11 +711,80 @@ socket.on('presence', p => {
 });
 
 /* ================= 输入事件 ================= */
+function autoGrow() {
+  const el = $('chatInput');
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 132) + 'px';
+}
 $('btnSend').onclick = sendText;
-$('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
+$('chatInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
+});
+$('chatInput').addEventListener('input', autoGrow);
 $('btnFile').onclick = () => $('fileInput').click();
 $('fileInput').onchange = e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value = ''; };
 $('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+
+// 截图粘贴直接发送
+document.addEventListener('paste', e => {
+  if (!$('vChat').classList.contains('on') || !currentPeer) return;
+  const items = (e.clipboardData || window.clipboardData)?.items || [];
+  for (const it of items) {
+    if (it.type && it.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = it.getAsFile();
+      if (blob) {
+        const ext = (it.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+        sendFile(new File([blob], '截图_' + Date.now() + '.' + ext, { type: it.type }));
+      }
+      return;
+    }
+  }
+});
+
+// 拖拽发送：文件直接发；文件夹递归收集后二次确认
+let dragDepth = 0;
+function entryFiles(entry) {
+  return new Promise(resolve => {
+    if (!entry) return resolve([]);
+    if (entry.isFile) {
+      entry.file(f => resolve([f]), () => resolve([]));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      const readBatch = () => reader.readEntries(async ents => {
+        if (!ents.length) {
+          const sub = [];
+          for (const en of all) sub.push(...await entryFiles(en));
+          return resolve(sub);
+        }
+        all.push(...ents); readBatch();
+      }, () => resolve([]));
+      readBatch();
+    } else resolve([]);
+  });
+}
+const chatRight = $('chatRight');
+chatRight.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; chatRight.classList.add('dragging'); });
+chatRight.addEventListener('dragover', e => e.preventDefault());
+chatRight.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; chatRight.classList.remove('dragging'); } });
+chatRight.addEventListener('drop', async e => {
+  e.preventDefault(); dragDepth = 0; chatRight.classList.remove('dragging');
+  if (!currentPeer) return toast('先选择会话');
+  const items = [...(e.dataTransfer.items || [])];
+  const entries = items.map(it => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+  let files = [];
+  if (entries.length && entries.some(en => en.isDirectory)) {
+    for (const en of entries) files.push(...await entryFiles(en));
+    files = files.filter(f => f.size <= 25 * 1024 * 1024);
+    if (!files.length) return toast('文件夹里没有可发送的文件（单个≤25MB）');
+    if (!confirm('文件夹「' + (entries[0].name) + '」共 ' + files.length + ' 个文件（总计 ' + fmtSize(files.reduce((s, f) => s + f.size, 0)) + '），确认全部发送？')) return;
+  } else {
+    files = [...(e.dataTransfer.files || [])];
+  }
+  toast('开始发送 ' + files.length + ' 个文件…', 6000);
+  for (const f of files) await sendFile(f);
+});
 
 /* ================= 启动 ================= */
 (async () => {
@@ -589,6 +797,7 @@ $('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStor
   } catch (e) {}
   loadChats().catch(e => toast(e.message));
   loadOverview().catch(() => {});
+  loadRecon().catch(() => {});
 })();
 </script>
 </body>

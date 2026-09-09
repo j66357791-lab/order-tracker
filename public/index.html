@@ -318,7 +318,7 @@
             <tr>
               <th>接单日</th><th>订单编号</th>
               <th class="num">订单金额（元）</th><th class="num">分成比例</th><th class="num">分成金额（元）</th>
-              <th>分类</th><th>完单日</th><th>备注</th><th style="width:90px">操作</th>
+              <th>分类</th><th>完单日</th><th>分单</th><th>备注</th><th style="width:90px">操作</th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -327,7 +327,7 @@
         <div class="empty" id="emptyTip" style="display:none">暂无订单，点右上角「＋ 新增订单」或左侧「⚡ 快捷录入」</div>
         <div class="pager" id="pager"></div>
       </div>
-      <div class="hint">分成金额 = 订单金额 × 分成比例；「待结算」即已交付等钱的状态，「已结算」为实际到账口径。跨月订单按「接单日或完单日」落范围，两个时间视图里都能看到。</div>
+      <div class="hint">分成金额 = 订单金额 × 分成比例；「待结算」即已交付等钱的状态，「已结算」为实际到账口径。已分单订单在收入统计中按实际结算金额（分成 − 写手报酬）计入。</div>
     </div>
   </div>
 </div>
@@ -596,6 +596,8 @@ async function quickSave() {
 const fmt = n => Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
 const r2 = n => Math.round(n * 100) / 100;
 const share = o => o.amount * o.shareRate / 100;
+// 实际结算口径：已分单（绑定派单卡）的订单，收入统计用「分成 − 写手报酬」
+const effShare = o => share(o) - (o.dispatch && o.dispatch.reward ? o.dispatch.reward : 0);
 
 function render() {
   const P = getPeriod();
@@ -622,8 +624,9 @@ function render() {
   const doneList = scope.filter(o => DONE_SET.has(stLabel(o.status)) && inP(o.doneDate));
   const doneAmt = doneList.reduce((s, o) => s + o.amount, 0);
   const pendingAmt = scope.filter(o => stLabel(o.status) === '待结算').reduce((s, o) => s + o.amount, 0);
-  const settledShare = scope.filter(o => stLabel(o.status) === '已结算').reduce((s, o) => s + share(o), 0);
-  const totalShare = scope.reduce((s, o) => s + share(o), 0);
+  const settledShare = scope.filter(o => stLabel(o.status) === '已结算').reduce((s, o) => s + effShare(o), 0);
+  const totalShare = scope.reduce((s, o) => s + effShare(o), 0);
+  const dispatchCnt = scope.filter(o => o.dispatch).length;
 
   document.getElementById('lblTake').textContent = P.scopeLabel + '接单金额';
   document.getElementById('lblDone').textContent = P.scopeLabel + '完单金额';
@@ -634,7 +637,7 @@ function render() {
   document.getElementById('kPending').innerHTML = fmt(r2(pendingAmt)) + '<small> 元</small>';
   document.getElementById('kSettled').innerHTML = fmt(r2(settledShare)) + '<small> 元</small>';
   document.getElementById('kShare').innerHTML = fmt(r2(totalShare)) + '<small> 元</small>';
-  document.getElementById('subCount').textContent = scope.length + ' 单';
+  document.getElementById('subCount').textContent = scope.length + ' 单' + (dispatchCnt ? ' · 其中已分单 ' + dispatchCnt + ' 单（收入按实际结算口径：分成−报酬）' : '');
   const unitTxt = P.gran === 'day' ? '每日' : '每月';
   document.getElementById('chartTitle').textContent = P.scopeLabel + unitTxt + '接单 / 完单金额';
 
@@ -659,6 +662,7 @@ function render() {
         <td class="num" style="color:var(--green);font-weight:600">${fmt(r2(share(o)))}</td>
         <td><span class="tag ${stLabel(o.status)}">${stLabel(o.status)}</span></td>
         <td>${o.doneDate || '—'}</td>
+        <td>${o.dispatch ? '<span class="tag 进行中" title="已派单给 ' + esc(o.dispatch.toName) + '，报酬 ¥' + o.dispatch.reward + ' · 卡状态：' + esc(o.dispatch.status) + '">已分单·' + esc(o.dispatch.toName) + '</span>' : '<span style="color:#cbd5e1">—</span>'}</td>
         <td class="note-cell" title="${esc(o.note || '')}">${esc(o.note || '')}</td>
         <td>
           <button class="btn-mini" onclick="openModal('${o._id}')">编辑</button>
@@ -672,7 +676,7 @@ function render() {
       <td class="num">${fmt(r2(vTake))}</td>
       <td class="num">—</td>
       <td class="num" style="color:var(--green)">${fmt(r2(vShare))}</td>
-      <td colspan="4"></td>
+      <td colspan="5"></td>
     </tr>`;
     renderPager(view.length, page, totalPages);
   }
@@ -763,7 +767,7 @@ ${unit} ${fmt(r2(v))} 元</title></circle>`).join('');
 /* ================= 收入走势：方块卡 + 点击弹窗 ================= */
 let chartData = null;
 function renderLineChart(scope, P) {
-  const daily = P.keys.map(k => scope.filter(o => P.keyOf(o.date) === k).reduce((s, o) => s + share(o), 0));
+  const daily = P.keys.map(k => scope.filter(o => P.keyOf(o.date) === k).reduce((s, o) => s + effShare(o), 0));
   let acc = 0;
   const cum = daily.map(v => r2(acc += v));
   const unitTxt = P.gran === 'day' ? '每日' : '每月';
@@ -799,7 +803,7 @@ function dayStatsOf(d) {
     take, done,
     takeAmt: take.reduce((s, o) => s + o.amount, 0),
     doneAmt: done.reduce((s, o) => s + o.amount, 0),
-    shareAmt: done.reduce((s, o) => s + share(o), 0),
+    shareAmt: done.reduce((s, o) => s + effShare(o), 0),
   };
 }
 
@@ -822,7 +826,7 @@ function renderCalendar(scope, P) {
     if (o.date) byTake[o.date] = (byTake[o.date] || 0) + o.amount;
     const dk = o.doneDate || (DONE_SET.has(stLabel(o.status)) ? o.date : null);
     if (dk) {
-      byShare[dk] = (byShare[dk] || 0) + share(o);
+      byShare[dk] = (byShare[dk] || 0) + effShare(o);
       if (DONE_SET.has(stLabel(o.status)) && o.doneDate) byDone[dk] = (byDone[dk] || 0) + o.amount;
     }
   });
@@ -882,6 +886,7 @@ function renderDayModal() {
             <td class="num" style="color:var(--green);font-weight:600">${fmt(r2(share(o)))}</td>
             <td><span class="tag ${stLabel(o.status)}">${stLabel(o.status)}</span></td>
             <td>${o.doneDate || '—'}</td>
+            <td>${o.dispatch ? '<span class="tag 进行中" title="已派单给 ' + esc(o.dispatch.toName) + '，报酬 ¥' + o.dispatch.reward + '">已分单·' + esc(o.dispatch.toName) + '</span>' : '<span style="color:#cbd5e1">—</span>'}</td>
             <td class="note-cell" title="${esc(o.note || '')}">${esc(o.note || '')}</td>
             <td>
               <button class="btn-mini" onclick="openModal('${o._id}')">编辑</button>
@@ -894,7 +899,7 @@ function renderDayModal() {
         <td class="num">${fmt(r2(list.reduce((s, o) => s + o.amount, 0)))}</td>
         <td class="num">—</td>
         <td class="num" style="color:var(--green)">${fmt(r2(list.reduce((s, o) => s + share(o), 0)))}</td>
-        <td colspan="4"></td>
+        <td colspan="5"></td>
       </tr></tfoot>
     </table>`;
   }
