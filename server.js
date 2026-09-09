@@ -21,6 +21,11 @@ function normalizeStatus(s) {
   if (s === '已交付') return '待结算';
   return STATUSES.includes(s) ? s : null;
 }
+
+// 派单卡状态机：待接单→已接单→待审核→待打款→已完成；旁路：已拒绝/已驳回
+// 旧状态「已交付」归一化为「待打款」
+const CARD_STATUSES = ['待接单', '已接单', '待审核', '待打款', '已完成', '已拒绝', '已驳回'];
+const normCard = c => ({ ...c, status: c.status === '已交付' ? '待打款' : c.status });
 const localToday = () => {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -52,8 +57,14 @@ async function getDb() {
     // 派单模块索引
     db.collection('users').createIndexes([{ key: { username: 1 }, unique: true }]).catch(() => {});
     db.collection('invites').createIndexes([{ key: { code: 1 }, unique: true }]).catch(() => {});
-    db.collection('messages').createIndexes([{ key: { conversation: 1, createdAt: -1 } }]).catch(() => {});
+    db.collection('messages').createIndexes([
+      { key: { conversation: 1, createdAt: -1 } },
+      // 聊天信息云端只保留3天，到期自动删除（客户端本地localStorage兜底留存）
+      { key: { createdAt: 1 }, expireAfterSeconds: 3 * 24 * 3600 },
+    ]).catch(() => {});
     db.collection('cards').createIndexes([{ key: { to: 1, createdAt: -1 } }, { key: { orderId: 1 } }]).catch(() => {});
+    // 启动时清掉历史遗留的假在线标记（真实在线以内存连接表为准）
+    db.collection('users').updateMany({ sockOnline: true }, { $set: { sockOnline: false } }).catch(() => {});
   }
   return db;
 }
@@ -221,7 +232,13 @@ const JWT_SECRET = process.env.JWT_SECRET || 'jdy-jwt-secret-2026-fallback';
 const FILE_LIMIT = 25 * 1024 * 1024;   // 单文件上限 25MB
 
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: FILE_LIMIT });
+const io = new Server(server, {
+  maxHttpBufferSize: FILE_LIMIT,
+  // 链接稳定性：心跳+断线自动重连参数
+  pingInterval: 20000,
+  pingTimeout: 25000,
+  transports: ['websocket', 'polling'],
+});
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -535,7 +552,7 @@ app.post('/api/cards', auth, adminOnly, async (req, res) => {
 app.get('/api/mycards', auth, async (req, res) => {
   try {
     const db = await getDb();
-    const cards = await db.collection('cards').find({ to: req.user.id }).sort({ createdAt: -1 }).limit(200).toArray();
+    const cards = (await db.collection('cards').find({ to: req.user.id }).sort({ createdAt: -1 }).limit(200).toArray()).map(normCard);
     res.json({ ok: true, cards });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -565,15 +582,48 @@ app.post('/api/cards/:id/decline', auth, async (req, res) => {
     res.json({ ok: true, card: r });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-// 写手：提交交付 → 联动同步原单（状态→待结算，完单日→今天）
-app.post('/api/cards/:id/deliver', auth, async (req, res) => {
+// 写手：提交审核（做单完成 → 等管理员审核；此时不动台账）
+async function submitHandler(req, res) {
   try {
     const db = await getDb();
     const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
     if (!card || card.to !== req.user.id) return res.status(404).json({ ok: false, error: '派单卡不存在' });
-    if (card.status !== '已接单') return res.status(400).json({ ok: false, error: '只有已接单的卡片才能交付' });
+    if (card.status !== '已接单') return res.status(400).json({ ok: false, error: '只有做单中的卡片才能提交审核' });
+    const note = String(req.body?.note || '').slice(0, 500).trim();
     const r = await db.collection('cards').findOneAndUpdate(
-      { _id: card._id }, { $set: { status: '已交付', deliveredAt: new Date() } }, { returnDocument: 'after' });
+      { _id: card._id },
+      { $set: { status: '待审核', submittedAt: new Date(), submitNote: note, rejectReason: null } },
+      { returnDocument: 'after' });
+    notify(card.from, 'card', r); notify(req.user.id, 'card', r);
+    res.json({ ok: true, card: r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+}
+app.post('/api/cards/:id/submit', auth, submitHandler);
+app.post('/api/cards/:id/deliver', auth, submitHandler);   // 兼容旧客户端
+// 写手：驳回后重新做单
+app.post('/api/cards/:id/redo', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
+    if (!card || card.to !== req.user.id) return res.status(404).json({ ok: false, error: '派单卡不存在' });
+    if (card.status !== '已驳回') return res.status(400).json({ ok: false, error: '只有被驳回的卡片才能重新做单' });
+    const r = await db.collection('cards').findOneAndUpdate(
+      { _id: card._id }, { $set: { status: '已接单', rejectReason: null } }, { returnDocument: 'after' });
+    notify(card.from, 'card', r); notify(req.user.id, 'card', r);
+    res.json({ ok: true, card: r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 管理员：审核通过 → 待打款；联动同步原单（状态→待结算，完单日→今天）
+app.post('/api/cards/:id/approve', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
+    if (!card) return res.status(404).json({ ok: false, error: '派单卡不存在' });
+    if (card.status !== '待审核' && card.status !== '已交付') {
+      return res.status(400).json({ ok: false, error: '只有待审核的卡片才能审核通过' });
+    }
+    const r = await db.collection('cards').findOneAndUpdate(
+      { _id: card._id }, { $set: { status: '待打款', approvedAt: new Date() } }, { returnDocument: 'after' });
     let syncedOrder = null;
     if (card.orderId && ObjectId.isValid(card.orderId)) {
       syncedOrder = await db.collection(CONFIG.collection).findOneAndUpdate(
@@ -582,28 +632,57 @@ app.post('/api/cards/:id/deliver', auth, async (req, res) => {
         { returnDocument: 'after' });
       if (syncedOrder) cacheClear();
     }
-    notify(card.from, 'card', r); notify(req.user.id, 'card', r);
+    notify(card.to, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r, syncedOrder });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-// 管理员：确认完成（写手交付后）
-app.post('/api/cards/:id/finish', auth, adminOnly, async (req, res) => {
+// 管理员：驳回（待审核 → 已驳回，带原因；写手可重新做单；台账不动）
+app.post('/api/cards/:id/reject', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
     const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
     if (!card) return res.status(404).json({ ok: false, error: '派单卡不存在' });
-    if (card.status !== '已交付') return res.status(400).json({ ok: false, error: '只有已交付的卡片才能确认完成' });
+    if (card.status !== '待审核') return res.status(400).json({ ok: false, error: '只有待审核的卡片才能驳回' });
+    const reason = String(req.body?.reason || '').slice(0, 300).trim() || '未通过';
     const r = await db.collection('cards').findOneAndUpdate(
-      { _id: card._id }, { $set: { status: '已完成', finishedAt: new Date() } }, { returnDocument: 'after' });
+      { _id: card._id }, { $set: { status: '已驳回', rejectReason: reason, rejectedAt: new Date() } }, { returnDocument: 'after' });
     notify(card.to, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-// 管理员：派单总览（含利润联动：原单分成 - 派单报酬）
+// 管理员：确认打款（待打款 → 已完成）；联动同步原单（状态→已结算）
+async function payHandler(req, res) {
+  try {
+    const db = await getDb();
+    const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
+    if (!card) return res.status(404).json({ ok: false, error: '派单卡不存在' });
+    if (card.status !== '待打款' && card.status !== '已交付') {
+      return res.status(400).json({ ok: false, error: '只有待打款的卡片才能确认打款' });
+    }
+    const r = await db.collection('cards').findOneAndUpdate(
+      { _id: card._id }, { $set: { status: '已完成', paidAt: new Date() } }, { returnDocument: 'after' });
+    let syncedOrder = null;
+    if (card.orderId && ObjectId.isValid(card.orderId)) {
+      syncedOrder = await db.collection(CONFIG.collection).findOneAndUpdate(
+        { _id: new ObjectId(card.orderId) },
+        { $set: { status: '已结算', updatedAt: new Date() } },
+        { returnDocument: 'after' });
+      if (syncedOrder) cacheClear();
+    }
+    notify(card.to, 'card', r); notify(req.user.id, 'card', r);
+    res.json({ ok: true, card: r, syncedOrder });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+}
+app.post('/api/cards/:id/pay', auth, adminOnly, payHandler);
+app.post('/api/cards/:id/finish', auth, adminOnly, payHandler);   // 兼容旧客户端
+// 管理员：派单总览（含利润联动：原单分成 - 派单报酬；支持 q 关键词 / status 筛选）
 app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
-    const cards = await db.collection('cards').find({}).sort({ createdAt: -1 }).limit(200).toArray();
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const st = String(req.query.status || '');
+    let cards = (await db.collection('cards').find({}).sort({ createdAt: -1 }).limit(500).toArray()).map(normCard);
+    if (st && CARD_STATUSES.includes(st)) cards = cards.filter(c => c.status === st);
     const rows = [];
     let totReward = 0, totShare = 0, totProfit = 0, linked = 0;
     for (const c of cards) {
@@ -614,12 +693,20 @@ app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
       const share = order ? Math.round(order.amount * order.shareRate) / 100 : null;
       const profit = order ? Math.round((share - c.reward) * 100) / 100 : null;
       if (order) { linked++; totReward += c.reward; totShare += share; totProfit += profit; }
-      rows.push({
+      const row = {
         _id: c._id.toString(), title: c.title, toName: c.toName, reward: c.reward,
         status: c.status, deadline: c.deadline, createdAt: c.createdAt,
+        submittedAt: c.submittedAt || null, submitNote: c.submitNote || null,
+        rejectReason: c.rejectReason || null,
+        requirement: c.requirement || null, fileId: c.fileId || null, fileName: c.fileName || null,
         orderId: c.orderId || null, orderNo: order ? order.orderNo : null,
         orderAmount: order ? order.amount : null, orderShare: share, profit,
-      });
+      };
+      if (q) {
+        const hay = [c.title, c.toName, row.orderNo, c.orderNo, c.requirement].map(x => String(x || '').toLowerCase());
+        if (!hay.some(h => h.includes(q))) continue;
+      }
+      rows.push(row);
     }
     res.json({ ok: true, rows, totals: { linked, totReward: Math.round(totReward*100)/100, totShare: Math.round(totShare*100)/100, totProfit: Math.round(totProfit*100)/100 } });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -653,11 +740,19 @@ async function evalAttendance(db, userId) {
         userId, date, planStart: day.start, planEnd: day.end,
         clockIn: null, clockOut: null, status: '旷工', updatedAt: new Date(),
       });
+      // 旷工自动下线（在班标识不残留）
+      const u = await db.collection('users').findOneAndUpdate(
+        { _id: new ObjectId(userId), shift: true }, { $set: { shift: false } }, { returnDocument: 'after' });
+      if (u) io.emit('presence', { userId, shift: false, sockOnline: !!u.sockOnline });
     }
     return;
   }
   if (att.clockIn && !att.clockOut && nowMin > endMin + 30) {
     await db.collection('attendance').updateOne({ _id: att._id }, { $set: { status: '未签退', updatedAt: new Date() } });
+    // 到点未签退超过30分钟，自动置为下班（避免"在班"标识一直挂着）
+    const u = await db.collection('users').findOneAndUpdate(
+      { _id: new ObjectId(userId), shift: true }, { $set: { shift: false } }, { returnDocument: 'after' });
+    if (u) io.emit('presence', { userId, shift: false, sockOnline: !!u.sockOnline });
   }
 }
 // 排班：写手自行设置每周班表（0=周日…6=周六；null=休）
@@ -741,19 +836,19 @@ app.get('/api/attendance', auth, async (req, res) => {
     res.json({ ok: true, rows });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-// 薪酬（按派单卡统计：已完成=已到手；已交付=待确认；其余=在途）
+// 薪酬（按派单卡统计：已完成=已到手；待打款=审核通过待打款；其余在途；已驳回/已拒绝不计钱）
 app.get('/api/payroll', auth, async (req, res) => {
   try {
     const db = await getDb();
     const uid = req.user.role === 'admin' && req.query.userId ? String(req.query.userId) : req.user.id;
     const month = /^\d{4}-\d{2}$/.test(String(req.query.month || '')) ? req.query.month : cnDateStr(cnNow()).slice(0, 7);
-    const cards = await db.collection('cards').find({ to: uid }).sort({ createdAt: -1 }).limit(300).toArray();
+    const cards = (await db.collection('cards').find({ to: uid }).sort({ createdAt: -1 }).limit(300).toArray()).map(normCard);
     const rows = cards.filter(c => (c.createdAt ? cnDateStr(c.createdAt) : '').startsWith(month));
-    const tot = { paid: 0, pending: 0, ongoing: 0, done: 0, delivering: 0, ongoingCnt: 0 };
+    const tot = { paid: 0, pending: 0, ongoing: 0, done: 0, pendingCnt: 0, ongoingCnt: 0 };
     rows.forEach(c => {
       if (c.status === '已完成') { tot.paid += c.reward; tot.done++; }
-      else if (c.status === '已交付') { tot.pending += c.reward; tot.delivering++; }
-      else if (c.status === '已接单' || c.status === '待接单') { tot.ongoing += c.reward; tot.ongoingCnt++; }
+      else if (c.status === '待打款') { tot.pending += c.reward; tot.pendingCnt++; }
+      else if (c.status === '已接单' || c.status === '待接单' || c.status === '待审核') { tot.ongoing += c.reward; tot.ongoingCnt++; }
     });
     ['paid', 'pending', 'ongoing'].forEach(k => tot[k] = Math.round(tot[k] * 100) / 100);
     res.json({ ok: true, month, cards: rows, totals: tot });
@@ -761,6 +856,8 @@ app.get('/api/payroll', auth, async (req, res) => {
 });
 
 // ---------- WebSocket 实时推送 ----------
+// 真实在线以内存连接表为准（一人多开=任一连接在线即在在线），不再信任数据库里的 sockOnline
+const onlineMap = new Map();   // userId -> Set(socketId)
 io.use((socket, next) => {
   try {
     const payload = jwt.verify(socket.handshake.auth?.token || '', JWT_SECRET);
@@ -772,13 +869,19 @@ io.on('connection', async (socket) => {
   socket.join('user:' + socket.userId);
   if (socket.role === 'admin') socket.join('admins');
   try {
+    if (!onlineMap.has(socket.userId)) onlineMap.set(socket.userId, new Set());
+    onlineMap.get(socket.userId).add(socket.id);
+    const firstConn = onlineMap.get(socket.userId).size === 1;
     const db = await getDb();
-    await db.collection('users').updateOne({ _id: new ObjectId(socket.userId) }, { $set: { sockOnline: true } });
+    if (firstConn) await db.collection('users').updateOne({ _id: new ObjectId(socket.userId) }, { $set: { sockOnline: true } });
     const u = await db.collection('users').findOne({ _id: new ObjectId(socket.userId) });
     io.emit('presence', { userId: socket.userId, shift: !!u?.shift, sockOnline: true });
   } catch (e) {}
   socket.on('disconnect', async () => {
     try {
+      const set = onlineMap.get(socket.userId);
+      if (set) { set.delete(socket.id); if (!set.size) onlineMap.delete(socket.userId); }
+      if (set && set.size) return;   // 还有其他标签页在线，不算下线
       const db = await getDb();
       await db.collection('users').updateOne({ _id: new ObjectId(socket.userId) }, { $set: { sockOnline: false } });
       io.emit('presence', { userId: socket.userId, sockOnline: false });
@@ -786,6 +889,20 @@ io.on('connection', async (socket) => {
   });
 });
 
+// ---------- 文件3天保留：GridFS 定时清理（聊天附件过期即删，派单卡仅存元数据） ----------
+async function cleanupOldFiles() {
+  try {
+    const db = await getDb();
+    const cutoff = new Date(Date.now() - 3 * 24 * 3600 * 1000);
+    const bucket = new GridFSBucket(db);
+    const old = await db.collection('fs.files').find({ uploadDate: { $lt: cutoff } }).project({ _id: 1 }).toArray();
+    for (const f of old) { try { await bucket.delete(f._id); } catch (e) {} }
+    if (old.length) console.log('[清理] 已删除', old.length, '个超过3天的聊天附件');
+  } catch (e) { console.error('[清理] 文件清理失败:', e.message); }
+}
+setTimeout(cleanupOldFiles, 15 * 1000);                 // 启动后15秒清一次
+setInterval(cleanupOldFiles, 6 * 3600 * 1000);          // 之后每6小时清一次
+
 server.listen(CONFIG.port, () => {
-  console.log(`订单统计系统V7已启动: http://localhost:${CONFIG.port}（含派单模块）`);
+  console.log(`订单统计系统V9已启动: http://localhost:${CONFIG.port}（含派单模块）`);
 });

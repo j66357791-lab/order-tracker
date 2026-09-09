@@ -5,27 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>登录 · 订单派单系统</title>
 <style>
-  :root{ --blue:#3b82f6; --ink:#0f172a; --sub:#64748b; --line:#e2e8f0; --red:#dc2626; --green:#16a34a; }
+  :root{ --blue:#3b82f6; --green:#07c160; --ink:#0f172a; --sub:#64748b; --line:#e2e8f0; --red:#dc2626; }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:#f1f5f9;color:var(--ink);font-size:14px;
-       min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:28px;width:100%;max-width:380px}
-  h1{font-size:19px;margin-bottom:4px}
-  .sub{font-size:12px;color:var(--sub);margin-bottom:20px}
-  .tabs{display:flex;gap:6px;margin-bottom:16px}
-  .tabs button{flex:1;padding:8px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-size:13px}
-  .tabs button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);font-size:14px;
+       min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+       background:linear-gradient(135deg,#667eea 0%,#3b82f6 50%,#06b6d4 100%);position:relative;overflow:hidden}
+  body::before,body::after{content:'';position:absolute;border-radius:50%;background:rgba(255,255,255,.08)}
+  body::before{width:420px;height:420px;top:-120px;right:-100px}
+  body::after{width:300px;height:300px;bottom:-80px;left:-60px}
+  .card{background:#fff;border-radius:20px;padding:32px 28px;width:100%;max-width:380px;
+        box-shadow:0 20px 60px rgba(0,0,0,.25);position:relative;z-index:1}
+  .logo{width:52px;height:52px;border-radius:15px;background:linear-gradient(135deg,#6ee7b7,#07c160);
+        display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px;
+        box-shadow:0 6px 16px rgba(7,193,96,.35)}
+  h1{font-size:19px;text-align:center;margin-bottom:4px}
+  .sub{font-size:12px;color:var(--sub);margin-bottom:22px;text-align:center}
+  .tabs{display:flex;gap:6px;background:#f1f5f9;border-radius:10px;padding:4px;margin-bottom:18px}
+  .tabs button{flex:1;padding:8px;border:none;background:transparent;border-radius:8px;cursor:pointer;font-size:13px;color:var(--sub);transition:all .15s}
+  .tabs button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.1)}
   label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px}
-  input{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px}
-  button.primary{width:100%;margin-top:18px;padding:10px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer}
-  button.primary:hover{background:#2563eb}
-  .err{color:var(--red);font-size:12px;margin-top:10px;min-height:16px}
-  .ok{color:var(--green);font-size:12px;margin-top:10px;min-height:16px}
+  input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;outline:none;transition:border .15s,box-shadow .15s}
+  input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(7,193,96,.12)}
+  button.primary{width:100%;margin-top:20px;padding:11px;background:linear-gradient(135deg,#07c160,#059a4e);color:#fff;border:none;border-radius:10px;font-size:14px;cursor:pointer;font-weight:600;transition:filter .15s;box-shadow:0 4px 12px rgba(7,193,96,.3)}
+  button.primary:hover{filter:brightness(1.06)}
+  button.primary:active{transform:scale(.98)}
+  .err{color:var(--red);font-size:12px;margin-top:10px;min-height:16px;text-align:center}
   .hidden{display:none}
 </style>
 </head>
 <body>
 <div class="card">
+  <div class="logo">📨</div>
   <h1>订单派单系统</h1>
   <div class="sub" id="subTip">管理员与写手登录入口</div>
 

@@ -2,366 +2,594 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>派单工作台 · 管理员</title>
 <style>
-  :root{ --bg:#ededed; --ink:#111; --sub:#7a7a7a; --line:#dcdcdc; --green:#95ec69; --blue:#576b95; --red:#fa5151; }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-  .topbar{background:#2e2e2e;color:#fff;display:flex;align-items:center;gap:10px;padding:10px 16px;flex-shrink:0}
+  :root{
+    --bg:#f2f3f5; --card:#fff; --ink:#111827; --sub:#6b7280; --line:#e5e7eb;
+    --green:#07c160; --green-dk:#059a4e; --green-bg:#e8f9ef;
+    --blue:#3b82f6; --blue-bg:#eff6ff;
+    --amber:#d97706; --amber-bg:#fff7e6;
+    --purple:#8b5cf6; --purple-bg:#f5f3ff;
+    --cyan:#0891b2; --cyan-bg:#ecfeff;
+    --red:#dc2626; --red-bg:#fef2f2;
+    --grey:#64748b; --grey-bg:#f1f5f9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+  #connBar{display:none;background:linear-gradient(90deg,#fef3c7,#fde68a);color:#92400e;font-size:12px;text-align:center;padding:6px 12px;flex-shrink:0}
+  #connBar.on{display:block}
+
+  .topbar{background:linear-gradient(135deg,#1f2937,#111827);color:#fff;display:flex;align-items:center;gap:10px;padding:12px 16px;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+  .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#60a5fa,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
   .topbar h1{font-size:15px;font-weight:600}
+  .topbar .sub{font-size:11px;opacity:.65;margin-top:1px}
   .topbar .grow{flex:1}
-  .tbtn{background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer}
-  .tbtn:hover{background:rgba(255,255,255,.22)}
-  .main{flex:1;display:flex;min-height:0;max-width:1180px;width:100%;margin:0 auto;background:#fff}
-  /* 左侧会话列表 */
-  .side{width:280px;border-right:1px solid var(--line);display:flex;flex-direction:column;flex-shrink:0}
-  .side-head{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:6px}
-  .side-head button{flex:1;font-size:12px;padding:7px 4px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer}
-  .side-head button:hover{background:#f5f5f5}
-  .chat-list{flex:1;overflow-y:auto}
-  .chat-item{display:flex;gap:10px;padding:12px;cursor:pointer;align-items:center;border-bottom:1px solid #f0f0f0}
-  .chat-item:hover,.chat-item.on{background:#f0f0f0}
-  .avatar{width:42px;height:42px;border-radius:8px;background:#9ca3af;color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;position:relative}
-  .online-dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;border-radius:50%;border:2px solid #fff}
-  .od-on{background:#4ade80} .od-off{background:#c8c8c8}
-  .ci-body{flex:1;min-width:0}
-  .ci-name{font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:6px}
-  .ci-name .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .unread{background:#fa5151;color:#fff;font-size:10px;border-radius:99px;padding:1px 6px;flex-shrink:0}
-  .ci-sub{font-size:12px;color:var(--sub);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .tags{font-size:10px;font-weight:600;padding:1px 6px;border-radius:99px;flex-shrink:0}
-  .tg-shift{background:#f0fdf4;color:#16a34a} .tg-off{background:#f1f5f9;color:var(--sub)}
-  .side-foot{padding:10px 12px;border-top:1px solid var(--line);text-align:center}
-  /* 右侧聊天窗口 */
-  .chatwin{flex:1;display:flex;flex-direction:column;min-width:0}
-  .chat-head{padding:12px 18px;border-bottom:1px solid var(--line);font-size:14px;font-weight:600;background:#f7f7f7;display:flex;align-items:center;gap:8px}
-  .chat-head .sub{font-size:11px;color:var(--sub);font-weight:400}
-  .chat-box{flex:1;overflow-y:auto;padding:18px;background:var(--bg)}
-  .msg{display:flex;gap:8px;margin-bottom:14px;align-items:flex-start}
-  .msg.me{flex-direction:row-reverse}
-  .avatar.sm{width:36px;height:36px;font-size:13px}
-  .msg.me .avatar{background:#07c160}
-  .bubble{max-width:60%;padding:9px 12px;border-radius:8px;background:#fff;font-size:14px;line-height:1.5;word-break:break-all;box-shadow:0 1px 1px rgba(0,0,0,.05)}
-  .msg.me .bubble{background:var(--green)}
-  .bubble .fn{font-size:11px;color:var(--sub);margin-bottom:3px}
-  .bubble a{color:var(--blue);text-decoration:none;font-size:13px}
-  .tcard{border-left:4px solid #07c160;background:#fff;border-radius:8px;padding:10px 12px;max-width:75%;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-  .msg.me .tcard{border-left-color:var(--amber)}
-  .tcard .t{font-weight:700;font-size:14px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .tcard .meta{font-size:12px;color:var(--sub);margin-top:5px;line-height:1.8}
-  .st{font-size:10px;padding:2px 7px;border-radius:99px;font-weight:600;background:#f1f5f9;color:var(--sub)}
-  .st-待接单{background:#fff7e6;color:#d97706} .st-已接单{background:#eff6ff;color:#3b82f6}
-  .st-已交付{background:#f5f3ff;color:#8b5cf6} .st-已完成{background:#f0fdf4;color:#16a34a} .st-已拒绝{background:#fef2f2;color:#fa5151}
-  .input-bar{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line);background:#f7f7f7;align-items:flex-end}
-  .input-bar textarea{flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:14px;font-family:inherit;resize:none;height:40px;max-height:110px;background:#fff}
-  .ibtn{background:#fff;border:1px solid var(--line);border-radius:8px;height:40px;font-size:13px;flex-shrink:0;padding:0 12px;cursor:pointer}
-  .ibtn:hover{background:#f0f0f0}
-  .send{background:#07c160;color:#fff;border:none;border-radius:8px;padding:0 20px;height:40px;font-size:14px;flex-shrink:0;cursor:pointer}
-  .no-chat{flex:1;display:flex;align-items:center;justify-content:center;color:var(--sub)}
-  /* 派单总览 */
-  .overview{flex:1;overflow:auto;padding:16px;display:none}
-  .overview.on{display:block}
-  table.ov{width:100%;border-collapse:collapse;font-size:12px;background:#fff}
-  table.ov th,table.ov td{border:1px solid var(--line);padding:7px 9px;text-align:left;white-space:nowrap}
-  table.ov th{background:#f7f7f7}
-  .ov-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap}
-  .tot{font-size:13px}
-  .tot b{color:#fa5151}
-  /* 弹窗 */
-  .mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;align-items:center;justify-content:center;padding:16px}
+  .tbtn{background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:9px;padding:8px 14px;font-size:12px;cursor:pointer;transition:background .15s}
+  .tbtn:hover{background:rgba(255,255,255,.25)}
+  .tbtn.g{background:var(--green)}
+  .tbtn.g:hover{background:var(--green-dk)}
+
+  .main{flex:1;overflow:hidden;position:relative}
+  .panel{display:none;height:100%;overflow:hidden}
+  .panel.on{display:block}
+  .panel.scroll{overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .wrap{max-width:900px;margin:0 auto;padding:14px 14px 30px}
+
+  /* 顶部页签 */
+  .subtabs{display:flex;gap:8px;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);flex-shrink:0}
+  .stab{padding:7px 18px;border-radius:99px;font-size:13px;cursor:pointer;color:var(--sub);background:var(--grey-bg);transition:all .15s;user-select:none;font-weight:500}
+  .stab.on{background:var(--green);color:#fff;font-weight:600}
+  .stab .reddot{display:inline-block;min-width:15px;height:15px;border-radius:99px;background:var(--red);color:#fff;font-size:10px;text-align:center;line-height:15px;padding:0 4px;margin-left:4px;vertical-align:1px}
+
+  .card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(17,24,39,.06)}
+  .btn{border:none;border-radius:9px;padding:9px 16px;font-size:13px;cursor:pointer;font-weight:500;transition:filter .15s,transform .05s}
+  .btn:active{transform:scale(.97)} .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn-g{background:var(--green);color:#fff}.btn-g:hover:not(:disabled){filter:brightness(1.06)}
+  .btn-bl{background:var(--blue-bg);color:var(--blue)}
+  .btn-r{background:var(--red-bg);color:var(--red)}
+  .btn-cy{background:var(--cyan-bg);color:var(--cyan)}
+  .btn-gh{background:var(--grey-bg);color:var(--sub)}
+  .btn-sm{padding:6px 12px;font-size:12px;border-radius:8px}
+  input,select,textarea{font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none;background:#fff;color:var(--ink);transition:border .15s}
+  input:focus,select:focus,textarea:focus{border-color:var(--green)}
+  .pill{font-size:11px;padding:2px 9px;border-radius:99px;font-weight:500;display:inline-block;white-space:nowrap}
+  .st-待接单{background:var(--amber-bg);color:var(--amber)}
+  .st-已接单{background:var(--blue-bg);color:var(--blue)}
+  .st-待审核{background:var(--purple-bg);color:var(--purple)}
+  .st-待打款{background:var(--cyan-bg);color:var(--cyan)}
+  .st-已完成{background:var(--green-bg);color:var(--green-dk)}
+  .st-已拒绝{background:var(--grey-bg);color:var(--grey)}
+  .st-已驳回{background:var(--red-bg);color:var(--red)}
+  .empty{text-align:center;color:var(--sub);font-size:13px;padding:36px 0}
+  .flow-tip{font-size:11px;color:var(--sub);background:var(--grey-bg);border-radius:8px;padding:8px 10px;line-height:1.6;margin-bottom:12px}
+  .flow-tip b{color:var(--green-dk)}
+
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+  .stat{background:var(--card);border-radius:14px;padding:12px 8px;text-align:center;box-shadow:0 1px 3px rgba(17,24,39,.06)}
+  .stat .v{font-size:20px;font-weight:700}
+  .stat .l{font-size:11px;color:var(--sub);margin-top:2px}
+  .stat.v-green .v{color:var(--green-dk)} .stat.v-cyan .v{color:var(--cyan)} .stat.v-amber .v{color:var(--amber)}
+
+  /* 派单总览行 */
+  .ov-card{background:var(--card);border-radius:14px;padding:13px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(17,24,39,.06)}
+  .ov-card .hd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .ov-card .hd .t{font-weight:600;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ov-card .meta{display:flex;flex-wrap:wrap;gap:5px 14px;font-size:12px;color:var(--sub);margin-bottom:6px}
+  .ov-card .meta b{color:var(--ink)}
+  .ov-card .meta .money b{color:var(--amber)}
+  .ov-card .note{font-size:12px;border-radius:8px;padding:7px 9px;margin-bottom:8px;line-height:1.5}
+  .ov-card .note.warn{background:var(--red-bg);color:var(--red)}
+  .ov-card .note.info{background:var(--purple-bg);color:var(--purple)}
+  .ov-card .ops{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+  .filter-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .filter-bar input{flex:1;min-width:180px}
+
+  /* 聊天布局 */
+  #chatLayout{display:flex;height:100%}
+  #convList{width:230px;border-right:1px solid var(--line);background:#fff;overflow-y:auto;flex-shrink:0}
+  .conv{display:flex;gap:10px;padding:12px 14px;cursor:pointer;align-items:center;border-bottom:1px solid #f3f4f6;transition:background .15s}
+  .conv:hover{background:#f9fafb} .conv.on{background:var(--blue-bg)}
+  .avatar{width:40px;height:40px;border-radius:10px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;position:relative}
+  .av-g{background:linear-gradient(135deg,#6ee7b7,#10b981)}
+  .avatar .dot{position:absolute;right:-2px;bottom:-2px;border:2px solid #fff}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .d-on{background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,.8)} .d-off{background:#9ca3af}
+  .conv .info{flex:1;min-width:0}
+  .conv .nm{font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .conv .nm .sh{font-size:10px;color:var(--green-dk);background:var(--green-bg);padding:1px 6px;border-radius:99px}
+  .conv .last{font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  .conv .unread{min-width:17px;height:17px;border-radius:99px;background:var(--red);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0}
+  #chatRight{flex:1;display:flex;flex-direction:column;min-width:0}
+  #chatHead{padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;flex-shrink:0}
+  #chatHead .sub{font-size:11px;color:var(--sub);font-weight:400}
+  #chatBox{flex:1;overflow-y:auto;padding:14px;background:var(--bg)}
+  .msg{display:flex;margin-bottom:12px;gap:8px} .msg.mine{flex-direction:row-reverse}
+  .msg .bub{max-width:72%;background:#fff;border-radius:4px 12px 12px 12px;padding:9px 12px;font-size:13px;line-height:1.55;box-shadow:0 1px 2px rgba(17,24,39,.05);word-break:break-word}
+  .msg.mine .bub{background:var(--green);color:#fff;border-radius:12px 4px 12px 12px}
+  .msg .bub a{color:var(--blue);text-decoration:none;font-size:12px} .msg.mine .bub a{color:#eafff3}
+  .msg .tm{font-size:10px;color:#9ca3af;margin-top:3px} .msg.mine .tm{text-align:right}
+  .card-bub{background:#fff;border-radius:12px;padding:12px;border:1px solid var(--line);max-width:85%;box-shadow:0 2px 8px rgba(17,24,39,.08)}
+  .card-bub .cb-hd{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .card-bub .cb-hd .cb-t{font-weight:600;font-size:13px}
+  .card-bub .cb-meta{font-size:12px;color:var(--sub);display:flex;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+  .card-bub .cb-meta b{color:var(--amber)}
+  .card-bub .cb-req{font-size:12px;color:var(--sub);background:var(--bg);border-radius:8px;padding:7px 9px;margin-bottom:6px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .card-bub .cb-ops{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap}
+  #chatInputBar{display:flex;gap:8px;padding:10px 12px;background:#fff;border-top:1px solid var(--line);flex-shrink:0;align-items:center}
+  #chatInput{flex:1;border-radius:99px;padding:10px 15px}
+  .icon-btn{width:38px;height:38px;border-radius:50%;border:none;background:var(--grey-bg);font-size:17px;cursor:pointer;flex-shrink:0;transition:background .15s}
+  .icon-btn:hover{background:#e2e8f0}
+
+  /* 弹层 */
+  .mask{position:fixed;inset:0;background:rgba(17,24,39,.5);display:none;align-items:flex-end;justify-content:center;z-index:100}
   .mask.show{display:flex}
-  .modal{background:#fff;border-radius:14px;padding:22px;width:100%;max-width:460px;max-height:86vh;overflow:auto}
-  .modal h2{font-size:16px;margin-bottom:14px}
-  .modal label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px}
-  .modal input,.modal select,.modal textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit}
-  .modal textarea{min-height:80px;resize:vertical}
-  .modal .btns{display:flex;gap:10px;margin-top:18px}
-  .modal .btns button{flex:1;padding:10px;font-size:14px;border-radius:8px;cursor:pointer;border:none}
-  .btn-p{background:#07c160;color:#fff} .btn-p:disabled{opacity:.5}
-  .btn-o{background:#f0f0f0;color:var(--ink)}
-  .code-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px}
-  .empty{padding:30px;text-align:center;color:var(--sub);font-size:13px}
-  .toast{display:none;position:fixed;top:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;padding:9px 18px;border-radius:99px;font-size:13px;z-index:99}
-  @media (max-width:760px){ .side{width:200px} .bubble{max-width:76%} }
+  @media(min-width:720px){.mask{align-items:center}}
+  .sheet{background:#fff;border-radius:18px 18px 0 0;width:100%;max-width:680px;max-height:88vh;overflow-y:auto;padding:18px}
+  @media(min-width:720px){.sheet{border-radius:18px}}
+  .sheet h3{font-size:15px;margin-bottom:12px}
+  .close-x{float:right;border:none;background:var(--grey-bg);width:26px;height:26px;border-radius:50%;cursor:pointer;color:var(--sub);font-size:13px}
+  .frow{margin-bottom:12px}
+  .frow label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px}
+  .frow input,.frow select,.frow textarea{width:100%}
+  .f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+  /* 订单选择器 */
+  .ord-picker{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .ord-picker .ph{padding:9px 10px;background:var(--bg);display:flex;gap:8px;border-bottom:1px solid var(--line)}
+  .ord-picker .ph input{flex:1;padding:7px 10px;font-size:12px}
+  .ord-picker .ph select{padding:7px 8px;font-size:12px;width:auto}
+  #ordList{max-height:260px;overflow-y:auto}
+  .ord-row{padding:9px 12px;border-bottom:1px solid #f3f4f6;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .12s}
+  .ord-row:hover{background:#f9fafb}
+  .ord-row.sel{background:var(--green-bg);box-shadow:inset 3px 0 0 var(--green)}
+  .ord-row .no{font-size:12px;font-weight:600}
+  .ord-row .info{flex:1;font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ord-row .amt{font-size:12px;color:var(--amber);font-weight:600}
+  .sel-summary{background:var(--green-bg);border-radius:10px;padding:9px 12px;font-size:12px;color:var(--green-dk);margin-top:8px;display:none}
+  .sel-summary.show{display:block}
+
+  .kv{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;font-size:13px}
+  .kv .k{font-weight:600;letter-spacing:.5px}
+  #toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(17,24,39,.85);color:#fff;font-size:13px;padding:9px 18px;border-radius:99px;z-index:200;display:none;max-width:80vw;text-align:center}
+  @media(max-width:640px){#convList{width:120px}.conv .last{display:none}}
 </style>
 </head>
 <body>
-<div class="topbar">
-  <h1>📦 派单工作台</h1><span class="grow"></span>
-  <button class="tbtn" onclick="location.href='/index.html'">← 返回看板</button>
-  <button class="tbtn" id="btnInvites">邀请码</button>
+<div id="connBar">⚠ 网络连接断开，正在自动重连…（恢复后无需刷新）</div>
+
+<header class="topbar">
+  <div class="logo">📨</div>
+  <div><h1>派单工作台</h1><div class="sub">管理端 · 派单系统 V9</div></div>
+  <div class="grow"></div>
+  <button class="tbtn" onclick="location.href='/index.html'">📊 台账</button>
+  <button class="tbtn" id="btnInvite">🎟️ 邀请码</button>
   <button class="tbtn" id="btnLogout">退出</button>
-</div>
-<div class="main">
-  <div class="side">
-    <div class="side-head">
-      <button id="viewChatBtn" style="background:#07c160;color:#fff;border-color:#07c160">💬 聊天</button>
-      <button id="viewOvBtn">📊 派单总览</button>
-    </div>
-    <div class="chat-list" id="chatList"><div class="empty">加载中…</div></div>
-    <div class="side-foot"><span style="font-size:11px;color:var(--sub)">🟢=在线 · 🟢在班=已打卡</span></div>
-  </div>
-  <div class="chatwin" id="chatWin">
-    <div class="chat-head" id="chatHead">选择左侧写手开始派单</div>
-    <div class="chat-box" id="chatBox"></div>
-    <div class="input-bar">
-      <input type="file" id="fileInput" style="display:none">
-      <button class="ibtn" id="btnCard">📨 派单卡</button>
-      <button class="ibtn" id="btnFile" title="发文件">📎</button>
-      <textarea id="msgInput" placeholder="输入消息，Enter发送…"></textarea>
-      <button class="send" id="btnSend">发送</button>
-    </div>
-  </div>
-  <div class="overview" id="ovWin">
-    <div class="ov-head">
-      <b>派单总览 · 利润联动</b>
-      <span class="tot" id="ovTotals"></span>
-    </div>
-    <table class="ov" id="ovTable"></table>
-  </div>
+</header>
+
+<div class="subtabs">
+  <div class="stab on" data-v="vChat">💬 聊天/派单<span class="reddot" id="tabUnread" style="display:none">0</span></div>
+  <div class="stab" data-v="vOver">📋 派单总览</div>
 </div>
 
-<!-- 派单卡弹窗 -->
-<div class="mask" id="cardMask">
-  <div class="modal">
-    <h2>📨 发派单卡 → <span id="cTo" style="color:#07c160"></span></h2>
-    <label>派单标题 *</label><input id="cTitle" placeholder="如：某品牌公众号推文 2000字">
-    <label>报酬（元）* —— 派出去的价，由你自定义</label><input id="cReward" type="number" min="0" step="0.01">
-    <label>截止日期</label><input id="cDeadline" type="date">
-    <label>交付要求</label><textarea id="cReq" placeholder="字数/风格/交稿格式等"></textarea>
-    <label>关联台账订单 *（必选——自动算利润、写手交付后自动同步原单；订单号会同步给写手）</label>
-    <select id="cOrder"><option value="">—— 请从台账选择订单 ——</option></select>
-    <label>需求附件（可选，≤25MB）</label>
-    <input type="file" id="cFile" style="font-size:12px">
-    <div style="font-size:12px;color:var(--sub);margin-top:4px" id="cFileInfo"></div>
-    <div class="btns">
-      <button class="btn-o" onclick="closeCard()">取消</button>
-      <button class="btn-p" id="btnCardSend">发送派单卡</button>
+<main class="main">
+  <!-- 聊天 + 发卡 -->
+  <section id="vChat" class="panel on">
+    <div id="chatLayout">
+      <div id="convList"></div>
+      <div id="chatRight">
+        <div id="chatHead"><span class="dot d-off" id="peerDot"></span><span id="peerName">选择会话</span><span class="sub" id="peerSt"></span>
+          <span style="flex:1"></span>
+          <button class="btn btn-g btn-sm" id="btnNewCard">＋ 发派单卡</button>
+        </div>
+        <div id="chatBox"><div class="empty">左侧选择写手，开始沟通 / 派单</div></div>
+        <div id="chatInputBar">
+          <button class="icon-btn" id="btnFile" title="发文件">📎</button>
+          <input id="chatInput" placeholder="输入消息，回车发送…">
+          <button class="icon-btn" id="btnSend" style="background:var(--green);color:#fff" title="发送">➤</button>
+          <input type="file" id="fileInput" style="display:none">
+        </div>
+      </div>
     </div>
-  </div>
-</div>
-<!-- 邀请码弹窗 -->
-<div class="mask" id="invMask">
-  <div class="modal">
-    <h2>🎟️ 邀请码</h2>
-    <button class="btn-p" id="btnGenInvite" style="width:100%;padding:10px">＋ 生成新邀请码</button>
-    <div id="invList" style="margin-top:12px"></div>
-    <div class="btns"><button class="btn-o" onclick="$('invMask').classList.remove('show')">关闭</button></div>
-  </div>
-</div>
-<div class="toast" id="toast"></div>
+  </section>
+
+  <!-- 派单总览 -->
+  <section id="vOver" class="panel scroll">
+    <div class="wrap">
+      <div class="flow-tip">🔄 流程：<b>派单</b> → 写手<b>接单</b> → 做单 → 写手<b>提交审核</b> → 我<b>审核</b>（通过→<b>待打款</b>，联动台账单变<b style="color:var(--amber)">待结算</b>；不通过→<b style="color:var(--red)">驳回</b>）→ <b>确认打款</b>（台账单变<b>已结算</b>）</div>
+      <div class="stats">
+        <div class="stat v-green"><div class="v" id="ovProfit">0</div><div class="l">已联动预估利润 ¥</div></div>
+        <div class="stat v-amber"><div class="v" id="ovReward">0</div><div class="l">派单报酬合计 ¥</div></div>
+        <div class="stat v-cyan"><div class="v" id="ovShare">0</div><div class="l">关联单分成合计 ¥</div></div>
+      </div>
+      <div class="filter-bar">
+        <input id="ovQ" placeholder="🔍 搜标题 / 写手 / 台账单号…">
+        <select id="ovSt">
+          <option value="">全部状态</option>
+          <option>待接单</option><option>已接单</option><option>待审核</option>
+          <option>待打款</option><option>已完成</option><option>已驳回</option><option>已拒绝</option>
+        </select>
+      </div>
+      <div id="ovList"></div>
+    </div>
+  </section>
+</main>
+
+<div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
+<div id="toast"></div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const TOKEN = localStorage.getItem('jdy_token');
-const ME = JSON.parse(localStorage.getItem('jdy_user') || 'null');
-if (!TOKEN || !ME || ME.role !== 'admin') location.href = '/login.html';
 const $ = id => document.getElementById(id);
-const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-const fmt = n => Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-const r2 = n => Math.round(n * 100) / 100;
-const dl = id => `/api/files/${id}/download?token=${TOKEN}`;
-let currentPeer = null, chats = [], cardFile = null;
+const TOKEN = localStorage.getItem('jdy_token');
+const USER = JSON.parse(localStorage.getItem('jdy_user') || 'null');
+if (!TOKEN || !USER || USER.role !== 'admin') location.href = '/login.html';
+let ME = null;
 
-function toast(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2400); }
-function authFetch(url, opt = {}) {
-  return fetch(url, { ...opt, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...(opt.headers || {}) } })
-    .then(async r => { const j = await r.json(); if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; throw new Error('登录过期'); } return j; });
-}
-function ping(title, body) {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination); o.type = 'sine'; o.frequency.value = 880;
-    g.gain.setValueAtTime(.25, ctx.currentTime); g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + .35);
-    o.start(); o.stop(ctx.currentTime + .35); setTimeout(() => ctx.close(), 500);
-  } catch (e) {}
-  if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
-    try { new Notification(title, { body }); } catch (e) {}
-  }
-  toast(title + (body ? '：' + String(body).slice(0, 24) : ''));
-}
-if ('Notification' in window && Notification.permission === 'default') {
-  document.addEventListener('click', function ask() { Notification.requestPermission(); document.removeEventListener('click', ask); }, { once: true });
+function toast(t, ms = 2200) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', ms); }
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtT = d => d ? (new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ')) : '';
+const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.round(n / 1024) + 'KB';
+const dl = id => '/api/files/' + id + '/download?token=' + encodeURIComponent(TOKEN);
+const stPill = st => '<span class="pill st-' + esc(st) + '">' + esc(st) + '</span>';
+
+async function authFetch(url, opt = {}) {
+  opt.headers = Object.assign({}, opt.headers, { 'Authorization': 'Bearer ' + TOKEN });
+  if (opt.body && !(opt.body instanceof FormData) && !opt.headers['Content-Type']) opt.headers['Content-Type'] = 'application/json';
+  const r = await fetch(url, opt);
+  if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; throw new Error('未登录'); }
+  const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
+  if (!j.ok) throw new Error(j.error || '请求失败');
+  return j;
 }
 
-/* ================= 会话列表 ================= */
-async function loadTeam() {
-  const j = await authFetch('/api/chats');
-  chats = j.chats || [];
-  $('chatList').innerHTML = chats.length ? chats.map(c => {
+/* ================= 聊天（含本地缓存） ================= */
+let chats = [], currentPeer = null, msgs = [], cardsAll = {};
+function cacheKey() { return 'jdy_msg_' + (ME ? ME.id : USER.id) + '_' + (currentPeer || 'none'); }
+function loadCache() { try { return JSON.parse(localStorage.getItem(cacheKey()) || '[]'); } catch (e) { return []; } }
+function saveCache(arr) { try { localStorage.setItem(cacheKey(), JSON.stringify(arr.slice(-600))); } catch (e) {} }
+
+function renderConvList() {
+  $('convList').innerHTML = chats.map(c => {
     const u = c.user;
-    const last = c.last ? (c.last.type === 'text' ? c.last.text : c.last.type === 'file' ? '[文件]' + c.last.fileName : '[派单卡]') : '（未聊过）';
-    return `<div class="chat-item ${currentPeer === u.id ? 'on' : ''}" onclick="openChat('${u.id}')">
-      <div class="avatar">${esc((u.displayName || '?').slice(0, 1))}<span class="online-dot ${u.sockOnline ? 'od-on' : 'od-off'}"></span></div>
-      <div class="ci-body">
-        <div class="ci-name"><span class="nm">${esc(u.displayName)}</span>${c.unread ? `<span class="unread">${c.unread}</span>` : ''}</div>
-        <div class="ci-sub">${esc(last)}</div>
-        <div class="ci-sub">${u.shift ? '<span class="tags tg-shift">在班</span>' : '<span class="tags tg-off">未上班</span>'}</div>
-      </div></div>`;
-  }).join('') : '<div class="empty">还没有写手。<br>点上方「邀请码」生成一个，发给写手注册</div>';
+    return `<div class="conv ${u.id === currentPeer ? 'on' : ''}" data-id="${u.id}">
+      <div class="avatar av-g">${esc((u.displayName || '?')[0])}<span class="dot ${u.sockOnline ? 'd-on' : 'd-off'}"></span></div>
+      <div class="info"><div class="nm"><span>${esc(u.displayName)}</span>${u.shift ? '<span class="sh">在班</span>' : ''}</div>
+      <div class="last">${c.last ? (c.last.type === 'text' ? esc(c.last.text).slice(0, 18) : c.last.type === 'file' ? '[文件]' : '[派单卡]') : '开始沟通'}</div></div>
+      ${c.unread ? '<div class="unread">' + (c.unread > 99 ? '99+' : c.unread) + '</div>' : ''}
+    </div>`;
+  }).join('') || '<div class="empty">还没有写手，先生成邀请码</div>';
+  document.querySelectorAll('.conv').forEach(el => el.onclick = () => openChat(el.dataset.id));
+  const totalUnread = chats.reduce((s, c) => s + (c.unread || 0), 0);
+  $('tabUnread').style.display = totalUnread ? 'inline-block' : 'none';
+  $('tabUnread').textContent = totalUnread > 99 ? '99+' : totalUnread;
 }
-
-/* ================= 聊天 ================= */
-function renderMsg(m) {
-  const me = m.from === ME.id;
-  const ava = esc((m.fromName || '?').slice(0, 1));
-  let inner;
-  if (m.type === 'text') inner = `<div class="bubble">${me ? '' : `<div class="fn">${esc(m.fromName)}</div>`}${esc(m.text)}</div>`;
-  else if (m.type === 'file') inner = `<div class="bubble">📎 <a href="${dl(m.fileId)}" download>${esc(m.fileName)}</a><div style="font-size:11px;color:var(--sub)">${fmt(Math.round((m.fileSize||0)/1024))} KB</div></div>`;
-  else if (m.type === 'card') inner = `<div class="tcard"><div class="fn" style="font-size:11px;color:var(--sub)">派单卡</div><div id="cm-${m.cardId}"></div></div>`;
-  return `<div class="msg ${me ? 'me' : ''}"><div class="avatar sm">${ava}</div>${inner}</div>`;
+function adminOps(c) {
+  const s = c.status;
+  if (s === '待审核') return `<button class="btn btn-g btn-sm" onclick="actApprove('${c._id}')">✔ 审核通过</button><button class="btn btn-r btn-sm" onclick="actReject('${c._id}')">✖ 驳回</button>`;
+  if (s === '待打款' || s === '已交付') return `<button class="btn btn-cy btn-sm" onclick="actPay('${c._id}')">💸 确认打款 ¥${c.reward}</button>`;
+  if (s === '已接单') return '<span style="font-size:11px;color:var(--blue)">✍️ 写手做单中</span>';
+  if (s === '待接单') return '<span style="font-size:11px;color:var(--amber)">⏳ 等待写手接单</span>';
+  if (s === '已驳回') return '<span style="font-size:11px;color:var(--red)">已驳回，等写手重新提交</span>';
+  return '';
+}
+function renderCardBub(c) {
+  return `<div class="card-bub">
+    <div class="cb-hd">🃏 <span class="cb-t">${esc(c.title)}</span>${stPill(c.status)}</div>
+    <div class="cb-meta"><span>报酬 <b>¥${c.reward}</b></span>${c.deadline ? '<span>截止 ' + esc(c.deadline) + '</span>' : ''}${c.toName ? '<span>写手 ' + esc(c.toName) + '</span>' : ''}${c.orderNo ? '<span>单号 ' + esc(c.orderNo) + '</span>' : ''}</div>
+    ${c.requirement ? '<div class="cb-req">' + esc(c.requirement) + '</div>' : ''}
+    ${c.status === '已驳回' && c.rejectReason ? '<div class="ov-card note warn" style="margin-bottom:6px">❌ 已驳回：' + esc(c.rejectReason) + '</div>' : ''}
+    ${c.submitNote ? '<div class="ov-card note info" style="margin-bottom:6px">📝 写手提交说明：' + esc(c.submitNote) + '</div>' : ''}
+    ${c.fileId ? '<div style="font-size:12px;margin-bottom:6px"><a href="' + dl(c.fileId) + '" target="_blank">📎 ' + esc(c.fileName || '附件') + '</a></div>' : ''}
+    ${adminOps(c) ? '<div class="cb-ops">' + adminOps(c) + '</div>' : ''}
+  </div>`;
+}
+function renderMsgs(list) {
+  if (!currentPeer) return;
+  if (!list.length) { $('chatBox').innerHTML = '<div class="empty">还没有消息，打个招呼吧</div>'; return; }
+  $('chatBox').innerHTML = list.map(m => {
+    if (m.type === 'card') {
+      const c = cardsAll[m.cardId];
+      return `<div class="msg ${m.from === ME.id ? 'mine' : ''}">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「派单总览」）</div>'}</div>`;
+    }
+    if (m.type === 'file') {
+      return `<div class="msg ${m.from === ME.id ? 'mine' : ''}"><div class="bub">📎 <a href="${dl(m.fileId)}" target="_blank">${esc(m.fileName)}</a> <span style="font-size:10px;opacity:.7">${fmtSize(m.fileSize)}</span><div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
+    }
+    return `<div class="msg ${m.from === ME.id ? 'mine' : ''}"><div class="bub">${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
+  }).join('');
+  $('chatBox').scrollTop = $('chatBox').scrollHeight;
+}
+async function loadChats() {
+  const j = await authFetch('/api/chats');
+  chats = j.chats;
+  renderConvList();
+  if (!currentPeer && chats.length) openChat(chats[0].user.id);
+  if (currentPeer) {
+    const c = chats.find(x => x.user.id === currentPeer);
+    if (c) { $('peerDot').className = 'dot ' + (c.user.sockOnline ? 'd-on' : 'd-off'); $('peerSt').textContent = (c.user.sockOnline ? '在线' : '离线') + (c.user.shift ? ' · 在班' : ''); }
+  }
 }
 async function openChat(peer) {
   currentPeer = peer;
-  showView('chat');
   const c = chats.find(x => x.user.id === peer);
-  $('chatHead').innerHTML = `👤 ${esc(c ? c.user.displayName : '')}
-    <span class="sub">${c ? (c.user.sockOnline ? '🟢在线' : '离线') + ' · ' + (c.user.shift ? '在班' : '未上班') : ''}</span>`;
-  loadTeam();
-  const j = await authFetch('/api/messages?peer=' + peer);
-  $('chatBox').innerHTML = (j.messages || []).map(renderMsg).join('') || '<div class="empty">开始对话，或直接甩一张派单卡</div>';
-  await fillCardMsgs();
-  $('chatBox').scrollTop = $('chatBox').scrollHeight;
+  $('peerName').textContent = c ? c.user.displayName : '会话';
+  $('peerDot').className = 'dot ' + (c && c.user.sockOnline ? 'd-on' : 'd-off');
+  $('peerSt').textContent = c ? ((c.user.sockOnline ? '在线' : '离线') + (c.user.shift ? ' · 在班' : '')) : '';
+  msgs = loadCache();
+  renderMsgs(msgs);
+  renderConvList();
+  try {
+    const j = await authFetch('/api/messages?peer=' + peer);
+    const map = new Map(msgs.map(m => [m._id, m]));
+    j.messages.forEach(m => map.set(m._id, m));
+    msgs = [...map.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    saveCache(msgs);
+    renderMsgs(msgs);
+    const ch = chats.find(x => x.user.id === peer); if (ch) { ch.unread = 0; renderConvList(); }
+  } catch (e) { toast(e.message); }
 }
-async function fillCardMsgs() {
-  const slots = document.querySelectorAll('[id^="cm-"]');
-  if (!slots.length) return;
-  const j = await authFetch('/api/dispatch/overview');
-  const map = {}; (j.rows || []).forEach(c => map[c._id] = c);
-  slots.forEach(el => {
-    const c = map[el.id.slice(3)];
-    if (!c) return;
-    el.innerHTML = `<div class="t"><span>${esc(c.title)}</span><span class="st st-${c.status}">${c.status}</span></div>
-      <div class="meta">订单 <span style="font-family:monospace;color:var(--blue)">${esc(c.orderNo || '-')}</span> · 写手：${esc(c.toName)} · 报酬 <b style="color:#fa5151">${fmt(c.reward)}</b> 元 · 截止 ${c.deadline || '不限'}
-      ${c.status === '已交付' ? `<button class="ibtn" style="height:26px;margin-top:4px" onclick="finishCard('${c._id}')">确认完成</button>` : ''}</div>`;
-  });
+async function sendText() {
+  const t = $('chatInput').value.trim();
+  if (!t || !currentPeer) return;
+  $('chatInput').value = '';
+  try {
+    const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer: currentPeer, text: t }) });
+    msgs.push(j.message); saveCache(msgs); renderMsgs(msgs);
+  } catch (e) { toast(e.message); $('chatInput').value = t; }
 }
-async function finishCard(id) {
-  const j = await authFetch(`/api/cards/${id}/finish`, { method: 'POST' });
-  if (j.ok) { toast('已确认完成'); fillCardMsgs(); loadOverview(); }
-  else alert(j.error);
-}
-$('btnSend').onclick = async () => {
-  const text = $('msgInput').value.trim();
-  if (!text || !currentPeer) return;
-  $('msgInput').value = '';
-  const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer: currentPeer, text }) });
-  if (!j.ok) toast(j.error);
-};
-$('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('btnSend').click(); } });
-$('btnFile').onclick = () => { if (!currentPeer) return toast('先选写手'); $('fileInput').click(); };
-$('fileInput').onchange = async () => {
-  const f = $('fileInput').files[0]; if (!f || !currentPeer) return;
-  if (f.size > 25 * 1024 * 1024) { toast('文件超过25MB'); return; }
-  toast('上传中…');
+async function sendFile(f) {
+  if (!f || !currentPeer) return;
+  if (f.size > 25 * 1024 * 1024) return toast('文件不能超过25MB');
+  toast('上传中：' + f.name + '…', 8000);
   const fd = new FormData(); fd.append('file', f); fd.append('peer', currentPeer);
   try {
-    const up = await fetch('/api/files', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd }).then(r => r.json());
-    if (!up.ok) throw new Error(up.error);
-    await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer: currentPeer, ...up }) });
+    const up = await authFetch('/api/files', { method: 'POST', body: fd });
+    const j = await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer: currentPeer, fileId: up.fileId, fileName: up.fileName, fileSize: up.fileSize }) });
+    msgs.push(j.message); saveCache(msgs); renderMsgs(msgs);
+    toast('发送成功');
   } catch (e) { toast('上传失败：' + e.message); }
-  $('fileInput').value = '';
-};
+}
 
-/* ================= 派单卡 ================= */
-$('btnCard').onclick = async () => {
-  if (!currentPeer) return toast('先在左侧选一个写手');
-  const c = chats.find(x => x.user.id === currentPeer);
-  $('cTo').textContent = c ? c.user.displayName : '';
-  $('cTitle').value = ''; $('cReward').value = ''; $('cDeadline').value = ''; $('cReq').value = '';
-  cardFile = null; $('cFile').value = ''; $('cFileInfo').textContent = '';
-  $('cOrder').innerHTML = '<option value="">—— 请从台账选择订单 ——</option>';
-  const j = await authFetch('/api/orders');
-  (j.orders || []).slice(0, 100).forEach(o => {
-    $('cOrder').insertAdjacentHTML('beforeend', `<option value="${o._id}">${esc(o.orderNo)}（${o.date} · ${fmt(o.amount)}元 · 分成${fmt(r2(o.amount * o.shareRate / 100))}）</option>`);
-  });
-  $('cardMask').classList.add('show');
-};
-function closeCard() { $('cardMask').classList.remove('show'); }
-$('cFile').onchange = () => {
-  const f = $('cFile').files[0];
-  cardFile = f;
-  $('cFileInfo').textContent = f ? `已选：${f.name}（${fmt(Math.round(f.size / 1024))} KB${f.size > 25 * 1024 * 1024 ? '，超25MB！' : ''}）` : '';
-};
-$('btnCardSend').onclick = async () => {
-  const title = $('cTitle').value.trim(), reward = Number($('cReward').value);
-  if (!title) { toast('请填标题'); return; }
-  if (!isFinite(reward) || reward < 0) { toast('请填报酬金额'); return; }
-  if (!$('cOrder').value) { toast('必须从台账选择一个订单才能发派单卡'); return; }
-  $('btnCardSend').disabled = true; $('btnCardSend').textContent = '发送中…';
+/* ================= 审核 / 打款 / 驳回 ================= */
+async function cardAct(id, path, body, okMsg) {
   try {
-    let fileId = null, fileName = null;
-    if (cardFile) {
-      if (cardFile.size > 25 * 1024 * 1024) throw new Error('附件超25MB');
-      const fd = new FormData(); fd.append('file', cardFile); fd.append('peer', currentPeer);
-      const up = await fetch('/api/files', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd }).then(r => r.json());
-      if (!up.ok) throw new Error(up.error);
-      fileId = up.fileId; fileName = up.fileName;
-    }
-    const j = await authFetch('/api/cards', { method: 'POST', body: JSON.stringify({
-      to: currentPeer, title, reward, requirement: $('cReq').value,
-      deadline: $('cDeadline').value, orderId: $('cOrder').value, fileId, fileName,
-    }) });
-    if (!j.ok) throw new Error(j.error);
-    toast('派单卡已发送');
-    closeCard();
-    if (currentPeer) openChat(currentPeer);
-  } catch (e) { toast('发送失败：' + e.message); }
-  $('btnCardSend').disabled = false; $('btnCardSend').textContent = '发送派单卡';
+    const j = await authFetch('/api/cards/' + id + '/' + path, { method: 'POST', body: JSON.stringify(body || {}) });
+    toast(okMsg);
+    await Promise.all([loadChats(), loadOverview()]);
+    if (j.syncedOrder) toast(okMsg + '（台账单已同步为「' + j.syncedOrder.status + '」）');
+  } catch (e) { toast(e.message); }
+}
+window.actApprove = id => { if (confirm('审核通过？通过后该单进入「待打款」，台账订单自动变为「待结算」')) cardAct(id, 'approve', {}, '审核通过 ✅'); };
+window.actReject = id => {
+  const reason = prompt('驳回原因（将展示给写手）：');
+  if (reason === null) return;
+  cardAct(id, 'reject', { reason }, '已驳回，写手可重新做单');
 };
+window.actPay = id => { if (confirm('确认已打款？台账订单将自动变为「已结算」')) cardAct(id, 'pay', {}, '打款完成 💸'); };
 
 /* ================= 派单总览 ================= */
-function showView(v) {
-  $('chatWin').style.display = v === 'chat' ? '' : 'none';
-  $('ovWin').classList.toggle('on', v === 'ov');
-  $('viewChatBtn').style.cssText = v === 'chat' ? 'background:#07c160;color:#fff;border-color:#07c160' : '';
-  $('viewOvBtn').style.cssText = v === 'ov' ? 'background:#07c160;color:#fff;border-color:#07c160' : '';
-}
-$('viewChatBtn').onclick = () => showView('chat');
-$('viewOvBtn').onclick = () => { showView('ov'); loadOverview(); };
 async function loadOverview() {
-  const j = await authFetch('/api/dispatch/overview');
-  $('ovTotals').innerHTML = `已关联 ${j.totals.linked} 单 · 报酬合计 <b>${fmt(j.totals.totReward)}</b> · 原单分成 <b>${fmt(j.totals.totShare)}</b> · 利润合计 <b>${fmt(j.totals.totProfit)}</b> 元`;
-  $('ovTable').innerHTML = '<tr><th>派单</th><th>订单号</th><th>原单分成</th><th>派单报酬</th><th style="color:#fa5151">利润</th><th>写手</th><th>状态</th><th>截止</th></tr>' +
-    (j.rows.length ? j.rows.map(r => `<tr>
-      <td>${esc(r.title)}</td><td style="font-family:monospace">${esc(r.orderNo || '—')}</td>
-      <td>${r.orderShare != null ? fmt(r.orderShare) : '—'}</td><td>${fmt(r.reward)}</td>
-      <td style="color:${r.profit != null ? (r.profit >= 0 ? '#16a34a' : '#fa5151') : '#999'};font-weight:700">${r.profit != null ? fmt(r.profit) : '—'}</td>
-      <td>${esc(r.toName)}</td><td><span class="st st-${r.status}">${r.status}</span></td><td>${r.deadline || '—'}</td></tr>`).join('')
-    : '<tr><td colspan="8" class="empty">还没有派单</td></tr>');
+  try {
+    const j = await authFetch('/api/dispatch/overview');
+    window._ovRows = j.rows;
+    $('ovProfit').textContent = j.totals.totProfit; $('ovReward').textContent = j.totals.totReward; $('ovShare').textContent = j.totals.totShare;
+    paintOverview();
+  } catch (e) { toast(e.message); }
 }
+function paintOverview() {
+  const q = $('ovQ').value.trim().toLowerCase();
+  const st = $('ovSt').value;
+  const rows = (window._ovRows || []).filter(r => {
+    if (st && r.status !== st) return false;
+    if (q && ![r.title, r.toName, r.orderNo].some(x => String(x || '').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  $('ovList').innerHTML = rows.length ? rows.map(r => {
+    let note = '';
+    if (r.status === '已驳回' && r.rejectReason) note = '<div class="note warn">❌ 已驳回：' + esc(r.rejectReason) + '</div>';
+    if (r.status === '待审核' && r.submitNote) note = '<div class="note info">📝 写手提交说明：' + esc(r.submitNote) + '</div>';
+    let ops = '';
+    if (r.status === '待审核') ops = `<button class="btn btn-g btn-sm" onclick="actApprove('${r._id}')">✔ 审核通过</button><button class="btn btn-r btn-sm" onclick="actReject('${r._id}')">✖ 驳回</button>`;
+    else if (r.status === '待打款' || r.status === '已交付') ops = `<button class="btn btn-cy btn-sm" onclick="actPay('${r._id}')">💸 确认打款 ¥${r.reward}</button>`;
+    return `<div class="ov-card">
+      <div class="hd"><span class="t">${esc(r.title)}</span>${stPill(r.status)}</div>
+      <div class="meta">
+        <span>✍️ ${esc(r.toName)}</span><span class="money">报酬 <b>¥${r.reward}</b></span>
+        ${r.orderNo ? `<span>🔗 ${esc(r.orderNo)}</span><span>原单 ¥${r.orderAmount} → 分成 ¥${r.orderShare} → <b>利润 ¥${r.profit}</b></span>` : '<span style="color:var(--red)">未关联台账单</span>'}
+        <span>${fmtT(r.createdAt)}</span>
+      </div>
+      ${note}
+      <div class="ops">${ops}</div>
+    </div>`;
+  }).join('') : '<div class="empty">没有符合条件的派单卡</div>';
+}
+$('ovQ').oninput = paintOverview;
+$('ovSt').onchange = paintOverview;
+
+/* ================= 发派单卡（订单选择器带搜索） ================= */
+let pickedOrder = null, ordPool = [];
+$('btnNewCard').onclick = async () => {
+  if (!currentPeer) return toast('先在左侧选择要派单的写手');
+  const writer = chats.find(c => c.user.id === currentPeer);
+  if (!writer) return toast('找不到写手信息');
+  pickedOrder = null;
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>🃏 发派单卡 → ${esc(writer.user.displayName)}</h3>
+    <div class="frow"><label>标题 *</label><input id="ncTitle" placeholder="如：XX项目文案撰写"></div>
+    <div class="f2">
+      <div class="frow"><label>报酬（元）*</label><input id="ncReward" type="number" min="0" step="0.01" placeholder="0.00"></div>
+      <div class="frow"><label>截止日期（选填）</label><input id="ncDeadline" type="date"></div>
+    </div>
+    <div class="frow"><label>从台账选择订单 *（支持单号/备注搜索，按状态筛选）</label>
+      <div class="ord-picker">
+        <div class="ph">
+          <input id="ordQ" placeholder="🔍 搜单号 / 备注…">
+          <select id="ordSt">
+            <option value="">全部状态</option>
+            <option>待开始</option><option>进行中</option><option>待结算</option><option>已结算</option>
+          </select>
+        </div>
+        <div id="ordList"><div class="empty" style="padding:18px">加载台账中…</div></div>
+      </div>
+      <div class="sel-summary" id="ordSummary"></div>
+    </div>
+    <div class="frow"><label>任务要求（选填）</label><textarea id="ncReq" rows="3" placeholder="写清楚交付要求、格式、注意事项…"></textarea></div>
+    <div class="frow"><label>附件（选填，≤25MB，云端保留3天）</label>
+      <input type="file" id="ncFile" style="padding:7px;font-size:12px">
+    </div>
+    <div style="display:flex;gap:8px"><button class="btn btn-g" style="flex:1" id="ncSend">发送派单卡</button></div>`;
+  $('mask').classList.add('show');
+  $('ordQ').oninput = paintOrdList;
+  $('ordSt').onchange = paintOrdList;
+  $('ncSend').onclick = submitCard;
+  try {
+    const j = await authFetch('/api/orders');
+    ordPool = j.orders;
+    paintOrdList();
+  } catch (e) { $('ordList').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+};
+function paintOrdList() {
+  const q = $('ordQ').value.trim().toLowerCase();
+  const st = $('ordSt').value;
+  const rows = ordPool.filter(o => {
+    if (st && o.status !== st) return false;
+    if (q && ![o.orderNo, o.note, o.date].some(x => String(x || '').toLowerCase().includes(q))) return false;
+    return true;
+  }).slice(0, 80);
+  $('ordList').innerHTML = rows.length ? rows.map(o => `
+    <div class="ord-row ${pickedOrder && pickedOrder._id === o._id ? 'sel' : ''}" data-id="${o._id}">
+      <span class="no">${esc(o.orderNo)}</span>
+      <span class="info">${esc(o.date)} · ${esc(o.note || '无备注')}</span>
+      <span class="amt">¥${o.amount}</span>
+      ${stPill(o.status)}
+    </div>`).join('') : '<div class="empty" style="padding:18px">没有匹配的订单，换个关键词试试</div>';
+  document.querySelectorAll('.ord-row').forEach(el => el.onclick = () => {
+    pickedOrder = ordPool.find(o => o._id === el.dataset.id);
+    paintOrdList();
+    const share = Math.round(pickedOrder.amount * pickedOrder.shareRate) / 100;
+    $('ordSummary').classList.add('show');
+    $('ordSummary').textContent = '已选：' + pickedOrder.orderNo + '（' + pickedOrder.date + '）· 金额 ¥' + pickedOrder.amount + ' · 分成 ¥' + share;
+  });
+}
+async function submitCard() {
+  const title = $('ncTitle').value.trim();
+  const reward = Number($('ncReward').value);
+  if (!title) return toast('标题不能为空');
+  if (!isFinite(reward) || reward < 0) return toast('报酬必须是≥0的数字');
+  if (!pickedOrder) return toast('必须从台账选择一个订单');
+  const btn = $('ncSend'); btn.disabled = true; btn.textContent = '发送中…';
+  try {
+    let fileId = '', fileName = '';
+    const f = $('ncFile').files[0];
+    if (f) {
+      if (f.size > 25 * 1024 * 1024) { toast('附件不能超过25MB'); btn.disabled = false; btn.textContent = '发送派单卡'; return; }
+      toast('上传附件中…', 6000);
+      const fd = new FormData(); fd.append('file', f); fd.append('peer', currentPeer);
+      const up = await authFetch('/api/files', { method: 'POST', body: fd });
+      fileId = up.fileId; fileName = up.fileName;
+    }
+    await authFetch('/api/cards', { method: 'POST', body: JSON.stringify({
+      to: currentPeer, title, reward, deadline: $('ncDeadline').value,
+      orderId: pickedOrder._id, requirement: $('ncReq').value.trim(), fileId, fileName,
+    }) });
+    closeSheet();
+    toast('派单卡已发出 ✅');
+    loadChats().catch(() => {});
+    loadOverview().catch(() => {});
+  } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = '发送派单卡'; }
+}
+window.closeSheet = () => $('mask').classList.remove('show');
+$('mask').onclick = e => { if (e.target === $('mask')) closeSheet(); };
 
 /* ================= 邀请码 ================= */
-$('btnInvites').onclick = async () => { $('invMask').classList.add('show'); loadInvites(); };
-$('btnGenInvite').onclick = async () => {
-  const j = await authFetch('/api/invites', { method: 'POST', body: JSON.stringify({ count: 1 }) });
-  if (j.ok) { toast('已生成，点击码可复制'); loadInvites(); }
+$('btnInvite').onclick = async () => {
+  let codes = [];
+  try { const j = await authFetch('/api/invites'); codes = j.invites || []; } catch (e) {}
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>🎟️ 写手邀请码</h3>
+    <div style="margin-bottom:12px"><button class="btn btn-g btn-sm" id="invNew">＋ 生成新邀请码</button></div>
+    <div id="invList">${codes.length ? codes.map(c => `<div class="kv"><span class="k">${esc(c.code)}</span><span class="v" style="color:var(--sub)">${c.usedBy ? '已被使用' : '未使用'}</span></div>`).join('') : '<div class="empty">还没有邀请码，点上面按钮生成</div>'}</div>`;
+  $('mask').classList.add('show');
+  $('invNew').onclick = async () => {
+    try {
+      const j = await authFetch('/api/invites', { method: 'POST', body: '{}' });
+      $('invList').insertAdjacentHTML('afterbegin', '<div class="kv"><span class="k" style="color:var(--green-dk);font-weight:700">' + esc(j.invite.code) + '</span><span class="v" style="color:var(--sub)">未使用</span></div>');
+      toast('已生成：' + j.invite.code);
+    } catch (e) { toast(e.message); }
+  };
 };
-async function loadInvites() {
-  const j = await authFetch('/api/invites');
-  if (!j.ok) return;
-  $('invList').innerHTML = j.invites.length ? j.invites.map(i => `
-    <div class="code-item">
-      <code style="cursor:pointer" onclick="navigator.clipboard.writeText('${i.code}').then(()=>toast('已复制：${i.code}'))" title="点击复制">${i.code}</code>
-      <span style="font-size:11px;color:var(--sub)">${i.usedBy ? '已使用' : '未使用'}</span>
-    </div>`).join('') : '<div class="empty">还没有邀请码，点上面按钮生成</div>';
-}
+
+/* ================= 页签切换 ================= */
+document.querySelectorAll('.stab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.stab').forEach(x => x.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  $(t.dataset.v).classList.add('on');
+  if (t.dataset.v === 'vOver') loadOverview();
+});
+
+/* ================= 实时推送 + 稳定性 ================= */
+const socket = io({
+  auth: { token: TOKEN },
+  reconnection: true, reconnectionAttempts: Infinity,
+  reconnectionDelay: 800, reconnectionDelayMax: 5000, randomizationFactor: 0.5,
+  timeout: 20000,
+});
+socket.on('connect', async () => {
+  $('connBar').classList.remove('on');
+  if (ME) toast('已恢复连接 ✅');
+  loadChats().catch(() => {});
+  loadOverview().catch(() => {});
+});
+socket.on('disconnect', () => $('connBar').classList.add('on'));
+socket.on('connect_error', () => $('connBar').classList.add('on'));
+socket.on('reconnect', () => $('connBar').classList.remove('on'));
+
+socket.on('msg', m => {
+  if (currentPeer && (m.from === currentPeer || m.to === currentPeer)) {
+    if (!msgs.find(x => x._id === m._id)) { msgs.push(m); saveCache(msgs); renderMsgs(msgs); }
+  }
+  loadChats().catch(() => {});
+  if (m.type === 'file') toast((m.fromName || '') + ' 发来文件：' + m.fileName);
+});
+socket.on('card', c => {
+  cardsAll[c._id] = c;
+  renderMsgs(msgs);
+  if ($('vOver').classList.contains('on')) loadOverview();
+  toast('派单卡更新：' + c.title + ' → ' + c.status);
+});
+socket.on('presence', p => {
+  const c = chats.find(x => x.user.id === p.userId);
+  if (!c) return;
+  if (p.sockOnline !== undefined) c.user.sockOnline = p.sockOnline;
+  if (p.shift !== undefined) c.user.shift = p.shift;
+  renderConvList();
+  if (p.userId === currentPeer) {
+    $('peerDot').className = 'dot ' + (c.user.sockOnline ? 'd-on' : 'd-off');
+    $('peerSt').textContent = (c.user.sockOnline ? '在线' : '离线') + (c.user.shift ? ' · 在班' : '');
+  }
+});
+
+/* ================= 输入事件 ================= */
+$('btnSend').onclick = sendText;
+$('chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
+$('btnFile').onclick = () => $('fileInput').click();
+$('fileInput').onchange = e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value = ''; };
 $('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
 
-/* ================= 实时推送 ================= */
-const socket = io({ auth: { token: TOKEN } });
-socket.on('msg', m => {
-  if (currentPeer && (m.from === currentPeer || m.to === currentPeer)) { $('chatBox').insertAdjacentHTML('beforeend', renderMsg(m)); fillCardMsgs(); $('chatBox').scrollTop = $('chatBox').scrollHeight; }
-  loadTeam();
-  ping('新消息', (m.fromName || '') + '：' + (m.type === 'text' ? m.text : m.type === 'file' ? '[文件]' + m.fileName : '[派单卡]'));
-});
-socket.on('card', c => { fillCardMsgs(); loadOverview(); ping('派单卡更新', c.title + ' → ' + c.status); });
-socket.on('presence', () => loadTeam());
-
-loadTeam();
-loadOverview();
+/* ================= 启动 ================= */
+(async () => {
+  const j = await authFetch('/api/me');
+  ME = j.user;
+  // 预取所有相关派单卡（渲染聊天气泡用）
+  try {
+    const cj = await authFetch('/api/dispatch/overview');
+    cj.rows.forEach(c => { cardsAll[c._id] = Object.assign(cardsAll[c._id] || {}, c); });
+  } catch (e) {}
+  loadChats().catch(e => toast(e.message));
+  loadOverview().catch(() => {});
+})();
 </script>
 </body>
 </html>
