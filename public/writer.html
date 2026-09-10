@@ -216,6 +216,8 @@
   .lvbadge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:99px;background:var(--grey-bg);color:var(--sub);font-weight:700;letter-spacing:.5px;vertical-align:1px}
   .lvbadge.lv1{background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;box-shadow:0 1px 4px rgba(249,115,22,.35)}
   .lvbadge.lv-tb{background:rgba(255,255,255,.18);color:#fde68a}
+  .vbadge{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;font-size:9px;font-weight:800;background:#cbd5e1;color:#fff;vertical-align:1px}
+  .vbadge.on{background:linear-gradient(135deg,#fbbf24,#f59e0b);box-shadow:0 1px 3px rgba(245,158,11,.4)}
   .pool-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f3f4f6}
   .pool-row:last-child{border-bottom:none}
   /* 我的页卡组 + 二级页 */
@@ -301,9 +303,10 @@
 
 <header class="topbar">
   <div class="logo">✍️</div>
-  <div><h1>写手工作台</h1><div class="sub">派单协作系统 V16</div></div>
+  <div><h1>写手工作台</h1><div class="sub">派单协作系统 V17</div></div>
   <div class="grow"></div>
   <div class="me-badge">
+    <button class="hd-btn" id="btnMail" title="站内信" style="background:rgba(255,255,255,.14);color:#fff;position:relative">✉<span class="reddot" id="mailDot" style="display:none;position:absolute;top:-4px;right:-4px">0</span></button>
     <span class="dot d-off" id="selfDot"></span>
     <span id="whoami"></span>
     <span class="lvbadge lv-tb" id="tbLv" style="display:none">LV0</span>
@@ -324,7 +327,7 @@
           <div id="quoteBar"><span>↩</span><span class="qb-txt" id="quoteTxt"></span><button class="qb-x" onclick="clearQuote()">✕</button></div>
           <div class="input-row">
             <button class="icon-btn" id="btnPlus" title="发送图片/文件">＋</button>
-            <textarea id="chatInput" rows="1" placeholder="输入消息…（回车换行，点发送按钮发出）"></textarea>
+            <textarea id="chatInput" rows="1"></textarea>
             <button id="btnSend" class="send-btn" title="发送">发送</button>
             <input type="file" id="fileInput" style="display:none">
             <input type="file" id="imgInput" accept="image/*" style="display:none">
@@ -404,6 +407,7 @@
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <b style="font-size:16px" id="meName">—</b>
               <span class="lvbadge" id="meLv">LV0</span>
+              <span class="vbadge" id="meV" title="未实名认证">V</span>
             </div>
             <div style="font-size:11.5px;color:var(--sub);margin-top:3px">ID：<b id="meUid">—</b> · @<span id="meUsername">—</span></div>
           </div>
@@ -425,6 +429,9 @@
         </div>
         <div class="tile tap" onclick="openSub('subContract','📜 合同管理')">
           <div class="ti">📜</div><div class="tt" id="ctTileStatus">—</div><div class="ts">合作签约协议</div>
+        </div>
+        <div class="tile tap" onclick="openRealname()">
+          <div class="ti">🪪</div><div class="tt" id="rnTileStatus">未认证</div><div class="ts">实名认证 · 接单必需</div>
         </div>
       </div>
       <div class="card">
@@ -700,27 +707,56 @@ function renderMsgs(list) {
   $('chatBox').innerHTML = list.map(m => {
     const mine = m.from === ME.id;
     const qref = m.replyTo && m.replyTo.id ? '<div class="qref" onclick="jumpToMsg(\'' + m.replyTo.id + '\')">↩ ' + esc(m.replyTo.fromName || '') + '：' + esc(m.replyTo.preview || '') + '</div>' : '';
-    const rbtn = m.type !== 'card' ? '<button class="rbtn" onclick="setQuote(msgs.find(x=>String(x._id)===\'' + m._id + '\'))">引用</button>' : '';
+    // 已读/未读水印：只标自己发的消息
+    const watermark = mine && !m.recalled ? '<span style="margin-left:6px;color:' + (m.read ? 'var(--blue)' : 'var(--sub)') + '">' + (m.read ? '已读' : '未读') + '</span>' : '';
+    if (m.recalled) {
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}"><div class="bub" style="background:transparent;border:1px dashed var(--line);color:var(--sub);font-size:12px;font-style:italic;box-shadow:none"><div class="tm" style="margin-top:0">${mine ? '你' : (m.fromName || '对方')}撤回了一条消息 · ${fmtT(m.createdAt)}</div></div></div>`;
+    }
     if (m.type === 'card') {
       const c = cardsMap[m.cardId];
-      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「单子」页）</div>'}</div>`;
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}" onclick="openMsgOps('${m._id}')">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「单子」页）</div>'}</div>`;
     }
     if (m.type === 'file') {
       m.fileName = fixName(m.fileName);
       const isImg = /\.(png|jpe?g|gif|webp|bmp)$/i.test(m.fileName || '');
       previewIndex[m.fileId] = { url: dl(m.fileId), name: m.fileName || '' };
       const body = isImg
-        ? `${qref}<img class="imgmsg" src="${dl(m.fileId)}" loading="lazy" onclick="openPreview('${m.fileId}')"><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}</div>`
+        ? `${qref}<img class="imgmsg" src="${dl(m.fileId)}" loading="lazy" onclick="event.stopPropagation();openPreview('${m.fileId}')"><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}${watermark}</div>`
         : `${qref}<div class="filecard"><div class="fic">${fileIcon(m.fileName)}</div><div class="fbody">
             <div class="fn">${esc(m.fileName)}</div><div class="fs">${fmtSize(m.fileSize)}</div>
-            <div class="fo"><button class="fc-prev" onclick="openPreview('${m.fileId}')">预览</button><a class="fc-dl" href="${dl(m.fileId)}" download="${esc(m.fileName)}">下载</a></div>
-          </div></div><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}</div>`;
-      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub hasfile">${body}</div></div>`;
+            <div class="fo"><button class="fc-prev" onclick="event.stopPropagation();openPreview('${m.fileId}')">预览</button><a class="fc-dl" href="${dl(m.fileId)}" download="${esc(m.fileName)}" onclick="event.stopPropagation()">下载</a></div>
+          </div></div><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}${watermark}</div>`;
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}" onclick="openMsgOps('${m._id}')"><div class="bub hasfile">${body}</div></div>`;
     }
-    return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${qref}${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
+    return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}" onclick="openMsgOps('${m._id}')"><div class="bub">${qref}${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}${watermark}</div></div></div>`;
   }).join('');
   $('chatBox').scrollTop = $('chatBox').scrollHeight;
 }
+/* 点击消息 → 弹出操作（引用 / 2分钟内撤回） */
+window.openMsgOps = function (mid) {
+  const m = msgs.find(x => String(x._id) === mid);
+  if (!m || m.recalled) return;
+  const mine = m.from === ME.id;
+  const canRecall = mine && !m.recalled && (Date.now() - new Date(m.createdAt).getTime() <= 2 * 60 * 1000);
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>💬 消息操作</h3>
+    <div class="req-box" style="margin-top:4px">${esc((m.type === 'text' ? m.text : '[' + (m.type === 'file' ? '文件' : '派单卡') + '] ' + (m.fileName || '')).slice(0, 60))}</div>
+    <div class="ops" style="flex-direction:column">
+      ${m.type !== 'card' ? '<button class="btn btn-o" onclick="setQuote(msgs.find(x=>String(x._id)===\'' + m._id + '\'));closeSheet()">↩ 引用这条消息</button>' : ''}
+      ${canRecall ? '<button class="btn btn-r" onclick="recallMsg(\'' + m._id + '\')">🗑 撤回（2分钟内）</button>' : (mine ? '<button class="btn btn-gh" disabled>撤回（超过2分钟）</button>' : '')}
+    </div>`;
+  $('mask').classList.add('show');
+};
+window.recallMsg = async function (mid) {
+  if (!confirm('确定撤回这条消息吗？')) return;
+  try {
+    await authFetch('/api/messages/recall', { method: 'POST', body: JSON.stringify({ id: mid }) });
+    const m = msgs.find(x => String(x._id) === mid);
+    if (m) { m.recalled = true; m.text = ''; m.fileName = null; renderMsgs(msgs); }
+    closeSheet();
+    toast('已撤回');
+  } catch (e) { toast(e.message); }
+};
 async function loadChats() {
   const j = await authFetch('/api/chats');
   chats = j.chats;
@@ -912,7 +948,10 @@ async function cardAct(id, path, body) {
     await Promise.all([reloadCards(), loadChats()]);
   } catch (e) { toast(e.message); }
 }
-window.actAccept = id => cardAct(id, 'accept');
+window.actAccept = id => {
+  if (!ME.realname) { openRealname(); return toast('接单前请先完成实名认证'); }
+  cardAct(id, 'accept');
+};
 window.actDecline = id => { if (confirm('确定不接这个单子吗？')) cardAct(id, 'decline'); };
 window.actSubmit = id => {
   const note = prompt('给管理员捎句话（选填，如完成说明）：') ?? '';
@@ -1131,8 +1170,69 @@ function paintMeExtras() {
   set('meUsername', ME.username || '');
   set('meUid', ME.uid || '补号中…');
   const lv = $('meLv'); if (lv) { lv.textContent = ME.level >= 1 ? 'LV' + ME.level : (ME.level === 0 ? 'LV0 试用期' : 'LV' + ME.level); lv.className = 'lvbadge' + (ME.level >= 1 ? ' lv1' : ''); }
+  // 实名 V 标：黄色=已认证，灰色=未认证
+  const vn = $('meV'); if (vn) { vn.className = 'vbadge' + (ME.realname ? ' on' : ''); vn.textContent = 'V'; vn.title = ME.realname ? '已实名：' + ME.realname.name : '未实名认证'; }
+  const rnT = $('rnTileStatus'); if (rnT) { rnT.textContent = ME.realname ? '已认证 ' + ME.realname.name : '未认证'; rnT.style.color = ME.realname ? 'var(--green-dk)' : 'var(--amber)'; }
   const tb = $('tbLv'); if (tb) { tb.textContent = 'LV' + (ME.level || 0); tb.style.display = 'inline-block'; }
 }
+/* ================= 实名认证 ================= */
+function openRealname() {
+  if (ME.realname) {
+    $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+      <h3>🪪 实名认证</h3>
+      <div class="req-box">✅ 已完成实名认证\n\n姓名：${esc(ME.realname.name)}\n身份证：${esc(ME.realname.idMask)}\n\n实名信息已自动关联合同与收款方式，无需重复认证。</div>`;
+    $('mask').classList.add('show');
+    return;
+  }
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>🪪 实名认证</h3>
+    <div class="flow-tip">接单前必须完成实名认证。平台仅做<b>18位位数校验</b>与唯一性识别，不对接第三方数据库；认证后自动关联合同签署与收款绑定（须为同一人）。</div>
+    <input id="rnName" placeholder="真实姓名（与身份证一致）" maxlength="30" style="margin-bottom:9px">
+    <input id="rnId" placeholder="18位身份证号码" maxlength="18" style="margin-bottom:12px">
+    <button class="btn btn-g" id="btnRealname" style="width:100%">提交认证</button>`;
+  $('mask').classList.add('show');
+  $('btnRealname').onclick = async () => {
+    const name = $('rnName').value.trim(), idCard = $('rnId').value.trim();
+    if (!name || !idCard) return toast('姓名和身份证号都要填');
+    if (!/^\d{17}[\dXx]$/.test(idCard)) return toast('身份证号应为18位（最后一位可为X）');
+    try {
+      const j = await authFetch('/api/me/realname', { method: 'PUT', body: JSON.stringify({ name, idCard }) });
+      ME.realname = { name, idMask: j.realname.idMask, verifiedAt: j.realname.verifiedAt };
+      paintMeExtras();
+      closeSheet();
+      toast('实名认证成功 🎉 已关联合同与收款方式');
+    } catch (e) { toast(e.message); }
+  };
+}
+/* ================= 站内信 ================= */
+async function loadMail() {
+  try {
+    const j = await authFetch('/api/notify');
+    const dot = $('mailDot');
+    dot.style.display = j.unread ? 'flex' : 'none';
+    dot.textContent = j.unread > 9 ? '9+' : j.unread;
+    return j.rows;
+  } catch (e) { return []; }
+}
+$('btnMail').onclick = async () => {
+  const rows = await loadMail();
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>✉ 站内信</h3>
+    ${rows.length ? rows.map(r => `
+      <div class="fr-row" style="cursor:pointer;align-items:flex-start" onclick="readMail('${r._id}')">
+        <div style="font-size:18px;margin-top:2px">${r.read ? '📭' : '📬'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">${esc(r.title)} ${r.read ? '' : '<span style="font-size:10px;color:var(--red)">未读</span>'}</div>
+          <div style="font-size:11px;color:var(--sub);margin-top:2px">${new Date(new Date(r.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ')}</div>
+          <div style="font-size:12px;color:var(--sub);margin-top:3px;white-space:pre-wrap;max-height:${r._open ? 'none' : '3.6em'};overflow:hidden">${esc(r.content)}</div>
+        </div>
+      </div>`).join('') : '<div class="empty">暂无站内信</div>'}`;
+  $('mask').classList.add('show');
+};
+window.readMail = async function (id) {
+  try { await authFetch('/api/notify/' + id + '/read', { method: 'POST', body: '{}' }); } catch (e) {}
+  $('btnMail').click();
+};
 /* ================= 等级 / 钱包 ================= */
 /* ================= 我的页：卡组 + 二级页 ================= */
 function openSub(secId, title) {
@@ -1207,7 +1307,7 @@ async function loadFriends() {
       <div class="fr-row">
         <div class="avatar" style="width:38px;height:38px;font-size:15px">${esc((u.displayName || '?')[0])}<span class="dot ${u.online ? 'd-on' : 'd-off'}"></span></div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13.5px;font-weight:600">${esc(u.displayName)} ${u.role === 'admin' ? '<span class="tag tg-warn">管理</span>' : '<span class="lvbadge ' + (u.level >= 1 ? 'lv1' : '') + '">LV' + (u.level || 0) + '</span>'}</div>
+          <div style="font-size:13.5px;font-weight:600">${esc(u.displayName)} ${u.role === 'admin' ? '<span class="tag tg-warn">管理</span>' : '<span class="lvbadge ' + (u.level >= 1 ? 'lv1' : '') + '">LV' + (u.level || 0) + '</span> <span class="vbadge' + (u.realname ? ' on' : '') + '" title="' + (u.realname ? '已实名' : '未实名') + '">V</span>'}</div>
           <div style="font-size:11px;color:var(--sub)">ID ${u.uid || '—'} · ${u.online ? '在线' : '离线'}</div>
         </div>
         <button class="btn btn-g btn-sm" onclick="chatWith('${u.id}')">💬 聊天</button>
@@ -1275,7 +1375,8 @@ async function checkContract() {
     if (j.signed) return;
     $('ctVer').textContent = '版本 ' + j.version + ' · 请仔细阅读后签署';
     $('ctModalText').textContent = j.text;
-    $('ctName').value = ME.displayName || '';
+    if (j.realname?.name) { $('ctName').value = j.realname.name; $('ctName').readOnly = true; $('ctName').style.background = 'var(--grey-bg)'; $('ctName').placeholder = '签署姓名（已锁定为实名姓名）'; }
+    else $('ctName').value = ME.displayName || '';
     setTimeout(() => $('ctMask').classList.add('on'), 1200);
   } catch (e) {}
 }
@@ -1289,6 +1390,7 @@ $('ctSign').onclick = async () => {
     toast('签署成功，合同已生效 🎉');
   } catch (e) { toast(e.message); }
 };
+// 收款方式：实名后姓名自动锁定为实名姓名
 window.chatWith = async id => {
   closeSub();
   document.querySelector('.tab[data-p="pChat"]').click();
@@ -1385,6 +1487,19 @@ socket.on('connect_error', () => { $('connBar').classList.add('on'); });
 socket.on('reconnect', () => { $('connBar').classList.remove('on'); });
 
 socket.on('friend_request', d => { toast('📩 ' + (d.fromName || '有人') + ' 请求加你为同事，去「我的-同事好友」确认'); });
+socket.on('announce', d => { toast('📬 站内信：' + (d.title || '新通知')); loadMail().catch(() => {}); });
+socket.on('msg_read', d => {
+  // 对方读了我发的消息 → 刷新当前会话的已读水印
+  if (currentPeer && d.peer === currentPeer) {
+    let changed = false;
+    msgs.forEach(m => { if (m.from === ME.id && !m.read) { m.read = true; changed = true; } });
+    if (changed) renderMsgs(msgs);
+  }
+});
+socket.on('msg_recall', d => {
+  const m = msgs.find(x => String(x._id) === String(d.id));
+  if (m) { m.recalled = true; m.text = ''; m.fileName = null; renderMsgs(msgs); }
+});
 socket.on('msg', m => {
   // 只收属于当前会话的消息：会话键=双方id排序拼接，防止别人聊天串台进当前窗口
   const convKey = currentPeer && ME ? [String(ME.id), String(currentPeer)].sort().join(':') : null;
@@ -1427,13 +1542,9 @@ window.togglePin = function () {
 };
 window.clearHistory = async function () {
   if (!currentPeer) return toast('先选择一个会话');
-  if (!confirm('确定清空与该联系人的全部聊天记录吗？双方都会清空，不可恢复！')) return;
-  try {
-    await authFetch('/api/messages?peer=' + currentPeer, { method: 'DELETE' });
-    msgs = []; saveCache(msgs); renderMsgs(msgs);
-    toast('聊天记录已清空');
-    loadChats().catch(() => {});
-  } catch (e) { toast(e.message); }
+  if (!confirm('确定清空本机上的这段聊天记录吗？（仅清空自己本地缓存，对方和服务器不受影响）')) return;
+  msgs = []; saveCache(msgs); renderMsgs(msgs);
+  toast('已清空本机聊天记录');
 };
 $('btnChatMenu').onclick = () => {
   if (!currentPeer) return toast('先选择一个会话');
@@ -1539,6 +1650,10 @@ $('btnAli').onclick = async () => {
 };
 function paintAlipay() {
   if (ME && ME.alipay) { $('aliName').value = ME.alipay.name || ''; $('aliAccount').value = ME.alipay.account || ''; }
+  if (ME?.realname?.name) {
+    $('aliName').value = ME.realname.name;
+    $('aliName').readOnly = true; $('aliName').style.background = 'var(--grey-bg)';
+  }
 }
 
 /* ================= 启动 ================= */

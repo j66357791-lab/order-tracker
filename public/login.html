@@ -66,6 +66,11 @@
       <label>用户名（字母数字，3-20位）</label><input id="rUser">
       <label>密码（至少6位）</label><input id="rPass" type="password">
       <label>邮箱（选填，离线通知用）</label><input id="rEmail" type="email">
+      <label>人机验证</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div id="capBox" style="flex-shrink:0;cursor:pointer" title="看不清？点一下换一个" onclick="loadCaptcha()"></div>
+        <input id="rCap" placeholder="计算结果" inputmode="numeric" maxlength="4" style="flex:1">
+      </div>
       <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#475569;cursor:pointer;line-height:1.5;margin-top:4px">
         <input type="checkbox" id="rAgree" style="margin-top:2px;width:auto">
         <span>我已阅读并同意<a href="javascript:void(0)" id="ctLink" style="color:#059669;font-weight:600">《兼职写手合作签约协议》</a>，注册即完成电子签署</span>
@@ -88,6 +93,20 @@
 <script>
 const $ = id => document.getElementById(id);
 const err = m => { $('mainErr').textContent = m || ''; };
+// 密码传输加密：SHA-256 预哈希后再发（旧账号首次登录带原文用于静默升级）
+async function sha256hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+let captchaId = '';
+async function loadCaptcha() {
+  try {
+    const j = await fetch('/api/captcha').then(x => x.json());
+    captchaId = j.id;
+    $('capBox').innerHTML = j.svg;
+  } catch (e) { $('capBox').innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:18px 10px">验证码加载失败</div>'; }
+}
+loadCaptcha();
 
 (async () => {
   const r = await fetch('/api/setup/state');
@@ -136,8 +155,11 @@ $('btnSetup').onclick = async () => {
 $('btnLogin').onclick = async () => {
   err('');
   try {
-    const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: $('lUser').value.trim(), password: $('lPass').value }) });
+    const plain = $('lPass').value;
+    const body = { username: $('lUser').value.trim(), password: await sha256hex(plain) };
+    // 兼容旧账号静默升级：仅在密码哈希不匹配时服务端才会用到原文
+    body.passwordPlain = plain;
+    const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error);
     enter(j.user.role, j.token, j.user);
@@ -146,14 +168,16 @@ $('btnLogin').onclick = async () => {
 $('btnReg').onclick = async () => {
   err('');
   if (!$('rAgree').checked) { err('请先阅读并勾选同意《兼职写手合作签约协议》'); return; }
+  if (!$('rCap').value.trim()) { err('请输入人机验证结果'); return; }
   try {
     const r = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ inviteCode: $('rInvite').value.trim(), username: $('rUser').value.trim(),
-        password: $('rPass').value, displayName: $('rName').value.trim(), email: $('rEmail').value.trim(), agree: true }) });
+        password: await sha256hex($('rPass').value), displayName: $('rName').value.trim(), email: $('rEmail').value.trim(), agree: true,
+        captchaId, captchaAnswer: $('rCap').value.trim() }) });
     const j = await r.json();
-    if (!j.ok) throw new Error(j.error);
+    if (!j.ok) { err(j.error); loadCaptcha(); return; }
     enter('writer', j.token, j.user);
-  } catch (e) { err(e.message); }
+  } catch (e) { err(e.message); loadCaptcha(); }
 };
 [$('lPass'), $('rPass')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') el.blur(); }));
 </script>

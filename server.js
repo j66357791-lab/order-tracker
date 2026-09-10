@@ -268,7 +268,8 @@ function signToken(u) {
 function publicUser(u) {
   return { id: u._id.toString(), uid: u.uid || null, username: u.username, role: u.role,
            displayName: u.displayName, shift: !!u.shift, sockOnline: !!u.sockOnline,
-           level: u.level || 0, alipay: u.alipay || null };
+           level: u.level || 0, alipay: u.alipay || null,
+           realname: u.realname ? { name: u.realname.name, idMask: u.realname.idMask, verifiedAt: u.realname.verifiedAt } : null };
 }
 // 写手绑定收款方式（支付宝：姓名+账号）
 app.put('/api/me/alipay', auth, async (req, res) => {
@@ -277,6 +278,10 @@ app.put('/api/me/alipay', auth, async (req, res) => {
     const name = String(req.body?.name || '').slice(0, 40).trim();
     const account = String(req.body?.account || '').slice(0, 60).trim();
     if (!name || !account) return res.status(400).json({ ok: false, error: '姓名和支付宝账号都必填' });
+    // 收款人与实名必须为同一人（自动关联）
+    if (req.user.realname?.name && name !== req.user.realname.name) {
+      return res.status(400).json({ ok: false, error: '已实名认证，收款姓名必须与实名姓名一致（' + req.user.realname.name + '）' });
+    }
     await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { alipay: { name, account, updatedAt: new Date() } } });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -503,8 +508,33 @@ app.get('/api/withdraw', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ---------- 人机验证码（算术图形码，内存5分钟过期） ----------
+const captchaStore = new Map();
+const rnd = n => Math.floor(Math.random() * n);
+app.get('/api/captcha', (req, res) => {
+  const a = rnd(8) + 2, b = rnd(8) + 1;
+  const op = Math.random() < 0.5 ? '+' : '-';
+  const ans = op === '+' ? a + b : a - b;
+  const id = require('crypto').randomBytes(12).toString('hex');
+  captchaStore.set(id, { ans, exp: Date.now() + 5 * 60 * 1000 });
+  if (captchaStore.size > 500) for (const [k, v] of captchaStore) if (v.exp < Date.now()) captchaStore.delete(k);
+  const noise = Array.from({ length: 3 }, () => `<path d="M${rnd(120)} ${rnd(44)} Q ${rnd(160)} ${rnd(60)} ${120 + rnd(80)} ${rnd(50)}" stroke="#94a3b8${rnd(9)}" fill="none" stroke-width="1.5" opacity=".5"/>`).join('');
+  const dots = Array.from({ length: 26 }, () => `<circle cx="${rnd(200)}" cy="${rnd(56)}" r="${rnd(2) + 1}" fill="#cbd5e1" opacity=".7"/>`).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="56" viewBox="0 0 200 56"><rect width="200" height="56" rx="10" fill="#f1f5f9"/>${noise}${dots}
+    <text x="100" y="36" text-anchor="middle" font-size="26" font-weight="700" font-family="Georgia,serif" fill="#1f2937" letter-spacing="4" transform="rotate(${rnd(7) - 3} 100 30)">${a} ${op} ${b} = ?</text></svg>`;
+  res.json({ ok: true, id, svg });
+});
+function verifyCaptcha(req) {
+  const { captchaId, captchaAnswer } = req.body || {};
+  const rec = captchaStore.get(String(captchaId || ''));
+  captchaStore.delete(String(captchaId || ''));
+  if (!rec || rec.exp < Date.now()) return '验证码已过期，请刷新重试';
+  if (parseInt(captchaAnswer, 10) !== rec.ans) return '验证码答案不对';
+  return null;
+}
+
 // ---------- 合同（兼职写手合作签约协议） ----------
-const CONTRACT_VERSION = 'V1.0';
+const CONTRACT_VERSION = 'V1.1';
 const CONTRACT_TITLE = '兼职写手合作签约协议';
 const CONTRACT_TEXT = `甲方：平台运营方（下称"平台"）
 乙方：兼职写手（下称"写手"，即本平台注册账号持有人）
@@ -514,26 +544,27 @@ const CONTRACT_TEXT = `甲方：平台运营方（下称"平台"）
 2. 写手自愿在平台注册并通过接单获得报酬，双方按"多劳多得、按单结算"原则合作。
 
 二、接单与交付规范
-1. 写手应保证所提交作品为本人原创，不得抄袭、洗稿、AI批量伪原创冒充人工产出，不得一稿多投。
+1. 写手应保证所提交作品为本人原创，可以适当使用AI工具辅助处理（资料检索、润色、排版等），但不得以AI直接生成内容未经加工就冒充人工原创交付，不得抄袭、洗稿，不得一稿多投。
 2. 作品需符合派单卡标注的要求（主题、字数、格式、交付时间等），不合格作品甲方可驳回并要求修改或重做。
 3. 接单后因个人原因无法完成的，应及时与管理员沟通释放订单；无故拖延、失联造成的损失由写手承担。
 4. 严禁泄露甲方客户信息、订单信息及平台内部数据；严禁绕开平台私自与客户交易。
 
 三、报酬与结算
 1. 报酬按单计价，以派单卡标注金额为准；审核通过后进入待打款，由管理员按约定周期打款至写手绑定的收款方式。
-2. 写手应保证绑定的收款账号真实有效，因账号错误导致的损失由写手自行承担。
+2. 写手应保证绑定的收款账号真实有效，且收款人与实名认证信息一致，因账号错误导致的损失由写手自行承担。
 3. 写手达到平台等级条件的，可享受平台额外激励奖励，具体规则以平台页面公示为准。
 
-四、隐私与保密
-1. 平台仅收集开展合作所必需的信息（账号、昵称、收款方式等），并妥善保管。
-2. 写手对合作过程中知悉的客户与业务信息负有保密义务，协议终止后仍持续有效。
+四、实名与隐私
+1. 写手接单前应完成实名认证（姓名+身份证号，平台仅作位数校验与唯一性识别，不对接第三方数据库）。
+2. 平台仅收集开展合作所必需的信息（账号、昵称、实名信息、收款方式等），并妥善保管，不用于合作以外用途。
+3. 写手对合作过程中知悉的客户与业务信息负有保密义务，协议终止后仍持续有效。
 
 五、违规与解除
-1. 写手出现抄袭、泄密、私单、恶意刷单等行为的，平台有权视情节采取驳回订单、取消激励、暂停接单、封禁账号等措施，未结合格报酬仍按规定结算。
+1. 写手出现抄袭、泄密、私单、恶意刷单、冒名实名等行为的，平台有权视情节采取驳回订单、取消激励、暂停接单、封禁账号等措施，未结合格报酬仍按规定结算。
 2. 任何一方可提前告知对方终止合作；已产生的合格订单报酬不受影响。
 
 六、其他
-1. 本协议自写手在平台完成电子签署（点击签署并确认姓名）之日起生效，长期有效。
+1. 本协议自写手在平台完成电子签署（点击签署并确认姓名）之日起生效，长期有效；实名认证信息与本协议自动关联，须为同一人。
 2. 写手签署本协议即视为已完整阅读并同意以上全部条款。
 3. 本协议的修改与解释权归平台所有，重大变更将以平台公告或弹窗方式通知。`;
 
@@ -544,7 +575,8 @@ app.get('/api/contract', auth, async (req, res) => {
     const rows = await db.collection('contracts').find({ userId: req.user.id }).sort({ signedAt: -1 }).limit(20).toArray();
     res.json({
       ok: true, title: CONTRACT_TITLE, version: CONTRACT_VERSION, text: CONTRACT_TEXT,
-      signed: rows.length > 0,
+      signed: rows.some(r => r.version === CONTRACT_VERSION),
+      realname: req.user.realname || null,
       contracts: rows.map(r => ({ _id: r._id.toString(), name: r.name, version: r.version, signedAt: r.signedAt })),
     });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -552,13 +584,83 @@ app.get('/api/contract', auth, async (req, res) => {
 app.post('/api/contract/sign', auth, async (req, res) => {
   try {
     const db = await getDb();
-    const name = String(req.body?.name || '').trim().slice(0, 30);
+    let name = String(req.body?.name || '').trim().slice(0, 30);
     if (!name) return res.status(400).json({ ok: false, error: '请输入签署姓名' });
     if (name !== (req.body?.nameConfirm || '').trim()) return res.status(400).json({ ok: false, error: '两次输入的姓名不一致' });
+    // 已实名则强制与实名一致（自动关联）
+    if (req.user.realname?.name) {
+      if (name !== req.user.realname.name) return res.status(400).json({ ok: false, error: '已实名认证，签署姓名必须与实名姓名一致（' + req.user.realname.name + '）' });
+    }
     const exist = await db.collection('contracts').findOne({ userId: req.user.id, version: CONTRACT_VERSION });
     if (exist) return res.json({ ok: true, already: true });
     await db.collection('contracts').insertOne({ userId: req.user.id, name, uid: req.user.uid, displayName: req.user.displayName, version: CONTRACT_VERSION, title: CONTRACT_TITLE, signedAt: new Date() });
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 实名认证（姓名+身份证18位位数校验，只存掩码与哈希） ----------
+const sha256hex = s => require('crypto').createHash('sha256').update(String(s)).digest('hex');
+app.put('/api/me/realname', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const name = String(req.body?.name || '').trim().slice(0, 30);
+    const idCard = String(req.body?.idCard || '').trim().toUpperCase();
+    if (!/^[\u4e00-\u9fa5·]{2,30}$/.test(name)) return res.status(400).json({ ok: false, error: '请输入真实中文姓名' });
+    if (!/^\d{17}[\dX]$/.test(idCard)) return res.status(400).json({ ok: false, error: '身份证号应为18位（最后一位可为X）' });
+    const idHash = sha256hex(idCard);
+    const dup = await db.collection('users').findOne({ 'realname.idHash': idHash, _id: { $ne: new ObjectId(req.user.id) } });
+    if (dup) return res.status(400).json({ ok: false, error: '该身份证号已被其他账号认证' });
+    const idMask = idCard.slice(0, 3) + '***********' + idCard.slice(-4);
+    const realname = { name, idMask, idHash, verifiedAt: new Date() };
+    await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { realname } });
+    // 自动关联合同：已签合同签署姓名同步为实名姓名
+    await db.collection('contracts').updateMany({ userId: req.user.id }, { $set: { name, linkedRealname: true } });
+    res.json({ ok: true, realname: { name, idMask, verifiedAt: realname.verifiedAt } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 站内信（管理员群发/定向，写手查看） ----------
+app.post('/api/notify', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const title = String(req.body?.title || '').trim().slice(0, 60);
+    const content = String(req.body?.content || '').trim().slice(0, 3000);
+    const target = String(req.body?.target || 'all');
+    if (!title || !content) return res.status(400).json({ ok: false, error: '标题和内容不能为空' });
+    let targets = [];
+    if (target === 'all') targets = (await db.collection('users').find({ role: 'writer' }).project({ _id: 1 }).toArray()).map(u => u._id.toString());
+    else {
+      if (!ObjectId.isValid(target)) return res.status(400).json({ ok: false, error: '目标用户无效' });
+      targets = [target];
+    }
+    if (!targets.length) return res.status(400).json({ ok: false, error: '没有可发送的用户' });
+    await db.collection('announcements').insertOne({ title, content, from: '系统', targets, readBy: [], createdAt: new Date() });
+    targets.forEach(t => notify(t, 'announce', { title }));
+    res.json({ ok: true, count: targets.length });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/notify', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.collection('announcements').find({ targets: req.user.id }).sort({ createdAt: -1 }).limit(50).toArray();
+    res.json({
+      ok: true, rows: rows.map(r => ({ _id: r._id.toString(), title: r.title, content: r.content, createdAt: r.createdAt, read: (r.readBy || []).includes(req.user.id) })),
+      unread: rows.filter(r => !(r.readBy || []).includes(req.user.id)).length,
+    });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/notify/:id/read', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    await db.collection('announcements').updateOne({ _id: new ObjectId(req.params.id) }, { $addToSet: { readBy: req.user.id } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/notify/admin', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.collection('announcements').find().sort({ createdAt: -1 }).limit(50).toArray();
+    res.json({ ok: true, rows: rows.map(r => ({ _id: r._id.toString(), title: r.title, content: r.content, createdAt: r.createdAt, targets: (r.targets || []).length, reads: (r.readBy || []).length })) });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -632,7 +734,7 @@ async function auth(req, res, next) {
     const db = await getDb();
     const u = await db.collection('users').findOne({ _id: new ObjectId(payload.id) });
     if (!u) return res.status(401).json({ ok: false, error: '账号不存在' });
-    req.user = { _id: u._id, id: u._id.toString(), role: u.role, username: u.username, displayName: u.displayName, uid: u.uid || null, level: u.level || 0, alipay: u.alipay || null };
+    req.user = { _id: u._id, id: u._id.toString(), role: u.role, username: u.username, displayName: u.displayName, uid: u.uid || null, level: u.level || 0, alipay: u.alipay || null, realname: u.realname || null };
     next();
   } catch (e) {
     res.status(401).json({ ok: false, error: '登录已过期，请重新登录' });
@@ -677,10 +779,17 @@ app.post('/api/setup', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const db = await getDb();
-    const { username, password } = req.body || {};
+    const { username, password, passwordPlain } = req.body || {};
     const u = await db.collection('users').findOne({ username: String(username || '') });
-    if (!u || !(await bcrypt.compare(String(password || ''), u.passwordHash))) {
+    // 新体系：前端SHA-256预哈希；旧用户：前端同时带上原文，验证通过后静默升级为哈希体系
+    const okNew = u && await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false);
+    const okLegacy = !okNew && u && passwordPlain && await bcrypt.compare(String(passwordPlain), u.passwordHash).catch(() => false);
+    if (!u || (!okNew && !okLegacy)) {
       return res.status(401).json({ ok: false, error: '用户名或密码错误' });
+    }
+    if (okLegacy) {
+      // 静默升级：换成SHA-256预哈希存储，此后登录不再传输明文
+      await db.collection('users').updateOne({ _id: u._id }, { $set: { passwordHash: await bcrypt.hash(String(password), 8) } }).catch(() => {});
     }
     res.json({ ok: true, token: signToken(u), user: publicUser(u) });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -694,6 +803,8 @@ app.post('/api/auth/register', async (req, res) => {
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(username || '')) return res.status(400).json({ ok: false, error: '用户名限3-20位字母数字下划线' });
     if (!password || String(password).length < 6) return res.status(400).json({ ok: false, error: '密码至少6位' });
     if (!req.body?.agree) return res.status(400).json({ ok: false, error: '请先阅读并同意《兼职写手合作签约协议》' });
+    const capErr = verifyCaptcha(req);
+    if (capErr) return res.status(400).json({ ok: false, error: capErr });
     const exists = await db.collection('users').findOne({ username });
     if (exists) return res.status(400).json({ ok: false, error: '用户名已被占用' });
     const doc = {
@@ -706,6 +817,11 @@ app.post('/api/auth/register', async (req, res) => {
     const myUid = await assignUid(db, r.insertedId);
     // 注册即签署合作协议
     await db.collection('contracts').insertOne({ userId: r.insertedId.toString(), name: doc.displayName, uid: myUid, displayName: doc.displayName, version: CONTRACT_VERSION, title: CONTRACT_TITLE, signedAt: new Date(), source: 'register' });
+    // 欢迎站内信
+    await db.collection('announcements').insertOne({
+      title: '👋 欢迎加入写手大家庭！', targets: [r.insertedId.toString()], readBy: [], createdAt: new Date(),
+      content: `你好呀，${doc.displayName}！\n\n欢迎加入平台，这里有一份快速上手指南：\n\n① 去「工作台」看看待完成的单子，点「接单」开始赚第一笔；\n② 接单前记得先完成「实名认证」（我的-实名认证），否则接不了单哦；\n③ 「我的-钱包」里绑定收款方式（需与实名一致），审核通过后管理员会打款给你；\n④ 考勤页可以抢班、打卡，等级 LV1 有每月 1.5% 的激励奖励；\n⑤ 有问题随时在「聊天」里联系管理员，或留意顶部 ✉ 站内信通知。\n\n祝你接单顺利，稿费满满！`,
+    });
     await db.collection('invites').updateOne({ _id: inv._id }, { $set: { usedBy: r.insertedId.toString(), usedAt: new Date() } });
     res.json({ ok: true, token: signToken({ _id: r.insertedId, role: 'writer' }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -783,7 +899,7 @@ app.get('/api/chats', auth, async (req, res) => {
     res.json({ ok: true, chats: list });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-// 消息列表（自动标已读）
+// 消息列表（自动标已读 + 通知发送方更新已读水印）
 app.get('/api/messages', auth, async (req, res) => {
   try {
     const db = await getDb();
@@ -791,8 +907,29 @@ app.get('/api/messages', auth, async (req, res) => {
     if (!ObjectId.isValid(peer)) return res.status(400).json({ ok: false, error: '无效会话' });
     const conv = pairKey(req.user.id, peer);
     const msgs = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: 1 }).limit(500).toArray();
-    await db.collection('messages').updateMany({ conversation: conv, to: req.user.id, read: false }, { $set: { read: true } });
+    const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
+    if (unread) {
+      await db.collection('messages').updateMany({ conversation: conv, to: req.user.id, read: false }, { $set: { read: true } });
+      msgs.forEach(m => { if (m.to === req.user.id) m.read = true; });
+      notify(peer, 'msg_read', { peer: req.user.id });   // 让对方刷新已读水印
+    }
     res.json({ ok: true, messages: msgs });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 撤回消息（2分钟内、仅本人）
+app.post('/api/messages/recall', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const id = String(req.body?.id || '');
+    if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: '参数无效' });
+    const m = await db.collection('messages').findOne({ _id: new ObjectId(id) });
+    if (!m || m.from !== req.user.id) return res.status(404).json({ ok: false, error: '消息不存在' });
+    if (m.recalled) return res.json({ ok: true });
+    if (Date.now() - new Date(m.createdAt).getTime() > 2 * 60 * 1000) return res.status(400).json({ ok: false, error: '超过2分钟，不能撤回了' });
+    await db.collection('messages').updateOne({ _id: m._id }, { $set: { recalled: true, text: '', fileId: null, fileName: null, cardId: null } });
+    const updated = { ...m, recalled: true, text: '' };
+    notify(m.to, 'msg_recall', { id, conversation: m.conversation });
+    res.json({ ok: true, message: updated });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 // 清空聊天记录（双方会话消息全部删除）
@@ -988,6 +1125,8 @@ app.get('/api/mycards', auth, async (req, res) => {
 app.post('/api/cards/:id/accept', auth, async (req, res) => {
   try {
     const db = await getDb();
+    // 接单必须完成实名认证
+    if (!req.user.realname?.name) return res.status(403).json({ ok: false, error: 'NEED_REALNAME:接单前请先完成实名认证（我的-实名认证）' });
     const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
     if (!card || card.to !== req.user.id) return res.status(404).json({ ok: false, error: '派单卡不存在' });
     if (card.status !== '待接单') return res.status(400).json({ ok: false, error: '该卡片当前状态不可接单' });
@@ -1405,8 +1544,8 @@ io.on('connection', async (socket) => {
   });
 });
 
-// ---------- 定时清理：聊天附件3天销毁 + 文字消息30天自动清理 ----------
-const FILE_RETAIN_DAYS = 3, MSG_RETAIN_DAYS = 30;
+// ---------- 定时清理：附件3天销毁；消息=双方已读3天清理、未读30天兜底清理 ----------
+const FILE_RETAIN_DAYS = 3, MSG_READ_RETAIN_DAYS = 3, MSG_UNREAD_RETAIN_DAYS = 30;
 async function cleanupOldData() {
   try {
     const db = await getDb();
@@ -1415,9 +1554,12 @@ async function cleanupOldData() {
     const old = await db.collection('fs.files').find({ uploadDate: { $lt: cutoff } }).project({ _id: 1 }).toArray();
     for (const f of old) { try { await bucket.delete(f._id); } catch (e) {} }
     if (old.length) console.log('[清理] 已删除', old.length, '个超过' + FILE_RETAIN_DAYS + '天的聊天附件');
-    const msgCutoff = new Date(Date.now() - MSG_RETAIN_DAYS * 24 * 3600 * 1000);
-    const r = await db.collection('messages').deleteMany({ createdAt: { $lt: msgCutoff } });
-    if (r.deletedCount) console.log('[清理] 已删除', r.deletedCount, '条超过' + MSG_RETAIN_DAYS + '天的历史消息');
+    // 已读消息3天后清理（省库）；未读兜底30天，防止漏看的信息凭空消失
+    const readCut = new Date(Date.now() - MSG_READ_RETAIN_DAYS * 24 * 3600 * 1000);
+    const unreadCut = new Date(Date.now() - MSG_UNREAD_RETAIN_DAYS * 24 * 3600 * 1000);
+    const r1 = await db.collection('messages').deleteMany({ read: true, createdAt: { $lt: readCut } });
+    const r2 = await db.collection('messages').deleteMany({ read: { $ne: true }, createdAt: { $lt: unreadCut } });
+    if (r1.deletedCount || r2.deletedCount) console.log('[清理] 消息清理：已读', r1.deletedCount, '条，未读过期', r2.deletedCount, '条');
   } catch (e) { console.error('[清理] 失败:', e.message); }
 }
 setTimeout(cleanupOldData, 15 * 1000);                 // 启动后15秒清一次
