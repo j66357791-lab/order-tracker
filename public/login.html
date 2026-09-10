@@ -66,9 +66,22 @@
       <label>用户名（字母数字，3-20位）</label><input id="rUser">
       <label>密码（至少6位）</label><input id="rPass" type="password">
       <label>邮箱（选填，离线通知用）</label><input id="rEmail" type="email">
+      <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#475569;cursor:pointer;line-height:1.5;margin-top:4px">
+        <input type="checkbox" id="rAgree" style="margin-top:2px;width:auto">
+        <span>我已阅读并同意<a href="javascript:void(0)" id="ctLink" style="color:#059669;font-weight:600">《兼职写手合作签约协议》</a>，注册即完成电子签署</span>
+      </label>
       <button class="primary" id="btnReg">注册并登录</button>
     </div>
     <div class="err" id="mainErr"></div>
+  </div>
+</div>
+
+<div id="ctMask" style="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99;display:none;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:86vh;display:flex;flex-direction:column;padding:18px">
+    <h3 style="font-size:16px;text-align:center;margin:0 0 4px">📜 兼职写手合作签约协议</h3>
+    <div style="font-size:11px;color:#94a3b8;text-align:center;margin-bottom:10px">版本 V1.0</div>
+    <div id="ctText" style="flex:1;overflow-y:auto;background:#f8fafc;border-radius:10px;padding:14px;font-size:13px;line-height:1.8;white-space:pre-wrap;min-height:200px">加载中…</div>
+    <button class="primary" id="ctClose" style="margin-top:12px">我已阅读</button>
   </div>
 </div>
 
@@ -97,6 +110,14 @@ $('tabReg').onclick = () => {
   $('tabReg').classList.add('on'); $('tabLogin').classList.remove('on');
   $('regForm').classList.remove('hidden'); $('loginForm').classList.add('hidden'); err('');
 };
+$('ctLink').onclick = async () => {
+  try {
+    const j = await fetch('/api/contract/text').then(x => x.json());
+    $('ctText').textContent = j.text || '加载失败';
+  } catch (e) { $('ctText').textContent = '加载失败，请稍后重试'; }
+  $('ctMask').style.display = 'flex';
+};
+$('ctClose').onclick = () => { $('ctMask').style.display = 'none'; $('rAgree').checked = true; };
 function enter(role, token, user) {
   localStorage.setItem('jdy_token', token);
   localStorage.setItem('jdy_user', JSON.stringify(user));
@@ -124,10 +145,11 @@ $('btnLogin').onclick = async () => {
 };
 $('btnReg').onclick = async () => {
   err('');
+  if (!$('rAgree').checked) { err('请先阅读并勾选同意《兼职写手合作签约协议》'); return; }
   try {
     const r = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ inviteCode: $('rInvite').value.trim(), username: $('rUser').value.trim(),
-        password: $('rPass').value, displayName: $('rName').value.trim(), email: $('rEmail').value.trim() }) });
+        password: $('rPass').value, displayName: $('rName').value.trim(), email: $('rEmail').value.trim(), agree: true }) });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error);
     enter('writer', j.token, j.user);

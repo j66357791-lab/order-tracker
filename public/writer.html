@@ -37,7 +37,7 @@
   .d-off{background:#6b7280}
 
   /* ===== 主体 ===== */
-  .main{flex:1;overflow:hidden;position:relative}
+  .main{flex:1;overflow:hidden;position:relative;padding-bottom:calc(56px + env(safe-area-inset-bottom))}
   .panel{display:none;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .panel.on{display:block}
   .wrap{max-width:760px;margin:0 auto;padding:14px 14px 90px}
@@ -94,7 +94,33 @@
 
   /* ===== 聊天 ===== */
   #chatLayout{display:flex;height:100%}
-  #convList{width:230px;border-right:1px solid var(--line);background:#fff;overflow-y:auto;flex-shrink:0}
+  #convList{width:230px;border-right:1px solid var(--line);background:#fff;overflow-y:auto;flex-shrink:0;transition:width .25s ease}
+  #convList.collapsed{width:54px}
+  #convList.collapsed .conv{flex-direction:column;gap:3px;padding:10px 4px}
+  #convList.collapsed .conv .info,#convList.collapsed .conv .unread{display:none}
+  #convList.collapsed .conv .nm{display:none}
+  .hd-btn{border:none;background:var(--grey-bg);width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--sub);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:transform .12s,background .15s;line-height:1}
+  .hd-btn:active{transform:scale(.88)}
+  .hd-btn:hover{background:#e2e8f0}
+  #convToggle.flip{transform:rotate(180deg)}
+  .send-btn{border:none;background:var(--green);color:#fff;border-radius:12px;padding:0 18px;height:40px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;align-self:flex-end;transition:transform .12s,filter .15s}
+  .send-btn:active{transform:scale(.94);filter:brightness(.95)}
+  .wb-hero{background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:1px solid #a7f3d0}
+  .wb-amt{display:block;font-size:9px;color:var(--blue);font-weight:600;line-height:1.2;margin-top:1px}
+  .wb-amt.done{color:var(--green-dk)}
+  .wb-done{display:block;font-size:8.5px;color:var(--green-dk);line-height:1.1}
+  /* 合同签署弹层 */
+  .ctmask{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:300;display:none;align-items:center;justify-content:center;padding:16px}
+  .ctmask.on{display:flex}
+  .ct-box{background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:86vh;display:flex;flex-direction:column;padding:18px;animation:panelIn .3s cubic-bezier(.22,1,.36,1)}
+  .ct-box h3{font-size:16px;text-align:center}
+  .ct-box .ct-sub{font-size:11px;color:var(--sub);text-align:center;margin:4px 0 10px}
+  .ct-text{flex:1;overflow-y:auto;background:var(--bg);border-radius:10px;padding:14px;font-size:13px;line-height:1.8;white-space:pre-wrap;min-height:180px}
+  .ct-ops{display:flex;gap:10px;margin-top:12px}
+  .ct-ops .btn{flex:1}
+  /* 合同卡 */
+  .ct-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f3f4f6}
+  .ct-row:last-child{border-bottom:none}
   .conv{display:flex;gap:10px;padding:12px 14px;cursor:pointer;align-items:center;border-bottom:1px solid #f3f4f6;transition:background .15s}
   .conv:hover{background:#f9fafb}
   .conv.on{background:var(--green-bg)}
@@ -260,9 +286,13 @@
   #toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(17,24,39,.85);color:#fff;font-size:13px;padding:9px 18px;border-radius:99px;z-index:200;display:none;max-width:80vw;text-align:center}
 
   @media(max-width:640px){
-    #convList{width:120px}
+    #convList{width:104px}
+    #convList.collapsed{width:48px}
     .conv .last{display:none}
     .stats{gap:8px}
+    #chatHead{padding:8px 10px;gap:6px}
+    #peerName{font-size:14px}
+    .send-btn{padding:0 14px}
   }
 </style>
 </head>
@@ -271,7 +301,7 @@
 
 <header class="topbar">
   <div class="logo">✍️</div>
-  <div><h1>写手工作台</h1><div class="sub">派单协作系统 V9</div></div>
+  <div><h1>写手工作台</h1><div class="sub">派单协作系统 V16</div></div>
   <div class="grow"></div>
   <div class="me-badge">
     <span class="dot d-off" id="selfDot"></span>
@@ -283,39 +313,47 @@
 
 <main class="main">
   <!-- 聊天 -->
-  <section id="pChat" class="panel on">
+  <section id="pChat" class="panel">
     <div id="chatLayout">
       <div id="convList"></div>
       <div id="chatRight">
-        <div id="chatHead"><span class="dot d-off" id="peerDot"></span><span id="peerName">选择会话</span><span class="sub" id="peerSt"></span></div>
+        <div id="chatHead"><button class="hd-btn" id="convToggle" title="收起/展开会话列表">‹</button><button class="hd-btn" id="btnChatMenu" title="会话操作">☰</button><span class="dot d-off" id="peerDot"></span><span id="peerName">选择会话</span><span class="sub" id="peerSt"></span></div>
         <div id="chatBox"><div class="empty">左侧选择会话开始沟通</div></div>
         <div id="dragOver">📥 松手发送 · 文件夹需确认</div>
         <div id="chatInputBar">
           <div id="quoteBar"><span>↩</span><span class="qb-txt" id="quoteTxt"></span><button class="qb-x" onclick="clearQuote()">✕</button></div>
           <div class="input-row">
-            <button class="icon-btn" id="btnFile" title="发文件">📎</button>
-            <textarea id="chatInput" rows="1" placeholder="输入消息，回车发送 · Shift+回车换行 · 支持粘贴/拖入截图和文件"></textarea>
-            <button class="icon-btn" id="btnSend" style="background:var(--green);color:#fff" title="发送">➤</button>
+            <button class="icon-btn" id="btnPlus" title="发送图片/文件">＋</button>
+            <textarea id="chatInput" rows="1" placeholder="输入消息…（回车换行，点发送按钮发出）"></textarea>
+            <button id="btnSend" class="send-btn" title="发送">发送</button>
             <input type="file" id="fileInput" style="display:none">
+            <input type="file" id="imgInput" accept="image/*" style="display:none">
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- 单子 -->
-  <section id="pCards" class="panel">
+  <!-- 工作台（默认页） -->
+  <section id="pCards" class="panel on">
     <div class="wrap">
-      <div class="flow-tip">📋 流程：<b>接单</b> → 做单 → <b>提交审核</b> → 管理员审核 → 审核通过进 <b>待打款</b> → 管理员打款后 <b>已完成</b>；未通过会<b style="color:var(--red)">驳回</b>（附原因，可重新做单）</div>
-      <div class="stats">
-        <div class="stat v-green"><div class="v" id="sumPaid">0</div><div class="l">已到手 ¥</div></div>
-        <div class="stat v-cyan"><div class="v" id="sumPending">0</div><div class="l">待打款 ¥</div></div>
-        <div class="stat v-blue"><div class="v" id="sumOngoing">0</div><div class="l">在途 ¥</div></div>
+      <div class="card wb-hero">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:26px">🔥</span>
+          <div style="flex:1">
+            <div style="font-size:13px;color:var(--sub)">待完成订单</div>
+            <div style="font-size:26px;font-weight:800;line-height:1.1"><b id="wbPending">—</b><span style="font-size:12px;font-weight:400;color:var(--sub)"> 单</span></div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11.5px;color:var(--sub)">本月已接单 <b id="wbAccepted" style="color:var(--green-dk)">¥—</b></div>
+            <div style="font-size:11.5px;color:var(--sub);margin-top:3px">待打款 <b id="wbPendingPay" style="color:var(--cyan)">¥—</b></div>
+          </div>
+        </div>
       </div>
       <div class="card">
-        <h3>📅 单子日历（按截止日） <input type="month" id="cardCalMonth" style="margin-left:auto;font-size:12px;padding:5px 8px"></h3>
-        <div class="cal" id="cardCal"></div>
-        <div class="flow-tip" style="margin-top:8px">点日期查看当天截止的单子；<span style="color:var(--blue)">蓝=进行中</span> · <span style="color:var(--green-dk)">绿=已完结</span> · <span style="color:var(--amber)">橙=被驳回</span></div>
+        <h3>📅 接单日历 <input type="month" id="wbMonth" style="margin-left:auto;font-size:12px;padding:5px 8px"></h3>
+        <div class="cal" id="wbCal"></div>
+        <div class="flow-tip" style="margin-top:8px">日期下的小字=当日接单金额，点日期看当日<b>接单</b>与<b>完结</b>明细。<span style="color:var(--green-dk)">绿=当日有完结</span></div>
       </div>
       <div class="card">
         <h3>🔎 单子明细 <input id="cardQ" placeholder="搜标题 / 要求 / 台账单号" style="margin-left:auto;font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);width:180px"></h3>
@@ -385,6 +423,9 @@
         <div class="tile tap" onclick="openSub('subFriends','👥 同事好友')">
           <div class="ti">👥</div><div class="tt" id="frTileCnt">—</div><div class="ts">添加同事 · 聊天</div>
         </div>
+        <div class="tile tap" onclick="openSub('subContract','📜 合同管理')">
+          <div class="ti">📜</div><div class="tt" id="ctTileStatus">—</div><div class="ts">合作签约协议</div>
+        </div>
       </div>
       <div class="card">
         <h3>⚙️ 账号</h3>
@@ -398,8 +439,8 @@
 </main>
 
 <nav class="tabbar">
-  <div class="tab on" data-p="pChat"><span class="ico">💬</span>聊天<span class="reddot" id="tabUnread" style="display:none">0</span></div>
-  <div class="tab" data-p="pCards"><span class="ico">📋</span>单子</div>
+  <div class="tab on" data-p="pCards"><span class="ico">🗂</span>工作台</div>
+  <div class="tab" data-p="pChat"><span class="ico">💬</span>聊天<span class="reddot" id="tabUnread" style="display:none">0</span></div>
   <div class="tab" data-p="pAttend"><span class="ico">🕒</span>考勤</div>
   <div class="tab" data-p="pMe"><span class="ico">👤</span>我的</div>
 </nav>
@@ -454,22 +495,48 @@
     </div>
     <div class="sp-sec" id="subFriends" hidden>
       <div class="card">
+        <h3>📨 收到的好友申请 <span id="frReqCnt" style="font-size:12px;color:var(--sub);font-weight:400"></span></h3>
+        <div id="frReqList"><div class="empty">加载中…</div></div>
+      </div>
+      <div class="card">
         <h3>➕ 添加同事</h3>
         <div style="display:flex;gap:8px">
           <input id="frQuery" placeholder="输入对方 7 位数 ID 或用户名" style="flex:1">
-          <button class="btn btn-g btn-sm" id="btnAddFriend">添加</button>
+          <button class="btn btn-g btn-sm" id="btnAddFriend">发申请</button>
         </div>
-        <div class="flow-tip">对方通过后你们互为同事，可直接发起聊天。自己的 ID 在「我的」页顶部。</div>
+        <div class="flow-tip">发送申请后，需<b>对方确认</b>才会成为同事；对方会在「我的-同事好友」收到申请提醒。自己的 ID 在「我的」页顶部。</div>
       </div>
       <div class="card">
         <h3>👥 我的同事 <span id="frCnt" style="font-size:12px;color:var(--sub);font-weight:400"></span></h3>
         <div id="frList"><div class="empty">加载中…</div></div>
       </div>
     </div>
+    <div class="sp-sec" id="subContract" hidden>
+      <div class="card">
+        <h3>📜 已签合同 <span id="ctSignedInfo" style="font-size:12px;color:var(--sub);font-weight:400"></span></h3>
+        <div id="ctList"><div class="empty">加载中…</div></div>
+      </div>
+      <div class="card">
+        <h3>📄 协议全文预览</h3>
+        <div id="ctPreview" style="background:var(--bg);border-radius:10px;padding:14px;font-size:12.5px;line-height:1.8;white-space:pre-wrap;max-height:50vh;overflow-y:auto">加载中…</div>
+      </div>
+    </div>
   </div>
 </div>
 <div id="imgMask" onclick="closePreview()"><a class="dl" id="imgDl" href="#" target="_blank" onclick="event.stopPropagation()">⬇ 下载原图</a><img id="imgBig" alt="图片预览"><iframe id="pvFrame" title="文件预览"></iframe></div>
 <div id="toast"></div>
+<div id="ctMask" class="ctmask">
+  <div class="ct-box">
+    <h3>📜 兼职写手合作签约协议</h3>
+    <div class="ct-sub" id="ctVer"></div>
+    <div class="ct-text" id="ctModalText"></div>
+    <input id="ctName" placeholder="请输入真实姓名确认签署" maxlength="30" style="margin-top:12px">
+    <div class="ct-ops">
+      <button class="btn btn-gh" id="ctLater">暂不签署</button>
+      <button class="btn btn-g" id="ctSign">✍️ 确认签署</button>
+    </div>
+  </div>
+</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -583,11 +650,13 @@ function closePreview() {
 }
 
 function renderConvList() {
-  $('convList').innerHTML = chats.map(c => {
+  const pins = pinnedPeers();
+  const sorted = [...chats].sort((a, b) => (pins.includes(b.user.id) ? 1 : 0) - (pins.includes(a.user.id) ? 1 : 0));
+  $('convList').innerHTML = sorted.map(c => {
     const u = c.user;
-    return `<div class="conv ${c.user.id === currentPeer ? 'on' : ''}" data-id="${u.id}">
+    return `<div class="conv ${u.id === currentPeer ? 'on' : ''}" data-id="${u.id}" title="${esc(u.displayName)}">
       <div class="avatar">${esc((u.displayName || '?')[0])}<span class="dot ${u.sockOnline ? 'd-on' : 'd-off'}"></span></div>
-      <div class="info"><div class="nm"><span>${esc(u.displayName)}</span>${u.shift ? '<span class="sh">在班</span>' : ''}</div>
+      <div class="info"><div class="nm"><span>${pins.includes(u.id) ? '📌 ' : ''}${esc(u.displayName)}</span>${u.shift ? '<span class="sh">在班</span>' : ''}</div>
       <div class="last">${c.last ? (c.last.type === 'text' ? esc(c.last.text).slice(0, 18) : c.last.type === 'file' ? '[文件]' : '[派单卡]') : '开始沟通'}</div></div>
       ${c.unread ? '<div class="unread">' + (c.unread > 99 ? '99+' : c.unread) + '</div>' : ''}
     </div>`;
@@ -716,16 +785,9 @@ async function reloadCards() {
     const j = await authFetch('/api/mycards');
     cardsMap = {}; j.cards.forEach(c => cardsMap[c._id] = c);
     window._cards = j.cards;
-    const sum = { paid: 0, pending: 0, ongoing: 0 };
-    j.cards.forEach(c => {
-      if (c.status === '已完成') sum.paid += c.reward;
-      else if (c.status === '待打款') sum.pending += c.reward;
-      else if (['待接单', '已接单', '待审核'].includes(c.status)) sum.ongoing += c.reward;
-    });
-    $('sumPaid').textContent = sum.paid; $('sumPending').textContent = sum.pending; $('sumOngoing').textContent = sum.ongoing;
     paintCardChips();
     renderCardList();
-    if ($('cardCal')) paintCardCal();
+    loadWorkbench();
     renderMsgs(msgs);
   } catch (e) { toast(e.message); }
 }
@@ -752,50 +814,57 @@ function renderCardList() {
   $('cardList').innerHTML = list.length ? list.map(c => cardRow(c)).join('') : '<div class="empty">没有符合条件的单子</div>';
 }
 $('cardQ').addEventListener('input', renderCardList);
-$('cardCalMonth').onchange = paintCardCal;
-function paintCardCal() {
-  const ym = $('cardCalMonth').value || cnDateStr(cnNow()).slice(0, 7);
-  if (!$('cardCalMonth').value) $('cardCalMonth').value = ym;
-  const cards = window._cards || [];
-  const grid = $('cardCal');
+/* ================= 工作台：汇总 + 接单日历 ================= */
+let wbDaily = [];
+async function loadWorkbench() {
+  const ym = $('wbMonth').value || cnDateStr(cnNow()).slice(0, 7);
+  try {
+    const j = await authFetch('/api/workbench?ym=' + ym);
+    $('wbPending').textContent = j.pendingCount;
+    $('wbAccepted').textContent = '¥' + fmt(j.monthAccepted);
+    $('wbPendingPay').textContent = '¥' + fmt(j.pendingPay);
+    wbDaily = j.daily || [];
+    paintWbCal(ym);
+  } catch (e) { toast(e.message); }
+}
+$('wbMonth').onchange = loadWorkbench;
+function paintWbCal(ym) {
+  if (!$('wbMonth').value) $('wbMonth').value = ym;
+  const grid = $('wbCal');
   const [y, m] = ym.split('-').map(Number);
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const firstWd = (new Date(ym + '-01T00:00:00+08:00').getUTCDay());
+  const firstWd = new Date(ym + '-01T00:00:00+08:00').getUTCDay();
   const today = cnDateStr(cnNow());
-  const byDay = {};
-  cards.forEach(c => {
-    const d = (c.deadline || (c.createdAt ? cnDateStr(new Date(new Date(c.createdAt).getTime() + 8 * 3600 * 1000)) : '')).slice(0, 10);
-    if (!d || !d.startsWith(ym)) return;
-    (byDay[d] = byDay[d] || []).push(c);
-  });
+  const byDay = Object.fromEntries(wbDaily.map(d => [d.date, d]));
   let html = ['一', '二', '三', '四', '五', '六', '日'].map(w => `<div class="wd">${w}</div>`).join('');
   html += Array.from({ length: (firstWd + 6) % 7 }, () => '<div class="cell blank"></div>').join('');
   for (let i = 1; i <= daysInMonth; i++) {
     const date = ym + '-' + String(i).padStart(2, '0');
-    const list = byDay[date] || [];
-    let badge = '', cls = 'sh-plan';
-    if (list.length) {
-      const active = list.filter(c => !['已完成', '已拒绝'].includes(c.status));
-      const rejected = list.filter(c => c.status === '已驳回');
-      badge = (list.length > 1 ? list.length + '单 ' : '') + (list[0].deadline ? '截 ' : '建 ');
-      if (rejected.length && !active.length) cls = 'sh-att-warn';
-      else if (!active.length) cls = 'sh-att-ok';
-    }
-    html += `<div class="cell ${date === today ? 'today' : ''}" onclick="openCardDay('${date}')" title="${date}${list.length ? '：' + list.length + '个单子' : ''}">
-      <span class="dnum">${i}</span>${list.length ? `<span class="sh ${cls}">${badge}</span>` : ''}</div>`;
+    const d = byDay[date];
+    const hasAmt = d && (d.accepted > 0 || d.completed > 0);
+    html += `<div class="cell ${date === today ? 'today' : ''}" onclick="openWbDay('${date}')" style="cursor:${hasAmt ? 'pointer' : 'default'}">
+      <span class="dnum">${i}</span>
+      ${hasAmt ? `<span class="wb-amt${d.completed > 0 ? ' done' : ''}">¥${d.accepted >= 1000 ? (d.accepted / 1000).toFixed(1) + 'k' : d.accepted}</span>` : ''}
+      ${d && d.completedCount ? '<span class="wb-done">✓' + d.completedCount + '</span>' : ''}</div>`;
   }
   grid.innerHTML = html;
 }
-window.openCardDay = date => {
-  const ym = $('cardCalMonth').value;
-  const list = (window._cards || []).filter(c => {
-    const d = (c.deadline || (c.createdAt ? cnDateStr(new Date(new Date(c.createdAt).getTime() + 8 * 3600 * 1000)) : '')).slice(0, 10);
-    return d === date;
-  });
-  if (!list.length) return;
+window.openWbDay = function (date) {
+  const d = wbDaily.find(x => x.date === date);
+  const cards = (window._cards || []);
+  const cnDay = c => c.createdAt ? cnDateStr(new Date(new Date(c.createdAt).getTime() + 8 * 3600 * 1000)).slice(0, 10) : '';
+  const cnPayDay = c => c.paidAt ? cnDateStr(new Date(new Date(c.paidAt).getTime() + 8 * 3600 * 1000)).slice(0, 10) : '';
+  const accepted = cards.filter(c => cnDay(c) === date);
+  const completed = cards.filter(c => c.status === '已完成' && cnPayDay(c) === date);
+  if (!d && !accepted.length) return toast(date + ' 没有接单记录');
   $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
-    <h3>📋 ${date} 的单子（${list.length}）</h3>
-    ${list.map(c => cardRow(c)).join('')}`;
+    <h3>📅 ${date} 接单情况</h3>
+    ${d ? `<div class="stats" style="margin-bottom:10px">
+      <div class="stat v-green"><div class="v">¥${fmt(d.accepted)}</div><div class="l">当日接单 ${d.acceptedCount} 单</div></div>
+      <div class="stat v-cyan"><div class="v">¥${fmt(d.completed)}</div><div class="l">当日完结 ${d.completedCount} 单</div></div>
+    </div>` : '<div class="empty" style="padding:12px 0">当日无接单</div>'}
+    ${accepted.length ? '<div style="font-size:12px;color:var(--sub);margin:6px 0 4px">▼ 当日接的单子</div>' + accepted.map(c => cardRow(c)).join('') : ''}
+    ${completed.length && completed.some(c => cnDay(c) !== date) ? '<div style="font-size:12px;color:var(--sub);margin:10px 0 4px">▼ 当日完结（此前接的单）</div>' + completed.filter(c => cnDay(c) !== date).map(c => cardRow(c)).join('') : ''}`;
   $('mask').classList.add('show');
 };
 function cardRow(c) {
@@ -1076,7 +1145,8 @@ function openSub(secId, title) {
   if (secId === 'subLv') loadWallet();
   if (secId === 'subWallet') { loadWallet(); loadWithdraw(); }
   if (secId === 'subPay') { if (!$('payMonth').value) $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadPay(); }
-  if (secId === 'subFriends') loadFriends();
+  if (secId === 'subFriends') { loadFriends(); loadFriendRequests(); }
+  if (secId === 'subContract') loadContracts();
 }
 function closeSub() { $('subPage').classList.remove('on'); }
 $('spBack').onclick = closeSub;
@@ -1151,8 +1221,72 @@ $('btnAddFriend').onclick = async () => {
   try {
     const j = await authFetch('/api/friends', { method: 'POST', body: JSON.stringify({ query: q }) });
     $('frQuery').value = '';
-    toast('已添加 ' + j.friend.displayName + ' 为同事 ✅');
-    loadFriends();
+    toast(j.message || '申请已发送，等待对方确认 ✅');
+  } catch (e) { toast(e.message); }
+};
+async function loadFriendRequests() {
+  try {
+    const j = await authFetch('/api/friends/requests');
+    $('frReqCnt').textContent = j.incoming.length ? '（' + j.incoming.length + ' 条待确认）' : '';
+    $('frReqList').innerHTML = j.incoming.length ? j.incoming.map(r => `
+      <div class="fr-row">
+        <div class="avatar" style="width:38px;height:38px;font-size:15px">${esc((r.name || '?')[0])}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">${esc(r.name)}${r.uid ? ' <span style="font-size:11px;color:var(--sub)">ID ' + r.uid + '</span>' : ''}</div>
+          <div style="font-size:11px;color:var(--sub)">请求加你为同事</div>
+        </div>
+        <button class="btn btn-g btn-sm" onclick="acceptReq('${r._id}')">同意</button>
+        <button class="btn btn-gh btn-sm" onclick="rejectReq('${r._id}')">拒绝</button>
+      </div>`).join('') : '<div class="empty" style="padding:8px 0">暂无待确认申请</div>';
+  } catch (e) {}
+}
+window.acceptReq = async id => {
+  try { await authFetch('/api/friends/requests/' + id + '/accept', { method: 'POST', body: '{}' }); toast('已同意，现在可以聊天了 ✅'); loadFriendRequests(); loadFriends(); }
+  catch (e) { toast(e.message); }
+};
+window.rejectReq = async id => {
+  try { await authFetch('/api/friends/requests/' + id + '/reject', { method: 'POST', body: '{}' }); toast('已拒绝'); loadFriendRequests(); }
+  catch (e) { toast(e.message); }
+};
+/* ================= 合同 ================= */
+async function loadContracts() {
+  try {
+    const j = await authFetch('/api/contract');
+    $('ctPreview').textContent = j.text;
+    $('ctTileStatus').textContent = j.signed ? '已签署' : '待签署';
+    $('ctTileStatus').style.color = j.signed ? 'var(--green-dk)' : 'var(--amber)';
+    $('ctSignedInfo').textContent = j.contracts.length ? '（' + j.contracts.length + ' 份 · ' + j.title + ' ' + j.version + '）' : '';
+    $('ctList').innerHTML = j.contracts.length ? j.contracts.map(c => `
+      <div class="ct-row">
+        <div style="font-size:20px">📜</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">${esc(j.title)} <span class="lvbadge">${esc(c.version)}</span></div>
+          <div style="font-size:11px;color:var(--sub)">签署人：${esc(c.name)} · ${new Date(new Date(c.signedAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10)} 电子签署</div>
+        </div>
+        <span style="font-size:12px;color:var(--green-dk);font-weight:600">✓ 已生效</span>
+      </div>`).join('') : '<div class="empty">还没有签署记录，回到「我的」页会弹出签署邀请</div>';
+  } catch (e) { toast(e.message); }
+}
+let contractData = null;
+async function checkContract() {
+  try {
+    const j = await authFetch('/api/contract');
+    contractData = j;
+    if (j.signed) return;
+    $('ctVer').textContent = '版本 ' + j.version + ' · 请仔细阅读后签署';
+    $('ctModalText').textContent = j.text;
+    $('ctName').value = ME.displayName || '';
+    setTimeout(() => $('ctMask').classList.add('on'), 1200);
+  } catch (e) {}
+}
+$('ctLater').onclick = () => { $('ctMask').classList.remove('on'); toast('可稍后在「我的-合同管理」完成签署'); };
+$('ctSign').onclick = async () => {
+  const name = $('ctName').value.trim();
+  if (!name) return toast('请输入签署姓名');
+  try {
+    await authFetch('/api/contract/sign', { method: 'POST', body: JSON.stringify({ name, nameConfirm: name }) });
+    $('ctMask').classList.remove('on');
+    toast('签署成功，合同已生效 🎉');
   } catch (e) { toast(e.message); }
 };
 window.chatWith = async id => {
@@ -1225,9 +1359,9 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
   t.classList.add('on');
   $(t.dataset.p).classList.add('on');
-  if (t.dataset.p === 'pCards') reloadCards();
+  if (t.dataset.p === 'pCards') { reloadCards(); loadWorkbench(); }
   if (t.dataset.p === 'pAttend') { $('attMonth').value = cnDateStr(cnNow()).slice(0, 7); loadShiftAndSched(); loadShiftPool(); }
-  if (t.dataset.p === 'pMe') { $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadWallet(); loadPay(); loadFriends(); }
+  if (t.dataset.p === 'pMe') { $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadWallet(); loadPay(); loadFriends(); loadFriendRequests(); }
 });
 
 /* ================= 实时推送 + 链接稳定性 ================= */
@@ -1243,11 +1377,14 @@ socket.on('connect', async () => {
   try { const j = await authFetch('/api/me'); ME = j.user; paintMe(); } catch (e) {}
   loadChats().catch(() => {});
   reloadCards().catch(() => {});
+  loadWorkbench().catch(() => {});
+  checkContract().catch(() => {});
 });
 socket.on('disconnect', reason => { $('connBar').classList.add('on'); });
 socket.on('connect_error', () => { $('connBar').classList.add('on'); });
 socket.on('reconnect', () => { $('connBar').classList.remove('on'); });
 
+socket.on('friend_request', d => { toast('📩 ' + (d.fromName || '有人') + ' 请求加你为同事，去「我的-同事好友」确认'); });
 socket.on('msg', m => {
   // 只收属于当前会话的消息：会话键=双方id排序拼接，防止别人聊天串台进当前窗口
   const convKey = currentPeer && ME ? [String(ME.id), String(currentPeer)].sort().join(':') : null;
@@ -1272,6 +1409,44 @@ socket.on('presence', p => {
   }
 });
 
+/* ================= 会话列表：折叠 / 置顶 / 清空 ================= */
+$('convToggle').onclick = () => {
+  const cl = $('convList');
+  cl.classList.toggle('collapsed');
+  $('convToggle').classList.toggle('flip', cl.classList.contains('collapsed'));
+};
+const pinKey = () => 'jdy_pin_' + (ME ? ME.id : 'x');
+const pinnedPeers = () => { try { return JSON.parse(localStorage.getItem(pinKey()) || '[]'); } catch (e) { return []; } };
+window.togglePin = function () {
+  if (!currentPeer) return toast('先选择一个会话');
+  const arr = pinnedPeers();
+  const i = arr.indexOf(currentPeer);
+  if (i >= 0) { arr.splice(i, 1); toast('已取消置顶'); } else { arr.push(currentPeer); toast('已置顶该会话 📌'); }
+  localStorage.setItem(pinKey(), JSON.stringify(arr));
+  renderConvList();
+};
+window.clearHistory = async function () {
+  if (!currentPeer) return toast('先选择一个会话');
+  if (!confirm('确定清空与该联系人的全部聊天记录吗？双方都会清空，不可恢复！')) return;
+  try {
+    await authFetch('/api/messages?peer=' + currentPeer, { method: 'DELETE' });
+    msgs = []; saveCache(msgs); renderMsgs(msgs);
+    toast('聊天记录已清空');
+    loadChats().catch(() => {});
+  } catch (e) { toast(e.message); }
+};
+$('btnChatMenu').onclick = () => {
+  if (!currentPeer) return toast('先选择一个会话');
+  const pinned = pinnedPeers().includes(currentPeer);
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>💬 会话操作</h3>
+    <div class="ops" style="flex-direction:column">
+      <button class="btn ${pinned ? 'btn-gh' : 'btn-o'}" onclick="togglePin();closeSheet()">${pinned ? '📌 取消置顶' : '📌 置顶聊天'}</button>
+      <button class="btn btn-r" onclick="clearHistory();closeSheet()">🗑 清空聊天记录</button>
+    </div>`;
+  $('mask').classList.add('show');
+};
+
 /* ================= 输入事件 ================= */
 function autoGrow() {
   const el = $('chatInput');
@@ -1279,12 +1454,20 @@ function autoGrow() {
   el.style.height = Math.min(el.scrollHeight, 220) + 'px';
 }
 $('btnSend').onclick = sendText;
-$('chatInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
-});
+// 回车=换行（微信式：点「发送」按钮才发出）
 $('chatInput').addEventListener('input', autoGrow);
-$('btnFile').onclick = () => $('fileInput').click();
+$('btnPlus').onclick = () => {
+  if (!currentPeer) return toast('先选择一个会话');
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>📤 发送内容</h3>
+    <div class="ops">
+      <button class="btn btn-o" onclick="closeSheet();$('imgInput').click()">📷 手机图片</button>
+      <button class="btn btn-bl" onclick="closeSheet();$('fileInput').click()">📎 文件（≤100MB）</button>
+    </div>`;
+  $('mask').classList.add('show');
+};
 $('fileInput').onchange = e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value = ''; };
+$('imgInput').onchange = e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value = ''; };
 
 // 微信/QQ截图：Ctrl+V 粘贴图片直接发送
 document.addEventListener('paste', e => {

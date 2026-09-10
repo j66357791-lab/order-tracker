@@ -436,7 +436,7 @@ app.get('/api/friends', auth, async (req, res) => {
     res.json({ ok: true, friends: rows.map(u => ({ ...publicUser(u), online: !!u.sockOnline })) });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-// 添加好友：支持7位数ID或用户名
+// 添加好友：发送申请，对方确认后互为好友
 app.post('/api/friends', auth, async (req, res) => {
   try {
     const db = await getDb();
@@ -446,9 +446,14 @@ app.post('/api/friends', auth, async (req, res) => {
       /^\d{7}$/.test(q) ? { uid: q } : { username: q.toLowerCase() });
     if (!target) return res.status(404).json({ ok: false, error: '找不到该用户，确认ID（7位数）或用户名没输错' });
     if (target._id.toString() === req.user.id) return res.status(400).json({ ok: false, error: '不能添加自己' });
-    await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $addToSet: { friends: target._id.toString() } });
-    await db.collection('users').updateOne({ _id: target._id }, { $addToSet: { friends: req.user.id } });
-    res.json({ ok: true, friend: { id: target._id.toString(), displayName: target.displayName, uid: target.uid || null } });
+    const tid = target._id.toString();
+    const meDoc = await db.collection('users').findOne({ _id: new ObjectId(req.user.id) });
+    if ((meDoc.friends || []).includes(tid)) return res.status(400).json({ ok: false, error: '你们已经是同事了' });
+    const dup = await db.collection('friend_requests').findOne({ from: req.user.id, to: tid, status: '待确认' });
+    if (dup) return res.status(400).json({ ok: false, error: '申请已发送，等待对方确认' });
+    await db.collection('friend_requests').insertOne({ from: req.user.id, to: tid, status: '待确认', createdAt: new Date() });
+    notify(tid, 'friend_request', { from: req.user.id, fromName: req.user.displayName });
+    res.json({ ok: true, message: '申请已发送，等待对方确认' });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 app.delete('/api/friends/:id', auth, async (req, res) => {
@@ -495,6 +500,103 @@ app.get('/api/withdraw', auth, async (req, res) => {
     const db = await getDb();
     const rows = await db.collection('withdrawals').find({ userId: req.user.id }).sort({ createdAt: -1 }).limit(30).toArray();
     res.json({ ok: true, rows: rows.map(w => ({ _id: w._id.toString(), type: w.type, amount: w.amount, status: w.status, createdAt: w.createdAt })) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 合同（兼职写手合作签约协议） ----------
+const CONTRACT_VERSION = 'V1.0';
+const CONTRACT_TITLE = '兼职写手合作签约协议';
+const CONTRACT_TEXT = `甲方：平台运营方（下称"平台"）
+乙方：兼职写手（下称"写手"，即本平台注册账号持有人）
+
+一、合作性质
+1. 本协议为兼职合作协议，不构成劳动雇佣关系，写手自主安排工作时间与地点，平台不要求坐班考勤约束（平台排班与打卡仅为接单协作需要）。
+2. 写手自愿在平台注册并通过接单获得报酬，双方按"多劳多得、按单结算"原则合作。
+
+二、接单与交付规范
+1. 写手应保证所提交作品为本人原创，不得抄袭、洗稿、AI批量伪原创冒充人工产出，不得一稿多投。
+2. 作品需符合派单卡标注的要求（主题、字数、格式、交付时间等），不合格作品甲方可驳回并要求修改或重做。
+3. 接单后因个人原因无法完成的，应及时与管理员沟通释放订单；无故拖延、失联造成的损失由写手承担。
+4. 严禁泄露甲方客户信息、订单信息及平台内部数据；严禁绕开平台私自与客户交易。
+
+三、报酬与结算
+1. 报酬按单计价，以派单卡标注金额为准；审核通过后进入待打款，由管理员按约定周期打款至写手绑定的收款方式。
+2. 写手应保证绑定的收款账号真实有效，因账号错误导致的损失由写手自行承担。
+3. 写手达到平台等级条件的，可享受平台额外激励奖励，具体规则以平台页面公示为准。
+
+四、隐私与保密
+1. 平台仅收集开展合作所必需的信息（账号、昵称、收款方式等），并妥善保管。
+2. 写手对合作过程中知悉的客户与业务信息负有保密义务，协议终止后仍持续有效。
+
+五、违规与解除
+1. 写手出现抄袭、泄密、私单、恶意刷单等行为的，平台有权视情节采取驳回订单、取消激励、暂停接单、封禁账号等措施，未结合格报酬仍按规定结算。
+2. 任何一方可提前告知对方终止合作；已产生的合格订单报酬不受影响。
+
+六、其他
+1. 本协议自写手在平台完成电子签署（点击签署并确认姓名）之日起生效，长期有效。
+2. 写手签署本协议即视为已完整阅读并同意以上全部条款。
+3. 本协议的修改与解释权归平台所有，重大变更将以平台公告或弹窗方式通知。`;
+
+app.get('/api/contract/text', (req, res) => res.json({ ok: true, title: CONTRACT_TITLE, version: CONTRACT_VERSION, text: CONTRACT_TEXT }));
+app.get('/api/contract', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.collection('contracts').find({ userId: req.user.id }).sort({ signedAt: -1 }).limit(20).toArray();
+    res.json({
+      ok: true, title: CONTRACT_TITLE, version: CONTRACT_VERSION, text: CONTRACT_TEXT,
+      signed: rows.length > 0,
+      contracts: rows.map(r => ({ _id: r._id.toString(), name: r.name, version: r.version, signedAt: r.signedAt })),
+    });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/contract/sign', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const name = String(req.body?.name || '').trim().slice(0, 30);
+    if (!name) return res.status(400).json({ ok: false, error: '请输入签署姓名' });
+    if (name !== (req.body?.nameConfirm || '').trim()) return res.status(400).json({ ok: false, error: '两次输入的姓名不一致' });
+    const exist = await db.collection('contracts').findOne({ userId: req.user.id, version: CONTRACT_VERSION });
+    if (exist) return res.json({ ok: true, already: true });
+    await db.collection('contracts').insertOne({ userId: req.user.id, name, uid: req.user.uid, displayName: req.user.displayName, version: CONTRACT_VERSION, title: CONTRACT_TITLE, signedAt: new Date() });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 好友申请（需对方确认） ----------
+app.get('/api/friends/requests', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.collection('friend_requests').find({
+      $or: [{ to: req.user.id, status: '待确认' }, { from: req.user.id, status: '待确认' }],
+    }).sort({ createdAt: -1 }).limit(50).toArray();
+    const ids = rows.flatMap(r => [r.from, r.to]).filter(x => ObjectId.isValid(x));
+    const users = ids.length ? await db.collection('users').find({ _id: { $in: ids.map(x => new ObjectId(x)) } }).project({ displayName: 1, uid: 1, level: 1 }).toArray() : [];
+    const um = Object.fromEntries(users.map(u => [u._id.toString(), u]));
+    res.json({
+      ok: true,
+      incoming: rows.filter(r => r.to === req.user.id).map(r => ({ _id: r._id.toString(), from: r.from, name: um[r.from]?.displayName || '写手', uid: um[r.from]?.uid || null, createdAt: r.createdAt })),
+      outgoing: rows.filter(r => r.from === req.user.id).map(r => ({ _id: r._id.toString(), to: r.to, name: um[r.to]?.displayName || '写手', uid: um[r.to]?.uid || null, createdAt: r.createdAt })),
+    });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/friends/requests/:id/accept', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const r = await db.collection('friend_requests').findOne({ _id: new ObjectId(req.params.id) });
+    if (!r || r.to !== req.user.id || r.status !== '待确认') return res.status(400).json({ ok: false, error: '申请不存在或已处理' });
+    await db.collection('friend_requests').updateOne({ _id: r._id }, { $set: { status: '已同意', handledAt: new Date() } });
+    await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $addToSet: { friends: r.from } });
+    await db.collection('users').updateOne({ _id: new ObjectId(r.from) }, { $addToSet: { friends: req.user.id } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/friends/requests/:id/reject', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const r = await db.collection('friend_requests').findOne({ _id: new ObjectId(req.params.id) });
+    if (!r || (r.to !== req.user.id && r.from !== req.user.id) || r.status !== '待确认') return res.status(400).json({ ok: false, error: '申请不存在或已处理' });
+    await db.collection('friend_requests').updateOne({ _id: r._id }, { $set: { status: r.to === req.user.id ? '已拒绝' : '已撤回', handledAt: new Date() } });
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -591,6 +693,7 @@ app.post('/api/auth/register', async (req, res) => {
     if (!inv || inv.usedBy) return res.status(400).json({ ok: false, error: '邀请码无效或已被使用' });
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(username || '')) return res.status(400).json({ ok: false, error: '用户名限3-20位字母数字下划线' });
     if (!password || String(password).length < 6) return res.status(400).json({ ok: false, error: '密码至少6位' });
+    if (!req.body?.agree) return res.status(400).json({ ok: false, error: '请先阅读并同意《兼职写手合作签约协议》' });
     const exists = await db.collection('users').findOne({ username });
     if (exists) return res.status(400).json({ ok: false, error: '用户名已被占用' });
     const doc = {
@@ -600,7 +703,9 @@ app.post('/api/auth/register', async (req, res) => {
       level: 0, createdAt: new Date(),
     };
     const r = await db.collection('users').insertOne(doc);
-    await assignUid(db, r.insertedId);
+    const myUid = await assignUid(db, r.insertedId);
+    // 注册即签署合作协议
+    await db.collection('contracts').insertOne({ userId: r.insertedId.toString(), name: doc.displayName, uid: myUid, displayName: doc.displayName, version: CONTRACT_VERSION, title: CONTRACT_TITLE, signedAt: new Date(), source: 'register' });
     await db.collection('invites').updateOne({ _id: inv._id }, { $set: { usedBy: r.insertedId.toString(), usedAt: new Date() } });
     res.json({ ok: true, token: signToken({ _id: r.insertedId, role: 'writer' }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -688,6 +793,48 @@ app.get('/api/messages', auth, async (req, res) => {
     const msgs = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: 1 }).limit(500).toArray();
     await db.collection('messages').updateMany({ conversation: conv, to: req.user.id, read: false }, { $set: { read: true } });
     res.json({ ok: true, messages: msgs });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 清空聊天记录（双方会话消息全部删除）
+app.delete('/api/messages', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const peer = String(req.query.peer || '');
+    if (!ObjectId.isValid(peer)) return res.status(400).json({ ok: false, error: '无效会话' });
+    const conv = pairKey(req.user.id, peer);
+    const r = await db.collection('messages').deleteMany({ conversation: conv });
+    res.json({ ok: true, deleted: r.deletedCount });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 工作台统计 ----------
+app.get('/api/workbench', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const ym = /^\d{4}-\d{2}$/.test(String(req.query.ym || '')) ? String(req.query.ym) : ymOf(cnNow());
+    const start = new Date(ym + '-01T00:00:00+08:00');
+    const endDate = (() => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 1, 0, 0, 0) - 8 * 3600 * 1000) })();
+    const monthCards = await db.collection('cards').find({ to: req.user.id, createdAt: { $gte: start, $lt: endDate } }).toArray();
+    const allCards = await db.collection('cards').find({ to: req.user.id }).toArray();
+    const pendingCount = allCards.filter(c => ['待接单', '已接单', '待审核'].includes(c.status)).length;
+    const monthAccepted = Math.round(monthCards.filter(c => c.status !== '已拒绝').reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
+    const pendingPay = Math.round(allCards.filter(c => c.status === '待打款').reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
+    const cnDay = d => cnDateStr(new Date(new Date(d).getTime() + 8 * 3600 * 1000)).slice(0, 10);
+    const daily = {};
+    monthCards.forEach(c => {
+      if (c.status === '已拒绝') return;
+      const d = cnDay(c.createdAt);
+      (daily[d] = daily[d] || { date: d, accepted: 0, acceptedCount: 0, completed: 0, completedCount: 0 });
+      daily[d].accepted += (c.reward || 0); daily[d].acceptedCount++;
+      if (c.status === '已完成' && c.paidAt) {
+        const pd = cnDay(c.paidAt);
+        if (pd.startsWith(ym)) {
+          (daily[pd] = daily[pd] || { date: pd, accepted: 0, acceptedCount: 0, completed: 0, completedCount: 0 });
+          daily[pd].completed += (c.reward || 0); daily[pd].completedCount++;
+        }
+      }
+    });
+    res.json({ ok: true, ym, pendingCount, monthAccepted, pendingPay, daily: Object.values(daily).sort((a, b) => a.date.localeCompare(b.date)) });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 // 发文字消息
