@@ -66,6 +66,13 @@ async function getDb() {
     db.collection('schedule_days').createIndexes([{ key: { userId: 1, date: 1 }, unique: true }]).catch(() => {});
     // 启动时清掉历史遗留的假在线标记（真实在线以内存连接表为准）
     db.collection('users').updateMany({ sockOnline: true }, { $set: { sockOnline: false } }).catch(() => {});
+    // 存量用户补齐7位数工号ID
+    (async () => {
+      try {
+        const miss = await db.collection('users').find({ uid: { $exists: false } }).project({ _id: 1 }).sort({ createdAt: 1 }).toArray();
+        for (const u of miss) await assignUid(db, u._id);
+      } catch (e) { console.error('uid补齐失败:', e.message); }
+    })();
   }
   return db;
 }
@@ -259,9 +266,9 @@ function signToken(u) {
   return jwt.sign({ id: u._id.toString(), role: u.role }, JWT_SECRET, { expiresIn: '30d' });
 }
 function publicUser(u) {
-  return { id: u._id.toString(), username: u.username, role: u.role,
+  return { id: u._id.toString(), uid: u.uid || null, username: u.username, role: u.role,
            displayName: u.displayName, shift: !!u.shift, sockOnline: !!u.sockOnline,
-           alipay: u.alipay || null };
+           level: u.level || 0, alipay: u.alipay || null };
 }
 // 写手绑定收款方式（支付宝：姓名+账号）
 app.put('/api/me/alipay', auth, async (req, res) => {
@@ -274,12 +281,168 @@ app.put('/api/me/alipay', auth, async (req, res) => {
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-// 引用消息字段清洗（text/file消息均可带）
+// 修改显示名
+app.put('/api/me/name', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const displayName = String(req.body?.displayName || '').trim().slice(0, 20);
+    if (!displayName) return res.status(400).json({ ok: false, error: '名字不能为空' });
+    await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { displayName, updatedAt: new Date() } });
+    res.json({ ok: true, displayName });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 等级 / 钱包 / 权益 ----------
+// LV0 试用期写手（注册默认）；LV1：累计已到账 ≥500元 且 被驳回占比 <20%
+// LV1权益：已到账金额每月额外 1.5% 奖励，次月发放进钱包
+const LV1_PAID = 500, LV1_REJECT_MAX = 0.2, BONUS_RATE = 0.015;
+const ymOf = d => cnDateStr(d).slice(0, 7);
+async function levelStats(db, userId) {
+  const cards = await db.collection('cards').find({ to: userId }).toArray();
+  const paid = cards.filter(c => c.status === '已完成').reduce((s, c) => s + (c.reward || 0), 0);
+  const judged = cards.filter(c => c.status !== '已拒绝');
+  const rejected = cards.filter(c => c.status === '已驳回').length;
+  const rejectRate = judged.length ? rejected / judged.length : 0;
+  return { paid: Math.round(paid * 100) / 100, total: judged.length, rejected, rejectRate: Math.round(rejectRate * 1000) / 1000 };
+}
+async function ensureLevel(db, user) {
+  const st = await levelStats(db, user.id);
+  let level = user.level || 0;
+  if (level < 1 && st.paid >= LV1_PAID && st.rejectRate < LV1_REJECT_MAX) {
+    level = 1;
+    await db.collection('users').updateOne({ _id: new ObjectId(user.id) }, { $set: { level, leveledUpAt: new Date() } });
+  }
+  return { level, st };
+}
+// 月度奖励入账：每月1次发上个月的（LV1及以上才有）
+async function ensureBonus(db, user, level) {
+  if (level < 1) return { balance: 0, grants: [], grantedLast: 0 };
+  const prev = (() => { const [y, m] = ymOf(cnNow()).split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; })();
+  const log = db.collection('wallet_log');
+  const exists = await log.findOne({ userId: user.id, month: prev });
+  if (exists) return null;
+  const cards = await db.collection('cards').find({ to: user.id, status: '已完成' }).toArray();
+  const paidPrev = cards.filter(c => c.paidAt && ymOf(new Date(new Date(c.paidAt).getTime() + 8 * 3600 * 1000)) === prev)
+    .reduce((s, c) => s + (c.reward || 0), 0);
+  const amount = Math.round(paidPrev * BONUS_RATE * 100) / 100;
+  if (amount <= 0) {
+    await log.insertOne({ userId: user.id, month: prev, amount: 0, note: '上月无到账，未产生奖励', createdAt: new Date() });
+    return null;
+  }
+  await log.insertOne({ userId: user.id, month: prev, amount, base: paidPrev, rate: BONUS_RATE, createdAt: new Date() });
+  return { grantedLast: amount, month: prev };
+}
+app.get('/api/wallet', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { level, st } = await ensureLevel(db, req.user);
+    await ensureBonus(db, req.user, level);
+    const grants = (await db.collection('wallet_log').find({ userId: req.user.id }).sort({ month: -1 }).toArray())
+      .map(g => ({ month: g.month, amount: g.amount, note: g.note || null, base: g.base || null }));
+    const balance = Math.round(grants.reduce((s, g) => s + g.amount, 0) * 100) / 100;
+    // 本月预计奖励
+    const ym = ymOf(cnNow());
+    const cards = await db.collection('cards').find({ to: req.user.id, status: '已完成' }).toArray();
+    const paidThisMonth = cards.filter(c => c.paidAt && ymOf(new Date(new Date(c.paidAt).getTime() + 8 * 3600 * 1000)) === ym)
+      .reduce((s, c) => s + (c.reward || 0), 0);
+    res.json({
+      ok: true, level, balance, stats: st,
+      estBonus: level >= 1 ? Math.round(paidThisMonth * BONUS_RATE * 100) / 100 : 0,
+      estBase: Math.round(paidThisMonth * 100) / 100,
+      bonusRate: BONUS_RATE, lv1Paid: LV1_PAID, lv1RejectMax: LV1_REJECT_MAX,
+      grants,
+    });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 班次池（管理员发班，写手抢班） ----------
+app.get('/api/shifts', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const ym = String(req.query.ym || '');
+    const q = /^\d{4}-\d{2}$/.test(ym) ? { date: { $regex: '^' + ym } } : {};
+    const rows = await db.collection('shifts').find(q).sort({ date: 1, start: 1 }).limit(300).toArray();
+    const uidSet = [...new Set(rows.flatMap(r => r.claims || []))];
+    const users = uidSet.length ? await db.collection('users').find({ _id: { $in: uidSet.map(x => new ObjectId(x)) } }).project({ displayName: 1 }).toArray() : [];
+    const nameMap = Object.fromEntries(users.map(u => [u._id.toString(), u.displayName]));
+    res.json({
+      ok: true, shifts: rows.map(r => ({
+        _id: r._id.toString(), date: r.date, start: r.start, end: r.end,
+        claimCount: (r.claims || []).length, claims: (r.claims || []).map(x => nameMap[x] || '写手'),
+        claimedByMe: (r.claims || []).includes(req.user.id),
+      })),
+    });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/shifts', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const date = String(req.body?.date || ''), start = String(req.body?.start || ''), end = String(req.body?.end || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: '日期格式应为 YYYY-MM-DD' });
+    if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) return res.status(400).json({ ok: false, error: '时间格式应为 HH:MM' });
+    if (toMin(end) <= toMin(start)) return res.status(400).json({ ok: false, error: '结束时间要晚于开始时间' });
+    if (date < cnDateStr(cnNow())) return res.status(400).json({ ok: false, error: '班次日期不能在过去' });
+    const dup = await db.collection('shifts').findOne({ date, start, end });
+    if (dup) return res.status(400).json({ ok: false, error: '该日期已有相同时间段的班次' });
+    const r = await db.collection('shifts').insertOne({ date, start, end, claims: [], createdBy: req.user.id, createdAt: new Date() });
+    res.json({ ok: true, _id: r.insertedId.toString() });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.delete('/api/shifts/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    await db.collection('shifts').deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 写手抢班：抢占后自动写入单日排班
+app.post('/api/shifts/:id/claim', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const sh = await db.collection('shifts').findOne({ _id: new ObjectId(req.params.id) });
+    if (!sh) return res.status(404).json({ ok: false, error: '班次不存在' });
+    if (sh.date <= cnDateStr(cnNow())) return res.status(400).json({ ok: false, error: '该班次已开始或过期，不能抢' });
+    if ((sh.claims || []).includes(req.user.id)) return res.status(400).json({ ok: false, error: '你已经抢过这个班次了' });
+    await db.collection('shifts').updateOne({ _id: sh._id }, { $addToSet: { claims: req.user.id } });
+    await db.collection('schedule_days').updateOne(
+      { userId: req.user.id, date: sh.date },
+      { $set: { userId: req.user.id, date: sh.date, start: sh.start, end: sh.end, fromShift: sh._id.toString(), updatedAt: new Date() } },
+      { upsert: true });
+    res.json({ ok: true, date: sh.date, start: sh.start, end: sh.end });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 放弃班次（未开始可退）
+app.post('/api/shifts/:id/unclaim', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const sh = await db.collection('shifts').findOne({ _id: new ObjectId(req.params.id) });
+    if (!sh) return res.status(404).json({ ok: false, error: '班次不存在' });
+    if (sh.date <= cnDateStr(cnNow())) return res.status(400).json({ ok: false, error: '班次已开始，不能退出' });
+    await db.collection('shifts').updateOne({ _id: sh._id }, { $pull: { claims: req.user.id } });
+    const att = await db.collection('attendance').findOne({ userId: req.user.id, date: sh.date });
+    if (!att) await db.collection('schedule_days').deleteOne({ userId: req.user.id, date: sh.date, fromShift: sh._id.toString() });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 function cleanReplyTo(rt) {
   if (!rt || typeof rt !== 'object') return null;
   const id = String(rt.id || '').slice(0, 40);
   if (!id) return null;
   return { id, fromName: String(rt.fromName || '').slice(0, 40), preview: String(rt.preview || '').slice(0, 80), type: String(rt.type || 'text') };
+}
+// 7位数工号ID：从1000001起自增
+async function nextUid(db) {
+  const rows = await db.collection('users').find({ uid: { $exists: true } }).project({ uid: 1 }).toArray();
+  const max = rows.reduce((m, r) => Math.max(m, parseInt(r.uid, 10) || 0), 1000000);
+  return String(max + 1);
+}
+async function assignUid(db, userId) {
+  for (let i = 0; i < 5; i++) {   // 并发兜底：重试拿号
+    const uid = await nextUid(db);
+    const ok = await db.collection('users').updateOne({ _id: userId, uid: { $exists: false } }, { $set: { uid } });
+    if (ok.modifiedCount) return uid;
+  }
+  return null;
 }
 const pairKey = (a, b) => [String(a), String(b)].sort().join(':');
 
@@ -293,7 +456,7 @@ async function auth(req, res, next) {
     const db = await getDb();
     const u = await db.collection('users').findOne({ _id: new ObjectId(payload.id) });
     if (!u) return res.status(401).json({ ok: false, error: '账号不存在' });
-    req.user = { _id: u._id, id: u._id.toString(), role: u.role, username: u.username, displayName: u.displayName, alipay: u.alipay || null };
+    req.user = { _id: u._id, id: u._id.toString(), role: u.role, username: u.username, displayName: u.displayName, uid: u.uid || null, level: u.level || 0, alipay: u.alipay || null };
     next();
   } catch (e) {
     res.status(401).json({ ok: false, error: '登录已过期，请重新登录' });
@@ -329,6 +492,7 @@ app.post('/api/setup', async (req, res) => {
       shift: false, sockOnline: false, email: '', createdAt: new Date(),
     };
     const r = await db.collection('users').insertOne(doc);
+    await assignUid(db, r.insertedId);
     res.json({ ok: true, token: signToken({ _id: r.insertedId, role: 'admin' }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -359,9 +523,10 @@ app.post('/api/auth/register', async (req, res) => {
       username, passwordHash: await bcrypt.hash(String(password), 8),
       displayName: String(displayName || username).slice(0, 20), role: 'writer',
       shift: false, sockOnline: false, email: String(email || '').slice(0, 60),
-      createdAt: new Date(),
+      level: 0, createdAt: new Date(),
     };
     const r = await db.collection('users').insertOne(doc);
+    await assignUid(db, r.insertedId);
     await db.collection('invites').updateOne({ _id: inv._id }, { $set: { usedBy: r.insertedId.toString(), usedAt: new Date() } });
     res.json({ ok: true, token: signToken({ _id: r.insertedId, role: 'writer' }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }

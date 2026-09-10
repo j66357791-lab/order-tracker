@@ -142,7 +142,8 @@
   .imgmsg{max-width:220px;max-height:220px;border-radius:10px;display:block;cursor:zoom-in;background:#f8fafc}
   @media(max-width:640px){.imgmsg{max-width:150px;max-height:150px}}
   /* 文件消息卡片 */
-  .filecard{display:flex;align-items:center;gap:10px;width:230px;max-width:70vw;background:rgba(0,0,0,.04);border-radius:10px;padding:10px}
+  .filecard{display:flex;align-items:center;gap:10px;width:100%;max-width:230px;background:rgba(0,0,0,.04);border-radius:10px;padding:10px}
+  .msg .bub.hasfile{max-width:78%}
   .msg.mine .filecard{background:rgba(255,255,255,.16)}
   .filecard .fic{width:40px;height:40px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .filecard .fbody{flex:1;min-width:0}
@@ -185,6 +186,12 @@
   .sh-att-bad{background:var(--red-bg);color:var(--red)}
   .sh-att-warn{background:var(--amber-bg);color:var(--amber)}
   .sh-rest{color:#cbd5e1}
+  /* 等级徽标与抢班 */
+  .lvbadge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:99px;background:var(--grey-bg);color:var(--sub);font-weight:700;letter-spacing:.5px;vertical-align:1px}
+  .lvbadge.lv1{background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;box-shadow:0 1px 4px rgba(249,115,22,.35)}
+  .lvbadge.lv-tb{background:rgba(255,255,255,.18);color:#fde68a}
+  .pool-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f3f4f6}
+  .pool-row:last-child{border-bottom:none}
   .shift-hero .big{font-size:26px;font-weight:700;letter-spacing:1px}
   .shift-hero .st{font-size:12px;opacity:.85;margin:4px 0 12px}
   .sched-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f3f4f6}
@@ -234,6 +241,7 @@
   <div class="me-badge">
     <span class="dot d-off" id="selfDot"></span>
     <span id="whoami"></span>
+    <span class="lvbadge lv-tb" id="tbLv" style="display:none">LV0</span>
     <span class="shift-tag st-off" id="shiftBadge">离班</span>
   </div>
 </header>
@@ -291,6 +299,11 @@
         <button class="btn btn-sm" id="btnClock" style="background:#fff;color:var(--green-dk);font-weight:600">打卡上班</button>
       </div>
       <div class="card">
+        <h3>🎯 可抢班次</h3>
+        <div id="shiftPool"><div class="empty">加载中…</div></div>
+        <div class="flow-tip">管理员发布的班次在这里抢，抢到即写入下方排班日历；显示每个时段已有多少人上班。</div>
+      </div>
+      <div class="card">
         <h3>📅 排班日历 <input type="month" id="calMonth" style="margin-left:auto;font-size:12px;padding:5px 8px"></h3>
         <div class="cal" id="calGrid"></div>
         <div class="flow-tip" style="margin-top:10px">💡 点<b>明天及以后</b>的日期可设置/取消当天班次（提前一天安排，小时级）；当天和历史日期展示实际打卡结果。<span style="color:var(--blue)">蓝=已排班</span> · <span style="color:var(--green-dk)">绿=出勤</span> · <span style="color:var(--amber)">橙=异常</span></div>
@@ -308,9 +321,26 @@
     </div>
   </section>
 
-  <!-- 薪酬 -->
-  <section id="pPay" class="panel">
+  <!-- 我的 -->
+  <section id="pMe" class="panel scroll">
     <div class="wrap">
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:54px;height:54px;border-radius:16px;background:linear-gradient(135deg,#07c160,#059a4e);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">✍️</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <b style="font-size:16px" id="meName">—</b>
+              <span class="lvbadge" id="meLv">LV0</span>
+            </div>
+            <div style="font-size:11.5px;color:var(--sub);margin-top:3px">ID：<b id="meUid">—</b> · @<span id="meUsername">—</span></div>
+          </div>
+          <button class="btn btn-gh btn-sm" id="btnEditName">改名字</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>🎖️ 写手等级与权益</h3>
+        <div id="lvBox"><div class="empty">加载中…</div></div>
+      </div>
       <div class="card">
         <h3>💰 月度结算 <input type="month" id="payMonth" style="margin-left:auto;font-size:12px;padding:5px 8px"></h3>
         <div class="stats" style="margin:0">
@@ -333,6 +363,14 @@
         </div>
         <div style="text-align:right;margin-top:10px"><button class="btn btn-g btn-sm" id="btnAli">保存收款方式</button></div>
       </div>
+      <div class="card">
+        <h3>⚙️ 账号</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-gh" id="btnSwitch">🔄 切换账号</button>
+          <button class="btn btn-r" id="btnLogout2">🚪 退出登录</button>
+        </div>
+        <div class="flow-tip">换设备登录别人账号用「切换账号」；退出后需重新输用户名密码。</div>
+      </div>
       <div id="payList"></div>
     </div>
   </section>
@@ -342,7 +380,7 @@
   <div class="tab on" data-p="pChat"><span class="ico">💬</span>聊天<span class="reddot" id="tabUnread" style="display:none">0</span></div>
   <div class="tab" data-p="pCards"><span class="ico">📋</span>单子</div>
   <div class="tab" data-p="pAttend"><span class="ico">🕒</span>考勤</div>
-  <div class="tab" data-p="pPay"><span class="ico">💰</span>薪酬</div>
+  <div class="tab" data-p="pMe"><span class="ico">👤</span>我的</div>
 </nav>
 
 <div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
@@ -358,6 +396,7 @@ if (!TOKEN || !USER) location.href = '/login.html';
 let ME = null;
 
 function toast(t, ms = 2200) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', ms); }
+const fmt = n => Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const cnNow = () => new Date(Date.now() + 8 * 3600 * 1000);
 const cnDateStr = d => d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
@@ -492,6 +531,16 @@ function renderCardBub(c) {
     <div style="text-align:right;margin-top:6px"><a href="javascript:void(0)" onclick="openCard('${c._id}')" style="font-size:11px;color:var(--blue);text-decoration:none">查看详情 ›</a></div>
   </div>`;
 }
+// 旧数据乱码文件名修复：latin1 误读的 utf8 中文，反向还原
+function fixName(n) {
+  if (!n || !/[\u00C0-\u00FF]/.test(n)) return n || '';
+  try {
+    const bytes = new Uint8Array([...n].map(c => c.charCodeAt(0) & 0xFF));
+    const s = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (/[\u4e00-\u9fff]/.test(s)) return s;
+  } catch (e) {}
+  return n;
+}
 function renderMsgs(list) {
   if (!currentPeer) return;
   if (!list.length) { $('chatBox').innerHTML = '<div class="empty">还没有消息，打个招呼吧</div>'; return; }
@@ -504,6 +553,7 @@ function renderMsgs(list) {
       return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「单子」页）</div>'}</div>`;
     }
     if (m.type === 'file') {
+      m.fileName = fixName(m.fileName);
       const isImg = /\.(png|jpe?g|gif|webp|bmp)$/i.test(m.fileName || '');
       previewIndex[m.fileId] = { url: dl(m.fileId), name: m.fileName || '' };
       const body = isImg
@@ -512,7 +562,7 @@ function renderMsgs(list) {
             <div class="fn">${esc(m.fileName)}</div><div class="fs">${fmtSize(m.fileSize)}</div>
             <div class="fo"><button class="fc-prev" onclick="openPreview('${m.fileId}')">预览</button><a class="fc-dl" href="${dl(m.fileId)}" download="${esc(m.fileName)}">下载</a></div>
           </div></div><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}</div>`;
-      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${body}</div></div>`;
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub hasfile">${body}</div></div>`;
     }
     return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${qref}${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
   }).join('');
@@ -920,6 +970,91 @@ function paintMe() {
   const sb = $('shiftBadge');
   sb.textContent = ME.shift ? '在班' : '离班';
   sb.className = 'shift-tag ' + (ME.shift ? 'st-on' : 'st-off');
+  paintMeExtras();
+}
+function paintMeExtras() {
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('meName', ME.displayName || ME.username);
+  set('meUsername', ME.username || '');
+  set('meUid', ME.uid || '补号中…');
+  const lv = $('meLv'); if (lv) { lv.textContent = ME.level >= 1 ? 'LV' + ME.level : (ME.level === 0 ? 'LV0 试用期' : 'LV' + ME.level); lv.className = 'lvbadge' + (ME.level >= 1 ? ' lv1' : ''); }
+  const tb = $('tbLv'); if (tb) { tb.textContent = 'LV' + (ME.level || 0); tb.style.display = 'inline-block'; }
+}
+/* ================= 等级 / 钱包 ================= */
+async function loadWallet() {
+  try {
+    const j = await authFetch('/api/wallet');
+    ME.level = j.level; paintMeExtras();
+    const pct = Math.min(100, Math.round(j.stats.paid / j.lv1Paid * 100));
+    $('lvBox').innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span class="lvbadge ${j.level >= 1 ? 'lv1' : ''}" style="font-size:13px;padding:3px 12px">${j.level >= 1 ? 'LV' + j.level : 'LV0 试用期写手'}</span>
+        <span style="font-size:12px;color:var(--sub)">${j.level >= 1 ? '已解锁等级权益' : '距离 LV1 还差一点点'}</span>
+      </div>
+      <div class="kv"><span class="k">累计已到账</span><span class="v">¥${fmt(j.stats.paid)} / ¥${j.lv1Paid}（${pct}%）</span></div>
+      <div class="kv"><span class="k">驳回占比</span><span class="v">${(j.stats.rejectRate * 100).toFixed(1)}% / 需 <20%（${j.stats.rejected}/${j.stats.total} 单）</span></div>
+      ${j.level < 1 ? `<div style="margin:8px 0"><div style="height:7px;border-radius:99px;background:var(--grey-bg);overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#f59e0b,#f97316)"></div></div></div>` : ''}
+      <div class="kv"><span class="k">LV1 条件</span><span class="v">累计已到账 ≥ ¥${j.lv1Paid} 且 驳回占比 < ${(j.lv1RejectMax * 100)}%</span></div>
+      <div class="kv"><span class="k">LV1 权益</span><span class="v">已到账金额每单额外 <b>+${(j.bonusRate * 100).toFixed(1)}%</b> 奖励，按月发放进钱包</span></div>
+      ${j.level >= 1 ? `<div class="kv"><span class="k">本月预计奖励</span><span class="v">¥${fmt(j.estBonus)}（基于本月已到账 ¥${fmt(j.estBase)}，下月发放）</span></div>` : ''}
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:11px 13px;border-radius:12px;background:linear-gradient(135deg,#fff7e6,#fde68a55)">
+        <div style="font-size:12px;color:var(--amber);font-weight:600">👛 钱包余额</div>
+        <div style="flex:1"></div>
+        <div style="font-size:20px;font-weight:700;color:var(--amber)">¥${fmt(j.balance)}</div>
+      </div>
+      ${j.grants.length ? '<div style="margin-top:8px">' + j.grants.map(g => `<div class="kv"><span class="k">${g.month}</span><span class="v">+¥${fmt(g.amount)}${g.note ? ' <span style="color:var(--sub)">（' + g.note + '）</span>' : (g.base ? ' <span style="color:var(--sub)">（基数 ¥' + fmt(g.base) + '）</span>' : '')}</span></div>`).join('') + '</div>' : '<div class="flow-tip" style="margin-top:8px">奖励每月发放一次（发上个月的），发放记录会显示在这里。</div>'}`;
+  } catch (e) { if ($('lvBox')) toast(e.message); }
+}
+$('btnEditName').onclick = () => {
+  const name = prompt('修改显示名字：', ME.displayName || '');
+  if (name === null) return;
+  const v = name.trim();
+  if (!v) return toast('名字不能为空');
+  authFetch('/api/me/name', { method: 'PUT', body: JSON.stringify({ displayName: v }) })
+    .then(() => { ME.displayName = v; paintMe(); toast('名字已更新 ✅'); loadChats().catch(() => {}); })
+    .catch(e => toast(e.message));
+};
+$('btnLogout2').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+$('btnSwitch').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+
+/* ================= 可抢班次 ================= */
+async function loadShiftPool() {
+  const box = $('shiftPool');
+  if (!box) return;
+  try {
+    const ym = cnDateStr(cnNow()).slice(0, 7);
+    const j = await authFetch('/api/shifts?ym=' + ym);
+    const list = (j.shifts || []).filter(s => s.date >= cnDateStr(cnNow()));
+    if (!list.length) { box.innerHTML = '<div class="empty">暂无可抢班次，管理员发布后会显示在这里</div>'; return; }
+    box.innerHTML = list.map(s => `
+      <div class="pool-row">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600">${s.date} ${cnDow(s.date)} · ${s.start}~${s.end}</div>
+          <div style="font-size:11px;color:var(--sub);margin-top:2px">${s.claimCount ? '👥 ' + s.claimCount + ' 人已抢' + (s.claims.length <= 3 ? '：' + esc(s.claims.join('、')) : '') : '还没有人抢'}</div>
+        </div>
+        ${s.claimedByMe
+          ? `<button class="btn btn-gh btn-sm" onclick="unclaimShift('${s._id}')">已抢·退出</button>`
+          : `<button class="btn btn-g btn-sm" onclick="claimShift('${s._id}')">⚡ 抢班</button>`}
+      </div>`).join('');
+  } catch (e) { box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'; }
+}
+const cnDow = dateStr => '周' + '日一二三四五六'[new Date(dateStr + 'T00:00:00+08:00').getUTCDay()];
+async function claimShift(id) {
+  try {
+    const j = await authFetch('/api/shifts/' + id + '/claim', { method: 'POST', body: '{}' });
+    toast('抢班成功：' + j.date + ' ' + j.start + '~' + j.end + '，已写入你的排班 ✅');
+    loadShiftPool();
+    if ($('calGrid')) loadCal();
+  } catch (e) { toast(e.message); }
+}
+async function unclaimShift(id) {
+  if (!confirm('确定退出这个班次吗？')) return;
+  try {
+    await authFetch('/api/shifts/' + id + '/unclaim', { method: 'POST', body: '{}' });
+    toast('已退出班次');
+    loadShiftPool();
+    if ($('calGrid')) loadCal();
+  } catch (e) { toast(e.message); }
 }
 
 /* ================= Tab切换 ================= */
@@ -929,8 +1064,8 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   t.classList.add('on');
   $(t.dataset.p).classList.add('on');
   if (t.dataset.p === 'pCards') reloadCards();
-  if (t.dataset.p === 'pAttend') { $('attMonth').value = cnDateStr(cnNow()).slice(0, 7); loadShiftAndSched(); }
-  if (t.dataset.p === 'pPay') { $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadPay(); }
+  if (t.dataset.p === 'pAttend') { $('attMonth').value = cnDateStr(cnNow()).slice(0, 7); loadShiftAndSched(); loadShiftPool(); }
+  if (t.dataset.p === 'pMe') { $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadPay(); loadWallet(); }
 });
 
 /* ================= 实时推送 + 链接稳定性 ================= */

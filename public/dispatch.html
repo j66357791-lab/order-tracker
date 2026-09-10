@@ -127,7 +127,8 @@
   @media(max-width:640px){#chatInput{min-height:64px}}
   .imgmsg{max-width:220px;max-height:220px;border-radius:10px;display:block;cursor:zoom-in;background:#f8fafc}
   @media(max-width:640px){.imgmsg{max-width:150px;max-height:150px}}
-  .filecard{display:flex;align-items:center;gap:10px;width:230px;max-width:70vw;background:rgba(0,0,0,.04);border-radius:10px;padding:10px}
+  .filecard{display:flex;align-items:center;gap:10px;width:100%;max-width:230px;background:rgba(0,0,0,.04);border-radius:10px;padding:10px}
+  .msg .bub.hasfile{max-width:78%}
   .msg.mine .filecard{background:rgba(255,255,255,.16)}
   .filecard .fic{width:40px;height:40px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .filecard .fbody{flex:1;min-width:0}
@@ -166,6 +167,8 @@
   .recon-item .rd{font-size:12px;color:var(--sub);display:flex;flex-wrap:wrap;gap:4px 14px;margin-bottom:8px}
   .recon-item .rd b{color:var(--ink)}
   .stab .warnnum{display:inline-block;min-width:15px;height:15px;border-radius:99px;background:var(--cyan);color:#fff;font-size:10px;text-align:center;line-height:15px;padding:0 4px;margin-left:4px;vertical-align:1px}
+  .pool-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f3f4f6}
+  .pool-row:last-child{border-bottom:none}
   .icon-btn{width:38px;height:38px;border-radius:50%;border:none;background:var(--grey-bg);font-size:17px;cursor:pointer;flex-shrink:0;transition:background .15s}
   .icon-btn:hover{background:#e2e8f0}
 
@@ -218,6 +221,7 @@
 <div class="subtabs">
   <div class="stab on" data-v="vChat">💬 聊天/派单<span class="reddot" id="tabUnread" style="display:none">0</span></div>
   <div class="stab" data-v="vOver">📋 派单总览</div>
+  <div class="stab" data-v="vShift">🗓 排班管理</div>
   <div class="stab" data-v="vRecon">💰 财务对账<span class="warnnum" id="reconNum" style="display:none">0</span></div>
 </div>
 
@@ -267,6 +271,28 @@
     </div>
   </section>
 
+  <!-- 排班管理 -->
+  <section id="vShift" class="panel scroll">
+    <div class="wrap">
+      <div class="flow-tip">💡 提前发布可抢班次：写手只能在<b>你发布的班次</b>里抢单，抢到的自动写入其排班；每个班次实时显示已抢人数和名单。</div>
+      <div class="card">
+        <h3>➕ 发布班次</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="date" id="shDate" style="flex:1;min-width:120px">
+          <input type="time" id="shStart" value="09:00" style="width:100px">
+          <span style="color:var(--sub)">至</span>
+          <input type="time" id="shEnd" value="18:00" style="width:100px">
+          <button class="btn btn-g btn-sm" id="btnAddShift">发布</button>
+        </div>
+        <div class="flow-tip" style="margin-top:8px">同一天同一时间段只能发一个班次；日期不能选过去的。</div>
+      </div>
+      <div class="card">
+        <h3>🗓 已发布班次 <input type="month" id="shMonth" style="margin-left:auto;font-size:12px;padding:5px 8px"></h3>
+        <div id="shiftList"><div class="empty">加载中…</div></div>
+      </div>
+    </div>
+  </section>
+
   <!-- 财务对账 -->
   <section id="vRecon" class="panel scroll">
     <div class="wrap">
@@ -292,6 +318,7 @@ if (!TOKEN || !USER || USER.role !== 'admin') location.href = '/login.html';
 let ME = null;
 
 function toast(t, ms = 2200) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', ms); }
+const fmt = n => Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtT = d => d ? (new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ')) : '';
 const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.round(n / 1024) + 'KB';
@@ -342,6 +369,16 @@ function jumpToMsg(id) {
   if (!el) return toast('原消息不在当前记录里');
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+}
+// 旧数据乱码文件名修复：latin1 误读的 utf8 中文，反向还原
+function fixName(n) {
+  if (!n || !/[\u00C0-\u00FF]/.test(n)) return n || '';
+  try {
+    const bytes = new Uint8Array([...n].map(c => c.charCodeAt(0) & 0xFF));
+    const s = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (/[\u4e00-\u9fff]/.test(s)) return s;
+  } catch (e) {}
+  return n;
 }
 // 图片灯箱预览
 function openImg(src) {
@@ -437,6 +474,7 @@ function renderMsgs(list) {
       return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「派单总览」）</div>'}</div>`;
     }
     if (m.type === 'file') {
+      m.fileName = fixName(m.fileName);
       const isImg = /\.(png|jpe?g|gif|webp|bmp)$/i.test(m.fileName || '');
       previewIndex[m.fileId] = { url: dl(m.fileId), name: m.fileName || '' };
       const body = isImg
@@ -445,7 +483,7 @@ function renderMsgs(list) {
             <div class="fn">${esc(m.fileName)}</div><div class="fs">${fmtSize(m.fileSize)}</div>
             <div class="fo"><button class="fc-prev" onclick="openPreview('${m.fileId}')">预览</button><a class="fc-dl" href="${dl(m.fileId)}" download="${esc(m.fileName)}">下载</a></div>
           </div></div><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}</div>`;
-      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${body}</div></div>`;
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub hasfile">${body}</div></div>`;
     }
     return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}">${rbtn}<div class="bub">${qref}${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}</div></div></div>`;
   }).join('');
@@ -574,6 +612,39 @@ function paintRecon(items) {
   }).join('') : '<div class="empty">✅ 台账与派单卡状态全部一致，没有待处理的差异</div>';
 }
 $('btnReconRefresh').onclick = loadRecon;
+
+/* ================= 排班管理 ================= */
+async function loadShifts() {
+  const ym = $('shMonth').value;
+  if (!ym) return;
+  try {
+    const j = await authFetch('/api/shifts?ym=' + ym);
+    const list = j.shifts || [];
+    $('shiftList').innerHTML = list.length ? list.map(s => {
+      const past = s.date < new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+      return `<div class="pool-row">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600">${s.date} · ${s.start}~${s.end}${past ? ' <span style="color:var(--sub);font-size:11px">（已过）</span>' : ''}</div>
+          <div style="font-size:11px;color:var(--sub);margin-top:2px">👥 ${s.claimCount} 人已抢${s.claims.length ? '：' + esc(s.claims.join('、')) : ''}</div>
+        </div>
+        <button class="btn btn-r btn-sm" onclick="delShift('${s._id}')">删除</button>
+      </div>`;
+    }).join('') : '<div class="empty">本月还没有发布班次</div>';
+  } catch (e) { toast(e.message); }
+}
+$('shMonth').onchange = loadShifts;
+$('btnAddShift').onclick = async () => {
+  try {
+    await authFetch('/api/shifts', { method: 'POST', body: JSON.stringify({ date: $('shDate').value, start: $('shStart').value, end: $('shEnd').value }) });
+    toast('班次已发布 ✅ 写手端即可抢班');
+    loadShifts();
+  } catch (e) { toast(e.message); }
+};
+window.delShift = async id => {
+  if (!confirm('删除该班次？已抢的写手排班不会自动撤销。')) return;
+  try { await authFetch('/api/shifts/' + id, { method: 'DELETE' }); toast('已删除'); loadShifts(); }
+  catch (e) { toast(e.message); }
+};
 
 /* ================= 派单总览 ================= */
 async function loadOverview() {
@@ -741,6 +812,7 @@ document.querySelectorAll('.stab').forEach(t => t.onclick = () => {
   $(t.dataset.v).classList.add('on');
   if (t.dataset.v === 'vOver') loadOverview();
   if (t.dataset.v === 'vRecon') loadRecon();
+  if (t.dataset.v === 'vShift') { if (!$('shMonth').value) $('shMonth').value = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7); loadShifts(); }
 });
 
 /* ================= 实时推送 + 稳定性 ================= */
