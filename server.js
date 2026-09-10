@@ -662,15 +662,19 @@ app.get('/api/chats', auth, async (req, res) => {
       }
       return res.json({ ok: true, chats: list });
     }
-    // 写手：会话对象=管理员
+    // 写手：会话对象=管理员 + 好友（同事）
     const admins = await db.collection('users').find({ role: 'admin' }).toArray();
+    const me = await db.collection('users').findOne({ _id: new ObjectId(req.user.id) });
+    const friendIds = (me.friends || []).filter(x => ObjectId.isValid(x) && x !== req.user.id);
+    const friends = friendIds.length ? await db.collection('users').find({ _id: { $in: friendIds.map(x => new ObjectId(x)) } }).toArray() : [];
     const list = [];
-    for (const a of admins) {
+    for (const a of [...admins, ...friends]) {
       const conv = pairKey(req.user.id, a._id.toString());
       const last = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: -1 }).limit(1).toArray();
       const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
       list.push({ user: publicUser(a), unread, last: last[0] || null });
     }
+    list.sort((x, y) => (y.last?.createdAt || y.user.createdAt || 0) - (x.last?.createdAt || x.user.createdAt || 0));
     res.json({ ok: true, chats: list });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -695,8 +699,11 @@ app.post('/api/messages', auth, async (req, res) => {
     if (!ObjectId.isValid(peer)) return res.status(400).json({ ok: false, error: '无效会话' });
     const target = await db.collection('users').findOne({ _id: new ObjectId(peer) });
     if (!target) return res.status(404).json({ ok: false, error: '对方不存在' });
-    // 权限：写手只能和管理员聊；管理员可和所有写手聊
-    if (req.user.role !== 'admin' && target.role !== 'admin') return res.status(403).json({ ok: false, error: '只能和管理员聊天' });
+    // 权限：管理员可和所有人聊；写手之间需互为好友（同事）
+    if (req.user.role !== 'admin' && target.role !== 'admin') {
+      const me = await db.collection('users').findOne({ _id: new ObjectId(req.user.id), friends: peer });
+      if (!me) return res.status(403).json({ ok: false, error: '只能和管理员或已添加的同事聊天' });
+    }
     if (!text) return res.status(400).json({ ok: false, error: '消息不能为空' });
     const msg = {
       conversation: pairKey(req.user.id, peer),
@@ -758,7 +765,11 @@ app.post('/api/messages/file', auth, async (req, res) => {
     if (!ObjectId.isValid(peer) || !ObjectId.isValid(fileId)) return res.status(400).json({ ok: false, error: '参数无效' });
     const target = await db.collection('users').findOne({ _id: new ObjectId(peer) });
     if (!target) return res.status(404).json({ ok: false, error: '对方不存在' });
-    if (req.user.role !== 'admin' && target.role !== 'admin') return res.status(403).json({ ok: false, error: '只能和管理员聊天' });
+    // 权限：管理员可和所有人聊；写手之间需互为好友（同事）
+    if (req.user.role !== 'admin' && target.role !== 'admin') {
+      const me = await db.collection('users').findOne({ _id: new ObjectId(req.user.id), friends: peer });
+      if (!me) return res.status(403).json({ ok: false, error: '只能和管理员或已添加的同事聊天' });
+    }
     const msg = {
       conversation: pairKey(req.user.id, peer),
       from: req.user.id, fromName: req.user.displayName, to: peer,
