@@ -424,6 +424,80 @@ app.post('/api/shifts/:id/unclaim', auth, async (req, res) => {
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
+// ---------- 好友（加同事） ----------
+app.get('/api/friends', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const me = await db.collection('users').findOne({ _id: new ObjectId(req.user.id) });
+    const ids = (me.friends || []).filter(x => ObjectId.isValid(x)).map(x => new ObjectId(x));
+    const rows = ids.length ? await db.collection('users').find({ _id: { $in: ids } })
+      .project({ displayName: 1, username: 1, uid: 1, role: 1, shift: 1, sockOnline: 1, level: 1 })
+      .sort({ displayName: 1 }).toArray() : [];
+    res.json({ ok: true, friends: rows.map(u => ({ ...publicUser(u), online: !!u.sockOnline })) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 添加好友：支持7位数ID或用户名
+app.post('/api/friends', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const q = String(req.body?.query || '').trim();
+    if (!q) return res.status(400).json({ ok: false, error: '请输入对方的ID或用户名' });
+    const target = await db.collection('users').findOne(
+      /^\d{7}$/.test(q) ? { uid: q } : { username: q.toLowerCase() });
+    if (!target) return res.status(404).json({ ok: false, error: '找不到该用户，确认ID（7位数）或用户名没输错' });
+    if (target._id.toString() === req.user.id) return res.status(400).json({ ok: false, error: '不能添加自己' });
+    await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $addToSet: { friends: target._id.toString() } });
+    await db.collection('users').updateOne({ _id: target._id }, { $addToSet: { friends: req.user.id } });
+    res.json({ ok: true, friend: { id: target._id.toString(), displayName: target.displayName, uid: target.uid || null } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.delete('/api/friends/:id', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ ok: false, error: '参数无效' });
+    await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $pull: { friends: req.params.id } });
+    await db.collection('users').updateOne({ _id: new ObjectId(req.params.id) }, { $pull: { friends: req.user.id } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 提现申请（线下打款登记） ----------
+app.post('/api/withdraw', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const type = String(req.body?.type || '');
+    if (!['bonus', 'order'].includes(type)) return res.status(400).json({ ok: false, error: '提现类型无效' });
+    const alipay = req.user.alipay;
+    if (!alipay || !alipay.account) return res.status(400).json({ ok: false, error: '请先在我的-钱包里绑定收款方式' });
+    const doc = {
+      userId: req.user.id, displayName: req.user.displayName, type,
+      status: '待处理', alipay: { name: alipay.name, account: alipay.account },
+      createdAt: new Date(),
+    };
+    if (type === 'bonus') {
+      const grants = await db.collection('wallet_log').find({ userId: req.user.id }).toArray();
+      const withdrawn = await db.collection('withdrawals').find({ userId: req.user.id, type: 'bonus', status: { $in: ['待处理', '已打款'] } }).toArray();
+      const balance = Math.round((grants.reduce((s, g) => s + (g.amount || 0), 0) - withdrawn.reduce((s, w) => s + (w.amount || 0), 0)) * 100) / 100;
+      if (balance <= 0) return res.status(400).json({ ok: false, error: '激励奖励暂无可提现余额' });
+      doc.amount = balance;
+    } else {
+      const cards = await db.collection('cards').find({ to: req.user.id, status: '待打款' }).toArray();
+      const amount = Math.round(cards.reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
+      if (amount <= 0) return res.status(400).json({ ok: false, error: '暂无待打款的单子奖励' });
+      doc.amount = amount;
+    }
+    const r = await db.collection('withdrawals').insertOne(doc);
+    res.json({ ok: true, _id: r.insertedId.toString(), amount: doc.amount, type });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/withdraw', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.collection('withdrawals').find({ userId: req.user.id }).sort({ createdAt: -1 }).limit(30).toArray();
+    res.json({ ok: true, rows: rows.map(w => ({ _id: w._id.toString(), type: w.type, amount: w.amount, status: w.status, createdAt: w.createdAt })) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 function cleanReplyTo(rt) {
   if (!rt || typeof rt !== 'object') return null;
   const id = String(rt.id || '').slice(0, 40);

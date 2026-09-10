@@ -192,6 +192,41 @@
   .lvbadge.lv-tb{background:rgba(255,255,255,.18);color:#fde68a}
   .pool-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f3f4f6}
   .pool-row:last-child{border-bottom:none}
+  /* 我的页卡组 + 二级页 */
+  .tilegrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .tile{background:#fff;border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(17,24,39,.06)}
+  .tile .ti{font-size:22px;line-height:1}
+  .tile .tt{font-size:15px;font-weight:700;margin-top:7px}
+  .tile .ts{font-size:11px;color:var(--sub);margin-top:2px}
+  .tap{cursor:pointer;transition:transform .12s ease,box-shadow .18s ease}
+  .tap:active{transform:scale(.96)}
+  .tap:hover{box-shadow:0 4px 14px rgba(17,24,39,.1)}
+  .subpage{position:fixed;inset:0;background:var(--bg);z-index:200;transform:translateX(100%);transition:transform .3s cubic-bezier(.22,1,.36,1);overflow-y:auto;-webkit-overflow-scrolling:touch;will-change:transform}
+  .subpage.on{transform:translateX(0)}
+  .sp-head{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:12px 14px}
+  .sp-head b{font-size:15px}
+  .sp-back{border:none;background:var(--grey-bg);width:32px;height:32px;border-radius:50%;font-size:18px;line-height:1;cursor:pointer;flex-shrink:0;transition:transform .12s}
+  .sp-back:active{transform:scale(.9)}
+  .sp-body{padding-top:12px;padding-bottom:30px}
+  .wd-card{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:12px;padding:12px 14px;margin-bottom:9px}
+  .wd-card .wt{font-size:13.5px;font-weight:600}
+  .wd-card .ws{font-size:11px;color:var(--sub);margin-top:2px}
+  .wd-card .wa{margin-left:auto;font-size:16px;font-weight:700;color:var(--green-dk);flex-shrink:0}
+  .fr-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f3f4f6}
+  .fr-row:last-child{border-bottom:none}
+  /* 全局动效 */
+  @keyframes panelIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .panel.on .wrap{animation:panelIn .28s cubic-bezier(.22,1,.36,1)}
+  @keyframes bubIn{from{opacity:0;transform:translateY(5px) scale(.98)}to{opacity:1;transform:none}}
+  .msg{animation:bubIn .18s ease}
+  .btn{transition:transform .12s ease,filter .15s ease}
+  .btn:active{transform:scale(.95);filter:brightness(.96)}
+  .icon-btn{transition:transform .12s ease,background .15s}
+  .icon-btn:active{transform:scale(.88)}
+  .tab .ico{display:inline-block;transition:transform .2s cubic-bezier(.34,1.56,.64,1)}
+  .tab.on .ico{transform:translateY(-1px) scale(1.12)}
+  .card{transition:box-shadow .2s ease}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
   .shift-hero .big{font-size:26px;font-weight:700;letter-spacing:1px}
   .shift-hero .st{font-size:12px;opacity:.85;margin:4px 0 12px}
   .sched-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f3f4f6}
@@ -337,10 +372,71 @@
           <button class="btn btn-gh btn-sm" id="btnEditName">改名字</button>
         </div>
       </div>
-      <div class="card">
-        <h3>🎖️ 写手等级与权益</h3>
-        <div id="lvBox"><div class="empty">加载中…</div></div>
+      <div class="tilegrid">
+        <div class="tile tap" onclick="openSub('subLv','🎖️ 等级与权益')">
+          <div class="ti">🎖️</div><div class="tt" id="lvTileName">试用期写手</div><div class="ts" id="lvTileSub">点看升级进度</div>
+        </div>
+        <div class="tile tap" onclick="openSub('subWallet','👛 钱包')">
+          <div class="ti">👛</div><div class="tt" id="walletTileAmt">¥--</div><div class="ts">钱包余额 · 提现</div>
+        </div>
+        <div class="tile tap" onclick="openSub('subPay','💵 薪酬结算')">
+          <div class="ti">💵</div><div class="tt" id="payTileAmt">¥--</div><div class="ts">月度结算 · 走势</div>
+        </div>
+        <div class="tile tap" onclick="openSub('subFriends','👥 同事好友')">
+          <div class="ti">👥</div><div class="tt" id="frTileCnt">—</div><div class="ts">添加同事 · 聊天</div>
+        </div>
       </div>
+      <div class="card">
+        <h3>⚙️ 账号</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-gh" id="btnSwitch">🔄 切换账号</button>
+          <button class="btn btn-r" id="btnLogout2">🚪 退出登录</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav class="tabbar">
+  <div class="tab on" data-p="pChat"><span class="ico">💬</span>聊天<span class="reddot" id="tabUnread" style="display:none">0</span></div>
+  <div class="tab" data-p="pCards"><span class="ico">📋</span>单子</div>
+  <div class="tab" data-p="pAttend"><span class="ico">🕒</span>考勤</div>
+  <div class="tab" data-p="pMe"><span class="ico">👤</span>我的</div>
+</nav>
+
+<div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
+<div id="subPage" class="subpage">
+  <div class="sp-head"><button class="sp-back" id="spBack">‹</button><b id="spTitle"></b></div>
+  <div class="wrap sp-body">
+    <div class="sp-sec" id="subLv" hidden>
+      <div class="card" id="lvBox"><div class="empty">加载中…</div></div>
+    </div>
+    <div class="sp-sec" id="subWallet" hidden>
+      <div class="card" id="walletBox"><div class="empty">加载中…</div></div>
+      <div class="card">
+        <h3>🏧 提现</h3>
+        <div class="wd-card tap" id="wdBonus" onclick="applyWithdraw('bonus')">
+          <div><div class="wt">💎 激励奖励提现</div><div class="ws">LV1等级奖励，按月发放的余额</div></div>
+          <div class="wa" id="wdBonusAmt">¥--</div>
+        </div>
+        <div class="wd-card tap" id="wdOrder" onclick="applyWithdraw('order')">
+          <div><div class="wt">🃏 单子奖励提现</div><div class="ws">审核通过、待打款的单子报酬</div></div>
+          <div class="wa" id="wdOrderAmt">¥--</div>
+        </div>
+        <div class="flow-tip">点卡片提交提现申请，管理员线下打款到你的收款方式；提现记录见下方。</div>
+        <div id="wdList" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h3>🏦 绑定收款方式（支付宝）</h3>
+        <div class="flow-tip">提现和打款都会用到，请确保<b>姓名与账号一致</b>，保存后立即生效。</div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <input id="aliName" placeholder="支付宝实名姓名" maxlength="40">
+          <input id="aliAccount" placeholder="支付宝账号（手机号或邮箱）" maxlength="60">
+        </div>
+        <div style="text-align:right;margin-top:10px"><button class="btn btn-g btn-sm" id="btnAli">保存收款方式</button></div>
+      </div>
+    </div>
+    <div class="sp-sec" id="subPay" hidden>
       <div class="card">
         <h3>💰 月度结算 <input type="month" id="payMonth" style="margin-left:auto;font-size:12px;padding:5px 8px"></h3>
         <div class="stats" style="margin:0">
@@ -354,36 +450,24 @@
         <div id="payChart"></div>
         <div class="flow-tip">绿条 = 当天确认打款（已到手）的金额；悬停看具体数额。<span style="color:var(--cyan)">青点 = 当天有单进入待打款</span></div>
       </div>
-      <div class="card">
-        <h3>🏦 收款方式（支付宝）</h3>
-        <div class="flow-tip">管理员打款前会查看这里的信息，请确保<b>姓名与账号一致</b>，填写后立即生效。</div>
-        <div style="display:flex;flex-direction:column;gap:9px">
-          <input id="aliName" placeholder="支付宝实名姓名" maxlength="40">
-          <input id="aliAccount" placeholder="支付宝账号（手机号或邮箱）" maxlength="60">
-        </div>
-        <div style="text-align:right;margin-top:10px"><button class="btn btn-g btn-sm" id="btnAli">保存收款方式</button></div>
-      </div>
-      <div class="card">
-        <h3>⚙️ 账号</h3>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-gh" id="btnSwitch">🔄 切换账号</button>
-          <button class="btn btn-r" id="btnLogout2">🚪 退出登录</button>
-        </div>
-        <div class="flow-tip">换设备登录别人账号用「切换账号」；退出后需重新输用户名密码。</div>
-      </div>
       <div id="payList"></div>
     </div>
-  </section>
-</main>
-
-<nav class="tabbar">
-  <div class="tab on" data-p="pChat"><span class="ico">💬</span>聊天<span class="reddot" id="tabUnread" style="display:none">0</span></div>
-  <div class="tab" data-p="pCards"><span class="ico">📋</span>单子</div>
-  <div class="tab" data-p="pAttend"><span class="ico">🕒</span>考勤</div>
-  <div class="tab" data-p="pMe"><span class="ico">👤</span>我的</div>
-</nav>
-
-<div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
+    <div class="sp-sec" id="subFriends" hidden>
+      <div class="card">
+        <h3>➕ 添加同事</h3>
+        <div style="display:flex;gap:8px">
+          <input id="frQuery" placeholder="输入对方 7 位数 ID 或用户名" style="flex:1">
+          <button class="btn btn-g btn-sm" id="btnAddFriend">添加</button>
+        </div>
+        <div class="flow-tip">对方通过后你们互为同事，可直接发起聊天。自己的 ID 在「我的」页顶部。</div>
+      </div>
+      <div class="card">
+        <h3>👥 我的同事 <span id="frCnt" style="font-size:12px;color:var(--sub);font-weight:400"></span></h3>
+        <div id="frList"><div class="empty">加载中…</div></div>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="imgMask" onclick="closePreview()"><a class="dl" id="imgDl" href="#" target="_blank" onclick="event.stopPropagation()">⬇ 下载原图</a><img id="imgBig" alt="图片预览"><iframe id="pvFrame" title="文件预览"></iframe></div>
 <div id="toast"></div>
 
@@ -981,30 +1065,107 @@ function paintMeExtras() {
   const tb = $('tbLv'); if (tb) { tb.textContent = 'LV' + (ME.level || 0); tb.style.display = 'inline-block'; }
 }
 /* ================= 等级 / 钱包 ================= */
+/* ================= 我的页：卡组 + 二级页 ================= */
+function openSub(secId, title) {
+  $('spTitle').textContent = title;
+  document.querySelectorAll('.sp-sec').forEach(x => x.hidden = true);
+  const sec = $(secId);
+  sec.hidden = false;
+  $('subPage').classList.add('on');
+  $('subPage').scrollTop = 0;
+  if (secId === 'subLv') loadWallet();
+  if (secId === 'subWallet') { loadWallet(); loadWithdraw(); }
+  if (secId === 'subPay') { if (!$('payMonth').value) $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadPay(); }
+  if (secId === 'subFriends') loadFriends();
+}
+function closeSub() { $('subPage').classList.remove('on'); }
+$('spBack').onclick = closeSub;
+const LVNAMES = { 0: '试用期写手', 1: '初级写手', 2: '资深写手' };
 async function loadWallet() {
   try {
     const j = await authFetch('/api/wallet');
     ME.level = j.level; paintMeExtras();
+    $('lvTileName').textContent = LVNAMES[j.level] || ('LV' + j.level);
+    $('lvTileSub').textContent = j.level >= 1 ? '已解锁奖励权益' : '点看升级进度';
+    $('walletTileAmt').textContent = '¥' + fmt(j.balance);
+    $('wdBonusAmt').textContent = '¥' + fmt(j.balance);
     const pct = Math.min(100, Math.round(j.stats.paid / j.lv1Paid * 100));
     $('lvBox').innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span class="lvbadge ${j.level >= 1 ? 'lv1' : ''}" style="font-size:13px;padding:3px 12px">${j.level >= 1 ? 'LV' + j.level : 'LV0 试用期写手'}</span>
-        <span style="font-size:12px;color:var(--sub)">${j.level >= 1 ? '已解锁等级权益' : '距离 LV1 还差一点点'}</span>
+        <span class="lvbadge ${j.level >= 1 ? 'lv1' : ''}" style="font-size:13px;padding:3px 12px">LV${j.level} ${LVNAMES[j.level] || ''}</span>
+        <span style="font-size:12px;color:var(--sub)">${j.level >= 1 ? '已解锁等级权益' : '距离 LV1 初级写手 还差一点点'}</span>
       </div>
       <div class="kv"><span class="k">累计已到账</span><span class="v">¥${fmt(j.stats.paid)} / ¥${j.lv1Paid}（${pct}%）</span></div>
       <div class="kv"><span class="k">驳回占比</span><span class="v">${(j.stats.rejectRate * 100).toFixed(1)}% / 需 <20%（${j.stats.rejected}/${j.stats.total} 单）</span></div>
-      ${j.level < 1 ? `<div style="margin:8px 0"><div style="height:7px;border-radius:99px;background:var(--grey-bg);overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#f59e0b,#f97316)"></div></div></div>` : ''}
-      <div class="kv"><span class="k">LV1 条件</span><span class="v">累计已到账 ≥ ¥${j.lv1Paid} 且 驳回占比 < ${(j.lv1RejectMax * 100)}%</span></div>
+      ${j.level < 1 ? `<div style="margin:8px 0"><div style="height:7px;border-radius:99px;background:var(--grey-bg);overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#f59e0b,#f97316);transition:width .5s ease"></div></div></div>` : ''}
+      <div class="kv"><span class="k">LV1 初级写手 条件</span><span class="v">累计已到账 ≥ ¥${j.lv1Paid} 且 驳回占比 < ${(j.lv1RejectMax * 100)}%</span></div>
       <div class="kv"><span class="k">LV1 权益</span><span class="v">已到账金额每单额外 <b>+${(j.bonusRate * 100).toFixed(1)}%</b> 奖励，按月发放进钱包</span></div>
       ${j.level >= 1 ? `<div class="kv"><span class="k">本月预计奖励</span><span class="v">¥${fmt(j.estBonus)}（基于本月已到账 ¥${fmt(j.estBase)}，下月发放）</span></div>` : ''}
-      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:11px 13px;border-radius:12px;background:linear-gradient(135deg,#fff7e6,#fde68a55)">
-        <div style="font-size:12px;color:var(--amber);font-weight:600">👛 钱包余额</div>
+      ${j.grants.length ? '<div style="margin-top:10px"><div style="font-size:12px;color:var(--sub);margin-bottom:5px">发放记录</div>' + j.grants.map(g => `<div class="kv"><span class="k">${g.month}</span><span class="v">+¥${fmt(g.amount)}${g.note ? ' <span style="color:var(--sub)">（' + g.note + '）</span>' : (g.base ? ' <span style="color:var(--sub)">（基数 ¥' + fmt(g.base) + '）</span>' : '')}</span></div>`).join('') + '</div>' : ''}`;
+    $('walletBox').innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;padding:6px 2px 12px">
+        <div style="font-size:13px;color:var(--sub)">👛 钱包余额（激励奖励）</div>
         <div style="flex:1"></div>
-        <div style="font-size:20px;font-weight:700;color:var(--amber)">¥${fmt(j.balance)}</div>
+        <div style="font-size:26px;font-weight:700;color:var(--amber)">¥${fmt(j.balance)}</div>
       </div>
-      ${j.grants.length ? '<div style="margin-top:8px">' + j.grants.map(g => `<div class="kv"><span class="k">${g.month}</span><span class="v">+¥${fmt(g.amount)}${g.note ? ' <span style="color:var(--sub)">（' + g.note + '）</span>' : (g.base ? ' <span style="color:var(--sub)">（基数 ¥' + fmt(g.base) + '）</span>' : '')}</span></div>`).join('') + '</div>' : '<div class="flow-tip" style="margin-top:8px">奖励每月发放一次（发上个月的），发放记录会显示在这里。</div>'}`;
-  } catch (e) { if ($('lvBox')) toast(e.message); }
+      ${j.level >= 1 ? '' : '<div class="flow-tip">升到 LV1 初级写手后，每月自动发放等级奖励到这里。</div>'}`;
+  } catch (e) { toast(e.message); }
 }
+async function loadWithdraw() {
+  try {
+    const j = await authFetch('/api/withdraw');
+    $('wdList').innerHTML = j.rows.length ? '<div style="font-size:12px;color:var(--sub);margin-bottom:5px">提现记录</div>' +
+      j.rows.map(w => `<div class="kv"><span class="k">${new Date(new Date(w.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 10).replace('-', '/')} ${w.type === 'bonus' ? '激励奖励' : '单子奖励'}</span><span class="v">¥${fmt(w.amount)} · ${w.status === '待处理' ? '<b style="color:var(--amber)">待处理</b>' : esc(w.status)}</span></div>`).join('') : '';
+  } catch (e) {}
+}
+async function applyWithdraw(type) {
+  if (!confirm(type === 'bonus' ? '申请提现全部激励奖励余额？' : '申请提现全部待打款的单子奖励？')) return;
+  try {
+    const j = await authFetch('/api/withdraw', { method: 'POST', body: JSON.stringify({ type }) });
+    toast('提现申请已提交（¥' + fmt(j.amount) + '），等待管理员打款');
+    loadWithdraw();
+    if (type === 'bonus') loadWallet();
+  } catch (e) { toast(e.message); }
+}
+/* ================= 同事好友 ================= */
+async function loadFriends() {
+  try {
+    const j = await authFetch('/api/friends');
+    $('frCnt').textContent = j.friends.length ? '（' + j.friends.length + '）' : '';
+    $('frTileCnt').textContent = j.friends.length ? j.friends.length + ' 位' : '还没有';
+    $('frList').innerHTML = j.friends.length ? j.friends.map(u => `
+      <div class="fr-row">
+        <div class="avatar" style="width:38px;height:38px;font-size:15px">${esc((u.displayName || '?')[0])}<span class="dot ${u.online ? 'd-on' : 'd-off'}"></span></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">${esc(u.displayName)} ${u.role === 'admin' ? '<span class="tag tg-warn">管理</span>' : '<span class="lvbadge ' + (u.level >= 1 ? 'lv1' : '') + '">LV' + (u.level || 0) + '</span>'}</div>
+          <div style="font-size:11px;color:var(--sub)">ID ${u.uid || '—'} · ${u.online ? '在线' : '离线'}</div>
+        </div>
+        <button class="btn btn-g btn-sm" onclick="chatWith('${u.id}')">💬 聊天</button>
+        <button class="btn btn-gh btn-sm" onclick="delFriend('${u.id}','${esc(u.displayName).replace(/'/g, '')}')">删除</button>
+      </div>`).join('') : '<div class="empty">还没有同事，用上方搜索添加吧</div>';
+  } catch (e) { toast(e.message); }
+}
+$('btnAddFriend').onclick = async () => {
+  const q = $('frQuery').value.trim();
+  if (!q) return toast('请输入对方 ID 或用户名');
+  try {
+    const j = await authFetch('/api/friends', { method: 'POST', body: JSON.stringify({ query: q }) });
+    $('frQuery').value = '';
+    toast('已添加 ' + j.friend.displayName + ' 为同事 ✅');
+    loadFriends();
+  } catch (e) { toast(e.message); }
+};
+window.chatWith = async id => {
+  closeSub();
+  document.querySelector('.tab[data-p="pChat"]').click();
+  setTimeout(() => openChat(id), 120);
+  try { const j = await authFetch('/api/chats'); chats = j.chats; openChat(id); } catch (e) {}
+};
+window.delFriend = async (id, name) => {
+  if (!confirm('删除同事 ' + (name || '') + '？聊天记录不受影响。')) return;
+  try { await authFetch('/api/friends/' + id, { method: 'DELETE' }); toast('已删除'); loadFriends(); }
+  catch (e) { toast(e.message); }
+};
 $('btnEditName').onclick = () => {
   const name = prompt('修改显示名字：', ME.displayName || '');
   if (name === null) return;
@@ -1065,7 +1226,7 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   $(t.dataset.p).classList.add('on');
   if (t.dataset.p === 'pCards') reloadCards();
   if (t.dataset.p === 'pAttend') { $('attMonth').value = cnDateStr(cnNow()).slice(0, 7); loadShiftAndSched(); loadShiftPool(); }
-  if (t.dataset.p === 'pMe') { $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadPay(); loadWallet(); }
+  if (t.dataset.p === 'pMe') { $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadWallet(); loadPay(); loadFriends(); }
 });
 
 /* ================= 实时推送 + 链接稳定性 ================= */
