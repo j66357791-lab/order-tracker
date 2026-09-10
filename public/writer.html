@@ -696,7 +696,7 @@ async function sendText() {
 }
 async function sendFile(f) {
   if (!f || !currentPeer) return;
-  if (f.size > 25 * 1024 * 1024) return toast('文件不能超过25MB');
+  if (f.size > 100 * 1024 * 1024) return toast('文件不能超过100MB');
   toast('上传中：' + f.name + '…', 8000);
   const replyTo = quoteTarget ? { id: String(quoteTarget._id), fromName: quoteTarget.fromName || '', preview: msgPreview(quoteTarget).slice(0, 80), type: quoteTarget.type || 'text' } : null;
   clearQuote();
@@ -1175,8 +1175,9 @@ $('btnEditName').onclick = () => {
     .then(() => { ME.displayName = v; paintMe(); toast('名字已更新 ✅'); loadChats().catch(() => {}); })
     .catch(e => toast(e.message));
 };
-$('btnLogout2').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
-$('btnSwitch').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+function purgeLocalMsgs() { try { Object.keys(localStorage).filter(k => k.startsWith('jdy_msg_')).forEach(k => localStorage.removeItem(k)); } catch (e) {} }
+$('btnLogout2').onclick = () => { purgeLocalMsgs(); localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+$('btnSwitch').onclick = () => { purgeLocalMsgs(); localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
 
 /* ================= 可抢班次 ================= */
 async function loadShiftPool() {
@@ -1248,7 +1249,9 @@ socket.on('connect_error', () => { $('connBar').classList.add('on'); });
 socket.on('reconnect', () => { $('connBar').classList.remove('on'); });
 
 socket.on('msg', m => {
-  if (currentPeer && (m.from === currentPeer || m.to === currentPeer)) {
+  // 只收属于当前会话的消息：会话键=双方id排序拼接，防止别人聊天串台进当前窗口
+  const convKey = currentPeer && ME ? [String(ME.id), String(currentPeer)].sort().join(':') : null;
+  if (currentPeer && m.conversation === convKey) {
     if (addMsg(m)) renderMsgs(msgs);
   }
   loadChats().catch(() => {});

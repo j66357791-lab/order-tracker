@@ -246,7 +246,7 @@ const multer = require('multer');
 const { Server } = require('socket.io');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'jdy-jwt-secret-2026-fallback';
-const FILE_LIMIT = 25 * 1024 * 1024;   // 单文件上限 25MB
+const FILE_LIMIT = 100 * 1024 * 1024;  // 单文件上限 100MB（GridFS流式写入，不占内存）
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -1258,19 +1258,23 @@ io.on('connection', async (socket) => {
   });
 });
 
-// ---------- 文件3天保留：GridFS 定时清理（聊天附件过期即删，派单卡仅存元数据） ----------
-async function cleanupOldFiles() {
+// ---------- 定时清理：聊天附件3天销毁 + 文字消息30天自动清理 ----------
+const FILE_RETAIN_DAYS = 3, MSG_RETAIN_DAYS = 30;
+async function cleanupOldData() {
   try {
     const db = await getDb();
-    const cutoff = new Date(Date.now() - 3 * 24 * 3600 * 1000);
     const bucket = new GridFSBucket(db);
+    const cutoff = new Date(Date.now() - FILE_RETAIN_DAYS * 24 * 3600 * 1000);
     const old = await db.collection('fs.files').find({ uploadDate: { $lt: cutoff } }).project({ _id: 1 }).toArray();
     for (const f of old) { try { await bucket.delete(f._id); } catch (e) {} }
-    if (old.length) console.log('[清理] 已删除', old.length, '个超过3天的聊天附件');
-  } catch (e) { console.error('[清理] 文件清理失败:', e.message); }
+    if (old.length) console.log('[清理] 已删除', old.length, '个超过' + FILE_RETAIN_DAYS + '天的聊天附件');
+    const msgCutoff = new Date(Date.now() - MSG_RETAIN_DAYS * 24 * 3600 * 1000);
+    const r = await db.collection('messages').deleteMany({ createdAt: { $lt: msgCutoff } });
+    if (r.deletedCount) console.log('[清理] 已删除', r.deletedCount, '条超过' + MSG_RETAIN_DAYS + '天的历史消息');
+  } catch (e) { console.error('[清理] 失败:', e.message); }
 }
-setTimeout(cleanupOldFiles, 15 * 1000);                 // 启动后15秒清一次
-setInterval(cleanupOldFiles, 6 * 3600 * 1000);          // 之后每6小时清一次
+setTimeout(cleanupOldData, 15 * 1000);                 // 启动后15秒清一次
+setInterval(cleanupOldData, 6 * 3600 * 1000);          // 之后每6小时清一次
 
 server.listen(CONFIG.port, () => {
   console.log(`订单统计系统V9已启动: http://localhost:${CONFIG.port}（含派单模块）`);
