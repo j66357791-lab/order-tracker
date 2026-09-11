@@ -580,6 +580,187 @@ app.post('/api/ads', auth, adminOnly, async (req, res) => {
   }
 });
 
+// ==================== 活动中心 API ====================
+// 工具：北京时间日期
+function cnDayStr(d) { return new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10); }
+function cnMonthStr(d) { return cnDayStr(d).slice(0, 7); }
+
+// ---- 每日签到 ----
+// GET /api/activity/checkin - 获取签到状态
+app.get('/api/activity/checkin', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const today = cnDayStr(new Date());
+    const month = today.slice(0, 7);
+    const userId = req.user.id;
+    // 今日是否已签
+    const todayRec = await db.collection('checkin_records').findOne({ userId, date: today });
+    // 月历
+    const monthRecs = await db.collection('checkin_records').find({ userId, date: { $regex: '^' + month } }).toArray();
+    const signedDays = monthRecs.map(r => r.date);
+    // 连续签到天数
+    let streak = 0;
+    let d = new Date();
+    while (true) {
+      const ds = cnDayStr(d);
+      const rec = await db.collection('checkin_records').findOne({ userId, date: ds });
+      if (rec) { streak++; d.setDate(d.getDate() - 1); }
+      else break;
+    }
+    res.json({ ok: true, today: today, signedToday: !!todayRec, todayAmount: todayRec ? todayRec.amount : 0, streak, signedDays, month });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// POST /api/activity/checkin - 签到
+app.post('/api/activity/checkin', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const today = cnDayStr(new Date());
+    const userId = req.user.id;
+    const existing = await db.collection('checkin_records').findOne({ userId, date: today });
+    if (existing) return res.status(400).json({ ok: false, error: '今日已签到' });
+    // 概率：99.99% 得 0.01~0.1，0.01% 得 1~5
+    let amount;
+    if (Math.random() < 0.0001) {
+      amount = Math.round((1 + Math.random() * 4) * 100) / 100; // 1~5
+    } else {
+      amount = Math.round((0.01 + Math.random() * 0.09) * 100) / 100; // 0.01~0.10
+    }
+    // 连续天数
+    let streak = 1;
+    let yd = new Date(); yd.setDate(yd.getDate() - 1);
+    const ydStr = cnDayStr(yd);
+    const ydRec = await db.collection('checkin_records').findOne({ userId, date: ydStr });
+    if (ydRec) {
+      // 计算连续天数
+      let d = new Date(); let s = 1;
+      while (true) { d.setDate(d.getDate() - 1); const rec = await db.collection('checkin_records').findOne({ userId, date: cnDayStr(d) }); if (rec) s++; else break; }
+      streak = s;
+    }
+    await db.collection('checkin_records').insertOne({ userId, date: today, amount, streak, createdAt: new Date() });
+    // 入账 wallet_log
+    await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount, note: '每日签到', createdAt: new Date() });
+    res.json({ ok: true, amount, streak });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---- 单单拆红包 ----
+// GET /api/activity/redpacket - 获取当天可拆红包的订单
+app.get('/api/activity/redpacket', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const userId = req.user.id;
+    const today = cnDayStr(new Date());
+    // 当天审核通过（待打款）的订单
+    const cards = await db.collection('cards').find({
+      to: userId, status: '待打款',
+      approvedAt: { $exists: true }
+    }).toArray();
+    // 已拆红包的
+    const opened = await db.collection('redpacket_records').find({ userId, date: today }).toArray();
+    const openedCardIds = opened.map(r => String(r.cardId));
+    // 今天已开红包的订单
+    const available = cards.filter(c => !openedCardIds.includes(String(c._id))).map(c => ({
+      cardId: c._id, title: c.title, reward: c.reward, approvedAt: c.approvedAt
+    }));
+    // 已开但冻结中的
+    const frozen = opened.filter(r => r.status === '冻结').map(r => ({
+      cardId: String(r.cardId), amount: r.amount, title: r.title
+    }));
+    res.json({ ok: true, available, frozen, today });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// POST /api/activity/redpacket/:cardId - 拆红包
+app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const userId = req.user.id;
+    const cardId = req.params.cardId;
+    const today = cnDayStr(new Date());
+    // 检查是否已拆
+    const existing = await db.collection('redpacket_records').findOne({ userId, cardId, date: today });
+    if (existing) return res.status(400).json({ ok: false, error: '该订单今日已拆红包' });
+    // 检查订单状态
+    const card = await db.collection('cards').findOne({ _id: new require('mongodb').ObjectId(cardId), to: userId });
+    if (!card) return res.status(404).json({ ok: false, error: '订单不存在' });
+    if (card.status !== '待打款') return res.status(400).json({ ok: false, error: '只有待打款状态的订单可拆红包' });
+    // 金额 = reward × 0.01~0.1
+    const rate = 0.01 + Math.random() * 0.09;
+    const amount = Math.round((card.reward || 0) * rate * 100) / 100;
+    await db.collection('redpacket_records').insertOne({
+      userId, cardId: card._id, title: card.title, orderReward: card.reward,
+      amount, rate: Math.round(rate * 10000) / 100, status: '冻结',
+      date: today, createdAt: new Date()
+    });
+    res.json({ ok: true, amount, rate: Math.round(rate * 100) / 100, title: card.title });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// 红包解冻：订单打款后自动解冻（在 pay 接口里触发）
+// 这里提供一个手动检查解冻的接口
+app.post('/api/activity/redpacket/unfreeze', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const userId = req.user.id;
+    const frozen = await db.collection('redpacket_records').find({ userId, status: '冻结' }).toArray();
+    let unlocked = 0;
+    for (const r of frozen) {
+      const card = await db.collection('cards').findOne({ _id: r.cardId });
+      if (card && card.status === '已完成') {
+        await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已解冻', unlockedAt: new Date() } });
+        await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount: r.amount, note: '红包奖励-' + r.title, createdAt: new Date() });
+        unlocked++;
+      }
+    }
+    res.json({ ok: true, unlocked });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---- 月度活动 ----
+// GET /api/activity/monthly - 获取月度活动进度
+app.get('/api/activity/monthly', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const userId = req.user.id;
+    const month = cnMonthStr(new Date());
+    const monthStart = month + '-01';
+    // 本月已完成订单金额
+    const cards = await db.collection('cards').find({
+      to: userId, status: '已完成',
+      paidAt: { $gte: new Date(monthStart + 'T00:00:00+08:00') }
+    }).toArray();
+    const earned = Math.round(cards.reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
+    const target = 500;
+    const reward = 8.88;
+    // 是否已领
+    const claimed = await db.collection('monthly_claims').findOne({ userId, month });
+    res.json({ ok: true, month, earned, target, reward, claimed: !!claimed, claimable: earned >= target && !claimed });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// POST /api/activity/monthly/claim - 领取月度奖励
+app.post('/api/activity/monthly/claim', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const userId = req.user.id;
+    const month = cnMonthStr(new Date());
+    const monthStart = month + '-01';
+    const existing = await db.collection('monthly_claims').findOne({ userId, month });
+    if (existing) return res.status(400).json({ ok: false, error: '本月奖励已领取' });
+    const cards = await db.collection('cards').find({
+      to: userId, status: '已完成',
+      paidAt: { $gte: new Date(monthStart + 'T00:00:00+08:00') }
+    }).toArray();
+    const earned = cards.reduce((s, c) => s + (c.reward || 0), 0);
+    if (earned < 500) return res.status(400).json({ ok: false, error: '本月接单金额未满500元' });
+    const reward = 8.88;
+    await db.collection('monthly_claims').insertOne({ userId, month, reward, claimedAt: new Date() });
+    await db.collection('wallet_log').insertOne({ userId, month, amount: reward, note: '月度活动奖励', createdAt: new Date() });
+    res.json({ ok: true, reward });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 const captchaStore = new Map();
 const rnd = n => Math.floor(Math.random() * n);
 app.get('/api/captcha', (req, res) => {
