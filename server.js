@@ -38,6 +38,18 @@ app.get('/manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/manifest+json');
   res.sendFile(path.join(__dirname, 'public', 'manifest.json'));
 });
+// TWA 验证文件，安卓 App 必须能访问到，否则只显示启动图标不加载网页
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json([{
+    relation: ['delegate_permission/common.handle_all_urls'],
+    target: {
+      namespace: 'android_app',
+      package_name: 'com.onrender.order_tracker_mgbh.twa',
+      sha256_cert_fingerprints: ['69:41:2C:F4:1C:96:2C:E2:04:08:39:53:ED:5C:D3:FD:15:BB:61:50:19:21:98:0B:15:ED:BE:E1:38:8C:EB:BE']
+    }
+  }]);
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 let dbPromise = null;
