@@ -62,7 +62,7 @@
     <div class="err" id="setupErr"></div>
   </div>
 
-  <div id="mainBox" class="hidden">
+  <div id="mainBox">
     <div class="tabs">
       <button id="tabLogin" class="on">登 录</button>
       <button id="tabReg">写手注册</button>
@@ -125,8 +125,8 @@ loadCaptcha();
 (async () => {
   const r = await fetch('/api/setup/state');
   const j = await r.json();
-  if (j.needsSetup) { $('setupBox').classList.remove('hidden'); $('subTip').textContent = '检测到系统未初始化'; }
-  else $('mainBox').classList.remove('hidden');
+  if (j.needsSetup) { $('setupBox').classList.remove('hidden'); $('mainBox').classList.add('hidden'); $('subTip').textContent = '检测到系统未初始化'; }
+  } catch(e){}
   if (localStorage.getItem('jdy_token')) {
     try {
       const me = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('jdy_token') } }).then(x => x.json());
