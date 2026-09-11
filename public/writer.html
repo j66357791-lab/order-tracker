@@ -754,7 +754,8 @@ function closePreview() {
 function renderConvList() {
   const pins = pinnedPeers();
   const sorted = [...chats].sort((a, b) => (pins.includes(b.user.id) ? 1 : 0) - (pins.includes(a.user.id) ? 1 : 0));
-  $('convList').innerHTML = sorted.map(c => {
+  const searchBox = '<div style="padding:8px;border-bottom:1px solid var(--line)"><input id="convSearch" placeholder="🔍 搜索联系人" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px"></div>';
+  $('convList').innerHTML = searchBox + sorted.filter(c => !convSearchQ || (c.user.displayName||'').toLowerCase().includes(convSearchQ)).map(c => {
     const u = c.user;
     return `<div class="conv ${u.id === currentPeer ? 'on' : ''}" data-id="${u.id}" title="${esc(u.displayName)}">
       <div class="avatar">${esc((u.displayName || '?')[0])}<span class="dot ${u.sockOnline ? 'd-on' : 'd-off'}"></span></div>
@@ -763,6 +764,8 @@ function renderConvList() {
       ${c.unread ? '<div class="unread">' + (c.unread > 99 ? '99+' : c.unread) + '</div>' : ''}
     </div>`;
   }).join('') || '<div class="empty">暂无会话</div>';
+  const si = document.getElementById('convSearch');
+  if (si) { si.value = convSearchQ; si.oninput = () => { convSearchQ = si.value.toLowerCase().trim(); renderChats(); const ni=document.getElementById('convSearch'); if(ni){ni.focus();ni.setSelectionRange(ni.value.length,ni.value.length);} }; }
   document.querySelectorAll('.conv').forEach(el => el.onclick = () => openChat(el.dataset.id));
   const totalUnread = chats.reduce((s, c) => s + (c.unread || 0), 0);
   $('tabUnread').style.display = totalUnread ? 'flex' : 'none';
