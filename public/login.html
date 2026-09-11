@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1.0">
 <title>登录 · 订单派单系统</title>
 <style>
   :root{ --blue:#3b82f6; --green:#07c160; --ink:#0f172a; --sub:#64748b; --line:#e2e8f0; --red:#dc2626; }
@@ -31,6 +31,16 @@
   button.primary:active{transform:scale(.98)}
   .err{color:var(--red);font-size:12px;margin-top:10px;min-height:16px;text-align:center}
   .hidden{display:none}
+
+  /* ===== 移动端App体验优化 ===== */
+  html,body{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}
+  body{position:fixed;inset:0;width:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  @supports(padding:max(0px)){
+    .safe-top{padding-top:max(0px,env(safe-area-inset-top))}
+    .safe-bottom{padding-bottom:max(0px,env(safe-area-inset-bottom))}
+  }
+
 </style>
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#07c160">
