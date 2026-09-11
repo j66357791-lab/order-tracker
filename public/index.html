@@ -193,6 +193,10 @@
   .day-modal .table-card{max-height:56vh}
   .day-modal table{min-width:840px}
 </style>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#07c160">
+  <link rel="icon" type="image/png" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
 </head>
 <body>
 <div class="layout">
@@ -1099,5 +1103,12 @@ function exportCSV() {
   });
 })();
 </script>
+  <script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/service-worker.js").catch(function () {});
+    });
+  }
+  </script>
 </body>
 </html>
