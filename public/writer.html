@@ -1022,7 +1022,7 @@ window.openCard = id => {
   $('mask').classList.add('show');
 };
 window.closeSheet = () => $('mask').classList.remove('show');
-$('mask').onclick = e => { if (e.target === $('mask')) closeSheet(); };
+if($('mask'))$('mask').onclick = e => { if (e.target === $('mask')) closeSheet(); };
 
 async function cardAct(id, path, body) {
   try {
@@ -1070,7 +1070,7 @@ function renderSched() {
     document.querySelector(`[data-e="${cb.dataset.day}"]`).disabled = !cb.checked;
   });
 }
-$('btnSched').onclick = async () => {
+if($('btnSched'))$('btnSched').onclick = async () => {
   const days = {};
   for (let i = 0; i < 7; i++) {
     if (document.querySelector(`#schedRows input[data-day="${i}"]`).checked) {
@@ -1275,7 +1275,7 @@ function openRealname() {
     <input id="rnId" placeholder="18位身份证号码" maxlength="18" style="margin-bottom:12px">
     <button class="btn btn-g" id="btnRealname" style="width:100%">提交认证</button>`;
   $('mask').classList.add('show');
-  $('btnRealname').onclick = async () => {
+  if($('btnRealname'))$('btnRealname').onclick = async () => {
     const name = $('rnName').value.trim(), idCard = $('rnId').value.trim();
     if (!name || !idCard) return toast('姓名和身份证号都要填');
     if (!/^\d{17}[\dXx]$/.test(idCard)) return toast('身份证号应为18位（最后一位可为X）');
@@ -1298,7 +1298,7 @@ async function loadMail() {
     return j.rows;
   } catch (e) { return []; }
 }
-$('btnMail').onclick = async () => {
+if($('btnMail'))$('btnMail').onclick = async () => {
   const rows = await loadMail();
   $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
     <h3>✉ 站内信</h3>
@@ -1333,7 +1333,7 @@ function openSub(secId, title) {
   if (secId === 'subContract') loadContracts();
 }
 function closeSub() { $('subPage').classList.remove('on'); }
-$('spBack').onclick = closeSub;
+if($('spBack'))$('spBack').onclick = closeSub;
 const LVNAMES = { 0: '试用期写手', 1: '初级写手', 2: '资深写手' };
 async function loadWallet() {
   try {
@@ -1399,7 +1399,7 @@ async function loadFriends() {
       </div>`).join('') : '<div class="empty">还没有同事，用上方搜索添加吧</div>';
   } catch (e) { toast(e.message); }
 }
-$('btnAddFriend').onclick = async () => {
+if($('btnAddFriend'))$('btnAddFriend').onclick = async () => {
   const q = $('frQuery').value.trim();
   if (!q) return toast('请输入对方 ID 或用户名');
   try {
@@ -1464,8 +1464,8 @@ async function checkContract() {
     setTimeout(() => $('ctMask').classList.add('on'), 1200);
   } catch (e) {}
 }
-$('ctLater').onclick = () => { $('ctMask').classList.remove('on'); toast('可稍后在「我的-合同管理」完成签署'); };
-$('ctSign').onclick = async () => {
+if($('ctLater'))$('ctLater').onclick = () => { $('ctMask').classList.remove('on'); toast('可稍后在「我的-合同管理」完成签署'); };
+if($('ctSign'))$('ctSign').onclick = async () => {
   const name = $('ctName').value.trim();
   if (!name) return toast('请输入签署姓名');
   try {
@@ -1486,7 +1486,7 @@ window.delFriend = async (id, name) => {
   try { await authFetch('/api/friends/' + id, { method: 'DELETE' }); toast('已删除'); loadFriends(); }
   catch (e) { toast(e.message); }
 };
-$('btnEditName').onclick = () => {
+if($('btnEditName'))$('btnEditName').onclick = () => {
   const name = prompt('修改显示名字：', ME.displayName || '');
   if (name === null) return;
   const v = name.trim();
@@ -1496,8 +1496,8 @@ $('btnEditName').onclick = () => {
     .catch(e => toast(e.message));
 };
 function purgeLocalMsgs() { try { Object.keys(localStorage).filter(k => k.startsWith('jdy_msg_')).forEach(k => localStorage.removeItem(k)); } catch (e) {} }
-$('btnLogout2').onclick = () => { purgeLocalMsgs(); localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
-$('btnSwitch').onclick = () => { purgeLocalMsgs(); localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+if($('btnLogout2'))$('btnLogout2').onclick = () => { purgeLocalMsgs(); localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+if($('btnSwitch'))$('btnSwitch').onclick = () => { purgeLocalMsgs(); localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
 
 /* ================= 可抢班次 ================= */
 async function loadShiftPool() {
@@ -1616,7 +1616,7 @@ socket.on('presence', p => {
 });
 
 /* ================= 会话列表：折叠 / 置顶 / 清空 ================= */
-$('convToggle').onclick = () => {
+if($('convToggle'))$('convToggle').onclick = () => {
   const cl = $('convList');
   cl.classList.toggle('collapsed');
   $('convToggle').classList.toggle('flip', cl.classList.contains('collapsed'));
@@ -1637,7 +1637,7 @@ window.clearHistory = async function () {
   msgs = []; saveCache(msgs); renderMsgs(msgs);
   toast('已清空本机聊天记录');
 };
-$('btnChatMenu').onclick = () => {
+if($('btnChatMenu'))$('btnChatMenu').onclick = () => {
   if (!currentPeer) return toast('先选择一个会话');
   const pinned = pinnedPeers().includes(currentPeer);
   $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
@@ -1655,10 +1655,10 @@ function autoGrow() {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 220) + 'px';
 }
-$('btnSend').onclick = sendText;
+if($('btnSend'))$('btnSend').onclick = sendText;
 // 回车=换行（微信式：点「发送」按钮才发出）
 $('chatInput').addEventListener('input', autoGrow);
-$('btnPlus').onclick = () => {
+if($('btnPlus'))$('btnPlus').onclick = () => {
   if (!currentPeer) return toast('先选择一个会话');
   $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
     <h3>📤 发送内容</h3>
@@ -1733,7 +1733,7 @@ chatRight.addEventListener('drop', async e => {
 });
 
 // 支付宝收款方式
-$('btnAli').onclick = async () => {
+if($('btnAli'))$('btnAli').onclick = async () => {
   try {
     await authFetch('/api/me/alipay', { method: 'PUT', body: JSON.stringify({ name: $('aliName').value.trim(), account: $('aliAccount').value.trim() }) });
     toast('收款方式已保存 ✅');
