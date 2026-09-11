@@ -444,7 +444,7 @@
         <div class="act-tab on" data-at="atSign">📅<small>签到</small></div>
         <div class="act-tab" data-at="atRp">🧧<small>红包</small></div>
         <div class="act-tab" data-at="atMonth">🏆<small>月度</small></div>
-        <div class="act-tab" data-at="atNotice">📢<small>公告</small></div>
+        
       </div>
       <!-- 右侧内容区 -->
       <div class="act-content" style="flex:1;min-width:0">
@@ -479,12 +479,7 @@
             <button class="act-btn act-btn-gold" id="btnMonthly" disabled>领取奖励</button>
           </div>
         </div>
-        <!-- 公告 -->
-        <div class="act-panel" id="atNotice">
-          <div class="card" style="margin:0">
-            <h3>📢 平台公告</h3>
-            <div id="adContent"><div class="empty">加载中…</div></div>
-          </div>
+        
         </div>
       </div>
     </div>
@@ -765,7 +760,7 @@ function renderConvList() {
     </div>`;
   }).join('') || '<div class="empty">暂无会话</div>';
   const si = document.getElementById('convSearch');
-  if (si) { si.value = convSearchQ; si.oninput = () => { convSearchQ = si.value.toLowerCase().trim(); renderChats(); const ni=document.getElementById('convSearch'); if(ni){ni.focus();ni.setSelectionRange(ni.value.length,ni.value.length);} }; }
+  if (si) { si.value = convSearchQ; si.oninput = () => { convSearchQ = si.value.toLowerCase().trim(); loadChats(); const ni=document.getElementById('convSearch'); if(ni){ni.focus();ni.setSelectionRange(ni.value.length,ni.value.length);} }; }
   document.querySelectorAll('.conv').forEach(el => el.onclick = () => openChat(el.dataset.id));
   const totalUnread = chats.reduce((s, c) => s + (c.unread || 0), 0);
   $('tabUnread').style.display = totalUnread ? 'flex' : 'none';
@@ -855,6 +850,7 @@ window.recallMsg = async function (mid) {
     toast('已撤回');
   } catch (e) { toast(e.message); }
 };
+let convSearchQ = '';
 async function loadChats() {
   const j = await authFetch('/api/chats');
   chats = j.chats;
