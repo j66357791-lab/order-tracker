@@ -306,6 +306,51 @@
     .safe-bottom{padding-bottom:max(0px,env(safe-area-inset-bottom))}
   }
 
+
+  /* ===== 活动中心 ===== */
+  .act-hero{background:linear-gradient(135deg,#ff6b6b,#feca57);border-radius:16px;padding:24px 20px;text-align:center;color:#fff;margin-bottom:14px;box-shadow:0 4px 15px rgba(255,107,107,.3)}
+  .act-hero h2{font-size:22px;margin-bottom:4px}
+  .act-hero .sub{font-size:12px;opacity:.9}
+  .act-card{background:#fff;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+  .act-card h3{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+  .act-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center}
+  .act-cal .dow{font-size:11px;color:var(--sub);padding:4px 0;font-weight:600}
+  .act-cal .day{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:10px;font-size:13px;position:relative}
+  .act-cal .day.today{background:linear-gradient(135deg,#ff6b6b,#feca57);color:#fff;font-weight:700}
+  .act-cal .day.signed{background:#e8f5e9;color:#2e7d32;font-weight:600}
+  .act-cal .day .amt{font-size:9px;opacity:.8}
+  .act-cal .day.future{color:#ccc}
+  .act-streak{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .act-streak .num{font-size:28px;font-weight:800;color:#ff6b6b}
+  .act-btn{display:block;width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;text-align:center}
+  .act-btn:disabled{opacity:.5;cursor:not-allowed}
+  .act-btn-red{background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff}
+  .act-btn-gold{background:linear-gradient(135deg,#feca57,#ff9f43);color:#fff}
+  .rp-item{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px}
+  .rp-item .rp-icon{font-size:28px}
+  .rp-item .rp-info{flex:1}
+  .rp-item .rp-title{font-size:13px;font-weight:600;margin-bottom:2px}
+  .rp-item .rp-reward{font-size:11px;color:var(--sub)}
+  .rp-item .rp-btn{padding:8px 16px;border:none;border-radius:8px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);color:#fff;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .rp-item .rp-btn:disabled{opacity:.5}
+  .rp-frozen{display:flex;align-items:center;gap:8px;padding:10px;background:#fff8e1;border-radius:8px;margin-bottom:8px;font-size:12px;color:#f57f17}
+  .prog-wrap{background:#f1f5f9;border-radius:10px;height:24px;overflow:hidden;position:relative;margin:10px 0}
+  .prog-bar{height:100%;background:linear-gradient(90deg,#ff6b6b,#feca57);border-radius:10px;transition:width .5s}
+  .prog-txt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#333}
+  .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;display:none;align-items:center;justify-content:center}
+  .modal-mask.on{display:flex}
+  .rp-modal{text-align:center;color:#fff;padding:40px}
+  .rp-modal .box{width:120px;height:120px;margin:0 auto 20px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:48px;cursor:pointer;animation:bounce 1s infinite}
+  @keyframes bounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+  .rp-modal .amt{font-size:36px;font-weight:800;color:#feca57;margin-bottom:8px}
+  .rp-modal .tip{font-size:13px;opacity:.8}
+  .checkin-result{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;display:none;align-items:center;justify-content:center}
+  .checkin-result.on{display:flex}
+  .cr-inner{text-align:center;color:#fff;padding:40px}
+  .cr-inner .icon{font-size:60px;margin-bottom:16px}
+  .cr-inner .amt{font-size:42px;font-weight:800;color:#feca57;margin-bottom:8px}
+  .cr-inner .sub{font-size:14px;opacity:.8}
+
 </style>
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#07c160">
@@ -383,18 +428,58 @@
   <!-- 活动中心 -->
   <section id="pAttend" class="panel">
     <div class="wrap">
-      <div class="card" style="text-align:center;padding:40px 20px">
-        <div style="font-size:48px;margin-bottom:12px">🎁</div>
-        <h3 style="margin-bottom:8px">活动中心</h3>
-        <p style="color:var(--sub);font-size:13px;line-height:1.8">活动中心正在建设中，敬请期待！</p>
-        <p style="color:var(--sub);font-size:12px;margin-top:6px">后续将上线接单技巧、等级规则、结算说明等内容</p>
+      <div class="act-hero">
+        <h2>🎁 活动中心</h2>
+        <div class="sub">每日签到 · 拆红包 · 月度奖励</div>
       </div>
+
+      <!-- 每日签到 -->
+      <div class="act-card">
+        <h3>📅 每日签到</h3>
+        <div class="act-streak">
+          <div>
+            <div class="num" id="ckStreak">0</div>
+            <div style="font-size:12px;color:var(--sub)">连续签到天数</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:13px;color:var(--sub)">今日签到</div>
+            <div id="ckTodayAmt" style="font-size:18px;font-weight:700;color:#ff6b6b">--</div>
+          </div>
+        </div>
+        <div class="act-cal" id="ckCal"></div>
+        <div id="ckBtnWrap" style="margin-top:14px">
+          <button class="act-btn act-btn-red" id="btnCheckin">立即签到</button>
+        </div>
+        <div style="font-size:11px;color:var(--sub);margin-top:8px">每日签到领随机现金，连续签到运气值提升！</div>
+      </div>
+
+      <!-- 单单拆红包 -->
+      <div class="act-card">
+        <h3>🧧 单单拆红包</h3>
+        <div style="font-size:12px;color:var(--sub);margin-bottom:10px">当天审核通过的订单，23点前可拆红包，金额=订单金额×1%~10%。红包金额冻结，订单打款后自动解冻入账。</div>
+        <div id="rpList"></div>
+        <div id="rpFrozen"></div>
+      </div>
+
+      <!-- 月度活动 -->
+      <div class="act-card">
+        <h3>🏆 月度活动（<span id="mlMonth">本月</span>）</h3>
+        <div style="font-size:13px;margin-bottom:8px">本月接单满 <b>¥500</b>，立得 <b style="color:#ff6b6b">¥8.88</b> 奖励！</div>
+        <div class="prog-wrap">
+          <div class="prog-bar" id="mlProg" style="width:0%"></div>
+          <div class="prog-txt" id="mlTxt">¥0 / ¥500</div>
+        </div>
+        <button class="act-btn act-btn-gold" id="btnMonthly" disabled>领取奖励</button>
+      </div>
+
+      <!-- 平台公告 -->
       <div class="card" id="adCard">
         <h3>📢 平台公告</h3>
         <div id="adContent"><div class="empty">加载中…</div></div>
       </div>
     </div>
   </section>
+
 
   <!-- 我的 -->
   <section id="pMe" class="panel scroll">
@@ -1468,7 +1553,7 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   t.classList.add('on');
   $(t.dataset.p).classList.add('on');
   if (t.dataset.p === 'pCards') { reloadCards(); loadWorkbench(); }
-  if (t.dataset.p === 'pAttend') loadAd();
+  if (t.dataset.p === 'pAttend') loadActivity();
   if (t.dataset.p === 'pMe') { $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadWallet(); loadPay(); loadFriends(); loadFriendRequests(); }
 });
 
@@ -1679,5 +1764,146 @@ function paintAlipay() {
     });
   }
   </script>
+
+<!-- 活动中心JS -->
+<script>
+/* 签到 */
+async function loadCheckin() {
+  try {
+    const j = await authFetch('/api/activity/checkin');
+    $('ckStreak').textContent = j.streak;
+    $('ckTodayAmt').textContent = j.signedToday ? '¥' + j.todayAmount : '未签到';
+    // 渲染日历
+    const cal = $('ckCal');
+    const dows = ['日','一','二','三','四','五','六'];
+    let html = dows.map(d => '<div class="dow">'+d+'</div>').join('');
+    const today = new Date();
+    const y = today.getFullYear(), m = today.getMonth();
+    const firstDay = new Date(y, m, 1).getDay();
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    for (let i = 0; i < firstDay; i++) html += '<div></div>';
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = j.month + '-' + String(d).padStart(2,'0');
+      const isToday = ds === j.today;
+      const isSigned = j.signedDays.includes(ds);
+      const isFuture = ds > j.today;
+      let cls = 'day';
+      if (isToday) cls += ' today';
+      else if (isSigned) cls += ' signed';
+      else if (isFuture) cls += ' future';
+      let amtHtml = '';
+      if (isSigned) {
+        // 找金额
+        html = html; // simplified
+      }
+      html += '<div class="'+cls+'">'+d+'</div>';
+    }
+    cal.innerHTML = html;
+    // 按钮
+    const btn = $('btnCheckin');
+    if (j.signedToday) { btn.disabled = true; btn.textContent = '今日已签到'; }
+    else { btn.disabled = false; btn.textContent = '立即签到'; }
+  } catch(e) {}
+}
+$('btnCheckin') && ($('btnCheckin').onclick = async () => {
+  try {
+    const j = await authFetch('/api/activity/checkin', { method: 'POST' });
+    // 显示签到动画
+    const rm = document.getElementById('ckResultModal');
+    rm.classList.add('on');
+    rm.querySelector('.amt').textContent = '¥' + j.amount;
+    rm.querySelector('.sub').textContent = '连续签到 ' + j.streak + ' 天';
+    loadCheckin();
+  } catch(e) { alert(e.message); }
+});
+function closeCkResult(){document.getElementById('ckResultModal').classList.remove('on');}
+
+/* 红包 */
+async function loadRedpacket() {
+  try {
+    const j = await authFetch('/api/activity/redpacket');
+    const list = $('rpList');
+    if (j.available.length === 0) {
+      list.innerHTML = '<div class="empty" style="padding:16px;text-align:center">今日暂无待拆红包的订单<br><small>审核通过的订单可在当天拆红包</small></div>';
+    } else {
+      list.innerHTML = j.available.map(c =>
+        '<div class="rp-item"><div class="rp-icon">🧧</div><div class="rp-info"><div class="rp-title">'+esc(c.title)+'</div><div class="rp-reward">订单金额 ¥'+c.reward+'</div></div><button class="rp-btn" onclick="openRp(\''+c.cardId+'\',\''+esc(c.title)+'\',\''+c.reward+'\')">拆红包</button></div>'
+      ).join('');
+    }
+    const fr = $('rpFrozen');
+    if (j.frozen.length > 0) {
+      fr.innerHTML = '<div style="font-size:12px;color:var(--sub);margin:8px 0 4px">冻结中：</div>' +
+        j.frozen.map(f => '<div class="rp-frozen">⏳ '+esc(f.title)+' · 冻结 ¥'+f.amount+'（订单打款后解冻）</div>').join('');
+    } else fr.innerHTML = '';
+  } catch(e) {}
+}
+async function openRp(cardId, title, reward) {
+  const rm = document.getElementById('rpModal');
+  rm.classList.add('on');
+  rm.querySelector('.rp-box').onclick = async () => {
+    try {
+      const j = await authFetch('/api/activity/redpacket/'+cardId, { method: 'POST' });
+      rm.querySelector('.rp-inner').innerHTML = '<div class="amt">¥'+j.amount+'</div><div class="tip">'+esc(title)+'<br>奖励比例 '+j.rate+'%</div><div style="margin-top:16px"><button class="act-btn act-btn-red" onclick="closeRp()">开心收下</button></div>';
+      loadRedpacket();
+      unfreezeCheck();
+    } catch(e) { alert(e.message); closeRp(); }
+  };
+}
+function closeRp(){document.getElementById('rpModal').classList.remove('on');}
+
+/* 月度活动 */
+async function loadMonthly() {
+  try {
+    const j = await authFetch('/api/activity/monthly');
+    $('mlMonth').textContent = j.month + '月';
+    const pct = Math.min(100, Math.round(j.earned / j.target * 100));
+    $('mlProg').style.width = pct + '%';
+    $('mlTxt').textContent = '¥' + j.earned + ' / ¥' + j.target;
+    const btn = $('btnMonthly');
+    if (j.claimed) { btn.disabled = true; btn.textContent = '已领取 ¥' + j.reward; }
+    else if (j.claimable) { btn.disabled = false; btn.textContent = '领取 ¥' + j.reward; }
+    else { btn.disabled = true; btn.textContent = '还差 ¥' + (j.target - j.earned); }
+  } catch(e) {}
+}
+$('btnMonthly') && ($('btnMonthly').onclick = async () => {
+  try {
+    const j = await authFetch('/api/activity/monthly/claim', { method: 'POST' });
+    alert('恭喜获得 ¥' + j.reward + '！已入账');
+    loadMonthly();
+  } catch(e) { alert(e.message); }
+});
+
+/* 解冻检查 */
+async function unfreezeCheck() {
+  try { await authFetch('/api/activity/redpacket/unfreeze', { method: 'POST' }); } catch(e) {}
+}
+
+/* 活动中心加载 */
+async function loadActivity() {
+  loadCheckin();
+  loadRedpacket();
+  loadMonthly();
+  loadAd();
+}
+</script>
+
+<!-- 签到结果弹窗 -->
+<div class="checkin-result" id="ckResultModal" onclick="closeCkResult()">
+  <div class="cr-inner">
+    <div class="icon">🎉</div>
+    <div class="amt">¥0.00</div>
+    <div class="sub">连续签到 0 天</div>
+    <div style="margin-top:20px;font-size:12px;opacity:.6">点击任意处关闭</div>
+  </div>
+</div>
+
+<!-- 拆红包弹窗 -->
+<div class="modal-mask" id="rpModal">
+  <div class="rp-modal">
+    <div class="rp-box" style="width:120px;height:120px;margin:0 auto 20px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:48px;cursor:pointer">🧧</div>
+    <div style="font-size:14px;opacity:.8;margin-bottom:16px">点击红包拆开</div>
+  </div>
+</div>
+
 </body>
 </html>
