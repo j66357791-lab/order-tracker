@@ -46,7 +46,7 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
     target: {
       namespace: 'android_app',
       package_name: 'com.onrender.order_tracker_mgbh.twa',
-      sha256_cert_fingerprints: ['69:41:2C:F4:1C:96:2C:E2:04:08:39:53:ED:5C:D3:FD:15:BB:61:50:19:21:98:0B:15:ED:BE:E1:38:8C:EB:BE']
+      sha256_cert_fingerprints: ['57:D8:AA:98:5F:7C:FA:6E:D6:F0:D5:E8:77:21:70:E7:2E:0B:27:99:4C:A5:85:87:B5:3B:D0:07:58:00:D7:BE']
     }
   }]);
 });
