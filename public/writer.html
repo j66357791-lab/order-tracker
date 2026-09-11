@@ -1019,7 +1019,7 @@ async function doClockin() {
 async function doClockout() {
   try { const j = await authFetch('/api/attendance/clockout', { method: 'POST', body: '{}' }); toast('已签退（' + j.status + '）'); ME.shift = false; paintMe(); loadShiftAndSched(); } catch (e) { toast(e.message); }
 }
-$('attMonth').onchange = loadAtt;
+if($('attMonth'))$('attMonth').onchange = loadAtt;
 
 /* ================= 排班日历 ================= */
 let dayOverrides = {};   // date -> {start,end}
@@ -1112,7 +1112,7 @@ async function clearDay(date) {
     loadCal();
   } catch (e) { toast(e.message); }
 }
-$('calMonth').onchange = loadCal;
+if($('calMonth'))$('calMonth').onchange = loadCal;
 
 /* ================= 薪酬 ================= */
 async function loadPay() {
@@ -1469,7 +1469,6 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   $(t.dataset.p).classList.add('on');
   if (t.dataset.p === 'pCards') { reloadCards(); loadWorkbench(); }
   if (t.dataset.p === 'pAttend') loadAd();
-  if (t.dataset.p === 'pAttend') { $('attMonth').value = cnDateStr(cnNow()).slice(0, 7); loadShiftAndSched(); loadShiftPool(); }
   if (t.dataset.p === 'pMe') { $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadWallet(); loadPay(); loadFriends(); loadFriendRequests(); }
 });
 
@@ -1670,7 +1669,7 @@ function paintAlipay() {
   paintMe(); paintAlipay();
   loadChats().catch(e => toast(e.message));
   reloadCards().catch(() => {});
-  setInterval(() => { $('clockNow').textContent = cnHm(); }, 1000);
+  if($('clockNow'))setInterval(() => { $('clockNow').textContent = cnHm(); }, 1000);
 })();
 </script>
   <script>
