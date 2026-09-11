@@ -885,7 +885,8 @@ async function openChat(peer) {
   $('peerSt').textContent = c ? ((c.user.sockOnline ? '在线' : '离线') + (c.user.shift ? ' · 在班' : '')) : '';
   msgs = loadCache();
   renderMsgs(msgs);
-  renderConvList();
+  // 只更新active状态，不重新渲染整个列表
+  document.querySelectorAll('.conv').forEach(el => el.classList.toggle('on', el.dataset.id === String(peer)));
   try {
     const j = await authFetch('/api/messages?peer=' + peer);
     const map = new Map(msgs.map(m => [m._id, m]));
@@ -893,10 +894,17 @@ async function openChat(peer) {
     msgs = [...map.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     saveCache(msgs);
     renderMsgs(msgs);
-    const ch = chats.find(x => x.user.id === peer); if (ch) { ch.unread = 0; renderConvList(); }
+    const ch = chats.find(x => x.user.id === peer); if (ch) { ch.unread = 0; updateUnreadBadge(); }
   } catch (e) { toast(e.message); }
-  // 拉取卡片数据用于聊天里的卡片气泡
-  try { const cj = await authFetch('/api/mycards'); cj.cards.forEach(c => cardsMap[c._id] = c); renderMsgs(msgs); } catch (e) {}
+  // 卡片数据只在第一次加载时拉取
+  if (!cardsMap._loaded) {
+    try { const cj = await authFetch('/api/mycards'); cj.cards.forEach(c => cardsMap[c._id] = c); cardsMap._loaded = true; renderMsgs(msgs); } catch (e) {}
+  }
+}
+// 只更新未读角标，不重新渲染列表
+function updateUnreadBadge() {
+  const totalUnread = chats.reduce((s, c) => s + (c.unread || 0), 0);
+  const tu = $('tabUnread'); if (tu) { tu.style.display = totalUnread ? 'flex' : 'none'; tu.textContent = totalUnread > 99 ? '99+' : totalUnread; }
 }
 async function sendText() {
   const t = $('chatInput').value.trim();
