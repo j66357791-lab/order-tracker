@@ -762,6 +762,17 @@ app.post('/api/activity/monthly/claim', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+
+// 临时：清空所有聊天记录（管理员调用一次即可删除）
+app.post('/api/admin/clear-chats', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const r1 = await db.collection('messages').deleteMany({});
+    const r2 = await db.collection('chats').deleteMany({});
+    res.json({ ok: true, messages: r1.deletedCount, chats: r2.deletedCount });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 const captchaStore = new Map();
 const rnd = n => Math.floor(Math.random() * n);
 app.get('/api/captcha', (req, res) => {
