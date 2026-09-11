@@ -32,6 +32,10 @@
   .err{color:var(--red);font-size:12px;margin-top:10px;min-height:16px;text-align:center}
   .hidden{display:none}
 </style>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#07c160">
+  <link rel="icon" type="image/png" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
 </head>
 <body>
 <div class="card">
@@ -181,5 +185,12 @@ $('btnReg').onclick = async () => {
 };
 [$('lPass'), $('rPass')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') el.blur(); }));
 </script>
+  <script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/service-worker.js").catch(function () {});
+    });
+  }
+  </script>
 </body>
 </html>
