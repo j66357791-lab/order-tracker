@@ -762,6 +762,45 @@ function closePreview() {
   $('imgBig').src = '';
 }
 
+
+// 增量更新单个会话（收到新消息时调用，不重建整个列表）
+function updateConvItem(peerId) {
+  const idx = chats.findIndex(c => String(c.user.id) === String(peerId));
+  if (idx < 0) return;
+  const c = chats[idx];
+  const el = document.querySelector('.conv[data-id="' + CSS.escape(String(peerId)) + '"]');
+  if (!el) { renderConvList(); return; } // 找不到就重建
+
+  // 更新最后一条消息预览
+  const lastEl = el.querySelector('.last');
+  if (lastEl) {
+    lastEl.textContent = c.last ? (c.last.type === 'text' ? (c.last.text || '').slice(0, 18) : c.last.type === 'file' ? '[文件]' : '[派单卡]') : '开始沟通';
+  }
+  // 更新未读数
+  const oldUnread = el.querySelector('.unread');
+  if (c.unread) {
+    if (oldUnread) oldUnread.textContent = c.unread > 99 ? '99+' : c.unread;
+    else {
+      const badge = document.createElement('div');
+      badge.className = 'unread';
+      badge.textContent = c.unread > 99 ? '99+' : c.unread;
+      el.appendChild(badge);
+    }
+  } else if (oldUnread) oldUnread.remove();
+
+  // 移到最上面（搜索框下面）
+  const convList = $('convList');
+  const searchBox = convList.querySelector('input');
+  if (convList.firstElementChild !== el) {
+    if (searchBox) {
+      convList.insertBefore(el, searchBox.nextSibling);
+    } else {
+      convList.insertBefore(el, convList.firstChild);
+    }
+  }
+  updateUnreadBadge();
+}
+
 function renderConvList() {
   const pins = pinnedPeers();
   const sorted = [...chats].sort((a, b) => (pins.includes(b.user.id) ? 1 : 0) - (pins.includes(a.user.id) ? 1 : 0));
@@ -1686,18 +1725,16 @@ socket.on('msg', m => {
   if (isCurrent) {
     if (addMsg(m)) renderMsgs(msgs);
   }
-  // 不重新loadChats，只本地更新会话列表
+  // 不重新loadChats，只本地增量更新
   const fromId = String(m.from);
   const idx = chats.findIndex(c => String(c.user.id) === fromId);
   if (idx >= 0) {
     chats[idx].last = m;
     if (!isCurrent) chats[idx].unread = (chats[idx].unread || 0) + 1;
-    // 移到最上面
     const c = chats.splice(idx, 1)[0];
     chats.unshift(c);
-    renderConvList();
+    updateConvItem(fromId); // 只更新这一个会话，不重建整个列表
   } else {
-    // 新会话，需要重新获取
     loadChats().catch(() => {});
   }
   updateTitleUnread();
