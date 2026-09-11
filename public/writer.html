@@ -877,8 +877,10 @@ async function loadChats() {
     if (c) { $('peerDot').className = 'dot ' + (c.user.sockOnline ? 'd-on' : 'd-off'); $('peerSt').textContent = (c.user.sockOnline ? '在线' : '离线') + (c.user.shift ? ' · 在班' : ''); }
   }
 }
+let openChatVersion = 0;
 async function openChat(peer) {
   currentPeer = peer;
+  const myVer = ++openChatVersion;
   const c = chats.find(x => x.user.id === peer);
   $('peerName').textContent = c ? c.user.displayName : '会话';
   $('peerDot').className = 'dot ' + (c && c.user.sockOnline ? 'd-on' : 'd-off');
@@ -889,16 +891,18 @@ async function openChat(peer) {
   document.querySelectorAll('.conv').forEach(el => el.classList.toggle('on', el.dataset.id === String(peer)));
   try {
     const j = await authFetch('/api/messages?peer=' + peer);
+    // 检查是否已经切换到别的会话了，是的话丢弃这次结果
+    if (myVer !== openChatVersion) return;
     const map = new Map(msgs.map(m => [m._id, m]));
     j.messages.forEach(m => map.set(m._id, m));
     msgs = [...map.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     saveCache(msgs);
     renderMsgs(msgs);
     const ch = chats.find(x => x.user.id === peer); if (ch) { ch.unread = 0; updateUnreadBadge(); }
-  } catch (e) { toast(e.message); }
+  } catch (e) { if (myVer === openChatVersion) toast(e.message); }
   // 卡片数据只在第一次加载时拉取
   if (!cardsMap._loaded) {
-    try { const cj = await authFetch('/api/mycards'); cj.cards.forEach(c => cardsMap[c._id] = c); cardsMap._loaded = true; renderMsgs(msgs); } catch (e) {}
+    try { const cj = await authFetch('/api/mycards'); cj.cards.forEach(c => cardsMap[c._id] = c); cardsMap._loaded = true; if (myVer === openChatVersion) renderMsgs(msgs); } catch (e) {}
   }
 }
 // 只更新未读角标，不重新渲染列表
@@ -1682,16 +1686,27 @@ socket.on('msg', m => {
   if (isCurrent) {
     if (addMsg(m)) renderMsgs(msgs);
   }
-  loadChats().then(() => {
-    updateTitleUnread();
-    // 不在当前会话时才提醒
-    if (!isCurrent) {
-      playNotifySound();
-      vibratePhone([100, 50, 200]);
-      const preview = m.type === 'file' ? '[文件]' : (m.text || '').slice(0, 30);
-      showNotifBanner(m.fromName || '新消息', preview);
-    }
-  }).catch(() => {});
+  // 不重新loadChats，只本地更新会话列表
+  const fromId = String(m.from);
+  const idx = chats.findIndex(c => String(c.user.id) === fromId);
+  if (idx >= 0) {
+    chats[idx].last = m;
+    if (!isCurrent) chats[idx].unread = (chats[idx].unread || 0) + 1;
+    // 移到最上面
+    const c = chats.splice(idx, 1)[0];
+    chats.unshift(c);
+    renderConvList();
+  } else {
+    // 新会话，需要重新获取
+    loadChats().catch(() => {});
+  }
+  updateTitleUnread();
+  if (!isCurrent) {
+    playNotifySound();
+    vibratePhone([100, 50, 200]);
+    const preview = m.type === 'file' ? '[文件]' : (m.text || '').slice(0, 30);
+    showNotifBanner(m.fromName || '新消息', preview);
+  }
   if (m.type === 'file' && isCurrent) toast((m.fromName || '') + ' 发来文件：' + m.fileName);
 });
 socket.on('card', c => { cardsMap[c._id] = c; renderMsgs(msgs); if ($('pCards').classList.contains('on')) reloadCards(); toast('派单卡更新：' + c.title + ' → ' + c.status); });
