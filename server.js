@@ -33,6 +33,11 @@ const localToday = () => {
 
 const app = express();
 app.use(express.json());
+// manifest.json 必须返回 application/manifest+json，否则 PWA 检测工具识别不到
+app.get('/manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json');
+  res.sendFile(path.join(__dirname, 'public', 'manifest.json'));
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 let dbPromise = null;
