@@ -362,6 +362,22 @@
   .act-panel.on{display:block}
   .act-streak-num{font-size:24px;font-weight:800;color:#ff6b6b}
 
+
+
+
+  /* 弹窗打开动画 */
+  @keyframes popIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+  @keyframes popOut{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.2) translate(300px,-400px)}}
+  .modal-mask.on{display:flex;animation:popIn .3s ease}
+  .checkin-result.on{display:flex;animation:popIn .3s ease}
+  /* tab切换动画 */
+  @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+  .panel.on{animation:slideIn .25s ease;will-change:opacity,transform}
+  /* 侧边栏tab动画 */
+  .act-tab{transition:all .2s cubic-bezier(.4,0,.2,1)}
+  /* 聊天列表收起动画 */
+  #convList{transition:width .3s cubic-bezier(.4,0,.2,1)}
+
 </style>
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#07c160">
@@ -1915,7 +1931,12 @@ function closeAdPopup(dontRemind) {
   if (dontRemind && document.getElementById('adDontRemind').checked) {
     localStorage.setItem('adDismissDate', new Date().toISOString().slice(0,10));
   }
-  mask.classList.remove('on');
+  // 播放飞入动画
+  mask.style.animation = 'popOut .35s ease forwards';
+  setTimeout(() => {
+    mask.classList.remove('on');
+    mask.style.animation = '';
+  }, 350);
 }
 
 /* 活动中心加载 */
@@ -1929,7 +1950,7 @@ async function loadActivity() {
 
 <!-- 广告弹窗 -->
 <div class="modal-mask" id="adPopup">
-  <div style="background:#fff;border-radius:16px;width:90%;max-width:380px;max-height:80vh;overflow-y:auto;padding:20px">
+  <div class="ad-popup-box" style="background:#fff;border-radius:16px;width:90%;max-width:380px;max-height:80vh;overflow-y:auto;padding:20px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h3 class="ad-popup-title" style="margin:0">平台公告</h3>
       <button onclick="closeAdPopup(false)" style="border:none;background:none;font-size:20px;cursor:pointer">✕</button>
