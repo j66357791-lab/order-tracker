@@ -848,8 +848,8 @@ async function loadAdAdmin() {
 function renderAdPreview() {
   $('adPreview').innerHTML = '<h4 style="font-size:15px;margin-bottom:8px">' + esc($('adTitle').value) + '</h4>' + $('adContent').value;
 }
-$('adContent') && $('adContent').oninput = renderAdPreview;
-$('btnSaveAd') && ($('btnSaveAd').onclick = async () => {
+if($('adContent'))$('adContent').oninput = renderAdPreview;
+if($('btnSaveAd'))$('btnSaveAd').onclick = async () => {
   try {
     await authFetch('/api/ads', { method: 'POST', body: JSON.stringify({ title: $('adTitle').value, content: $('adContent').value }) });
     toast('广告已保存 ✅');
