@@ -537,9 +537,9 @@ const DEFAULT_AD = {
 <p>4. 管理员审核通过后，单子进入「待打款」状态</p>
 <p>5. 管理员打款后，单子变为「已完成」，报酬自动入账</p>
 <h4 style="color:#3b82f6;margin:12px 0 6px">二、结算规则</h4>
-<p>• 审核通过的单子，报酬在<b>次月15日</b>统一结算</p>
+<p>• 审核通过的单子，将在<b>客人签收完成30天左右</b>进行结算</p>
 <p>• 提现：「我的 → 钱包 → 提现」，支付宝到账</p>
-<p>• 单笔结算后可随时提现，不设门槛</p>
+<p>• 结算后可随时提现，不设门槛</p>
 <p>• 恶意退单/虚假提交将扣除对应报酬并记录违约</p>
 <h4 style="color:#8b5cf6;margin:12px 0 6px">三、等级规范</h4>
 <p>• <b style="color:#f59e0b">LV1 新手</b>：刚注册，可接基础单子</p>
@@ -556,9 +556,10 @@ app.get('/api/ads', async (req, res) => {
   try {
     const db = await getDb();
     let ad = await db.collection('ads').findOne({ _id: 'main' });
-    if (!ad) {
+    if (!ad || (ad.content && ad.content.indexOf('签收完成30天') === -1)) {
+      // 首次部署或广告内容过时，用默认内容覆盖
       ad = { _id: 'main', ...DEFAULT_AD, updatedAt: new Date() };
-      await db.collection('ads').insertOne(ad);
+      await db.collection('ads').replaceOne({ _id: 'main' }, ad, { upsert: true });
     }
     res.json({ ok: true, ad });
   } catch (e) {
