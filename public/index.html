@@ -196,7 +196,7 @@
   /* ===== 移动端App体验优化 ===== */
   html,body{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
   input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}
-  body{position:fixed;inset:0;width:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  body{overscroll-behavior-y:none;-webkit-overflow-scrolling:touch}
   @supports(padding:max(0px)){
     .safe-top{padding-top:max(0px,env(safe-area-inset-top))}
     .safe-bottom{padding-bottom:max(0px,env(safe-area-inset-bottom))}
