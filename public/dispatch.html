@@ -205,6 +205,10 @@
   #toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(17,24,39,.85);color:#fff;font-size:13px;padding:9px 18px;border-radius:99px;z-index:200;display:none;max-width:80vw;text-align:center}
   @media(max-width:640px){#convList{width:120px}.conv .last{display:none}}
 </style>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#07c160">
+  <link rel="icon" type="image/png" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
 </head>
 <body>
 <div id="connBar">⚠ 网络连接断开，正在自动重连…（恢复后无需刷新）</div>
@@ -1005,5 +1009,12 @@ chatRight.addEventListener('drop', async e => {
   loadRecon().catch(() => {});
 })();
 </script>
+  <script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/service-worker.js").catch(function () {});
+    });
+  }
+  </script>
 </body>
 </html>
