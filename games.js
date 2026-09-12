@@ -124,11 +124,16 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
   // 综合状态：背包 + 每日钥匙 + 进行中对局 + 商铺
   app.get('/api/game/state', auth, wrap(async (req, res) => {
     const db = await getDb();
+    // 检查维护状态
+    const cfg = await db.collection('config').findOne({ key: 'game_maintenance' });
+    const maintenance = cfg ? cfg.value : false;
+    if (maintenance) return res.json({ ok: true, maintenance: true, activity: { name: ACTIVITY.name } });
     const p = await getProfile(db, req.user.id);
     const session = await getActiveSession(db, req.user.id);
     const today = nowDay();
     res.json({
-      ok: true, activity: { name: ACTIVITY.name, start: ACTIVITY.start, end: ACTIVITY.end, active: inActivity(), composeFragCost: ACTIVITY.composeFragCost },
+      ok: true, maintenance: false,
+      activity: { name: ACTIVITY.name, start: ACTIVITY.start, end: ACTIVITY.end, active: inActivity(), composeFragCost: ACTIVITY.composeFragCost },
       bag: { keys: p.keys, balls: p.balls, frags: p.frags, revives: p.revives, bagS: p.bagS, bagM: p.bagM, bagL: p.bagL },
       dailyClaimed: p.lastDailyKey === today,
       session: session ? { wave: session.wave, round: session.round, pot: session.pot, revivesUsed: session.revivesUsed, waveDone: session.status === 'wave_done', table: tablePublic(session.wave, session.round) } : null,
