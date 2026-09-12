@@ -236,6 +236,7 @@
   <div class="stab on" data-v="vChat">💬 聊天/派单<span class="reddot" id="tabUnread" style="display:none">0</span></div>
   <div class="stab" data-v="vOver">📋 派单总览</div>
     <div class="stab" data-v="vAd">📝 广告管理</div>
+  <div class="stab" data-v="vAct">📊 活动数据</div>
   <div class="stab" data-v="vRecon">💰 财务对账<span class="warnnum" id="reconNum" style="display:none">0</span></div>
 </div>
 
@@ -300,6 +301,39 @@
       <div class="card">
         <h3>👁 预览</h3>
         <div id="adPreview" style="border:1px solid var(--line);border-radius:10px;padding:12px;min-height:100px"></div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- 活动数据 -->
+  <section id="vAct" class="panel scroll">
+    <div class="wrap">
+      <div class="card">
+        <h3>🎮 魔法翻翻乐</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0">
+          <div style="background:var(--grey-bg);border-radius:10px;padding:12px;text-align:center">
+            <div style="font-size:24px;font-weight:700" id="actPlayers">--</div>
+            <div style="font-size:12px;color:var(--sub)">参与人数</div>
+          </div>
+          <div style="background:var(--grey-bg);border-radius:10px;padding:12px;text-align:center">
+            <div style="font-size:24px;font-weight:700" id="actPlaying">--</div>
+            <div style="font-size:12px;color:var(--sub)">进行中</div>
+          </div>
+          <div style="background:var(--grey-bg);border-radius:10px;padding:12px;text-align:center">
+            <div style="font-size:24px;font-weight:700" id="actGames">--</div>
+            <div style="font-size:12px;color:var(--sub)">总局数</div>
+          </div>
+          <div style="background:var(--grey-bg);border-radius:10px;padding:12px;text-align:center">
+            <div style="font-size:24px;font-weight:700" id="actKeys">--</div>
+            <div style="font-size:12px;color:var(--sub)">剩余钥匙</div>
+          </div>
+        </div>
+        <button class="btn btn-r" onclick="cleanupGames()" style="margin-top:10px">🧹 清理卡住的对局（退还钥匙）</button>
+      </div>
+      <div class="card">
+        <h3>📅 今日签到</h3>
+        <div style="font-size:14px;margin:8px 0">今日签到人数：<b id="actCheckins">--</b></div>
       </div>
     </div>
   </section>
@@ -812,7 +846,29 @@ document.querySelectorAll('.stab').forEach(t => t.onclick = () => {
   if (t.dataset.v === 'vOver' && !_overLoaded) { _overLoaded = true; loadOverview(); }
   if (t.dataset.v === 'vRecon' && !_reconLoaded) { _reconLoaded = true; loadRecon(); }
     if (t.dataset.v === 'vAd') loadAdAdmin();
+  if (t.dataset.v === 'vAct') loadActivityStats();
 });
+
+
+async function loadActivityStats() {
+  try {
+    const j = await authFetch('/api/admin/activity-stats');
+    if (!j.ok) return;
+    $('actPlayers').textContent = j.game.totalPlayers;
+    $('actPlaying').textContent = j.game.playingSessions;
+    $('actGames').textContent = j.game.totalGames;
+    $('actKeys').textContent = j.game.totalKeysLeft;
+    $('actCheckins').textContent = j.checkin.today;
+  } catch(e) { console.error(e); }
+}
+async function cleanupGames() {
+  if (!confirm('确定清理所有进行中的游戏会话？每个玩家退还1把钥匙')) return;
+  try {
+    const j = await authFetch('/api/admin/game-cleanup', { method: 'POST' });
+    alert('已清理 ' + j.cleaned + ' 个对局');
+    loadActivityStats();
+  } catch(e) { alert(e.message); }
+}
 
 /* ================= 实时推送 + 稳定性 ================= */
 const socket = io({
