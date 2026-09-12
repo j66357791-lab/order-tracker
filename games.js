@@ -75,6 +75,15 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
       await log(db, userId, 'timeout', { wave: s.wave, round: s.round });
       return null;
     }
+    // 【2026-09-13 修复】自愈历史残局：卡在"逃跑待处理"且已无复活可能的，直接了结
+    if (s.status === 'playing' && s.pendingEscape) {
+      const p = await getProfile(db, userId);
+      if (!(p.revives > 0 && s.revivesUsed < ACTIVITY.maxRevivesPerGame)) {
+        await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { status: 'lost', endedAt: new Date(), updatedAt: new Date() } });
+        await log(db, userId, 'lost', { wave: s.wave, round: s.round, lostPot: s.pot, heal: true });
+        return null;
+      }
+    }
     return s;
   }
 
@@ -118,6 +127,26 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
 
   const bad = (res, code, msg) => res.status(code).json({ ok: false, error: msg });
   const wrap = (fn) => async (req, res) => { try { await fn(req, res); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } };
+
+  // ==================== 配置热调 + 管理员管控（2026-09-13 新增） ====================
+  // 注意：必须先于游戏路由注册（Express 按注册顺序匹配）
+  // 所有 /api/game/* 请求前，先从数据库 config 读取运营覆盖项（无需重启）
+  app.use('/api/game', async (req, res, next) => {
+    try {
+      const db = await getDb();
+      const doc = await db.collection('config').findOne({ key: 'game_config' });
+      const v = (doc && doc.value) || {};
+      if (v.start) ACTIVITY.start = v.start;
+      if (v.end) ACTIVITY.end = v.end;
+      if (v.dailyFreeKey > 0) ACTIVITY.dailyFreeKey = v.dailyFreeKey;
+      if (v.maxRevivesPerGame >= 0) ACTIVITY.maxRevivesPerGame = v.maxRevivesPerGame;
+      if (v.composeFragCost > 0) ACTIVITY.composeFragCost = v.composeFragCost;
+      for (const k of ['bagS', 'bagM', 'bagL']) if (Array.isArray(v[k]) && v[k].length === 2) BAG_RANGE[k] = v[k];
+      next();
+    } catch (e) { next(); } // 配置读取失败不阻塞游戏，用代码内默认值
+  });
+
+  const adminGate = (req, res) => { if (req.user.role !== 'admin') { bad(res, 403, '需要管理员权限'); return false; } return true; };
 
   // ==================== 接口 ====================
 
@@ -196,9 +225,16 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
     if (escaped) {
       const pro = await getProfile(db, req.user.id);
       const canRevive = pro.revives > 0 && s.revivesUsed < ACTIVITY.maxRevivesPerGame;
-      await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { pendingEscape: true, updatedAt: new Date() } });
       await log(db, req.user.id, 'escape', { wave: s.wave, round: s.round });
-      return res.json({ ok: true, escaped: true, canRevive, revivesLeft: pro.revives, reviveQuotaLeft: ACTIVITY.maxRevivesPerGame - s.revivesUsed, lostPot: canRevive ? null : s.pot });
+      if (!canRevive) {
+        // 【2026-09-13 修复】无复活可用 → 对局立即结束，不再留"待处理"残局
+        // （旧版只标 pendingEscape 不结束，前端返回大厅刷新后又把残局拉起来，死循环）
+        await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { status: 'lost', endedAt: new Date(), updatedAt: new Date() } });
+        await log(db, req.user.id, 'lost', { wave: s.wave, round: s.round, lostPot: s.pot });
+        return res.json({ ok: true, escaped: true, canRevive: false, revivesLeft: 0, reviveQuotaLeft: 0, lostPot: s.pot, session: null });
+      }
+      await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { pendingEscape: true, updatedAt: new Date() } });
+      return res.json({ ok: true, escaped: true, canRevive: true, revivesLeft: pro.revives, reviveQuotaLeft: ACTIVITY.maxRevivesPerGame - s.revivesUsed, lostPot: null });
     }
 
     // 命中奖励 → 计入暂存
@@ -338,5 +374,60 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
     res.json({ ok: true, name: item.name, balls: p.balls });
   }));
 
-  console.log('[游戏] 魔法翻翻乐接口注册完成：/api/game/*');
+  // 管理员：读取游戏配置（含数据库覆盖值）
+  app.get('/api/game/admin/config', auth, wrap(async (req, res) => {
+    if (!adminGate(req, res)) return;
+    const db = await getDb();
+    const doc = await db.collection('config').findOne({ key: 'game_config' });
+    res.json({ ok: true, effective: { start: ACTIVITY.start, end: ACTIVITY.end, dailyFreeKey: ACTIVITY.dailyFreeKey, maxRevivesPerGame: ACTIVITY.maxRevivesPerGame, composeFragCost: ACTIVITY.composeFragCost, bagS: BAG_RANGE.bagS, bagM: BAG_RANGE.bagM, bagL: BAG_RANGE.bagL }, overrides: (doc && doc.value) || {}, prob: PROB, shop: SHOP });
+  }));
+
+  // 管理员：修改游戏配置（热调，立即生效）
+  app.post('/api/game/admin/config', auth, wrap(async (req, res) => {
+    if (!adminGate(req, res)) return;
+    const db = await getDb();
+    const b = req.body || {};
+    const v = (await db.collection('config').findOne({ key: 'game_config' }))?.value || {};
+    if (b.start && !/^\d{4}-\d{2}-\d{2}$/.test(b.start)) return bad(res, 400, 'start 日期格式应为 YYYY-MM-DD');
+    if (b.end && !/^\d{4}-\d{2}-\d{2}$/.test(b.end)) return bad(res, 400, 'end 日期格式应为 YYYY-MM-DD');
+    if (b.start) v.start = b.start;
+    if (b.end) v.end = b.end;
+    if (b.dailyFreeKey !== undefined) { if (!(b.dailyFreeKey >= 0 && b.dailyFreeKey <= 10)) return bad(res, 400, '每日免费钥匙应在 0~10'); v.dailyFreeKey = b.dailyFreeKey; }
+    if (b.maxRevivesPerGame !== undefined) { if (!(b.maxRevivesPerGame >= 0 && b.maxRevivesPerGame <= 5)) return bad(res, 400, '每局复活上限应在 0~5'); v.maxRevivesPerGame = b.maxRevivesPerGame; }
+    if (b.composeFragCost !== undefined) { if (!(b.composeFragCost >= 1 && b.composeFragCost <= 100)) return bad(res, 400, '合成碎片数应在 1~100'); v.composeFragCost = b.composeFragCost; }
+    for (const k of ['bagS', 'bagM', 'bagL']) {
+      if (b[k] !== undefined) {
+        if (!Array.isArray(b[k]) || b[k].length !== 2 || !(b[k][0] >= 0 && b[k][1] > b[k][0])) return bad(res, 400, k + ' 应为 [最小值, 最大值] 且最大>最小');
+        v[k] = [b[k][0], b[k][1]];
+      }
+    }
+    if (b.maintenance !== undefined) await db.collection('config').updateOne({ key: 'game_maintenance' }, { $set: { value: !!b.maintenance } }, { upsert: true });
+    await db.collection('config').updateOne({ key: 'game_config' }, { $set: { value: v } }, { upsert: true });
+    await log(db, req.user.id, 'admin_config', { by: req.user.id, changes: b });
+    res.json({ ok: true, saved: v });
+  }));
+
+  // 管理员：审计日志查询（可按用户/动作筛选）
+  app.get('/api/game/admin/logs', auth, wrap(async (req, res) => {
+    if (!adminGate(req, res)) return;
+    const db = await getDb();
+    const q = {};
+    if (req.query.userId) q.userId = req.query.userId;
+    if (req.query.action) q.action = req.query.action;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const logs = await db.collection('game_logs').find(q).sort({ createdAt: -1 }).limit(limit).toArray();
+    res.json({ ok: true, logs });
+  }));
+
+  // 管理员：兑换记录（含成本合计）
+  app.get('/api/game/admin/redeems', auth, wrap(async (req, res) => {
+    if (!adminGate(req, res)) return;
+    const db = await getDb();
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const redeems = await db.collection('game_redeems').find({}).sort({ createdAt: -1 }).limit(limit).toArray();
+    const totalCost = redeems.reduce((s, r) => s + (r.cost || 0), 0);
+    res.json({ ok: true, redeems, totalCost });
+  }));
+
+  console.log('[游戏] 魔法翻翻乐接口注册完成：/api/game/*（含管理员管控接口）');
 };
