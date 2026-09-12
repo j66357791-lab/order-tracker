@@ -198,7 +198,17 @@ function invHTML(p){ const ICON_MAP = { keys:'key', balls:'ball', frags:'frag', 
   return [['keys','钥匙'],['balls','魔法球'],['frags','碎片'],['revives','复活石'],['bagS','福袋·小'],['bagM','福袋·中'],['bagL','福袋·大']].map(([k,lbl]) =>
   `<div class="inv-item"><img src="${ICO[ICON_MAP[k]]}"><div class="num">${p[k]||0}</div><div class="lbl">${lbl}</div></div>`).join(''); }
 
-async function refresh(){ STATE = await api('/api/game/state'); render(); }
+async function refresh(){
+  STATE = await api('/api/game/state');
+  if (STATE.maintenance) {
+    $('pageHome').classList.add('hidden');
+    $('pageGame').classList.add('hidden');
+    $('pageShop').classList.add('hidden');
+    document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;text-align:center;padding:20px"><div style="font-size:64px;margin-bottom:20px">🔧</div><h2>活动维护中</h2><p style="opacity:.8;margin-top:10px">活动正在升级优化，稍后再来玩吧~</p><button class="btn" style="margin-top:20px;background:#fff;color:#667eea" onclick="location.href='/writer.html'">返回</button></div>';
+    return;
+  }
+  render();
+}
 function render(){
   $('actTime').textContent = `活动时间 ${STATE.activity.start} ~ ${STATE.activity.end}`;
   $('invBar').innerHTML = invHTML(STATE.bag);
