@@ -58,7 +58,7 @@
   .pot b { color:#ffd76a; }
   .pot .empty { color:#8f7bad; }
 
-  .cards { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:16px; }
+  .cards { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:16px; padding:10px; background:rgba(22,8,36,0.38); border:1px solid rgba(255,215,106,0.18); border-radius:16px; backdrop-filter:blur(2px); }
   .card { aspect-ratio:3/4; perspective:600px; cursor:pointer; }
   .card-inner { position:relative; width:100%; height:100%; transform-style:preserve-3d; transition:transform .6s cubic-bezier(.4,.2,.2,1); }
   .card.open .card-inner { transform:rotateY(180deg); }
@@ -91,6 +91,8 @@
   .compose-bar { margin-top:12px; display:flex; align-items:center; gap:10px; background:rgba(30,12,55,.75); border:1px solid rgba(126,224,138,.35); border-radius:14px; padding:10px 12px; }
   .toast { position:fixed; left:50%; bottom:12%; transform:translateX(-50%); background:rgba(20,8,40,.92); border:1px solid rgba(255,215,106,.5); color:#ffd76a; font-size:13px; padding:9px 18px; border-radius:22px; z-index:99; }
   .bag-open-txt { font-size:26px; font-weight:800; color:#ffd76a; text-shadow:0 0 14px rgba(255,200,80,.6); }
+  /* 序列帧粒子特效层 */
+  #fx { position:fixed; inset:0; pointer-events:none; z-index:998; }
 </style>
 </head>
 <body>
@@ -106,7 +108,7 @@
     </div>
     <div class="inv" id="invBar"></div>
     <div class="task-bar">
-      <img src="https://sfile.chatglm.cn/workspace/image/a2/a2108f7259.png" alt="">
+      <img src="/assets/game/icon_key.png" alt="">
       <div class="t-info">
         <div class="t-name">每日任务 · 领取魔法钥匙</div>
         <div class="t-desc">每天可免费领取 1 把魔法钥匙</div>
@@ -115,7 +117,7 @@
     </div>
     <!-- 任务专区 -->
     <div class="task-bar" style="margin-top:10px">
-      <img src="https://sfile.chatglm.cn/workspace/image/a2/a2108f7259.png" alt="">
+      <img src="/assets/game/icon_key.png" alt="">
       <div class="t-info">
         <div class="t-name">📋 任务专区</div>
         <div class="t-desc">每日登录领钥匙 · 完成游戏赢碎片 · 邀请好友得奖励</div>
@@ -158,7 +160,7 @@
       <button class="btn-back" onclick="backHome()">返回</button>
     </div>
     <div class="compose-bar">
-      <img src="https://sfile.chatglm.cn/workspace/image/f3/f38f92807e.png" style="width:40px;height:40px;" alt="">
+      <img src="/assets/game/icon_frag.png" style="width:40px;height:40px;" alt="">
       <div class="t-info" style="flex:1;">
         <div class="t-name" style="font-size:14px;font-weight:600;">碎片合成魔法球</div>
         <div class="t-desc" style="font-size:11px;color:#c9b3e8;margin-top:2px;" id="composeDesc"></div>
@@ -186,7 +188,7 @@ async function api(path, opt = {}) {
 }
 
 const CN = { frag:'碎片', key:'钥匙', ball:'魔法球', bagS:'福袋(小)', bagM:'福袋(中)', bagL:'福袋(大)', frags:'碎片', keys:'钥匙', balls:'魔法球', revives:'复活石' };
-const ICO = { frag:'https://sfile.chatglm.cn/workspace/image/f3/f38f92807e.png', key:'https://sfile.chatglm.cn/workspace/image/a2/a2108f7259.png', ball:'https://sfile.chatglm.cn/workspace/image/68/68bcfbdaff.png', revive:'https://sfile.chatglm.cn/workspace/image/21/2164971677.png', bagS:'/assets/game/bag_s.png', bagM:'/assets/game/bag_m.png', bagL:'/assets/game/bag_l.png' };
+const ICO = { frag:'/assets/game/icon_frag.png', key:'/assets/game/icon_key.png', ball:'/assets/game/icon_ball.png', revive:'/assets/game/icon_revive.png', bagS:'/assets/game/bag_s.png', bagM:'/assets/game/bag_m.png', bagL:'/assets/game/bag_l.png' };
 const WAVES = ['第一波','第二波','第三波'];
 
 let STATE = null;   // /api/game/state 结果
@@ -235,7 +237,7 @@ function closeModal(){ $('modalRoot').innerHTML = ''; }
 
 // ===== 每日钥匙 / 合成 / 福袋 =====
 async function claimDaily(){ try{ await api('/api/game/daily',{method:'POST'}); toast('领取成功：魔法钥匙 +1'); await refresh(); }catch(e){ toast(e.message); } }
-async function compose(){ try{ const r = await api('/api/game/compose',{method:'POST'}); modal(`<img class="m-ico" src="https://sfile.chatglm.cn/workspace/image/68/68bcfbdaff.png"><h3>合成成功！</h3><p>消耗碎片 ×${STATE.activity.composeFragCost}，获得魔法球 ×1</p><div class="m-btns"><button class="btn" onclick="closeModal();refresh()">好的</button></div>`); }catch(e){ toast(e.message); } }
+async function compose(){ try{ const r = await api('/api/game/compose',{method:'POST'}); modal(`<img class="m-ico" src="/assets/game/icon_ball.png"><h3>合成成功！</h3><p>消耗碎片 ×${STATE.activity.composeFragCost}，获得魔法球 ×1</p><div class="m-btns"><button class="btn" onclick="closeModal();refresh()">好的</button></div>`); }catch(e){ toast(e.message); } }
 async function openBags(){
   const bags = ['bagS','bagM','bagL'].filter(k => (STATE.bag[k]||0) > 0);
   if (!bags.length) return toast('暂无可拆的福袋，去翻牌赢取吧');
@@ -276,7 +278,7 @@ function showGame(s){
 function renderCards(){
   $('cards').innerHTML = [0,1,2,3,4].map(i => `<div class="card" id="card${i}" onclick="flip(${i})">
     <div class="card-inner">
-      <div class="card-face"><img src="https://sfile.chatglm.cn/workspace/image/c6/c63553777d.png"></div>
+      <div class="card-face"><img src="/assets/game/card_back.png"></div>
       <div class="card-face card-front-face" id="face${i}"></div>
     </div></div>`).join('');
 }
@@ -285,12 +287,13 @@ async function flip(idx){
     const r = await api('/api/game/flip',{method:'POST'});
     const face = $('face'+idx);
     if (r.escaped){
-      face.innerHTML = `<img class="bg" src="https://sfile.chatglm.cn/workspace/image/be/be58a11886.png"><div class="prize-txt">奖励逃跑了！</div>`;
+      face.innerHTML = `<img class="bg" src="/assets/game/card_escape.png"><div class="prize-txt">奖励逃跑了！</div>`;
     } else {
       face.innerHTML = `<img class="bg" src="https://sfile.chatglm.cn/workspace/image/cf/cfcd8c50c5.png"><img class="prize" src="${ICO[r.got.type]}"><div class="prize-txt">${CN[r.got.type]} ×${r.got.n}</div>`;
     }
     document.querySelectorAll('.card').forEach(c=>c.classList.add('disabled'));
     $('card'+idx).classList.add('open');
+    r.escaped ? FX.poof($('card'+idx)) : FX.burst($('card'+idx));
     setTimeout(()=> onFlipResult(r), 750);
   }catch(e){ toast(e.message); }
 }
@@ -302,7 +305,7 @@ async function onFlipResult(r){
         <p>本局暂存奖励将被清空。使用 1 颗复活石可抵消本次逃跑，重新翻牌。<br>本局还可复活 ${r.reviveQuotaLeft} 次（背包复活石 ${r.revivesLeft} 颗）</p>
         <div class="m-btns"><button class="btn" onclick="doRevive()">复活并重翻</button><button class="btn btn-danger" onclick="doGiveup()">放弃本局</button></div>`);
     } else {
-      modal(`<img class="m-ico" src="https://sfile.chatglm.cn/workspace/image/be/be58a11886.png" style="border-radius:12px;width:120px;height:auto;"><h3>奖励逃跑了…</h3>
+      modal(`<img class="m-ico" src="/assets/game/card_escape.png" style="border-radius:12px;width:120px;height:auto;"><h3>奖励逃跑了…</h3>
         <p>本局累计奖励已全部清空，再接再厉！</p>
         <div class="m-btns"><button class="btn" onclick="gameOver()">返回大厅</button></div>`);
     }
@@ -310,11 +313,12 @@ async function onFlipResult(r){
   }
   const got = `${CN[r.got.type]} ×${r.got.n}`;
   if (r.finished){                     // 第三波第5轮通过 → 自动结算
+    FX.confetti();
     modal(`<img class="m-ico" src="${ICO[r.got.type]}"><h3>第三波通关！</h3><p>本轮获得 ${got}，全部暂存奖励已落袋！</p>
       <div class="gain-list">${fmtSettled(r.settled).map(i=>`<span>${i}</span>`).join('')}</div>
       <div class="m-btns"><button class="btn" onclick="gameOver()">领取并返回</button></div>`);
   } else if (r.waveDone){              // 波次完成 → 抉择
-    showWaveDone(r.session.wave, r.session.pot, got);
+    FX.confetti(); showWaveDone(r.session.wave, r.session.pot, got);
   } else {
     showGame(r.session);
     toast('获得 ' + got + '，已计入暂存奖励');
@@ -380,6 +384,56 @@ async function buy(id){ try{ const r = await api('/api/game/shop/buy',{method:'P
 function logout(){ localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; }
 
 refresh().catch(e => $('modalRoot').innerHTML = `<div class="mask"><div class="modal"><h3>加载失败</h3><p>${e.message}</p><div class="m-btns"><button class="btn" onclick="location.reload()">重试</button></div></div></div>`);
+</script>
+<canvas id="fx"></canvas>
+<script>
+// ===== 序列帧粒子特效（运行时逐帧渲染，等效序列帧动画，零素材加载）=====
+const FX = (() => {
+  const cv = document.getElementById('fx'), ctx = cv.getContext('2d');
+  let W, H, parts = [], running = false;
+  function size(){ W = cv.width = innerWidth; H = cv.height = innerHeight; }
+  addEventListener('resize', size); size();
+  function loop(){
+    ctx.clearRect(0, 0, W, H);
+    parts = parts.filter(p => (p.life -= p.decay) > 0);
+    for (const p of parts) {
+      p.x += p.vx; p.y += p.vy; p.vy += p.g || 0;
+      p.vx *= 0.985; p.vy *= 0.985;
+      ctx.globalAlpha = Math.max(p.life, 0) * (p.alpha || 1);
+      if (p.type === 'spark') {
+        ctx.fillStyle = p.c;
+        ctx.shadowColor = p.c; ctx.shadowBlur = 12;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, 7); ctx.fill();
+        ctx.shadowBlur = 0;
+      } else { // smoke
+        ctx.fillStyle = p.c;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1.6 - p.life), 0, 7); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+    if (parts.length) requestAnimationFrame(loop); else running = false;
+  }
+  function kick(){ if (!running) { running = true; requestAnimationFrame(loop); } }
+  function emit(n, fn){ for (let i = 0; i < n; i++) parts.push(fn(i)); kick(); }
+  function center(el){ const r = el.getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]; }
+  return {
+    // 翻牌奖励：金色迸溅
+    burst(el){ const [x, y] = center(el);
+      emit(36, () => { const a = Math.random()*6.28, s = 2+Math.random()*5;
+        return { type:'spark', x, y, vx:Math.cos(a)*s, vy:Math.sin(a)*s-2, g:0.12, r:2+Math.random()*3.5,
+                 life:1, decay:0.012+Math.random()*0.015, c:['#ffd76a','#ffb347','#fff3c4','#ffec80'][i()%4|0] }; }); },
+    // 逃跑：紫色烟雾扩散
+    poof(el){ const [x, y] = center(el);
+      emit(26, () => { const a = Math.random()*6.28, s = 1+Math.random()*3;
+        return { type:'smoke', x, y, vx:Math.cos(a)*s, vy:Math.sin(a)*s-1.2, g:-0.02, r:8+Math.random()*14,
+                 life:1, decay:0.014+Math.random()*0.01, c:'rgba(124,77,255,0.5)', alpha:0.8 }; }); },
+    // 通关：全屏彩带
+    confetti(){ emit(80, () => ({ type:'spark', x:Math.random()*W, y:-20-Math.random()*80,
+      vx:(Math.random()-0.5)*2, vy:2+Math.random()*3, g:0.03, r:2.5+Math.random()*3,
+      life:1, decay:0.006+Math.random()*0.006,
+      c:['#ffd76a','#7c4dff','#4dd0e1','#ff8a80','#b9f6ca'][Math.random()*5|0] })); }
+  };
+})();
 </script>
 </body>
 </html>
