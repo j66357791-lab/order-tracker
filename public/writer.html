@@ -1930,9 +1930,6 @@ document.querySelectorAll('.act-tab').forEach(t => t.onclick = () => {
   document.getElementById(t.dataset.at).classList.add('on');
   if (t.dataset.at === 'atGame') loadGameEntry();
 });
-  }
-});
-
 
 async function loadGameEntry() {
   try {
