@@ -1853,6 +1853,25 @@ app.get('/api/admin/activity-stats', auth, adminOnly, async (req, res) => {
 
 
 
+
+// 【2026-09-12】活动维护开关
+app.get('/api/admin/activity-maintenance', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const cfg = await db.collection('config').findOne({ key: 'game_maintenance' });
+    res.json({ ok: true, maintenance: cfg ? cfg.value : false });
+  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/admin/activity-maintenance', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { maintenance } = req.body;
+    await db.collection('config').updateOne({ key: 'game_maintenance' }, { $set: { value: !!maintenance, updatedAt: new Date() } }, { upsert: true });
+    res.json({ ok: true, maintenance: !!maintenance });
+  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // 【2026-09-12】管理员：清空所有用户的钥匙
 app.post('/api/admin/reset-all-keys', auth, adminOnly, async (req, res) => {
   try {
