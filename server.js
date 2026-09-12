@@ -1852,6 +1852,16 @@ app.get('/api/admin/activity-stats', auth, adminOnly, async (req, res) => {
 
 
 
+
+// 【2026-09-12】管理员：清空所有用户的钥匙
+app.post('/api/admin/reset-all-keys', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const r = await db.collection('game_profiles').updateMany({}, { $set: { keys: 0 } });
+    res.json({ ok: true, modified: r.modifiedCount });
+  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // 【2026-09-12】管理员：列出所有用户
 app.get('/api/admin/users', auth, adminOnly, async (req, res) => {
   try {
