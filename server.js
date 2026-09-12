@@ -1851,6 +1851,16 @@ app.get('/api/admin/activity-stats', auth, adminOnly, async (req, res) => {
 
 
 
+
+// 【2026-09-12】管理员：列出所有用户
+app.get('/api/admin/users', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const users = await db.collection('users').find({}, { projection: { password: 0 } }).limit(50).toArray();
+    res.json({ ok: true, users });
+  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // 【2026-09-12】管理员：根据手机号查用户ID
 app.get('/api/admin/find-user/:phone', auth, adminOnly, async (req, res) => {
   try {
