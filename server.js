@@ -1829,6 +1829,12 @@ async function cleanupOldData() {
 setTimeout(cleanupOldData, 15 * 1000);                 // 启动后15秒清一次
 setInterval(cleanupOldData, 6 * 3600 * 1000);          // 之后每6小时清一次
 
+// 【2026-09-12】挂载魔法翻翻乐游戏模块
+try {
+  require('./games')(app, { auth, getDb, cnDayStr });
+  console.log('[游戏] 魔法翻翻乐模块已挂载');
+} catch(e) { console.error('[游戏] 模块加载失败:', e.message); }
+
 server.listen(CONFIG.port, () => {
   console.log(`订单统计系统V9已启动: http://localhost:${CONFIG.port}（含派单模块）`);
 });
