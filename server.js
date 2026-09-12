@@ -1850,6 +1850,17 @@ app.get('/api/admin/activity-stats', auth, adminOnly, async (req, res) => {
 });
 
 
+
+// 【2026-09-12】管理员：根据手机号查用户ID
+app.get('/api/admin/find-user/:phone', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const u = await db.collection('users').findOne({ phone: req.params.phone });
+    if (!u) return res.status(404).json({ ok: false, error: '未找到该手机号用户' });
+    res.json({ ok: true, user: { _id: u._id, phone: u.phone, name: u.name || '' } });
+  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // 【2026-09-12】管理员：游戏道具发放/收回/查询
 app.post('/api/admin/game-grant', auth, adminOnly, async (req, res) => {
   try {
