@@ -334,7 +334,11 @@
       <div class="card">
         <h3>🎁 道具发放/收回</h3>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-          <input id="grantUserId" placeholder="用户ID" style="flex:1;min-width:120px">
+          <input id="grantPhone" placeholder="输入手机号查找" style="flex:1;min-width:120px">
+          <button class="btn btn-ghost" onclick="findUser()">查找</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <input id="grantUserId" placeholder="用户ID（查找后自动填充）" style="flex:1;min-width:120px" readonly>
           <select id="grantItem" style="width:100px">
             <option value="keys">钥匙</option>
             <option value="balls">魔法球</option>
@@ -870,6 +874,17 @@ document.querySelectorAll('.stab').forEach(t => t.onclick = () => {
 });
 
 
+async function findUser() {
+  const phone = $('grantPhone').value.trim();
+  if (!phone) { alert('请输入手机号'); return; }
+  try {
+    const j = await authFetch('/api/admin/find-user/' + phone);
+    if (j.ok) {
+      $('grantUserId').value = j.user._id;
+      alert('找到用户：' + (j.user.name || '') + ' (' + j.user.phone + ')');
+    }
+  } catch(e) { alert(e.message); }
+}
 async function grantItem(isGrant) {
   const uid = $('grantUserId').value.trim();
   const item = $('grantItem').value;
