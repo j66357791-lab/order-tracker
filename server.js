@@ -1862,10 +1862,11 @@ app.post('/api/admin/game-grant', auth, adminOnly, async (req, res) => {
     const p = await db.collection('game_profiles').findOneAndUpdate(
       { userId }, update, { returnDocument: 'after', upsert: true }
     );
+    const profile = p.value || p;
     await db.collection('game_logs').insertOne({
       userId, action: 'admin_grant', detail: { item, amount, by: req.user.phone || req.user._id }, createdAt: new Date()
     });
-    res.json({ ok: true, profile: p.value });
+    res.json({ ok: true, profile: profile });
   } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
