@@ -318,7 +318,7 @@ function fmtPot(pot){
   return t.length ? t.join(' · ') : '空';
 }
 async function doRevive(){ try{ const r = await api('/api/game/revive',{method:'POST'}); closeModal(); renderCards(); if(STATE.bag){ STATE.bag.revives = r.revives; $('invBar').innerHTML = invHTML(STATE.bag); } toast('复活成功！重新翻牌'); }catch(e){ toast(e.message); } }
-async function doGiveup(){ try{ await api('/api/game/giveup',{method:'POST'}); modal(`<h3>本局结束</h3><p>奖励已逃走，下次一定！</p><div class="m-btns"><button class="btn" onclick="gameOver()">返回大厅</button></div>`); }catch(e){ toast(e.message); } }
+async function doGiveup(){ try{ await api('/api/game/giveup',{method:'POST'}); gameOver(); toast('本局已结束，奖励已逃走'); }catch(e){ toast(e.message); } }
 async function decide(action){ try{ const r = await api('/api/game/decide',{method:'POST',body:{action}}); if(action==='cashout'){ modal(`<h3>落袋为安！</h3><div class="gain-list">${fmtSettled(r.settled).map(i=>`<span>${i}</span>`).join('')}</div><p style="margin-top:8px">奖励已存入背包</p><div class="m-btns"><button class="btn" onclick="gameOver()">返回大厅</button></div>`); } else { showGame({ wave:r.wave, round:r.round, pot:r.pot }); toast(`已携带宝物进入${WAVES[r.wave-1]}！`); } }catch(e){ toast(e.message); } }
 function gameOver(){ closeModal(); $('pageGame').classList.add('hidden'); $('pageHome').classList.remove('hidden'); refresh(); }
 function backHome(){ $('pageGame').classList.add('hidden'); $('pageShop').classList.add('hidden'); $('pageHome').classList.remove('hidden'); closeModal(); refresh(); }
