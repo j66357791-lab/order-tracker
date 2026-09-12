@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>魔法翻翻乐 · 管理管控台</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; background:#141024; color:#eee; padding:16px; }
+  .wrap { max-width:860px; margin:0 auto; }
+  h1 { font-size:20px; color:#ffd76a; margin-bottom:12px; }
+  h2 { font-size:15px; color:#ffd76a; margin:18px 0 8px; border-left:3px solid #ffd76a; padding-left:8px; }
+  .card { background:#1f1836; border:1px solid #372a5c; border-radius:12px; padding:12px; margin-bottom:10px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .stat { background:#241a42; border-radius:10px; padding:10px; text-align:center; }
+  .stat b { display:block; font-size:22px; color:#ffd76a; }
+  .stat span { font-size:12px; color:#aaa; }
+  input, button, select { font-size:14px; border-radius:8px; border:1px solid #4a3a7a; background:#2a1f4d; color:#eee; padding:8px; }
+  button { background:#6c3fd6; cursor:pointer; border:none; }
+  button:hover { background:#7d4fe8; }
+  button.warn { background:#a33; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { padding:6px 4px; border-bottom:1px solid #372a5c; text-align:left; word-break:break-all; }
+  th { color:#ffd76a; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0; }
+  .row label { font-size:12px; color:#bbb; min-width:88px; }
+  input { width:130px; }
+  .msg { font-size:12px; color:#8f8; min-height:16px; margin:4px 0; }
+  .tag { font-size:11px; padding:2px 6px; border-radius:6px; background:#372a5c; margin-right:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>魔法翻翻乐 · 管理管控台 <button style="float:right" onclick="location.href='/writer.html'">返回工作台</button></h1>
+  <div class="msg" id="msg"></div>
+
+  <h2>数据总览</h2>
+  <div class="card"><div class="grid" id="stats">加载中…</div>
+    <div class="row" style="margin-top:10px">
+      <button onclick="cleanup()">清场：作废所有进行中对局并退钥匙</button>
+      <button class="warn" id="btnMaint" onclick="toggleMaint()">维护模式：读取中</button>
+    </div>
+  </div>
+
+  <h2>配置热调（立即生效，无需重启）</h2>
+  <div class="card">
+    <div class="row"><label>活动开始</label><input id="cfgStart" placeholder="2026-09-12">
+      <label>活动结束</label><input id="cfgEnd" placeholder="2026-10-31"></div>
+    <div class="row"><label>每日免费钥匙</label><input id="cfgDaily" type="number">
+      <label>每局复活上限</label><input id="cfgRevive" type="number">
+      <label>合成球需碎片</label><input id="cfgCompose" type="number"></div>
+    <div class="row"><label>小福袋(元)</label><input id="cfgBagS" placeholder="0.30,0.88">
+      <label>中福袋(元)</label><input id="cfgBagM" placeholder="1.68,8.88">
+      <label>大福袋(元)</label><input id="cfgBagL" placeholder="18.88,88.88"></div>
+    <button onclick="saveCfg()">保存配置</button> <span style="font-size:12px;color:#999">留空=不修改；概率表/商铺商品在 games.js 内配置</span>
+  </div>
+
+  <h2>玩家查询与道具发放</h2>
+  <div class="card">
+    <div class="row"><input id="uid" placeholder="用户ID(userId)">
+      <button onclick="findUser()">查询背包</button></div>
+    <div id="userBox"></div>
+    <div class="row" style="margin-top:8px">
+      <select id="grantItem">
+        <option value="keys">魔法钥匙</option><option value="balls">魔法球</option>
+        <option value="frags">碎片</option><option value="revives">复活石</option>
+        <option value="bagS">福袋·小</option><option value="bagM">福袋·中</option><option value="bagL">福袋·大</option>
+      </select>
+      <input id="grantN" type="number" value="1" style="width:70px">
+      <button onclick="grant()">发放（负数为扣除）</button>
+    </div>
+  </div>
+
+  <h2>兑换记录</h2>
+  <div class="card" id="redeemBox">加载中…</div>
+
+  <h2>审计日志（最近）</h2>
+  <div class="card" id="logBox">加载中…</div>
+</div>
+<script>
+const TOKEN = localStorage.getItem('jdy_token');
+if (!TOKEN) location.href = '/login.html';
+async function api(p, opt) {
+  opt = opt || {};
+  opt.headers = Object.assign({}, opt.headers, { 'Authorization': 'Bearer ' + TOKEN });
+  if (opt.body && typeof opt.body !== 'string') { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(opt.body); }
+  const r = await fetch(p, opt);
+  if (r.status === 401) { location.href = '/login.html'; throw new Error('未登录'); }
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || '请求失败');
+  return j;
+}
+function say(m, bad) { const el = document.getElementById('msg'); el.textContent = m; el.style.color = bad ? '#f99' : '#8f8'; setTimeout(() => el.textContent = '', 4000); }
+const dt = t => t ? new Date(t).toLocaleString('zh-CN', { hour12: false }) : '';
+const NAMES = { frag:'碎片', key:'钥匙', ball:'魔法球', bagS:'福袋小', bagM:'福袋中', bagL:'福袋大', frags:'碎片', keys:'钥匙', balls:'魔法球' };
+
+async function loadStats() {
+  try {
+    const s = await api('/api/admin/activity-stats');
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><b>${s.game?.totalPlayers ?? '-'}</b><span>参与玩家</span></div>
+      <div class="stat"><b>${s.game?.totalGames ?? '-'}</b><span>累计局数</span></div>
+      <div class="stat"><b>${s.game?.playingSessions ?? '-'}</b><span>进行中对局</span></div>
+      <div class="stat"><b>${s.game?.totalKeysLeft ?? '-'}</b><span>场外钥匙存量</span></div>
+      <div class="stat"><b>${s.game?.totalBallsLeft ?? '-'}</b><span>场外魔法球存量</span></div>
+      <div class="stat"><b>${s.checkin?.today ?? '-'}</b><span>今日签到人数</span></div>`;
+    const m = await api('/api/admin/activity-maintenance');
+    document.getElementById('btnMaint').textContent = '维护模式：' + (m.value ? '开启中(点击关闭)' : '关闭(点击开启)');
+    document.getElementById('btnMaint').dataset.on = m.value ? '1' : '';
+  } catch (e) { say(e.message, true); }
+  try {
+    const r = await api('/api/game/admin/redeems?limit=15');
+    document.getElementById('redeemBox').innerHTML = r.redeems.length
+      ? `<table><tr><th>时间</th><th>用户</th><th>商品</th><th>花费球数</th></tr>` +
+        r.redeems.map(x => `<tr><td>${dt(x.createdAt)}</td><td>${x.userId}</td><td>${x.name}</td><td>${x.cost}</td></tr>`).join('') +
+        `</table><p style="margin-top:6px;font-size:12px;color:#ffd76a">近${r.redeems.length}笔合计消耗魔法球 ${r.totalCost} 个</p>`
+      : '暂无兑换记录';
+  } catch (e) { document.getElementById('redeemBox').textContent = e.message; }
+  try {
+    const l = await api('/api/game/admin/logs?limit=30');
+    document.getElementById('logBox').innerHTML = l.logs.length
+      ? `<table><tr><th>时间</th><th>用户</th><th>动作</th><th>详情</th></tr>` +
+        l.logs.map(x => `<tr><td>${dt(x.createdAt)}</td><td>${x.userId}</td><td><span class="tag">${x.action}</span></td><td>${JSON.stringify(x.detail || {})}</td></tr>`).join('') + '</table>'
+      : '暂无日志';
+  } catch (e) { document.getElementById('logBox').textContent = e.message; }
+}
+async function loadCfg() {
+  try {
+    const c = await api('/api/game/admin/config');
+    const e = c.effective;
+    cfgStart.value = e.start; cfgEnd.value = e.end;
+    cfgDaily.value = e.dailyFreeKey; cfgRevive.value = e.maxRevivesPerGame; cfgCompose.value = e.composeFragCost;
+    cfgBagS.value = e.bagS.join(','); cfgBagM.value = e.bagM.join(','); cfgBagL.value = e.bagL.join(',');
+  } catch (err) { say(err.message, true); }
+}
+async function saveCfg() {
+  try {
+    const b = {};
+    if (cfgStart.value) b.start = cfgStart.value.trim();
+    if (cfgEnd.value) b.end = cfgEnd.value.trim();
+    if (cfgDaily.value !== '') b.dailyFreeKey = +cfgDaily.value;
+    if (cfgRevive.value !== '') b.maxRevivesPerGame = +cfgRevive.value;
+    if (cfgCompose.value !== '') b.composeFragCost = +cfgCompose.value;
+    for (const [id, k] of [[cfgBagS,'bagS'],[cfgBagM,'bagM'],[cfgBagL,'bagL']])
+      if (id.value) b[k] = id.value.split(',').map(Number);
+    await api('/api/game/admin/config', { method: 'POST', body: b });
+    say('配置已保存并立即生效'); loadCfg();
+  } catch (e) { say(e.message, true); }
+}
+async function findUser() {
+  try {
+    const p = await api('/api/admin/game-profile/' + uid.value.trim());
+    document.getElementById('userBox').innerHTML = `<table><tr><th>钥匙</th><th>魔法球</th><th>碎片</th><th>复活石</th><th>福袋小/中/大</th><th>累计局数</th></tr>
+      <tr><td>${p.profile.keys}</td><td>${p.profile.balls}</td><td>${p.profile.frags}</td><td>${p.profile.revives}</td>
+      <td>${p.profile.bagS}/${p.profile.bagM}/${p.profile.bagL}</td><td>${p.profile.totalGames ?? '-'}</td></tr></table>`;
+  } catch (e) { document.getElementById('userBox').textContent = e.message; }
+}
+async function grant() {
+  try {
+    const r = await api('/api/admin/game-grant', { method: 'POST', body: { userId: uid.value.trim(), item: grantItem.value, amount: +grantN.value } });
+    say('发放成功'); findUser();
+  } catch (e) { say(e.message, true); }
+}
+async function cleanup() {
+  if (!confirm('确定作废所有进行中的对局？玩家钥匙将退回。')) return;
+  try { const r = await api('/api/admin/game-cleanup', { method: 'POST' }); say('已清理 ' + r.cleaned + ' 局'); loadStats(); }
+  catch (e) { say(e.message, true); }
+}
+async function toggleMaint() {
+  const on = !document.getElementById('btnMaint').dataset.on;
+  try { await api('/api/admin/activity-maintenance', { method: 'POST', body: { value: on } }); say(on ? '维护模式已开启' : '维护模式已关闭'); loadStats(); }
+  catch (e) { say(e.message, true); }
+}
+loadStats(); loadCfg();
+</script>
+</body>
+</html>
