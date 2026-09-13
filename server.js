@@ -683,7 +683,7 @@ app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
     const existing = await db.collection('redpacket_records').findOne({ userId, cardId, date: today });
     if (existing) return res.status(400).json({ ok: false, error: '该订单今日已拆红包' });
     // 检查订单状态
-    const card = await db.collection('cards').findOne({ _id: new require('mongodb').ObjectId(cardId), to: userId });
+    const card = await db.collection('cards').findOne({ _id: new (require('mongodb').ObjectId)(cardId), to: userId });
     if (!card) return res.status(404).json({ ok: false, error: '订单不存在' });
     if (card.status !== '待打款') return res.status(400).json({ ok: false, error: '只有待打款状态的订单可拆红包' });
     // 金额 = reward × 0.01~0.1
