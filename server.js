@@ -1948,6 +1948,12 @@ try {
   console.log('[游戏] 魔法翻翻乐模块已挂载');
 } catch(e) { console.error('[游戏] 模块加载失败:', e.message); }
 
+// ===== 山海斩妖录（割草）模块 =====
+try {
+  require('./shanhai_game')(app, { auth, getDb, cnDayStr });
+  console.log('[游戏] 山海斩妖录模块已挂载');
+} catch(e) { console.error('[游戏] 山海斩妖录模块加载失败:', e.message); }
+
 server.listen(CONFIG.port, () => {
   console.log(`订单统计系统V9已启动: http://localhost:${CONFIG.port}（含派单模块）`);
 });
