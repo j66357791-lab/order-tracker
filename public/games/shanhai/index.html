@@ -2,63 +2,136 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>山海斩妖录</title>
 <link rel="stylesheet" href="css/style.css">
-<style>
-  .btn-back-sh { position: fixed; top: 10px; right: 12px; z-index: 30; font: bold 13px "SimHei", sans-serif; color: #E8DCC8; background: rgba(26,35,48,.75); border: 1px solid rgba(232,220,200,.35); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
-  .btn-back-sh:hover { background: rgba(60,72,92,.85); }
-  .board-tabs { display: flex; gap: 8px; justify-content: center; margin: 12px 0 8px; }
-  .board-tabs button { font: 12px "SimHei", sans-serif; padding: 5px 12px; border-radius: 6px; border: 1px solid #4A5568; background: #26303F; color: #AAB4C0; cursor: pointer; }
-  .board-tabs button.on { background: #D4875A; color: #14141A; border-color: #D4875A; }
-  .board-list { max-height: 200px; overflow: auto; text-align: left; font: 12px/1.9 "SimHei", sans-serif; color: #C8D0DA; }
-  .board-list table { width: 100%; border-collapse: collapse; }
-  .board-list td, .board-list th { padding: 2px 6px; border-bottom: 1px solid rgba(255,255,255,.07); }
-  .board-list td:first-child { color: #D4875A; width: 34px; }
-</style>
 </head>
 <body>
-<button class="btn-back-sh" onclick="location.href='/writer.html'">✕ 退出</button>
-<canvas id="game"></canvas>
+<div id="app">
 
-<!-- 虚拟摇杆 -->
-<div id="joystick"><div id="joyKnob"></div></div>
-
-<!-- HUD -->
-<div id="hud" style="display:none">
-  <div class="hud-top">
-    <div class="hp-wrap">
-      <div class="bar hp"><div id="hpFill"></div></div>
-      <span id="hpText">100/100</span>
+  <!-- ① 封面 -->
+  <div class="screen on" id="scrCover">
+    <div class="cover-bg"></div>
+    <div class="cover-vignette"></div>
+    <div class="cover-body">
+      <div class="logo-vert">
+        <span class="logo-ch">山</span><span class="logo-ch">海</span>
+        <span class="logo-ch accent">斩</span><span class="logo-ch accent">妖</span>
+        <span class="logo-ch">录</span>
+      </div>
+      <div class="cover-sub">S H A N H A I · 割 草 证 道</div>
     </div>
-    <div class="exp-wrap">
-      <div class="bar exp"><div id="expFill"></div></div>
-      <span id="lvText">Lv.1</span>
-    </div>
-    <div class="stats">
-      <span id="waveText">波次 1/15</span>
-      <span id="timeText">00:00</span>
-      <span id="killText">斩妖 0</span>
+    <div class="cover-foot">
+      <div class="tap-hint" id="tapEnter">— 轻触进入 —</div>
+      <div class="cover-ver">V1.5 · 御火行者</div>
     </div>
   </div>
-  <div id="bossBar">
-    <span id="bossName">山臊王</span>
-    <div class="bar boss"><div id="bossFill"></div></div>
+
+  <!-- ② 加载 -->
+  <div class="screen" id="scrLoad">
+    <div class="home-bg dim"></div>
+    <div class="load-body">
+      <div class="load-ring">
+        <svg viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="52" class="ring-bg"/>
+          <circle cx="60" cy="60" r="52" class="ring-fg" id="ringFg"/>
+        </svg>
+        <div class="load-pct" id="loadPct">0%</div>
+      </div>
+      <div class="load-tip" id="loadTip">山河入梦…</div>
+      <div class="load-name" id="loadName"></div>
+    </div>
   </div>
-  <div id="skillBar"></div>
+
+  <!-- ③ 主页 -->
+  <div class="screen" id="scrHome">
+    <div class="home-bg"></div>
+    <div class="fireflies"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <!-- 顶栏 -->
+    <div class="topbar">
+      <div class="tb-user">
+        <div class="avatar" id="avChar">御</div>
+        <div class="tb-info">
+          <b id="tbName">御火行者</b>
+          <span id="tbTitle">初入山海</span>
+        </div>
+      </div>
+      <div class="tb-currency"><span class="yd-ico">◉</span><b id="tbYadan">0</b></div>
+    </div>
+
+    <!-- 面板区 -->
+    <div class="home-body">
+
+      <!-- 出战 -->
+      <div class="home-tab on" id="tabFight">
+        <div class="stage-head"><span class="sh-line"></span><h3>斩妖路</h3><span class="sh-line"></span></div>
+        <div class="stage-list" id="stageList"></div>
+        <div class="daily-tip" id="dailyTip">每局皆得妖丹 · 首通另有重赏</div>
+      </div>
+
+      <!-- 养成 -->
+      <div class="home-tab" id="tabGrow">
+        <div class="grow-yadan"><span class="yd-ico big">◉</span>妖丹余额 <b id="growYadan">0</b></div>
+        <div class="grow-sec">◆ 技能强化（战斗内永久生效）</div>
+        <div id="skillList" class="skill-list"></div>
+        <div class="grow-sec">◆ 装备宝箱（<b>200</b> 妖丹一抽 · 品质不足自动折算）</div>
+        <div class="equip-slots">
+          <div class="equip-slot" id="slotWeapon"><i>武器</i><b id="eqWeapon">空</b></div>
+          <div class="equip-slot" id="slotTalisman"><i>护符</i><b id="eqTalisman">空</b></div>
+        </div>
+        <button class="btn-jade" id="btnDraw">开 启 宝 箱 · 200 ◉</button>
+        <div class="draw-result" id="drawResult"></div>
+      </div>
+
+      <!-- 榜单 -->
+      <div class="home-tab" id="tabBoard">
+        <div id="shBoard" class="board-list"></div>
+      </div>
+
+      <!-- 设置 -->
+      <div class="home-tab" id="tabSet">
+        <div class="set-row"><span>音效</span><b class="soon">第二轮开放</b></div>
+        <div class="set-row tap" onclick="location.href='/writer.html'"><span>返回网站</span><b>›</b></div>
+        <div class="set-row tap" id="btnLogout"><span>退出登录</span><b>›</b></div>
+        <div class="set-ver">山海斩妖录 V1.5 · M1.5 养成版</div>
+      </div>
+    </div>
+
+    <!-- 底部导航 -->
+    <nav class="home-nav">
+      <div class="hn-item on" data-tab="tabFight"><i>⚔</i>出 战</div>
+      <div class="hn-item" data-tab="tabGrow"><i>◉</i>养 成</div>
+      <div class="hn-item" data-tab="tabBoard"><i>榜</i>斩妖榜</div>
+      <div class="hn-item" data-tab="tabSet"><i>设</i>更 多</div>
+    </nav>
+  </div>
+
+  <!-- ④ 战斗 -->
+  <div class="screen" id="scrBattle">
+    <button class="btn-back-sh" id="btnQuitBattle">‹ 退出</button>
+    <canvas id="game"></canvas>
+    <div id="joystick"><div id="joyKnob"></div></div>
+    <div id="hud" style="display:none">
+      <div class="hud-top">
+        <div class="hp-wrap"><div class="bar hp"><div id="hpFill"></div></div><span id="hpText">100/100</span></div>
+        <div class="exp-wrap"><div class="bar exp"><div id="expFill"></div></div><span id="lvText">Lv.1</span></div>
+        <div class="stats"><span id="waveText">波次 1/15</span><span id="timeText">00:00</span><span id="killText">斩妖 0</span></div>
+      </div>
+      <div id="bossBar"><span id="bossName">山臊王</span><div class="bar boss"><div id="bossFill"></div></div></div>
+      <div id="skillBar"></div>
+      <div id="banner" style="display:none"><b id="bannerMain"></b><span id="bannerSub"></span></div>
+    </div>
+  </div>
+
+  <!-- 弹层 -->
+  <div id="overlay"></div>
 </div>
-
-<!-- 横幅/提示 -->
-<div id="banner"><div id="bannerMain"></div><div id="bannerSub"></div></div>
-<div id="toast"></div>
-
-<!-- 弹层（三选一/结算/标题） -->
-<div id="overlay"></div>
 
 <script src="js/config.js"></script>
 <script>
 "use strict";
-// ===== 后端对接层（与主站同一 token 体系）=====
+// ===== 后端对接层 =====
 const SH_TOKEN = localStorage.getItem("jdy_token");
 if (!SH_TOKEN) location.href = "/login.html";
 async function shApi(path, opt = {}) {
@@ -67,35 +140,10 @@ async function shApi(path, opt = {}) {
   return r.json();
 }
 function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
-// 结算上报（M1 结束时调用；失败静默——游戏不因网络中断）
-async function shReport(win) {
-  const h = Game.hero;
-  if (!h) return;
-  try {
-    await shApi("/api/shanhai/result", { method: "POST", body: JSON.stringify({
-      win, timeSec: Math.round(h.timeAlive), kills: h.kills, level: h.level, dmgTaken: Math.round(h.dmgTaken),
-    }) });
-  } catch (e) { console.warn("report fail", e); }
-}
-async function showBoard() {
-  const box = document.getElementById("shBoard");
-  if (!box) return;
-  box.innerHTML = '<div style="text-align:center;color:#6A7480">加载中…</div>';
-  try {
-    const d = await shApi("/api/shanhai/leaderboard");
-    const fmt = (list, kind) => list.map((p, i) => `<tr><td>${i + 1}</td><td>${p.username || "侠士"}</td><td>${kind === "t" ? fmtT(p.bestTimeSec) : p.bestKills}</td><td style="color:#6A7480">胜${p.wins || 0}</td></tr>`).join("") || '<tr><td colspan="4" style="text-align:center;color:#6A7480">虚位以待</td></tr>';
-    window.__boardData = d;
-    const kind = window.__boardKind || "t";
-    const list = kind === "t" ? d.timeBoard : d.killBoard;
-    box.innerHTML = `<div class="board-tabs">
-        <button class="${kind === "t" ? "on" : ""}" onclick="window.__boardKind='t';showBoard()">最快通关</button>
-        <button class="${kind === "k" ? "on" : ""}" onclick="window.__boardKind='k';showBoard()">斩妖最多</button>
-      </div><table><tr><th>#</th><th>侠士</th><th>${kind === "t" ? "用时" : "斩妖"}</th><th>战绩</th></tr>${fmt(list, kind)}</table>`;
-  } catch (e) { box.innerHTML = '<div style="text-align:center;color:#6A7480">加载失败</div>'; }
-}
 </script>
 <script src="js/assets.js"></script>
 <script src="js/pool.js"></script>
+<script src="js/meta.js"></script>
 <script src="js/entities.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/effects.js"></script>
@@ -104,63 +152,176 @@ async function showBoard() {
 <script>
 "use strict";
 (async () => {
-  await Assets.load();
-  // 标题画面
-  const ov = document.getElementById("overlay");
-  ov.style.display = "flex";
-  ov.innerHTML = `
-    <div class="panel title-panel">
-      <div class="game-logo">山海斩妖录</div>
-      <div class="game-sub">SHANHAI · ROGUELITE SURVIVORS</div>
-      <div class="title-desc">山海经异兽自四方涌来，御火而行，割草成道。<br>M1 原型 · 第一关「南山草泽」 · 15 波 · 山臊王</div>
-      <button class="btn" id="startBtn">入 局</button>
-      <div class="ctrl-hint">WASD / 方向键移动 · 自动索敌攻击 · 触屏拖摇杆</div>
-    </div>`;
-  document.getElementById("startBtn").onclick = () => Game.startRun();
+  /* ============ 屏幕编排 ============ */
+  const $ = id => document.getElementById(id);
+  const showScreen = id => document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id === id));
 
-  // 标题画面挂个人档案 + 排行榜入口
-  (async () => {
+  // —— 封面 → 加载 ——
+  $("scrCover").addEventListener("click", () => {
+    showScreen("scrLoad");
+    Assets.load("assets/sprites", (done, total, name) => {
+      const pct = Math.round(done / total * 100);
+      $("loadPct").textContent = pct + "%";
+      $("ringFg").style.strokeDashoffset = 327 - 327 * pct / 100;
+      const tips = ["山河入梦…", "异兽蠢蠢欲动…", "御火者披挂上阵…", "妖丹淬炼中…"];
+      $("loadTip").textContent = tips[Math.floor(done / total * tips.length)] || tips[0];
+      $("loadName").textContent = name && !name.includes("…") ? "· " + name + " ·" : "";
+    }).then(async () => {
+      await META.load();
+      renderHome();
+      showScreen("scrHome");
+    }).catch(e => { $("loadTip").textContent = "加载失败，请刷新重试"; console.error(e); });
+  }, { once: true });
+
+  // —— 主页渲染 ——
+  const STAGES = [
+    { id: 1, name: "南山草泽", sub: "15 波 · 山臊王", open: true },
+    { id: 2, name: "雪域寒潭", sub: "冰封之地 · 敬请期待", open: false },
+    { id: 3, name: "炎火山径", sub: "地火翻涌 · 敬请期待", open: false },
+  ];
+  function renderHome() {
+    const p = META.profile || {};
+    $("tbYadan").textContent = p.yadan || 0;
+    $("growYadan").textContent = p.yadan || 0;
+    $("tbName").textContent = p.username || "御火行者";
+    const wins = p.wins || 0;
+    $("tbTitle").textContent = wins >= 10 ? "山海伏妖师" : wins >= 3 ? "斩妖剑客" : wins >= 1 ? "初露锋芒" : "初入山海";
+    // 关卡卡
+    $("stageList").innerHTML = STAGES.map((s, i) => {
+      const stars = (p.stageStars || {})[s.id] || 0;
+      const best = s.id === 1 && p.bestTimeSec ? fmtT(p.bestTimeSec) : null;
+      return `<div class="stage-card ${s.open ? "" : "locked"}" ${s.open ? `data-stage="${s.id}"` : ""}>
+        <div class="st-num">${s.id}</div>
+        <div class="st-info"><b>${s.name}</b><span>${s.sub}</span>
+          ${s.open ? `<em class="st-stars">${"★".repeat(stars)}${"☆".repeat(3 - stars)}${best ? " · 最快 " + best : ""}</em>` : `<em class="st-lock">🔒 未解锁</em>`}
+        </div>
+        ${s.open ? `<button class="btn-stage">出 战</button>` : ""}
+      </div>`;
+    }).join("");
+    document.querySelectorAll(".stage-card[data-stage]").forEach(c =>
+      c.querySelector(".btn-stage").onclick = () => enterBattle(+c.dataset.stage));
+    // 养成
+    renderGrow();
+  }
+  function renderGrow() {
+    const p = META.profile || {};
+    const B = META.bonus();
+    const SK = [
+      { key: "fireline", name: "凤凰火线", desc: lv => `火羽伤害 +${lv * 6}% · 弹体增大` },
+      { key: "icepick", name: "寒冰锥", desc: lv => `冰锥伤害 +${lv * 6}%${lv >= 3 ? " · +1 枚" : ""}` },
+      { key: "body", name: "修身体质", desc: lv => `生命上限 +${lv * 8}%` },
+    ];
+    $("skillList").innerHTML = SK.map(s => {
+      const lv = (p.skillLv || {})[s.key] || 0;
+      const max = lv >= 5;
+      const cost = 100 * (lv + 1);
+      return `<div class="skill-row">
+        <div class="sk-lv">${lv}<small>层</small></div>
+        <div class="sk-mid"><b>${s.name}</b><span>${s.desc(lv)}</span></div>
+        <button class="btn-up" data-key="${s.key}" ${max || (p.yadan || 0) < cost ? "disabled" : ""}>${max ? "满层" : cost + " ◉"}</button>
+      </div>`;
+    }).join("");
+    document.querySelectorAll(".btn-up").forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      try { await META.upgradeSkill(b.dataset.key); renderHome(); toast("强化成功！"); }
+      catch (e) { b.disabled = false; toast(e.error || "强化失败"); }
+    });
+    const QN = ["白", "绿", "蓝", "紫"];
+    const eq = p.equip || {};
+    $("eqWeapon").innerHTML = eq.weapon ? `<span class="q q${eq.weapon.q}">${QN[eq.weapon.q]}</span> 攻击 +${eq.weapon.val}%` : "空";
+    $("eqTalisman").innerHTML = eq.talisman ? `<span class="q q${eq.talisman.q}">${QN[eq.talisman.q]}</span> 生命 +${eq.talisman.val}%` : "空";
+  }
+  function toast(msg) {
+    const t = document.createElement("div");
+    t.className = "toast"; t.textContent = msg;
+    document.getElementById("app").appendChild(t);
+    setTimeout(() => t.remove(), 1800);
+  }
+
+  // —— 抽装备箱 ——
+  $("btnDraw").onclick = async () => {
+    $("btnDraw").disabled = true;
     try {
-      const p = await shApi("/api/shanhai/profile");
-      const pf = p.profile || {};
-      const line = document.querySelector(".title-desc");
-      if (line && (pf.plays > 0)) line.insertAdjacentHTML("beforeend",
-        `<div style="margin-top:8px;color:#D4B87A">个人最佳 · ${pf.wins ? "通关 " + fmtT(pf.bestTimeSec) : "尚未通关"} · 斩妖 ${pf.bestKills || 0} · 战局 ${pf.plays}</div>`);
-    } catch (e) {}
-  })();
-  document.getElementById("startBtn").insertAdjacentHTML("afterend", '<button class="btn" id="boardBtn" style="margin-top:10px;background:linear-gradient(180deg,#5A7A9A,#3E5A74);color:#fff;letter-spacing:3px">斩妖榜</button>');
-  document.getElementById("boardBtn").onclick = () => {
-    const ov = document.getElementById("overlay");
-    ov.style.display = "flex";
-    ov.innerHTML = `<div class="panel"><div class="panel-title" style="color:#D4B87A">斩妖榜</div><div id="shBoard" class="board-list"></div>
-      <button class="btn" style="margin-top:14px" onclick="location.reload()">返 回</button></div>`;
-    showBoard();
+      const d = await META.draw();
+      renderHome();
+      const g = d.got;
+      const QN = ["白", "绿", "蓝", "紫"];
+      $("drawResult").innerHTML = `<div class="draw-pop q-pop${g.q}">
+        抽得 <b class="q q${g.q}">${QN[g.q]}·${g.slot === "weapon" ? "武器" : "护符"}</b>
+        ${g.slot === "weapon" ? "攻击" : "生命"} +${g.val}%
+        <small>${g.equipped ? "已自动穿戴" : "品质不及现有 · 折算 " + g.salvaged + " 妖丹"}</small></div>`;
+    } catch (e) { toast(e.error || "抽取失败"); }
+    $("btnDraw").disabled = false;
   };
 
-  // monkey-patch 结算：上报战绩 + 结算面板加排行榜入口
+  // —— 主页 tab 切换 ——
+  document.querySelectorAll(".hn-item").forEach(n => n.onclick = async () => {
+    document.querySelectorAll(".hn-item").forEach(x => x.classList.remove("on"));
+    document.querySelectorAll(".home-tab").forEach(x => x.classList.remove("on"));
+    n.classList.add("on");
+    $("" + n.dataset.tab).classList.add("on");
+    if (n.dataset.tab === "tabBoard") loadBoard();
+    if (n.dataset.tab === "tabGrow") renderGrow();
+  });
+
+  // —— 榜单 ——
+  window.__boardKind = "t";
+  async function loadBoard() {
+    const box = $("shBoard");
+    box.innerHTML = '<div class="empty-tip">榜单飞驰而来…</div>';
+    try {
+      const d = await shApi("/api/shanhai/leaderboard");
+      const kind = window.__boardKind;
+      const list = kind === "t" ? d.timeBoard : d.killBoard;
+      const fmt = list.map((p, i) => `<tr><td>${i + 1}</td><td>${p.username || "侠士"}</td><td>${kind === "t" ? fmtT(p.bestTimeSec) : p.bestKills}</td><td style="color:#6A7480">胜${p.wins || 0}</td></tr>`).join("") || '<tr><td colspan="4" class="empty-tip">虚位以待</td></tr>';
+      box.innerHTML = `<div class="board-tabs">
+        <button class="${kind === "t" ? "on" : ""}" data-k="t">最快通关</button>
+        <button class="${kind === "k" ? "on" : ""}" data-k="k">斩妖最多</button>
+      </div><table><tr><th>#</th><th>侠士</th><th>${kind === "t" ? "用时" : "斩妖"}</th><th>战绩</th></tr>${fmt}</table>`;
+      box.querySelectorAll(".board-tabs button").forEach(b => b.onclick = () => { window.__boardKind = b.dataset.k; loadBoard(); });
+    } catch (e) { box.innerHTML = '<div class="empty-tip">加载失败</div>'; }
+  }
+
+  /* ============ 战斗 ============ */
+  let curStage = 1;
+  function enterBattle(stage) {
+    curStage = stage;
+    showScreen("scrBattle");
+    window.dispatchEvent(new Event("resize"));
+    Game.startRun(stage);
+  }
+  function backHome() {
+    Game.state !== undefined && (Game.pause());
+    showScreen("scrHome");
+    META.load().then(renderHome);
+  }
+  $("btnQuitBattle").onclick = backHome;
+  $("btnLogout").onclick = () => { localStorage.removeItem("jdy_token"); localStorage.removeItem("jdy_user"); location.href = "/login.html"; };
+
+  // 结算 monkey-patch：上报 + 返回主页按钮
   const _over = UI.gameOver, _win = UI.victory;
-  UI.gameOver = function (stats, hero) { shReport(false); return _over(stats, hero); };
+  UI.gameOver = function (stats, hero) { META.report(false, curStage).then(g => g && renderHome()); const r = _over(stats, hero); addHomeBtn(); return r; };
   UI.victory = function (stats, hero) {
-    shReport(true);
-    const r = _win(stats, hero);
+    META.report(true, curStage).then(g => {
+      renderHome();
+      if (g) {
+        const p = document.querySelector(".panel .result-grid");
+        if (p) p.insertAdjacentHTML("afterend", `<div class="gain-line">◉ 妖丹 +${g.yadan}${g.firstClear ? " · 首通重赏已入袋" : ""} · 评级 ${"★".repeat(g.stars)}${"☆".repeat(3 - g.stars)}</div>`);
+      }
+    });
+    const r = _win(stats, hero); addHomeBtn(); return r;
+  };
+  function addHomeBtn() {
     setTimeout(() => {
       const p = document.querySelector(".panel");
-      if (p && !document.getElementById("boardBtn2")) {
-        p.querySelector(".btn").insertAdjacentHTML("afterend",
-          '<button class="btn" id="boardBtn2" style="margin-top:10px;background:linear-gradient(180deg,#5A7A9A,#3E5A74);color:#fff;letter-spacing:3px">斩妖榜</button>');
-        document.getElementById("boardBtn2").onclick = () => {
-          p.style.display = "none";
-          const ov = document.getElementById("overlay");
-          ov.innerHTML += `<div class="panel" id="shBoardPanel" style="position:absolute;inset:0;background:#1A2330;overflow:auto"><div class="panel-title" style="color:#D4B87A">斩妖榜</div><div id="shBoard" class="board-list"></div>
-            <button class="btn" style="margin-top:14px" onclick="location.reload()">返 回</button></div>`;
-          showBoard();
-        };
+      if (p && !document.getElementById("btnHome")) {
+        p.querySelector(".btn").insertAdjacentHTML("afterend", '<button class="btn btn-sub" id="btnHome">返回主页</button>');
+        $("btnHome").onclick = backHome;
       }
-    }, 50);
-    return r;
-  };
+    }, 30);
+  }
 
-  Game.start();
+  Game.start();   // 预热画布（等 enterBattle 才 startRun）
 })();
 </script>
 </body>
