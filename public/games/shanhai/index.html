@@ -219,10 +219,29 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   function showBoard() {
     document.querySelectorAll('.hn-item').forEach(x => x.classList.remove('on'));
     document.querySelectorAll('.home-tab').forEach(x => x.classList.remove('on'));
-    document.querySelector('[data-tab="tabChallenge"]').classList.add('on');
-    document.getElementById('tabChallenge').classList.add('on');
-    // 加载榜单到挑战tab
-    if (typeof loadBoard === 'function') loadBoard();
+    // 用弹窗显示排行榜，不跳tab
+    const mask = document.createElement('div');
+    mask.style = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px';
+    mask.onclick = () => mask.remove();
+    mask.innerHTML = `
+      <div style="background:linear-gradient(180deg,#f5f0e0,#e8dcc8);border-radius:16px;padding:20px;width:90%;max-width:320px;max-height:80vh;overflow-y:auto" onclick="event.stopPropagation()">
+        <div style="font-size:18px;font-weight:900;color:#3a5a4a;text-align:center;margin-bottom:16px">🏆 斩妖榜</div>
+        <div id="boardList" style="font-size:14px;color:#5a6e5a">加载中…</div>
+      </div>`;
+    document.body.appendChild(mask);
+    // 加载榜单数据
+    fetch('/api/shanhai/leaderboard', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('jdy_token') } })
+      .then(r => r.json())
+      .then(d => {
+        const el = document.getElementById('boardList');
+        if (!el) return;
+        el.innerHTML = (d.list || []).map((u, i) => `
+          <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid rgba(0,0,0,.05)">
+            <span>${i+1}. ${u.name || '佚名'}</span>
+            <span>${u.wins || 0}胜</span>
+          </div>`).join('') || '<div style="text-align:center;padding:30px">暂无数据</div>';
+      })
+      .catch(e => { const el = document.getElementById('boardList'); if(el) el.textContent = '加载失败'; });
   }
   window.showBoard = showBoard;
 
@@ -364,7 +383,6 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     META.load().then(renderHome);
   }
   $("btnQuitBattle").onclick = backHome;
-  $("btnLogout").onclick = () => { localStorage.removeItem("jdy_token"); localStorage.removeItem("jdy_user"); location.href = "/login.html"; };
 
   // 结算 monkey-patch：上报 + 返回主页按钮
   const _over = UI.gameOver, _win = UI.victory;
