@@ -4,8 +4,10 @@ const Assets = (() => {
   const sheets = {};   // name -> {img, fw, fh, frames}
   const anims = {};    // animName -> sheet
 
-  async function load(base = "assets/sprites") {
+  async function load(base = "assets/sprites", onProgress = null) {
+    const extra = (onProgress ? ["assets/bg/cover_bg.png", "assets/bg/home_bg.png"] : []);
     const mf = await (await fetch(`${base}/manifest.json`)).json();
+    if (onProgress) { onProgress(0, 2 + 21, "云游四海…"); }
     const animMap = {
       hero: "hero", zheng: "zheng", shanhaogt: "shanhaogt",
       bifang: "bifang", xuangui: "xuangui", boss: "boss_shanhaoking",
@@ -15,6 +17,16 @@ const Assets = (() => {
       tile: "tile_grass", tree1: "deco_tree1", tree2: "deco_tree2",
       stone: "deco_stone", stele: "deco_stele",
     };
+    // 预载大图（封面/主页背景）
+    let done = 0; const total = 2 + Object.keys(animMap).length;
+    for (const url of extra) {
+      await new Promise(res => {
+        const im = new Image();
+        im.onload = () => { done++; onProgress && onProgress(done, total, "山河入梦…"); res(); };
+        im.onerror = () => { done++; onProgress && onProgress(done, total, ""); res(); };
+        im.src = url;
+      });
+    }
     const loads = [];
     for (const [anim, key] of Object.entries(animMap)) {
       const m = mf[key];
@@ -23,6 +35,7 @@ const Assets = (() => {
         const img = new Image();
         img.onload = () => {
           sheets[anim] = { img, fw: m.fw, fh: m.fh, frames: m.frames };
+          done++; onProgress && onProgress(done, total, anim);
           res();
         };
         img.onerror = () => { console.error("sprite fail:", key); res(); };
