@@ -672,6 +672,20 @@ const USER = JSON.parse(localStorage.getItem('jdy_user') || 'null');
 if (!TOKEN || !USER) location.href = '/login.html';
 let ME = null;
 
+// URL参数：?tab=game 直接切游戏tab
+(function(){
+  const p = new URLSearchParams(location.search);
+  if(p.get('tab')==='game'){
+    setTimeout(()=>{
+      document.querySelectorAll('.act-tab').forEach(t=>t.classList.remove('on'));
+      document.querySelectorAll('.act-panel').forEach(p=>p.classList.remove('on'));
+      const t = document.querySelector('[data-at="atGame"]');
+      if(t){ t.classList.add('on'); document.getElementById('atGame').classList.add('on'); }
+      document.getElementById('atGame')?.scrollIntoView({behavior:'smooth'});
+    }, 800);
+  }
+})();
+
 function toast(t, ms = 2200) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', ms); }
 const fmt = n => Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
