@@ -58,6 +58,7 @@ const UI = (() => {
 
   function banner(main, sub) {
     const b = $("banner");
+    if (!b || !$("bannerMain")) return;
     $("bannerMain").textContent = main;
     $("bannerSub").textContent = sub || "";
     b.style.display = "block";
@@ -67,7 +68,15 @@ const UI = (() => {
   }
 
   function toast(msg) {
-    const t = $("toast");
+    // 动态创建 toast（不依赖页面静态元素，防御性）
+    let t = $("toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "toast";
+      t.style.cssText = "position:absolute;top:16%;left:50%;transform:translateX(-50%);background:rgba(14,26,22,.92);border:1px solid rgba(212,184,122,.45);color:#F0E8D0;font:13px 'PingFang SC',sans-serif;padding:10px 22px;border-radius:22px;z-index:99;transition:opacity .3s";
+      const app = document.getElementById("app") || document.body;
+      app.appendChild(t);
+    }
     t.textContent = msg;
     t.style.display = "block";
     t.style.opacity = "1";
