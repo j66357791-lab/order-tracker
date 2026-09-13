@@ -22,7 +22,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .cover-ver { margin-top: 12px; font: 10px/1 sans-serif; color: rgba(232,220,200,.35); }
 
 /* ===== 背景（主页/加载共用） ===== */
-.home-bg { position: absolute; inset: 0; background: url(../bg/home_bg.png) center/cover no-repeat; }
+.home-bg { position: absolute; inset: 0; background: url(../assets/home-bg-ink.jpg) center/cover no-repeat; }
 .home-bg.dim { filter: brightness(.55) blur(2px); }
 .home-bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,24,20,.35), rgba(10,24,20,.05) 30%, rgba(10,24,20,.5) 100%); }
 
@@ -216,10 +216,10 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 /* ===== 关卡展示（单关卡+左右切换） ===== */
 .stage-visual { position: relative; display: flex; align-items: center; justify-content: center; min-height: 380px; margin: 10px 0 20px; }
 .stage-mountain { position: relative; text-align: center; }
-.stage-mountain img { width: 220px; max-height: 320px; object-fit: contain; filter: drop-shadow(0 10px 30px rgba(0,0,0,.5)); }
-.stage-name { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font: 900 22px "STKaiti", serif; color: #F0E8D0; text-shadow: 0 2px 8px #000; letter-spacing: 4px; white-space: nowrap; }
-.stage-sub { position: absolute; top: 55px; left: 50%; transform: translateX(-50%); font: 11px/1 sans-serif; color: #D4B87A; white-space: nowrap; }
-.stage-stars { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); font-size: 16px; color: #D4B87A; text-shadow: 0 1px 4px #000; }
+.stage-mountain img { width: 260px; max-height: 380px; object-fit: contain; filter: drop-shadow(0 10px 30px rgba(0,0,0,.3)); }
+.stage-name { position: absolute; top: 120px; left: 50%; transform: translateX(-50%); font: 900 24px "STKaiti", serif; color: #2A4A3E; text-shadow: 0 1px 4px rgba(255,255,255,.6); letter-spacing: 6px; white-space: nowrap; }
+.stage-sub { position: absolute; top: 155px; left: 50%; transform: translateX(-50%); font: 11px/1 sans-serif; color: #6A8076; white-space: nowrap; }
+.stage-stars { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%); font-size: 18px; color: #D4A84A; text-shadow: 0 1px 4px rgba(0,0,0,.2); }
 .stage-arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,.4); border: 1px solid rgba(212,184,122,.5); color: #D4B87A; font-size: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; z-index: 2; }
 .stage-arrow.left { left: 5px; }
 .stage-arrow.right { right: 5px; }
