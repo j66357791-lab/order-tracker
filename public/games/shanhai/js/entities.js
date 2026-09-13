@@ -47,7 +47,7 @@ class Hero {
   }
 
   hurt(dmg) {
-    if (this.iframe > 0) return false;
+    if (this.iframe > 0 || this.godMode) return false;
     this.hp = Math.max(0, this.hp - dmg);
     this.dmgTaken += dmg;
     this.iframe = CONFIG.hero.iframe;
