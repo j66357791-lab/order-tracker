@@ -321,6 +321,8 @@ async function onFlipResult(r){
     FX.confetti(); showWaveDone(r.session.wave, r.session.pot, got);
   } else {
     showGame(r.session);
+    document.querySelectorAll('.card').forEach(c => { c.classList.remove('disabled'); c.classList.remove('open'); });
+    renderCards();
     toast('获得 ' + got + '，已计入暂存奖励');
   }
 }
