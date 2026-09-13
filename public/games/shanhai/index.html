@@ -292,6 +292,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
   function backHome() {
     Game.state !== undefined && (Game.pause());
+    $("overlay").style.display = "none";
     showScreen("scrHome");
     META.load().then(renderHome);
   }
