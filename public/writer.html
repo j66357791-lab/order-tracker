@@ -2038,7 +2038,7 @@ async function openRp(cardId) {
   rm.querySelector('.rp-box').onclick = async () => {
     try {
       const j = await authFetch('/api/activity/redpacket/'+cardId, { method: 'POST' });
-      rm.querySelector('.rp-inner').innerHTML = '<div class="amt">¥'+j.amount+'</div><div class="tip">奖励比例 '+j.rate+'%</div><div style="margin-top:16px"><button class="act-btn act-btn-red" onclick="closeRp()">开心收下</button></div>';
+      rm.querySelector('.rp-modal').innerHTML = '<div class="amt" style="font-size:32px;color:#ffd700;margin:20px 0">¥'+j.amount+'</div><div class="tip" style="font-size:14px;color:#fff;margin-bottom:20px">奖励比例 '+j.rate+'%</div><div style="margin-top:16px"><button class="act-btn act-btn-red" onclick="closeRp()">开心收下</button></div>';
       loadRedpacket();
       try { await authFetch('/api/activity/redpacket/unfreeze', { method: 'POST' }); } catch(e) {}
     } catch(e) { alert(e.message); closeRp(); }
