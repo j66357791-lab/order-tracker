@@ -21,27 +21,21 @@
       </div>
       <div class="cover-sub">S H A N H A I · 割 草 证 道</div>
     </div>
+    <!-- 加载进度条（叠加在封面上） -->
+    <div id="loadBar" style="position:absolute;bottom:120px;left:50%;transform:translateX(-50%);width:70%;text-align:center">
+      <div style="font-size:13px;color:#ffd76a;margin-bottom:8px;letter-spacing:2px" id="loadTip">山河入梦…</div>
+      <div style="height:4px;background:rgba(255,255,255,.2);border-radius:99px;overflow:hidden">
+        <div id="loadFill" style="height:100%;width:0%;background:linear-gradient(90deg,#ffd76a,#ff9a3c);transition:width .3s;border-radius:99px"></div>
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,.7);margin-top:6px" id="loadPct">0%</div>
+    </div>
     <div class="cover-foot">
-      <div class="tap-hint" id="tapEnter">— 轻触进入 —</div>
+      <div class="tap-hint" id="tapEnter" style="display:none">— 轻触进入 —</div>
       <div class="cover-ver">V1.5 · 御火行者</div>
     </div>
   </div>
 
-  <!-- ② 加载 -->
-  <div class="screen" id="scrLoad">
-    <div class="home-bg dim"></div>
-    <div class="load-body">
-      <div class="load-ring">
-        <svg viewBox="0 0 120 120">
-          <circle cx="60" cy="60" r="52" class="ring-bg"/>
-          <circle cx="60" cy="60" r="52" class="ring-fg" id="ringFg"/>
-        </svg>
-        <div class="load-pct" id="loadPct">0%</div>
-      </div>
-      <div class="load-tip" id="loadTip">山河入梦…</div>
-      <div class="load-name" id="loadName"></div>
-    </div>
-  </div>
+  <!-- 加载进度条已移到封面页上 -->
 
   <!-- ③ 主页 -->
   <div class="screen" id="scrHome">
@@ -156,21 +150,24 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   const $ = id => document.getElementById(id);
   const showScreen = id => document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id === id));
 
-  // —— 封面 → 加载 ——
+  // —— 自动加载资源（进度条在封面上）——
+  Assets.load("assets/sprites", (done, total, name) => {
+    const pct = Math.round(done / total * 100);
+    $("loadPct").textContent = pct + "%";
+    $("loadFill").style.width = pct + "%";
+    const tips = ["山河入梦…", "异兽蠢蠢欲动…", "御火者披挂上阵…", "妖丹淬炼中…"];
+    $("loadTip").textContent = tips[Math.floor(done / total * tips.length)] || tips[0];
+  }).then(async () => {
+    await META.load();
+    renderHome();
+    // 加载完，隐藏进度条，显示轻触进入
+    $("loadBar").style.display = "none";
+    $("tapEnter").style.display = "block";
+  }).catch(e => { $("loadTip").textContent = "加载失败，请刷新重试"; console.error(e); });
+
+  // 点封面进入主页
   $("scrCover").addEventListener("click", () => {
-    showScreen("scrLoad");
-    Assets.load("assets/sprites", (done, total, name) => {
-      const pct = Math.round(done / total * 100);
-      $("loadPct").textContent = pct + "%";
-      $("ringFg").style.strokeDashoffset = 327 - 327 * pct / 100;
-      const tips = ["山河入梦…", "异兽蠢蠢欲动…", "御火者披挂上阵…", "妖丹淬炼中…"];
-      $("loadTip").textContent = tips[Math.floor(done / total * tips.length)] || tips[0];
-      $("loadName").textContent = name && !name.includes("…") ? "· " + name + " ·" : "";
-    }).then(async () => {
-      await META.load();
-      renderHome();
-      showScreen("scrHome");
-    }).catch(e => { $("loadTip").textContent = "加载失败，请刷新重试"; console.error(e); });
+    showScreen("scrHome");
   }, { once: true });
 
   // —— 主页渲染 ——
