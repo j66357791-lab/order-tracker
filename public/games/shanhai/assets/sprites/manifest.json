@@ -1,0 +1,122 @@
+{
+ "hero": {
+  "file": "hero.png",
+  "frames": 6,
+  "fw": 32,
+  "fh": 32
+ },
+ "zheng": {
+  "file": "zheng.png",
+  "frames": 4,
+  "fw": 32,
+  "fh": 32
+ },
+ "shanhaogt": {
+  "file": "shanhaogt.png",
+  "frames": 4,
+  "fw": 24,
+  "fh": 24
+ },
+ "bifang": {
+  "file": "bifang.png",
+  "frames": 4,
+  "fw": 32,
+  "fh": 32
+ },
+ "xuangui": {
+  "file": "xuangui.png",
+  "frames": 4,
+  "fw": 32,
+  "fh": 32
+ },
+ "boss_shanhaoking": {
+  "file": "boss_shanhaoking.png",
+  "frames": 6,
+  "fw": 48,
+  "fh": 48
+ },
+ "proj_fire": {
+  "file": "proj_fire.png",
+  "frames": 4,
+  "fw": 16,
+  "fh": 16
+ },
+ "proj_ice": {
+  "file": "proj_ice.png",
+  "frames": 4,
+  "fw": 16,
+  "fh": 16
+ },
+ "proj_rock": {
+  "file": "proj_rock.png",
+  "frames": 2,
+  "fw": 16,
+  "fh": 16
+ },
+ "orb": {
+  "file": "orb.png",
+  "frames": 4,
+  "fw": 12,
+  "fh": 12
+ },
+ "meat": {
+  "file": "meat.png",
+  "frames": 1,
+  "fw": 14,
+  "fh": 14
+ },
+ "fx_hit": {
+  "file": "fx_hit.png",
+  "frames": 4,
+  "fw": 24,
+  "fh": 24
+ },
+ "fx_die": {
+  "file": "fx_die.png",
+  "frames": 6,
+  "fw": 32,
+  "fh": 32
+ },
+ "fx_levelup": {
+  "file": "fx_levelup.png",
+  "frames": 6,
+  "fw": 48,
+  "fh": 48
+ },
+ "fx_smash": {
+  "file": "fx_smash.png",
+  "frames": 4,
+  "fw": 48,
+  "fh": 48
+ },
+ "tile_grass": {
+  "file": "tile_grass.png",
+  "frames": 6,
+  "fw": 64,
+  "fh": 64
+ },
+ "deco_tree1": {
+  "file": "deco_tree1.png",
+  "frames": 2,
+  "fw": 40,
+  "fh": 52
+ },
+ "deco_tree2": {
+  "file": "deco_tree2.png",
+  "frames": 2,
+  "fw": 36,
+  "fh": 56
+ },
+ "deco_stone": {
+  "file": "deco_stone.png",
+  "frames": 1,
+  "fw": 28,
+  "fh": 20
+ },
+ "deco_stele": {
+  "file": "deco_stele.png",
+  "frames": 1,
+  "fw": 28,
+  "fh": 44
+ }
+}
