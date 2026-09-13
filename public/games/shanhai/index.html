@@ -53,7 +53,8 @@
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <div class="tb-rank" onclick="showBoard()" style="width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.3);border:1px solid rgba(212,184,122,.5);display:flex;align-items:center;justify-content:center;cursor:pointer" title="排行榜">🏆</div>
-        <div class="tb-currency"><span class="yd-ico">◉</span><b id="tbYadan">0</b></div>
+        <div class="tb-currency"><span class="yd-ico">◉</span><b id="tbXianyu">0</b></div>
+        <div class="tb-currency lingqi"><span class="lq-ico">✦</span><b id="tbLingqi">0</b></div>
       </div>
     </div>
 
@@ -83,21 +84,40 @@
         <div class="stage-actions">
           <button class="btn-stage-big" id="btnEnterBattle">出 战</button>
         </div>
-        <div class="daily-tip">每局皆得妖丹 · 首通另有重赏</div>
+        <div class="daily-tip">每局皆得仙玉 · 首通另有重赏</div>
       </div>
 
-      <!-- 养成 -->
+      <!-- 养成·装备页（斩妖录·贰） -->
       <div class="home-tab" id="tabGrow">
-        <div class="grow-yadan"><span class="yd-ico big">◉</span>妖丹余额 <b id="growYadan">0</b></div>
+        <div class="grow-cur">
+          <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="growXianyu">0</b></span>
+          <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="growLingqi">0</b></span>
+        </div>
         <div class="grow-sec">◆ 技能强化（战斗内永久生效）</div>
         <div id="skillList" class="skill-list"></div>
-        <div class="grow-sec">◆ 装备宝箱（<b>200</b> 妖丹一抽 · 品质不足自动折算）</div>
-        <div class="equip-slots">
-          <div class="equip-slot" id="slotWeapon"><i>武器</i><b id="eqWeapon">空</b></div>
-          <div class="equip-slot" id="slotTalisman"><i>护符</i><b id="eqTalisman">空</b></div>
-        </div>
-        <button class="btn-jade" id="btnDraw">开 启 宝 箱 · 200 ◉</button>
+        <div class="grow-sec">◆ 装备寻宝（<b>120</b> 仙玉一抽 · 空槽自动穿戴）</div>
+        <button class="btn-jade" id="btnDraw">寻 宝 · 120 ◉</button>
         <div class="draw-result" id="drawResult"></div>
+        <div class="grow-sec">◆ 神行装束（点击已穿装备可卸下）</div>
+        <div class="equip-layout">
+          <div class="eq-col">
+            <div class="eq-slot" data-slot="weapon" id="slotWeapon"><i>武器</i><b class="eq-v">空</b></div>
+            <div class="eq-slot" data-slot="armor" id="slotArmor"><i>衣服</i><b class="eq-v">空</b></div>
+            <div class="eq-slot" data-slot="crown" id="slotCrown"><i>发冠</i><b class="eq-v">空</b></div>
+          </div>
+          <div class="eq-center">
+            <img src="/games/shanhai/assets/sprites/hero.png" id="eqHero" alt="">
+            <div class="eq-power" id="eqPower">神力 0</div>
+          </div>
+          <div class="eq-col">
+            <div class="eq-slot" data-slot="belt" id="slotBelt"><i>腰带</i><b class="eq-v">空</b></div>
+            <div class="eq-slot" data-slot="boots" id="slotBoots"><i>鞋子</i><b class="eq-v">空</b></div>
+            <div class="eq-slot" data-slot="accessory" id="slotAccessory"><i>配饰</i><b class="eq-v">空</b></div>
+          </div>
+        </div>
+        <div class="grow-sec bag-sec">◆ 装备背包 <span class="bag-count" id="bagCount">0/50</span>（点击穿戴）</div>
+        <div class="bag-grid" id="bagGrid"></div>
+        <div class="empty-tip" id="bagEmpty" style="display:none">行囊空空 · 寻宝可得装备</div>
       </div>
 
       <!-- 榜单 -->
@@ -235,11 +255,12 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       .then(d => {
         const el = document.getElementById('boardList');
         if (!el) return;
-        el.innerHTML = (d.list || []).map((u, i) => `
-          <div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid rgba(0,0,0,.05)">
-            <span>${i+1}. ${u.name || '佚名'}</span>
-            <span>${u.wins || 0}胜</span>
-          </div>`).join('') || '<div style="text-align:center;padding:30px">暂无数据</div>';
+        const row = (u, i, right) => `<div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid rgba(0,0,0,.05)">
+            <span>${i+1}. ${u.username || '佚名'}</span><span>${right}</span></div>`;
+        const t = (d.timeBoard || []).map((u, i) => row(u, i, fmtT(u.bestTimeSec) + ' · ' + (u.wins || 0) + '胜')).join('');
+        const k = (d.killBoard || []).map((u, i) => row(u, i, '斩妖' + (u.bestKills || 0) + ' · ' + (u.wins || 0) + '胜')).join('');
+        el.innerHTML = `<div style="font-weight:900;color:#3a5a4a;margin:8px 0 2px">⚡ 最快通关</div>` + (t || '<div style="text-align:center;padding:12px;color:#999">虚位以待</div>') +
+          `<div style="font-weight:900;color:#3a5a4a;margin:12px 0 2px">🗡 斩妖最多</div>` + (k || '<div style="text-align:center;padding:12px;color:#999">虚位以待</div>');
       })
       .catch(e => { const el = document.getElementById('boardList'); if(el) el.textContent = '加载失败'; });
   }
@@ -253,8 +274,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   ];
   function renderHome() {
     const p = META.profile || {};
-    $("tbYadan").textContent = p.yadan || 0;
-    $("growYadan").textContent = p.yadan || 0;
+    $("tbXianyu").textContent = p.xianyu || 0;
+    $("tbLingqi").textContent = p.lingqi || 0;
+    $("growXianyu").textContent = p.xianyu || 0;
+    $("growLingqi").textContent = p.lingqi || 0;
     $("tbName").textContent = p.username || "御火行者";
     const wins = p.wins || 0;
     $("tbTitle").textContent = wins >= 10 ? "山海伏妖师" : wins >= 3 ? "斩妖剑客" : wins >= 1 ? "初露锋芒" : "初入山海";
@@ -263,10 +286,11 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     function renderStage(i) {
       curStageIdx = i;
       const s = STAGES[i];
-      const stars = (p.stageStars || {})[s.id] || 0;
+      const stars = (META.stageStars || {})[s.id] || (localStorage.getItem("sh_stars_" + s.id) | 0) || 0;
       $("stageName").textContent = s.name;
       $("stageSub").textContent = s.sub;
-      $("stageStars").textContent = "★".repeat(stars) + "☆".repeat(3 - stars);
+      $("stageStars").innerHTML = Array.from({ length: 3 }, (_, i) =>
+        `<img src="/games/shanhai/assets/star-${i < stars ? "gold" : "transparent"}.png" class="star-i ${i < stars ? "on" : ""}" alt="">`).join("");
       // 左右箭头显示
       document.getElementById("stagePrev").style.opacity = i > 0 ? "1" : ".3";
       document.getElementById("stageNext").style.opacity = i < STAGES.length - 1 ? "1" : ".3";
@@ -291,7 +315,6 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
   function renderGrow() {
     const p = META.profile || {};
-    const B = META.bonus();
     const SK = [
       { key: "fireline", name: "凤凰火线", desc: lv => `火羽伤害 +${lv * 6}% · 弹体增大` },
       { key: "icepick", name: "寒冰锥", desc: lv => `冰锥伤害 +${lv * 6}%${lv >= 3 ? " · +1 枚" : ""}` },
@@ -300,11 +323,11 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     $("skillList").innerHTML = SK.map(s => {
       const lv = (p.skillLv || {})[s.key] || 0;
       const max = lv >= 5;
-      const cost = 100 * (lv + 1);
+      const cost = 80 + lv * 60;
       return `<div class="skill-row">
         <div class="sk-lv">${lv}<small>层</small></div>
         <div class="sk-mid"><b>${s.name}</b><span>${s.desc(lv)}</span></div>
-        <button class="btn-up" data-key="${s.key}" ${max || (p.yadan || 0) < cost ? "disabled" : ""}>${max ? "满层" : cost + " ◉"}</button>
+        <button class="btn-up" data-key="${s.key}" ${max || (p.xianyu || 0) < cost ? "disabled" : ""}>${max ? "满层" : cost + " ◉"}</button>
       </div>`;
     }).join("");
     document.querySelectorAll(".btn-up").forEach(b => b.onclick = async () => {
@@ -312,10 +335,48 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       try { await META.upgradeSkill(b.dataset.key); renderHome(); toast("强化成功！"); }
       catch (e) { b.disabled = false; toast(e.error || "强化失败"); }
     });
-    const QN = ["白", "绿", "蓝", "紫"];
+    renderEquip();
+    renderBag();
+  }
+  const SLOT_NAME = { weapon: "武器", armor: "衣服", crown: "发冠", belt: "腰带", boots: "鞋子", accessory: "配饰" };
+  function renderEquip() {
+    const p = META.profile || {};
     const eq = p.equip || {};
-    $("eqWeapon").innerHTML = eq.weapon ? `<span class="q q${eq.weapon.q}">${QN[eq.weapon.q]}</span> 攻击 +${eq.weapon.val}%` : "空";
-    $("eqTalisman").innerHTML = eq.talisman ? `<span class="q q${eq.talisman.q}">${QN[eq.talisman.q]}</span> 生命 +${eq.talisman.val}%` : "空";
+    let power = 0;
+    document.querySelectorAll(".eq-slot").forEach(el => {
+      const slot = el.dataset.slot;
+      const it = eq[slot];
+      const v = el.querySelector(".eq-v");
+      if (it) {
+        power += it.val || 0;
+        v.innerHTML = `<span class="eq-name" style="color:${it.color || "#cfd8dc"}">${it.name}</span><em class="eq-affix">${it.affix || ""} +${it.val}%</em>`;
+        el.classList.add("filled");
+      } else { v.innerHTML = "空"; el.classList.remove("filled"); }
+    });
+    $("eqPower").textContent = "神力 " + Math.round(power * 10) / 10;
+    document.querySelectorAll(".eq-slot").forEach(el => el.onclick = async () => {
+      const slot = el.dataset.slot;
+      if (!(META.profile || {}).equip || !META.profile.equip[slot]) return;
+      try { await META.unequip(slot); await META.load(); renderGrow(); renderHome(); toast("已卸下" + SLOT_NAME[slot]); }
+      catch (e) { toast(e.error || "操作失败"); }
+    });
+  }
+  function renderBag() {
+    const p = META.profile || {};
+    const bag = p.bag || [];
+    $("bagCount").textContent = bag.length + "/50";
+    const grid = $("bagGrid");
+    $("bagEmpty").style.display = bag.length ? "none" : "block";
+    grid.innerHTML = bag.map(it => `
+      <div class="bag-cell q-${it.quality}" data-id="${it.id}" title="${it.name}">
+        <i>${SLOT_NAME[it.slot] || it.slot}</i>
+        <b style="color:${it.color || "#cfd8dc"}">${(it.name || "").slice(0, 4)}</b>
+        <em>${it.affix || ""}+${it.val}%</em>
+      </div>`).join("");
+    grid.querySelectorAll(".bag-cell").forEach(c => c.onclick = async () => {
+      try { await META.equip(c.dataset.id); await META.load(); renderGrow(); renderHome(); toast("穿戴成功"); }
+      catch (e) { toast(e.error || "穿戴失败"); }
+    });
   }
   function toast(msg) {
     const t = document.createElement("div");
@@ -324,18 +385,18 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     setTimeout(() => t.remove(), 1800);
   }
 
-  // —— 抽装备箱 ——
+  // —— 抽装备寻宝 ——
   $("btnDraw").onclick = async () => {
     $("btnDraw").disabled = true;
     try {
       const d = await META.draw();
+      await META.load();
       renderHome();
-      const g = d.got;
-      const QN = ["白", "绿", "蓝", "紫"];
-      $("drawResult").innerHTML = `<div class="draw-pop q-pop${g.q}">
-        抽得 <b class="q q${g.q}">${QN[g.q]}·${g.slot === "weapon" ? "武器" : "护符"}</b>
-        ${g.slot === "weapon" ? "攻击" : "生命"} +${g.val}%
-        <small>${g.equipped ? "已自动穿戴" : "品质不及现有 · 折算 " + g.salvaged + " 妖丹"}</small></div>`;
+      const g = d.item;
+      $("drawResult").innerHTML = `<div class="draw-pop" style="border-color:${g.color}">
+        寻得 <b style="color:${g.color}">${g.qualityName}·${g.name}</b>（${SLOT_NAME[g.slot]}）
+        ${g.affix} +${g.val}%
+        <small>${d.autoEquipped ? "槽位空缺 · 已自动穿戴" : "已放入背包"}</small></div>`;
     } catch (e) { toast(e.error || "抽取失败"); }
     $("btnDraw").disabled = false;
   };
@@ -389,10 +450,11 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   UI.gameOver = function (stats, hero) { META.report(false, curStage).then(g => g && renderHome()); const r = _over(stats, hero); addHomeBtn(); return r; };
   UI.victory = function (stats, hero) {
     META.report(true, curStage).then(g => {
+      if (g && g.stars) { localStorage.setItem("sh_stars_" + curStage, g.stars); META.stageStars = META.stageStars || {}; META.stageStars[curStage] = g.stars; }
       renderHome();
       if (g) {
         const p = document.querySelector(".panel .result-grid");
-        if (p) p.insertAdjacentHTML("afterend", `<div class="gain-line">◉ 妖丹 +${g.yadan}${g.firstClear ? " · 首通重赏已入袋" : ""} · 评级 ${"★".repeat(g.stars)}${"☆".repeat(3 - g.stars)}</div>`);
+        if (p) p.insertAdjacentHTML("afterend", `<div class="gain-line">◉ 仙玉 +${g.xianyu}${g.lingqi ? " · ✦ 灵气 +" + g.lingqi : ""}${g.firstClear ? " · 首通重赏已入袋" : ""} · 评级 ${"★".repeat(g.stars)}${"☆".repeat(3 - g.stars)}</div>`);
       }
     });
     const r = _win(stats, hero); addHomeBtn(); return r;
