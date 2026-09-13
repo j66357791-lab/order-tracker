@@ -2,7 +2,7 @@
  * 策略：HTML页面 network-first（总是最新），静态资源 cache-first
  * 每次部署改 CACHE_VERSION 即可自动清旧缓存
  */
-const CACHE_VERSION = 'jiedan-v3-20260911b';
+const CACHE_VERSION = 'jiedan-v4-20260913';
 const APP_SHELL = [
   '/login.html',
   '/index.html',
@@ -11,6 +11,8 @@ const APP_SHELL = [
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
+  '/assets/banner-fanfanle.jpg',
+  '/assets/banner-shanhai.jpg',
 ];
 
 // 安装：跳过等待，立即激活
