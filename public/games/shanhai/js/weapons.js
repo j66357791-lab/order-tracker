@@ -39,32 +39,35 @@ class WeaponSystem {
   firelineParams() {
     const W = CONFIG.weapons.fireline, lv = this.lv("fireline");
     return {
-      dmg: (W.baseDmg + W.dmgPerLv * (lv - 1) + (lv >= 5 ? W.dmgPerLv : 0)) * this.hero.dmgMul,
+      dmg: (W.baseDmg + W.dmgPerLv * (lv - 1) + (lv >= 5 ? W.dmgPerLv : 0)) * this.hero.dmgMul * (this.hero.dmgFireExternal || 1),
       cd: W.cd + W.cdPerLv * (lv - 1),
       count: 1 + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0),
-      speed: W.projSpeed, radius: W.projRadius,
+      speed: W.projSpeed, radius: W.projRadius * (this.hero.fireScale || 1),
+      scale: this.hero.fireScale || 1,
     };
   }
   icepickParams() {
     const W = CONFIG.weapons.icepick, lv = this.lv("icepick");
     if (!lv) return null;
     return {
-      dmg: (W.baseDmg + W.dmgPerLv * (lv - 1)) * this.hero.dmgMul,
+      dmg: (W.baseDmg + W.dmgPerLv * (lv - 1)) * this.hero.dmgMul * (this.hero.dmgIceExternal || 1),
       cd: W.cd + W.cdPerLv * (lv - 1),
-      count: 1 + (lv >= 3 ? 1 : 0),
+      count: 1 + (lv >= 3 ? 1 : 0) + (this.hero.iceBonus || 0),
       pierce: W.pierce + W.piercePerLv * (lv - 1),
       speed: W.projSpeed, radius: W.projRadius,
       slow: { pct: W.slowPct, dur: W.slowDur },
     };
   }
 
-  update(dt, enemies, fire) {
+  update(dt, enemies, fire, boss) {
     for (const s of Object.values(this.slots)) s.t -= dt;
+    // 索敌候选 = 小怪池 + Boss（修复：Boss 战小怪清空后停火）
+    const cand = enemies.active.concat(boss && boss.alive ? [boss] : []);
     // 凤凰火线：射最近敌人
     const fp = this.firelineParams();
     const slot = this.slots.fireline;
     if (slot && slot.t <= 0) {
-      const targets = nearestEnemies(enemies, this.hero, fp.count);
+      const targets = nearestEnemies(cand, this.hero, fp.count);
       if (targets.length) {
         slot.t = fp.cd;
         for (const tgt of targets) {
@@ -78,7 +81,7 @@ class WeaponSystem {
     const ip = this.icepickParams();
     const islot = this.slots.icepick;
     if (ip && islot && islot.t <= 0) {
-      const targets = nearestEnemies(enemies, this.hero, ip.count);
+      const targets = nearestEnemies(cand, this.hero, ip.count);
       if (targets.length) {
         islot.t = ip.cd;
         for (const tgt of targets) {
@@ -91,10 +94,10 @@ class WeaponSystem {
   }
 }
 
-function nearestEnemies(enemies, hero, n) {
-  // 简化选择：活动怪池里取距离最小的 n 个（怪量≤60，直接扫描足够快）
+function nearestEnemies(candidates, hero, n) {
+  // 索敌：候选（含Boss）中取距离最小的 n 个（量≤60，直接扫描足够快）
   const arr = [];
-  for (const e of enemies.active) {
+  for (const e of candidates) {
     const d = (e.x - hero.x) ** 2 + (e.y - hero.y) ** 2;
     if (d < 420 * 420) arr.push({ e, d });
   }
@@ -119,6 +122,7 @@ class Projectile {
     this.alive = true;
     this.life = 3.2;        // 寿命
     this.spin = Math.random() * Math.PI * 2;
+    this.scale = params.scale || 1;
   }
   update(dt) {
     this.animT += dt;
@@ -130,7 +134,12 @@ class Projectile {
   draw(ctx) {
     if (this.kind === "fireline") {
       const f = Assets.frame("fireball", this.animT, 12);
-      Assets.draw(ctx, "fireball", f, this.x, this.y, 1);
+      Assets.draw(ctx, "fireball", f, this.x, this.y, this.scale || 1);
+      // 运动拖尾残影（视觉强化）
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      Assets.draw(ctx, "fireball", f, this.x - this.dx * 10, this.y - this.dy * 10, (this.scale || 1) * 0.8);
+      ctx.restore();
     } else if (this.kind === "icepick") {
       const f = Assets.frame("icepick", this.animT, 10);
       // 朝向旋转
