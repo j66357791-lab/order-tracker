@@ -9,7 +9,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .screen.on { display: block; }
 
 /* ===== ① 封面 ===== */
-.cover-bg { position: absolute; inset: 0; background: url(../bg/cover_bg.png) center/cover no-repeat; }
+.cover-bg { position: absolute; inset: 0; background: url(../assets/cover_new.jpg) center/cover no-repeat; }
 .cover-vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 42%, transparent 30%, rgba(6,13,11,.72) 100%); }
 .cover-body { position: absolute; top: 7%; left: 0; right: 0; text-align: center; }
 .logo-vert { display: inline-flex; flex-direction: column; gap: 2px; }
