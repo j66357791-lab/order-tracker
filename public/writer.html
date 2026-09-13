@@ -505,6 +505,15 @@
             <button class="act-btn act-btn-gold" onclick="location.href='/game.html'" style="background:#ffd700;color:#333;font-weight:700">🎮 立即开始</button>
           </div>
         </div>
+        <!-- 限时活动：山海斩妖录（割草） -->
+        <div class="act-panel" id="atGame2">
+          <div class="act-card" style="margin:0;text-align:center;background:linear-gradient(135deg,#1A3A32,#2C5A48);color:#fff;border:none">
+            <div style="font-size:48px;margin-bottom:8px">⚔️</div>
+            <h3 style="color:#8AF0CE">山海斩妖录</h3>
+            <div style="font-size:12px;opacity:.9;margin:8px 0 16px">山海经异兽围剿 · 御火割草<br>15波斩山臊王 · 冲击斩妖榜</div>
+            <button class="act-btn act-btn-gold" onclick="location.href='/games/shanhai/index.html'" style="background:#3EC9A0;color:#0E2420;font-weight:700">⚔️ 入局斩妖</button>
+          </div>
+        </div>
         </div>
       </div>
     </div>
@@ -1928,7 +1937,7 @@ document.querySelectorAll('.act-tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.act-panel').forEach(x => x.classList.remove('on'));
   t.classList.add('on');
   document.getElementById(t.dataset.at).classList.add('on');
-  if (t.dataset.at === 'atGame') loadGameEntry();
+  if (t.dataset.at === 'atGame') { const g2 = document.getElementById('atGame2'); if (g2) g2.classList.add('on'); loadGameEntry(); }
 });
 
 async function loadGameEntry() {
