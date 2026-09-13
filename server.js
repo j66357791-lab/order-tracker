@@ -50,7 +50,7 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
     }
   }]);
 });
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '30d', setHeaders: (res, p) => { if (p.endsWith('.html') || p.endsWith('.json')) res.setHeader('Cache-Control', 'no-cache'); } }));
 
 let dbPromise = null;
 let indexReady = false;
@@ -80,6 +80,8 @@ async function getDb() {
       { key: { createdAt: 1 }, expireAfterSeconds: 3 * 24 * 3600 },
     ]).catch(() => {});
     db.collection('cards').createIndexes([{ key: { to: 1, createdAt: -1 } }, { key: { orderId: 1 } }]).catch(() => {});
+    // 【2026-09-14 修复】单单拆红包：一人一订单一天只能拆一次（数据库层强制，防并发双击）
+    db.collection('redpacket_records').createIndexes([{ key: { userId: 1, cardId: 1, date: 1 }, unique: true }]).catch(e => console.warn('[索引] redpacket_records:', e.message));
     db.collection('schedule_days').createIndexes([{ key: { userId: 1, date: 1 }, unique: true }]).catch(() => {});
     // 启动时清掉历史遗留的假在线标记（真实在线以内存连接表为准）
     db.collection('users').updateMany({ sockOnline: true }, { $set: { sockOnline: false } }).catch(() => {});
@@ -596,6 +598,12 @@ app.get('/api/activity/checkin', auth, async (req, res) => {
     const userId = req.user.id;
     // 今日是否已签
     const todayRec = await db.collection('checkin_records').findOne({ userId, date: today });
+    // 【2026-09-14 需求】返回签到资格（当天接过单）
+    const dayStart2 = new Date(today + 'T00:00:00+08:00');
+    const takenCnt = await db.collection('cards').countDocuments({
+      to: userId,
+      $or: [ { acceptedAt: { $gte: dayStart2 } }, { createdAt: { $gte: dayStart2 }, status: { $in: ['已接单', '待审核', '待打款', '已完成'] } } ]
+    });
     // 月历
     const monthRecs = await db.collection('checkin_records').find({ userId, date: { $regex: '^' + month } }).toArray();
     const signedDays = monthRecs.map(r => r.date);
@@ -608,7 +616,7 @@ app.get('/api/activity/checkin', auth, async (req, res) => {
       if (rec) { streak++; d.setDate(d.getDate() - 1); }
       else break;
     }
-    res.json({ ok: true, today: today, signedToday: !!todayRec, todayAmount: todayRec ? todayRec.amount : 0, streak, signedDays, month });
+    res.json({ ok: true, today: today, signedToday: !!todayRec, todayAmount: todayRec ? todayRec.amount : 0, streak, signedDays, month, eligible: takenCnt > 0 });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -620,6 +628,13 @@ app.post('/api/activity/checkin', auth, async (req, res) => {
     const userId = req.user.id;
     const existing = await db.collection('checkin_records').findOne({ userId, date: today });
     if (existing) return res.status(400).json({ ok: false, error: '今日已签到' });
+    // 【2026-09-14 需求】现金签到资格：当天接过单的写手（当天新建派单 或 手上有进行中订单）
+    const dayStart = new Date(today + 'T00:00:00+08:00');
+    const taken = await db.collection('cards').countDocuments({
+      to: userId,
+      $or: [ { acceptedAt: { $gte: dayStart } }, { createdAt: { $gte: dayStart }, status: { $in: ['已接单', '待审核', '待打款', '已完成'] } } ]
+    });
+    if (!taken) return res.status(400).json({ ok: false, error: '今日接单后才能参与现金签到' });
     // 概率：99.99% 得 0.01~0.1，0.01% 得 1~5
     let amount;
     if (Math.random() < 0.0001) {
@@ -680,7 +695,9 @@ app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
     const cardId = req.params.cardId;
     const today = cnDayStr(new Date());
     // 检查是否已拆
-    const existing = await db.collection('redpacket_records').findOne({ userId, cardId, date: today });
+    // 【2026-09-14 修复】cardId 类型对齐（库里存 ObjectId，字符串查永远落空）+ 查重
+    const ObjectId = require('mongodb').ObjectId;
+    const existing = await db.collection('redpacket_records').findOne({ userId, cardId: new ObjectId(String(cardId)), date: today });
     if (existing) return res.status(400).json({ ok: false, error: '该订单今日已拆红包' });
     // 检查订单状态
     const card = await db.collection('cards').findOne({ _id: new (require('mongodb').ObjectId)(cardId), to: userId });
@@ -689,11 +706,16 @@ app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
     // 金额 = reward × 0.01~0.1
     const rate = 0.01 + Math.random() * 0.09;
     const amount = Math.round((card.reward || 0) * rate * 100) / 100;
-    await db.collection('redpacket_records').insertOne({
-      userId, cardId: card._id, title: card.title, orderReward: card.reward,
-      amount, rate: Math.round(rate * 10000) / 100, status: '冻结',
-      date: today, createdAt: new Date()
-    });
+    try {
+      await db.collection('redpacket_records').insertOne({
+        userId, cardId: card._id, title: card.title, orderReward: card.reward,
+        amount, rate: Math.round(rate * 10000) / 100, status: '冻结',
+        date: today, createdAt: new Date()
+      });
+    } catch (e) {
+      if (e.code === 11000) return res.status(400).json({ ok: false, error: '该订单今日已拆红包' }); // 并发双击兜底
+      throw e;
+    }
     res.json({ ok: true, amount, rate: Math.round(rate * 100) / 100, title: card.title });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -704,13 +726,22 @@ app.post('/api/activity/redpacket/unfreeze', auth, async (req, res) => {
   try {
     const db = await getDb();
     const userId = req.user.id;
-    const frozen = await db.collection('redpacket_records').find({ userId, status: '冻结' }).toArray();
+    const frozen = await db.collection('redpacket_records').find({ userId, status: '冻结' }).sort({ createdAt: 1 }).toArray();
     let unlocked = 0;
+    const paidCardIds = new Set();   // 本轮已入账订单（重复拆的历史脏数据只按最早一笔算）
     for (const r of frozen) {
+      const cid = String(r.cardId);
       const card = await db.collection('cards').findOne({ _id: r.cardId });
       if (card && card.status === '已完成') {
+        // 【2026-09-14 修复】幂等：同订单已入过账（本轮或历史）的重复记录作废，不再入账
+        const paid = paidCardIds.has(cid) || await db.collection('wallet_log').findOne({ userId, note: '红包奖励-' + (r.title || ''), cardId: cid });
+        if (paid) {
+          await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已作废', note: '重复拆包记录' } });
+          continue;
+        }
         await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已解冻', unlockedAt: new Date() } });
-        await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount: r.amount, note: '红包奖励-' + r.title, createdAt: new Date() });
+        await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount: r.amount, note: '红包奖励-' + r.title, cardId: cid, createdAt: new Date() });
+        paidCardIds.add(cid);
         unlocked++;
       }
     }
