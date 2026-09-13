@@ -52,7 +52,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 /* ===== ③ 主页 ===== */
 .topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px; background: linear-gradient(180deg, rgba(8,18,15,.85), transparent); z-index: 5; }
 .tb-user { display: flex; align-items: center; gap: 10px; }
-.avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #2C5A48, #1A3A32); border: 2px solid #D4B87A; display: flex; align-items: center; justify-content: center; font: 900 19px "STKaiti", serif; color: #D4B87A; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+.avatar { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #2C5A48, #1A3A32); background-image: url(../assets/avatar-frame.png), linear-gradient(135deg, #2C5A48, #1A3A32); background-size: 100% 100%; border: none; display: flex; align-items: center; justify-content: center; font: 900 20px "STKaiti", serif; color: #D4B87A; box-shadow: 0 2px 12px rgba(212,184,122,.3); position: relative; }
 .tb-info b { display: block; font: bold 15px/1.3 "PingFang SC", sans-serif; color: #F0E8D0; }
 .tb-info span { font: 10px/1.4 sans-serif; color: #D4B87A; }
 .tb-currency { display: flex; align-items: center; gap: 5px; background: rgba(8,18,15,.7); border: 1px solid rgba(212,184,122,.4); border-radius: 20px; padding: 6px 14px; }
@@ -68,7 +68,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .stage-head { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; }
 .stage-head h3 { font: 900 19px "STKaiti", serif; letter-spacing: 5px; color: #F0E8D0; text-shadow: 0 1px 4px #000; }
 .sh-line { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgba(212,184,122,.5), transparent); }
-.stage-card { position: relative; display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, rgba(30,64,52,.92), rgba(18,40,32,.92)); border: 1px solid rgba(62,201,160,.35); border-radius: 14px; padding: 16px; margin-bottom: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.35); overflow: hidden; }
+.stage-card { position: relative; display: flex; align-items: center; gap: 14px; background: url(../assets/stage-card-bg.jpg) center/cover no-repeat, linear-gradient(135deg, rgba(30,64,52,.92), rgba(18,40,32,.92)); border: 1px solid rgba(212,184,122,.5); border-radius: 14px; padding: 18px 16px; margin-bottom: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.4), 0 0 0 1px rgba(212,184,122,.15) inset; overflow: hidden; }
 .stage-card::before { content: ""; position: absolute; right: -20px; top: -20px; width: 90px; height: 90px; border-radius: 50%; background: radial-gradient(circle, rgba(212,184,122,.18), transparent 70%); }
 .stage-card:not(.locked):active { transform: scale(.985); }
 .stage-card.locked { opacity: .55; filter: grayscale(.4); }
@@ -78,8 +78,8 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .st-info span { font: 11px/1.6 sans-serif; color: rgba(232,220,200,.6); }
 .st-stars { display: block; font: 12px/1.8 sans-serif; color: #D4B87A; font-style: normal; }
 .st-lock { display: block; font: 11px/1.8 sans-serif; color: rgba(232,220,200,.5); font-style: normal; }
-.btn-stage { background: linear-gradient(180deg, #E8B45A, #C9963E); border: none; border-radius: 20px; padding: 9px 22px; font: bold 14px "PingFang SC", sans-serif; color: #14201C; cursor: pointer; letter-spacing: 3px; box-shadow: 0 3px 10px rgba(212,184,122,.35); }
-.btn-stage:active { transform: translateY(1px); }
+.btn-stage { background: linear-gradient(180deg, #F0C068, #C9963E); border: 1px solid rgba(255,220,150,.4); border-radius: 24px; padding: 10px 24px; font: bold 14px "PingFang SC", sans-serif; color: #2A1808; cursor: pointer; letter-spacing: 3px; box-shadow: 0 4px 14px rgba(212,184,122,.4), inset 0 1px 0 rgba(255,255,255,.3); }
+.btn-stage:active { transform: translateY(1px); box-shadow: 0 2px 8px rgba(212,184,122,.3); }
 .daily-tip { text-align: center; font: 11px/1 sans-serif; color: rgba(212,184,122,.65); margin-top: 6px; }
 
 /* 养成 */
@@ -125,8 +125,10 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .set-ver { text-align: center; font: 10px/3 sans-serif; color: #4A5E54; margin-top: 16px; }
 
 /* 底部导航 */
-.home-nav { position: absolute; bottom: 0; left: 0; right: 0; display: flex; background: rgba(8,18,15,.92); border-top: 1px solid rgba(62,201,160,.2); backdrop-filter: blur(8px); padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 5; }
-.hn-item { flex: 1; text-align: center; padding: 8px 0 7px; font: 10px/1.4 sans-serif; color: #6A8076; cursor: pointer; }
+.home-nav { position: absolute; bottom: 0; left: 0; right: 0; display: flex; background: linear-gradient(180deg, rgba(8,18,15,.95), rgba(14,31,26,.98)); border-top: 1px solid rgba(212,184,122,.3); backdrop-filter: blur(12px); padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 5; box-shadow: 0 -4px 20px rgba(0,0,0,.4); }
+.hn-item { flex: 1; text-align: center; padding: 10px 0 8px; font: 11px/1.4 "PingFang SC", sans-serif; color: #6A8076; cursor: pointer; transition: all .2s; }
+.hn-item i { display: block; font-size: 18px; margin-bottom: 2px; }
+.hn-item.on { color: #D4B87A; text-shadow: 0 0 12px rgba(212,184,122,.5); }
 .hn-item i { display: block; font: 15px/1.6 "STKaiti", serif; font-style: normal; }
 .hn-item.on { color: #D4B87A; }
 .hn-item.on i { text-shadow: 0 0 10px rgba(212,184,122,.6); }
