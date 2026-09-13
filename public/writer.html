@@ -676,13 +676,12 @@ let ME = null;
 (function(){
   const p = new URLSearchParams(location.search);
   if(p.get('tab')==='game'){
-    setTimeout(()=>{
-      document.querySelectorAll('.act-tab').forEach(t=>t.classList.remove('on'));
-      document.querySelectorAll('.act-panel').forEach(p=>p.classList.remove('on'));
-      const t = document.querySelector('[data-at="atGame"]');
-      if(t){ t.classList.add('on'); document.getElementById('atGame').classList.add('on'); }
-      document.getElementById('atGame')?.scrollIntoView({behavior:'smooth'});
-    }, 800);
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const t = document.querySelector('.act-tab[data-at="atGame"]');
+        if(t) t.click();
+      }, 1000);
+    });
   }
 })();
 
