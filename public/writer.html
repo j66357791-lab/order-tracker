@@ -686,8 +686,10 @@ let ME = null;
 })();
 
 // ===== 游戏资源预缓存弹窗 =====
-const GAME_CACHE_KEY = 'game_cache_version';
-const GAME_CACHE_VER = 'v1.5-20260913'; // 更新版本号就会触发重新下载
+const GAME_CACHE_KEY = 'writer_ui_cache_version';
+const GAME_CACHE_VER = 'v1.6-20260914'; // 更新版本号就会触发重新下载
+// 【2026-09-14 修复】预下载范围改为写手端基础UI资源（游戏资源包改由各游戏页自己下载）
+// 旧版问题：①下载列表里manifest.js不存在、bg路径错误 ②fetch未消费响应体，浏览器不会真正缓存
 
 function showGameCacheModal() {
   const modal = document.createElement('div');
@@ -696,10 +698,10 @@ function showGameCacheModal() {
   modal.innerHTML = `
     <div style="background:linear-gradient(180deg,#1a3a2e,#0e1f1a);border:1px solid #3ec9a0;border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center">
       <div style="font-size:48px;margin-bottom:12px">🎮</div>
-      <h3 style="color:#ffd76a;font-size:18px;margin-bottom:12px">游戏资源预下载</h3>
+      <h3 style="color:#ffd76a;font-size:18px;margin-bottom:12px">界面资源预载</h3>
       <p style="color:#8AF0CE;font-size:13px;line-height:1.6;margin-bottom:20px">
-        为了游戏体验流畅，建议提前下载游戏美术资源。<br>
-        下载约 20MB，下载完成后下次打开游戏秒进，不消耗流量。
+        提前缓存写手端基础界面资源（约 1MB），下次打开秒开不耗流量。<br>
+        游戏美术包较大，进入对应游戏时会单独提示下载。
       </p>
       <div style="margin-bottom:16px">
         <div style="height:6px;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden">
@@ -714,12 +716,11 @@ function showGameCacheModal() {
   document.body.appendChild(modal);
 
   const gameAssets = [
-    '/games/shanhai/assets/cover_new.jpg',
-    '/games/shanhai/assets/sprites/hero.png',
-    '/games/shanhai/assets/sprites/zheng.png',
-    '/games/shanhai/assets/sprites/bifang.png',
-    '/games/shanhai/assets/sprites/manifest.js',
-    '/games/shanhai/bg/home_bg.png',
+    '/assets/banner-fanfanle.jpg',
+    '/assets/banner-shanhai.jpg',
+    '/assets/game-banner.jpg',
+    '/icon-192.png',
+    '/icon-512.png',
   ];
 
   let downloaded = 0;
@@ -737,14 +738,19 @@ function showGameCacheModal() {
     }
     try {
       document.getElementById('gameCacheTip').textContent = `下载中… ${downloaded + 1}/${gameAssets.length}`;
-      await fetch(gameAssets[downloaded], { mode: 'no-cors' });
+      // 【2026-09-14 修复】必须消费响应体（r.blob()）浏览器才会真正写入HTTP缓存
+      const r = await fetch(gameAssets[downloaded]);
+      if (!r.ok) throw new Error(r.status);
+      await r.blob();
       downloaded++;
       document.getElementById('gameCacheProgress').style.width = Math.round(downloaded / gameAssets.length * 100) + '%';
-      setTimeout(downloadNext, 100);
+      setTimeout(downloadNext, 60);
     } catch(e) {
-      // 单个失败继续下一个
+      // 单个失败继续下一个（不计完成，进度条如实反映）
       downloaded++;
-      downloadNext();
+      console.warn('[预载] 失败:', gameAssets[downloaded - 1], e.message);
+      document.getElementById('gameCacheTip').textContent = `部分资源下载失败（${downloaded}/${gameAssets.length}）…`;
+      setTimeout(downloadNext, 60);
     }
   }
 
@@ -2093,6 +2099,7 @@ async function loadCheckin() {
     const btn = $('btnCheckin');
     if (btn) {
       if (j.signedToday) { btn.disabled = true; btn.textContent = '今日已签到'; }
+      else if (j.eligible === false) { btn.disabled = true; btn.textContent = '今日接单后可签到'; $('ckTodayAmt').textContent = '今日完成接单后可参与现金签到'; }
       else { btn.disabled = false; btn.textContent = '立即签到'; }
     }
   } catch(e) {}
@@ -2107,7 +2114,7 @@ if($('btnCheckin'))$('btnCheckin').onclick = async () => {
       rm.querySelector('.sub').textContent = '连续签到 ' + j.streak + ' 天';
     }
     loadCheckin();
-  } catch(e) { alert(e.message); }
+  } catch(e) { loadCheckin(); toast(typeof e === 'string' ? e : (e.message || '签到失败')); }
 };
 function closeCkResult(){const rm=document.getElementById('ckResultModal');if(rm)rm.classList.remove('on');}
 
@@ -2167,7 +2174,7 @@ if($('btnMonthly'))$('btnMonthly').onclick = async () => {
     const j = await authFetch('/api/activity/monthly/claim', { method: 'POST' });
     alert('恭喜获得 ¥' + j.reward + '！已入账');
     loadMonthly();
-  } catch(e) { alert(e.message); }
+  } catch(e) { toast(typeof e === 'string' ? e : (e.message || '领取失败')); }
 };
 
 /* 广告弹窗 */
