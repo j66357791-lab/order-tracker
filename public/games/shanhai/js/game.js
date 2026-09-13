@@ -25,8 +25,21 @@ const Game = (() => {
   }
 
   // ============ 开局 ============
-  function startRun() {
+  function startRun(stage = 1) {
     hero = new Hero();
+    // —— 养成加成接入（来自 META 档案）——
+    try {
+      const B = (window.META && META.bonus) ? META.bonus() : null;
+      if (B) {
+        hero.hpMulExternal = B.hpMul * B.bodyHpMul;
+        hero.dmgFireExternal = B.fireMul;
+        hero.dmgIceExternal = B.iceMul;
+        hero.fireScale = B.fireScale;
+        hero.iceBonus = B.iceCount;
+        hero.maxHpBase = Math.round(hero.maxHpBase * hero.hpMulExternal * B.bodyHpMul);
+        hero.hp = hero.maxHp;
+      }
+    } catch (e) { console.warn("meta bonus fail", e); }
     weapons = new WeaponSystem(hero);
     boss = null;
     enemyPool = new Pool(() => new Enemy(), (e, t, x, y) => e.reset(t, x, y), 60);
@@ -139,7 +152,7 @@ const Game = (() => {
     stats.time += dt;
     // 玩家
     hero.update(dt, touchVec ? touchKeys() : input);
-    weapons.update(dt, enemyPool, fire);
+    weapons.update(dt, enemyPool, fire, boss);
 
     // 波次推进
     waveT -= dt;
@@ -343,6 +356,7 @@ const Game = (() => {
   }
 
   function openLevelUp() {
+    if (boss && !boss.alive) return;   // Boss 已亡：胜利结算优先，不再弹升级
     state = "levelup";
     fxPool.spawn("levelup", hero.x, hero.y, 1.4);
     const choices = buildChoices();
@@ -490,6 +504,13 @@ const Game = (() => {
     get hero() { return hero; },
     get __weapons() { return weapons; },
     get waveIdx() { return waveIdx; },
+    pause() { state = "title"; },
+    get __boss() { return boss; },
+    __debug: {
+      toWave(n) { waveIdx = Math.min(Math.max(n, 1), CONFIG.waves.length) - 1; startWave(waveIdx); },
+      god(on) { if (hero) hero.godMode = !!on; },
+      killBoss() { if (boss && boss.alive) boss.hp = 0; },
+    },
   };
   return api;
 })();
