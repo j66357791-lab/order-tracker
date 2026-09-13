@@ -104,7 +104,7 @@
         <div class="title">✨ 魔法翻翻乐</div>
         <span class="act-time" id="actTime"></span>
       </div>
-      <button class="btn-back" onclick="location.href='/writer.html'">退出</button>
+      <button class="btn-back" onclick="location.href='/writer.html?tab=game'">退出</button>
     </div>
     <div class="inv" id="invBar"></div>
     <div class="task-bar">
@@ -206,7 +206,7 @@ async function refresh(){
     $('pageHome').classList.add('hidden');
     $('pageGame').classList.add('hidden');
     $('pageShop').classList.add('hidden');
-    document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;text-align:center;padding:20px"><div style="font-size:64px;margin-bottom:20px">🔧</div><h2>活动维护中</h2><p style="opacity:.8;margin-top:10px">活动正在升级优化，稍后再来玩吧~</p><button class="btn" style="margin-top:20px;background:#fff;color:#667eea" onclick="location.href='/writer.html'">返回</button></div>`;
+    document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;text-align:center;padding:20px"><div style="font-size:64px;margin-bottom:20px">🔧</div><h2>活动维护中</h2><p style="opacity:.8;margin-top:10px">活动正在升级优化，稍后再来玩吧~</p><button class="btn" style="margin-top:20px;background:#fff;color:#667eea" onclick="location.href='/writer.html?tab=game'">返回</button></div>`;
     return;
   }
   render();
