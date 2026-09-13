@@ -249,3 +249,19 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 
 /* 顶栏排行榜图标 */
 .tb-rank { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.3); border: 1px solid rgba(160,140,100,.3); display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer; }
+
+/* 关卡标题横条 */
+.stage-title-bar { position: relative; display: inline-block; margin-bottom: 10px; }
+.stage-title-bar img { width: 240px; display: block; }
+.stage-title-bar span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font: 900 18px "STKaiti", serif; color: #f0e8d0; letter-spacing: 4px; white-space: nowrap; }
+
+/* 关卡等级小框 */
+.stage-level-badge { display: inline-block; background: rgba(42,90,74,.9); color: #f0e8d0; font: 12px "PingFang SC", sans-serif; padding: 4px 16px; border-radius: 12px; margin: 8px 0; letter-spacing: 2px; }
+
+/* 星星PNG */
+.stage-stars { display: flex; gap: 6px; justify-content: center; margin: 8px 0; }
+.stage-stars img { width: 24px; height: 24px; }
+.stage-stars img:nth-child(2), .stage-stars img:nth-child(3) { opacity: .3; }
+
+/* 主视觉盆景山（透明无框） */
+.stage-img { width: 200px; max-height: 220px; object-fit: contain; }
