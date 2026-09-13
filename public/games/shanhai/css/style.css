@@ -269,3 +269,47 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 
 /* 主视觉盆景山（透明无框） */
 .stage-img { width: 200px; max-height: 220px; object-fit: contain; }
+
+/* ==================== 【2026-09-14】斩妖录·贰 装备页 ==================== */
+.grow-cur { display: flex; gap: 10px; margin: 4px 0 10px; }
+.cur-chip { flex: 1; text-align: center; padding: 8px 0; border-radius: 10px; font-size: 13px; color: #E8DCC8; background: rgba(0,0,0,.28); border: 1px solid rgba(212,184,122,.25); }
+.cur-chip b { font-size: 16px; margin-left: 4px; color: #ffd76a; }
+.cur-chip.lingqi b { color: #9ad9ff; }
+.cur-chip i { font-style: normal; margin-right: 2px; }
+.cur-chip.xianyu i { color: #ffd76a; }
+.cur-chip.lingqi i { color: #9ad9ff; }
+.tb-currency.lingqi .lq-ico { color: #9ad9ff; }
+.tb-currency.lingqi b { color: #cfeaff; }
+
+.equip-layout { display: flex; gap: 10px; align-items: stretch; margin: 10px 0; }
+.eq-col { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+.eq-slot { background: rgba(0,0,0,.30); border: 1px solid rgba(212,184,122,.30); border-radius: 12px; padding: 10px 8px; text-align: center; cursor: pointer; transition: all .15s; min-height: 58px; }
+.eq-slot i { display: block; font-style: normal; font-size: 11px; color: #A89878; letter-spacing: 3px; margin-bottom: 5px; }
+.eq-slot .eq-name { display: block; font-size: 13px; font-weight: 700; }
+.eq-slot .eq-affix { display: block; font-size: 11px; color: #E8DCC8; opacity: .85; font-style: normal; margin-top: 2px; }
+.eq-slot.filled { background: rgba(61,44,20,.35); border-color: rgba(255,215,106,.55); box-shadow: 0 0 10px rgba(255,215,106,.12) inset; }
+.eq-slot.filled:hover { border-color: #ff9a3c; }
+.eq-center { flex: 1.1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(212,184,122,.10), rgba(0,0,0,.30) 70%); border-radius: 12px; border: 1px solid rgba(212,184,122,.18); padding: 6px; }
+.eq-center img { height: 120px; image-rendering: auto; filter: drop-shadow(0 4px 12px rgba(0,0,0,.5)); }
+.eq-power { margin-top: 6px; font-size: 13px; font-weight: 900; color: #ffd76a; letter-spacing: 2px; }
+
+.bag-sec { margin-top: 12px; }
+.bag-count { font-size: 11px; color: #A89878; margin-left: 6px; }
+.bag-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 8px 0 4px; }
+.bag-cell { background: rgba(0,0,0,.30); border: 1px solid rgba(120,110,90,.4); border-radius: 10px; padding: 8px 4px; text-align: center; cursor: pointer; transition: all .15s; min-height: 64px; overflow: hidden; }
+.bag-cell i { display: block; font-style: normal; font-size: 10px; color: #A89878; }
+.bag-cell b { display: block; font-size: 12px; font-weight: 700; margin: 3px 0 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bag-cell em { display: block; font-style: normal; font-size: 10px; color: #E8DCC8; opacity: .8; }
+.bag-cell.q-white { border-color: rgba(207,216,220,.5); }
+.bag-cell.q-green { border-color: rgba(142,240,160,.55); }
+.bag-cell.q-blue { border-color: rgba(142,207,240,.55); }
+.bag-cell.q-purple { border-color: rgba(201,160,255,.6); box-shadow: 0 0 8px rgba(201,160,255,.15) inset; }
+.bag-cell.q-gold { border-color: rgba(255,215,106,.7); box-shadow: 0 0 10px rgba(255,215,106,.25) inset; }
+.bag-cell:hover { transform: translateY(-2px); border-color: #ffd76a; }
+
+.star-i { width: 22px; height: 22px; margin: 0 2px; }
+.star-i.on { filter: drop-shadow(0 0 4px rgba(255,215,106,.8)); }
+
+.draw-pop { margin: 10px 0; padding: 10px 12px; border: 1px solid; border-radius: 10px; background: rgba(0,0,0,.3); font-size: 13px; color: #E8DCC8; animation: popin .35s ease; }
+.draw-pop small { display: block; margin-top: 4px; color: #A89878; }
+@keyframes popin { from { transform: scale(.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
