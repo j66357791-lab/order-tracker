@@ -437,5 +437,55 @@ const FX = (() => {
   };
 })();
 </script>
+
+<script>
+// ===== 【2026-09-14】游戏资源包下载（进入游戏页时自行提示，不再依赖写手端预载） =====
+(function () {
+  var KEY = 'fanfanle_cache_version', VER = 'v1.6-20260914';
+  if (localStorage.getItem(KEY) === VER) return;
+  var ASSETS = [
+    '/assets/game/bg_main.jpg',
+    '/assets/game/card_back.png', '/assets/game/card_front.png', '/assets/game/card_escape.png',
+    '/assets/game/icon_key.png', '/assets/game/icon_ball.png', '/assets/game/icon_frag.png',
+    '/assets/game/icon_revive.png', '/assets/game/bag_s.png', '/assets/game/bag_m.png', '/assets/game/bag_l.png',
+  ];
+  var m = document.createElement('div');
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = '<div style="background:linear-gradient(180deg,#2a1f4d,#1a1233);border:1px solid #ffd76a;border-radius:16px;padding:24px;max-width:320px;width:100%;text-align:center">'
+    + '<div style="font-size:40px;margin-bottom:10px">🪄</div>'
+    + '<h3 style="color:#ffd76a;font-size:17px;margin-bottom:10px">游戏资源包</h3>'
+    + '<p style="color:#cbb8ff;font-size:12px;line-height:1.6;margin-bottom:16px">下载本游戏美术资源（约 8MB），<br>完成后翻牌秒开、随时可玩不耗流量。</p>'
+    + '<div style="height:6px;background:rgba(255,255,255,.12);border-radius:99px;overflow:hidden;margin-bottom:6px">'
+    + '<div id="ffProgress" style="height:100%;width:0%;background:linear-gradient(90deg,#7c4dff,#ffd76a);transition:width .25s"></div></div>'
+    + '<div id="ffTip" style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:14px">等待开始…</div>'
+    + '<button id="ffGo" style="background:linear-gradient(135deg,#7c4dff,#6c3fd6);color:#fff;border:none;border-radius:10px;padding:11px 28px;font-size:14px;font-weight:700;cursor:pointer;margin-right:8px">立即下载</button>'
+    + '<button id="ffSkip" style="background:rgba(255,255,255,.1);color:#ccc;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:11px 20px;font-size:13px;cursor:pointer">暂不</button></div>';
+  document.body.appendChild(m);
+  function fin(ok) {
+    var t = document.getElementById('ffTip');
+    if (!t) return;
+    if (ok) { t.textContent = '下载完成！🎉'; localStorage.setItem(KEY, VER); setTimeout(function () { m.remove(); }, 1200); }
+    else t.textContent = '部分资源失败，游戏仍可正常玩';
+  }
+  document.getElementById('ffGo').onclick = async function () {
+    this.style.display = 'none';
+    document.getElementById('ffSkip').textContent = '后台下载中…';
+    var done = 0, fail = 0;
+    for (var i = 0; i < ASSETS.length; i++) {
+      try {
+        var r = await fetch(ASSETS[i]);
+        if (!r.ok) throw 0;
+        await r.blob();  // 消费响应体，确保写入HTTP缓存
+      } catch (e) { fail++; }
+      done++;
+      var p = document.getElementById('ffProgress'), tip = document.getElementById('ffTip');
+      if (p) p.style.width = Math.round(done / ASSETS.length * 100) + '%';
+      if (tip) tip.textContent = '下载中… ' + done + '/' + ASSETS.length;
+    }
+    fin(!fail);
+  };
+  document.getElementById('ffSkip').onclick = function () { m.remove(); };
+})();
+</script>
 </body>
 </html>
