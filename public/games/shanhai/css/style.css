@@ -1,0 +1,82 @@
+/* 山海斩妖录 M1 — UI 样式（国风深色） */
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #1A2330; }
+#game { display: block; width: 100vw; height: 100vh; touch-action: none; }
+
+/* —— HUD —— */
+.hud-top { position: fixed; top: 10px; left: 12px; right: 12px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+.hp-wrap, .exp-wrap { display: flex; align-items: center; gap: 8px; }
+.bar { height: 14px; border: 2px solid #14141A; background: #2A3340; border-radius: 4px; overflow: hidden; }
+.hp { width: min(260px, 40vw); }
+.hp > div { height: 100%; background: #4CAF50; transition: width .15s; }
+.exp { width: min(300px, 46vw); height: 8px; }
+.exp > div { height: 100%; background: #3EC9A0; transition: width .15s; }
+.hp-wrap span, .exp-wrap span, .stats span {
+  font: 12px/1 "SimHei", sans-serif; color: #E8DCC8; text-shadow: 1px 1px 2px #000;
+}
+.stats { display: flex; gap: 14px; margin-top: 2px; }
+
+#bossBar { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); width: min(420px, 70vw); display: none; text-align: center; pointer-events: none; }
+#bossBar span { font: bold 13px "SimHei", sans-serif; color: #FF9A70; text-shadow: 1px 1px 2px #000; }
+.boss { width: 100%; height: 10px; margin-top: 2px; }
+.boss > div { height: 100%; background: #E8503C; transition: width .1s; }
+
+#skillBar { position: fixed; bottom: 10px; left: 12px; display: flex; gap: 6px; pointer-events: none; flex-wrap: wrap; }
+.skill-chip { display: flex; align-items: center; gap: 4px; background: rgba(20,26,38,.82); border: 1px solid #D4875A66; border-radius: 6px; padding: 4px 8px; }
+.skill-chip .sk-ico { font-size: 14px; }
+.skill-chip .sk-name { font: 11px "SimHei", sans-serif; color: #E8DCC8; }
+.skill-chip .sk-lv { font: bold 11px "SimHei", sans-serif; color: #F4C03C; }
+.skill-chip.maxed { border-color: #F4C03C; }
+.skill-chip.maxed .sk-lv { color: #FFD24A; }
+
+/* —— 横幅 / toast —— */
+#banner { position: fixed; top: 22%; left: 0; right: 0; text-align: center; pointer-events: none; opacity: 0; transition: opacity .4s; }
+#bannerMain { font: bold 30px "SimHei", "Microsoft YaHei", sans-serif; color: #F0E8D0; text-shadow: 0 0 14px #D4875A, 2px 2px 4px #000; letter-spacing: 8px; }
+#bannerSub { font: 14px "SimHei", sans-serif; color: #D4875A; margin-top: 6px; text-shadow: 1px 1px 2px #000; }
+#toast { position: fixed; top: 30%; left: 0; right: 0; text-align: center; font: 15px "SimHei", sans-serif; color: #FF9A70; text-shadow: 1px 1px 3px #000; opacity: 0; transition: opacity .3s; pointer-events: none; }
+
+/* —— 摇杆 —— */
+#joystick { position: fixed; width: 120px; height: 120px; border: 2px solid rgba(232,220,200,.25); border-radius: 50%; display: none; pointer-events: none; }
+#joyKnob { position: absolute; left: 42px; top: 42px; width: 36px; height: 36px; background: rgba(212,135,90,.55); border: 2px solid rgba(232,220,200,.5); border-radius: 50%; }
+
+/* —— 弹层 —— */
+#overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(10, 14, 20, .78); z-index: 10; }
+.panel { background: #1E2635; border: 2px solid #D4875A; border-radius: 12px; padding: 28px 34px; text-align: center; box-shadow: 0 0 40px rgba(212,135,90,.25), 0 12px 40px rgba(0,0,0,.6); max-width: min(560px, 92vw); }
+.panel-title { font: bold 24px "SimHei", sans-serif; color: #F0E8D0; letter-spacing: 4px; margin-bottom: 10px; }
+.panel-title.dead { color: #E8503C; }
+.panel-title.win { color: #3EC9A0; }
+.panel-sub, .win-sub { font: 13px "SimHei", sans-serif; color: #9AA4B2; margin-bottom: 14px; }
+
+/* 标题 */
+.title-panel .game-logo { font: bold 44px "SimHei", "Microsoft YaHei", sans-serif; color: #F0E8D0; text-shadow: 0 0 24px #D4875A; letter-spacing: 12px; margin-bottom: 6px; }
+.game-sub { font: 11px Arial, sans-serif; color: #D4875A; letter-spacing: 5px; margin-bottom: 14px; }
+.title-desc { font: 13px/1.8 "SimHei", sans-serif; color: #C8C0B0; margin-bottom: 18px; }
+.ctrl-hint { font: 11px "SimHei", sans-serif; color: #6A7480; margin-top: 10px; }
+
+/* 三选一 */
+.choices { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.choice-card { width: 150px; background: #26303F; border: 2px solid #3A4858; border-radius: 10px; padding: 14px 10px; cursor: pointer; transition: all .15s; position: relative; }
+.choice-card:hover { border-color: #D4875A; transform: translateY(-4px); box-shadow: 0 8px 20px rgba(212,135,90,.3); }
+.ch-tag { display: inline-block; font: 10px "SimHei", sans-serif; color: #9AA4B2; border: 1px solid #4A5A6A; border-radius: 3px; padding: 1px 6px; margin-bottom: 8px; }
+.ch-tag.new { color: #3EC9A0; border-color: #3EC9A0; }
+.ch-tag.up { color: #F4C03C; border-color: #F4C03C; }
+.ch-icon { font-size: 30px; margin: 4px 0 8px; }
+.ch-name { font: bold 15px "SimHei", sans-serif; color: #F0E8D0; margin-bottom: 6px; }
+.ch-desc { font: 11px/1.6 "SimHei", sans-serif; color: #9AA4B2; }
+
+/* 结算 */
+.result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0 20px; }
+.result-grid div { background: #26303F; border-radius: 8px; padding: 10px 4px; }
+.result-grid i { display: block; font: 11px "SimHei", sans-serif; color: #6A7480; margin-bottom: 4px; font-style: normal; }
+.result-grid b { font: bold 18px "SimHei", sans-serif; color: #F0E8D0; }
+
+.btn { font: bold 16px "SimHei", sans-serif; color: #14141A; background: linear-gradient(180deg, #E8A05C, #D4875A); border: none; border-radius: 8px; padding: 12px 42px; cursor: pointer; letter-spacing: 6px; box-shadow: 0 4px 14px rgba(212,135,90,.4); }
+.btn:hover { filter: brightness(1.1); }
+.btn:active { transform: translateY(2px); }
+.hint { font: 11px/1.6 "SimHei", sans-serif; color: #6A7480; margin-top: 12px; }
+
+@media (max-width: 640px) {
+  .choice-card { width: 128px; }
+  .result-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  #bannerMain { font-size: 22px; letter-spacing: 4px; }
+}
