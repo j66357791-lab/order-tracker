@@ -13,6 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "bson": "^7.3.2",
     "express": "^4.22.2",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^6.21.0",
