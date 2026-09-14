@@ -1,9 +1,9 @@
 // routes/activity.js — 活动模块（签到 / 单单拆红包 / 月度活动）
 // 【2026-09-14v2 架构瘦身】从 server.js 抽出，行为不变
 // 挂载：require('./routes/activity')(app, { auth, getDb, cnDayStr, cnMonthStr, notify });
-const { ObjectId } = require('mongodb');
+import { ObjectId } from 'mongodb';
 
-module.exports = function mountActivity(app, { auth, getDb, cnDayStr, cnMonthStr, notify }) {
+export default function mountActivity(app, { auth, getDb, cnDayStr, cnMonthStr, notify }) {
 
 // ---- 每日签到 ----
 // GET /api/activity/checkin - 获取签到状态
@@ -114,11 +114,10 @@ app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
     const today = cnDayStr(new Date());
     // 检查是否已拆（终身一次：不限日期）
     // 【2026-09-14 修复】cardId 类型对齐（库里存 ObjectId，字符串查永远落空）+ 查重
-    const ObjectId = require('mongodb').ObjectId;
     const existing = await db.collection('redpacket_records').findOne({ userId, cardId: new ObjectId(String(cardId)) });
     if (existing) return res.status(400).json({ ok: false, error: '该订单已拆过红包，一个订单仅可拆一次' });
     // 检查订单状态
-    const card = await db.collection('cards').findOne({ _id: new (require('mongodb').ObjectId)(cardId), to: userId });
+    const card = await db.collection('cards').findOne({ _id: new ObjectId(cardId), to: userId });
     if (!card) return res.status(404).json({ ok: false, error: '订单不存在' });
     if (card.status !== '待打款') return res.status(400).json({ ok: false, error: '只有待打款状态的订单可拆红包' });
     // 【2026-09-14v2 修复】金额分层幸运档：用户反馈"金额异常/都一样"
