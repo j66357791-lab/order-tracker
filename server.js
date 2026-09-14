@@ -9,14 +9,15 @@ import multer from 'multer';
 import { Server } from 'socket.io';
 import { ObjectId, GridFSBucket } from 'mongodb';
 
-import { CONFIG, STATUSES } from './config.js';
+import { CONFIG } from './config.js';
 import { getDb } from './lib/db.js';
 import {
   JWT_SECRET, signToken, publicUser, auth, adminOnly,
   cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr,
-  sha256hex, captchaStore, verifyCaptcha,
+  sha256hex, captchaStore, verifyCaptcha, rnd, ymOf, toMin, cnTimeStr,
   cleanReplyTo, nextUid, assignUid, pairKey, makeNotify,
 } from './lib/core.js';
+import { STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FILE_LIMIT = 100 * 1024 * 1024;
@@ -43,16 +44,23 @@ const makeBucket = async () => { const db = await getDb(); gridBucket = gridBuck
 app.get('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, 'public/manifest.json')));
 app.get('/.well-known/assetlinks.json', (req, res) => res.sendFile(path.join(__dirname, 'public/.well-known/assetlinks.json')));
 
-// ---- 业务模块（顺序保持原版语义：核心表在鉴权后、活动中心在前） ----
-const ctx = { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt: (await import('bcryptjs')).default, gridBucket, makeBucket };
+// ---- 业务模块（activity 先挂：其导出的 unfreezeRedpackets 供 user/cards 打款链路使用） ----
+const activityMod = await import('./routes/activity.js');
+const unfreezeRedpackets = activityMod.unfreezeRedpackets;
+const contract = await import('./routes/misc.js');
+const bcrypt = (await import('bcryptjs')).default;
+const jwt = (await import('jsonwebtoken')).default;
+const ctx = { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket,
+  rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday,
+  CONTRACT_VERSION: contract.CONTRACT_VERSION, CONTRACT_TITLE: contract.CONTRACT_TITLE, CONTRACT_TEXT: contract.CONTRACT_TEXT,
+  unfreezeRedpackets };
+try {
+  activityMod.default(app, { auth, getDb, cnDayStr, cnMonthStr, notify, ObjectId, CONFIG, normalizeStatus });
+  console.log('[活动] 签到/红包/月度路由已挂载（routes/activity.js）');
+} catch (e) { console.error('[活动] 模块加载失败:', e.message); }
 (await import('./routes/orders.js')).default(ctx);
 (await import('./routes/user.js')).default(ctx);
 (await import('./routes/ads.js')).default(ctx);
-// 活动中心（签到/红包/月度）
-try {
-  (await import('./routes/activity.js')).default(app, { auth, getDb, cnDayStr, cnMonthStr, notify });
-  console.log('[活动] 签到/红包/月度路由已挂载（routes/activity.js）');
-} catch (e) { console.error('[活动] 模块加载失败:', e.message); }
 (await import('./routes/misc.js')).default(ctx);
 (await import('./routes/authx.js')).default(ctx);
 (await import('./routes/cards.js')).default(ctx);
@@ -67,6 +75,16 @@ try {
   (await import('./shanhai_game.js')).default(app, { auth, getDb });
   console.log('[游戏] 山海斩妖录模块已挂载');
 } catch (e) { console.error('[游戏] 山海加载失败:', e.message); }
+
+
+// —— uid 补齐迁移（旧账号无 uid 时分配）——
+(async () => {
+  try {
+    const db = await getDb();
+    const miss = await db.collection('users').find({ uid: null }).limit(50).toArray();
+    for (const u of miss) await assignUid(db, u._id);
+  } catch (e) { console.error('uid补齐失败:', e.message); }
+})();
 
 // ---- 兜底与启动 ----
 app.use((req, res) => res.status(404).json({ ok: false, error: '接口不存在' }));
