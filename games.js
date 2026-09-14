@@ -7,7 +7,7 @@
 //   3) 每个用户同时只能有一局进行中（partial unique index 强制）
 //   4) 关键动作写 game_logs 审计流水
 
-module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
+export default function mountGames(app, { auth, getDb, cnDayStr }) {
 
   // ==================== 活动配置（运营改这里即可） ====================
   const ACTIVITY = {
@@ -211,7 +211,7 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
     const doc = { userId: req.user.id, status: 'playing', wave: 1, round: 1, pot, revivesUsed: 0, pendingEscape: false, createdAt: new Date(), updatedAt: new Date() };
     try {
       const s = await db.collection('game_sessions').insertOne(doc);
-      await log(db, req.user.id, 'start', { sessionId: s.insertedId });
+      log(db, req.user.id, 'start', { sessionId: s.insertedId }).catch(() => {});
       res.json({ ok: true, session: { wave: 1, round: 1, pot, revivesUsed: 0, waveDone: false, table: tablePublic(1, 1) }, keys: p.keys });
     } catch (e) {
       // 并发开局撞唯一索引 → 退回钥匙
@@ -264,7 +264,7 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
       upd = { $set: { pot, round: s.round + 1, updatedAt: new Date() } };
     }
     await db.collection('game_sessions').updateOne({ _id: s._id }, upd);
-    await log(db, req.user.id, 'reward', { wave: s.wave, round: s.round, got: reward });
+    log(db, req.user.id, 'reward', { wave: s.wave, round: s.round, got: reward }).catch(() => {});   // 【v3】日志异步化，响应不再等 Atlas 写日志
     const nextRound = waveDone ? s.round : s.round + 1;
     res.json({
       ok: true, escaped: false, got: reward, pot, waveDone, finished,
