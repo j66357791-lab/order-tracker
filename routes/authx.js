@@ -1,0 +1,324 @@
+// routes/authx.js — 初始化/认证/邀请/团队/聊天/文件
+// 【2026-09-14 ES6 重构】自 server.js 原样迁出，行为不变
+import { ObjectId } from 'mongodb';
+
+export default function mount(ctx) {
+  const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket } = ctx;
+// ---------- 初始化：创建管理员（仅当没有任何账号时） ----------
+app.get('/api/setup/state', async (req, res) => {
+  try {
+    const db = await getDb();
+    const n = await db.collection('users').countDocuments();
+    res.json({ ok: true, needsSetup: n === 0 });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/setup', async (req, res) => {
+  try {
+    const db = await getDb();
+    const n = await db.collection('users').countDocuments();
+    if (n > 0) return res.status(400).json({ ok: false, error: '系统已初始化，请直接登录' });
+    const { username, password, displayName } = req.body || {};
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username || '')) return res.status(400).json({ ok: false, error: '用户名限3-20位字母数字下划线' });
+    if (!password || String(password).length < 6) return res.status(400).json({ ok: false, error: '密码至少6位' });
+    const doc = {
+      username, passwordHash: await bcrypt.hash(String(password), 8),
+      displayName: String(displayName || username).slice(0, 20), role: 'admin',
+      shift: false, sockOnline: false, email: '', createdAt: new Date(),
+    };
+    const r = await db.collection('users').insertOne(doc);
+    await assignUid(db, r.insertedId);
+    res.json({ ok: true, token: signToken({ _id: r.insertedId, role: 'admin' }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 登录 / 注册（写手凭邀请码） ----------
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { username, password, passwordPlain } = req.body || {};
+    const u = await db.collection('users').findOne({ username: String(username || '') });
+    // 新体系：前端SHA-256预哈希；旧用户：前端同时带上原文，验证通过后静默升级为哈希体系
+    const okNew = u && await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false);
+    const okLegacy = !okNew && u && passwordPlain && await bcrypt.compare(String(passwordPlain), u.passwordHash).catch(() => false);
+    if (!u || (!okNew && !okLegacy)) {
+      return res.status(401).json({ ok: false, error: '用户名或密码错误' });
+    }
+    if (okLegacy) {
+      // 静默升级：换成SHA-256预哈希存储，此后登录不再传输明文
+      await db.collection('users').updateOne({ _id: u._id }, { $set: { passwordHash: await bcrypt.hash(String(password), 8) } }).catch(() => {});
+    }
+    res.json({ ok: true, token: signToken(u), user: publicUser(u) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { inviteCode, username, password, displayName, email } = req.body || {};
+    const inv = await db.collection('invites').findOne({ code: String(inviteCode || '').trim().toUpperCase() });
+    if (!inv || inv.usedBy) return res.status(400).json({ ok: false, error: '邀请码无效或已被使用' });
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username || '')) return res.status(400).json({ ok: false, error: '用户名限3-20位字母数字下划线' });
+    if (!password || String(password).length < 6) return res.status(400).json({ ok: false, error: '密码至少6位' });
+    if (!req.body?.agree) return res.status(400).json({ ok: false, error: '请先阅读并同意《兼职写手合作签约协议》' });
+    const capErr = verifyCaptcha(req);
+    if (capErr) return res.status(400).json({ ok: false, error: capErr });
+    const exists = await db.collection('users').findOne({ username });
+    if (exists) return res.status(400).json({ ok: false, error: '用户名已被占用' });
+    const doc = {
+      username, passwordHash: await bcrypt.hash(String(password), 8),
+      displayName: String(displayName || username).slice(0, 20), role: 'writer',
+      shift: false, sockOnline: false, email: String(email || '').slice(0, 60),
+      level: 0, createdAt: new Date(),
+    };
+    const r = await db.collection('users').insertOne(doc);
+    const myUid = await assignUid(db, r.insertedId);
+    // 注册即签署合作协议
+    await db.collection('contracts').insertOne({ userId: r.insertedId.toString(), name: doc.displayName, uid: myUid, displayName: doc.displayName, version: CONTRACT_VERSION, title: CONTRACT_TITLE, signedAt: new Date(), source: 'register' });
+    // 欢迎站内信
+    await db.collection('announcements').insertOne({
+      title: '👋 欢迎加入写手大家庭！', targets: [r.insertedId.toString()], readBy: [], createdAt: new Date(),
+      content: `你好呀，${doc.displayName}！\n\n欢迎加入平台，这里有一份快速上手指南：\n\n① 去「工作台」看看待完成的单子，点「接单」开始赚第一笔；\n② 接单前记得先完成「实名认证」（我的-实名认证），否则接不了单哦；\n③ 「我的-钱包」里绑定收款方式（需与实名一致），审核通过后管理员会打款给你；\n④ 考勤页可以抢班、打卡，等级 LV1 有每月 1.5% 的激励奖励；\n⑤ 有问题随时在「聊天」里联系管理员，或留意顶部 ✉ 站内信通知。\n\n祝你接单顺利，稿费满满！`,
+    });
+    await db.collection('invites').updateOne({ _id: inv._id }, { $set: { usedBy: r.insertedId.toString(), usedAt: new Date() } });
+    res.json({ ok: true, token: signToken({ _id: r.insertedId, role: 'writer' }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/me', auth, (req, res) => res.json({ ok: true, user: req.user }));
+
+// ---------- 邀请码（管理员） ----------
+app.post('/api/invites', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const n = Math.max(1, Math.min(20, Number(req.body?.count) || 1));
+    const docs = [];
+    for (let i = 0; i < n; i++) {
+      docs.push({ code: 'W' + crypto.randomBytes(4).toString('hex').toUpperCase(), usedBy: null, createdAt: new Date() });
+    }
+    await db.collection('invites').insertMany(docs);
+    res.json({ ok: true, invites: docs });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/invites', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const invites = await db.collection('invites').find({}).sort({ createdAt: -1 }).limit(100).toArray();
+    res.json({ ok: true, invites });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 团队 / 在班打卡 ----------
+app.get('/api/team', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const users = await db.collection('users').find({ role: 'writer' }).sort({ createdAt: 1 }).toArray();
+    res.json({ ok: true, users: users.map(publicUser) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/shift', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const shift = !!req.body?.shift;
+    await db.collection('users').updateOne({ _id: req.user._id }, { $set: { shift } });
+    io.emit('presence', { userId: req.user.id, shift, sockOnline: true });
+    res.json({ ok: true, shift });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 聊天 ----------
+// 会话列表：管理员=全部写手（含未读/最后一条）；写手=和管理员的会话
+app.get('/api/chats', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    if (req.user.role === 'admin') {
+      const writers = await db.collection('users').find({ role: 'writer' }).sort({ createdAt: 1 }).toArray();
+      const list = [];
+      for (const w of writers) {
+        const conv = pairKey(req.user.id, w._id.toString());
+        const last = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: -1 }).limit(1).toArray();
+        const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
+        list.push({ user: publicUser(w), unread, last: last[0] || null });
+      }
+      return res.json({ ok: true, chats: list });
+    }
+    // 写手：会话对象=管理员 + 好友（同事）
+    const admins = await db.collection('users').find({ role: 'admin' }).toArray();
+    const me = await db.collection('users').findOne({ _id: new ObjectId(req.user.id) });
+    const friendIds = (me.friends || []).filter(x => ObjectId.isValid(x) && x !== req.user.id);
+    const friends = friendIds.length ? await db.collection('users').find({ _id: { $in: friendIds.map(x => new ObjectId(x)) } }).toArray() : [];
+    const list = [];
+    for (const a of [...admins, ...friends]) {
+      const conv = pairKey(req.user.id, a._id.toString());
+      const last = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: -1 }).limit(1).toArray();
+      const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
+      list.push({ user: publicUser(a), unread, last: last[0] || null });
+    }
+    list.sort((x, y) => (y.last?.createdAt || y.user.createdAt || 0) - (x.last?.createdAt || x.user.createdAt || 0));
+    res.json({ ok: true, chats: list });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 消息列表（自动标已读 + 通知发送方更新已读水印）
+app.get('/api/messages', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const peer = String(req.query.peer || '');
+    if (!ObjectId.isValid(peer)) return res.status(400).json({ ok: false, error: '无效会话' });
+    const conv = pairKey(req.user.id, peer);
+    const msgs = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: 1 }).limit(500).toArray();
+    const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
+    if (unread) {
+      await db.collection('messages').updateMany({ conversation: conv, to: req.user.id, read: false }, { $set: { read: true } });
+      msgs.forEach(m => { if (m.to === req.user.id) m.read = true; });
+      notify(peer, 'msg_read', { peer: req.user.id });   // 让对方刷新已读水印
+    }
+    res.json({ ok: true, messages: msgs });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 撤回消息（2分钟内、仅本人）
+app.post('/api/messages/recall', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const id = String(req.body?.id || '');
+    if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: '参数无效' });
+    const m = await db.collection('messages').findOne({ _id: new ObjectId(id) });
+    if (!m || m.from !== req.user.id) return res.status(404).json({ ok: false, error: '消息不存在' });
+    if (m.recalled) return res.json({ ok: true });
+    if (Date.now() - new Date(m.createdAt).getTime() > 2 * 60 * 1000) return res.status(400).json({ ok: false, error: '超过2分钟，不能撤回了' });
+    await db.collection('messages').updateOne({ _id: m._id }, { $set: { recalled: true, text: '', fileId: null, fileName: null, cardId: null } });
+    const updated = { ...m, recalled: true, text: '' };
+    notify(m.to, 'msg_recall', { id, conversation: m.conversation });
+    res.json({ ok: true, message: updated });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 清空聊天记录（双方会话消息全部删除）
+app.delete('/api/messages', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const peer = String(req.query.peer || '');
+    if (!ObjectId.isValid(peer)) return res.status(400).json({ ok: false, error: '无效会话' });
+    const conv = pairKey(req.user.id, peer);
+    const r = await db.collection('messages').deleteMany({ conversation: conv });
+    res.json({ ok: true, deleted: r.deletedCount });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 工作台统计 ----------
+app.get('/api/workbench', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const ym = /^\d{4}-\d{2}$/.test(String(req.query.ym || '')) ? String(req.query.ym) : ymOf(cnNow());
+    const start = new Date(ym + '-01T00:00:00+08:00');
+    const endDate = (() => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 1, 0, 0, 0) - 8 * 3600 * 1000) })();
+    const monthCards = await db.collection('cards').find({ to: req.user.id, createdAt: { $gte: start, $lt: endDate } }).toArray();
+    const allCards = await db.collection('cards').find({ to: req.user.id }).toArray();
+    const pendingCount = allCards.filter(c => ['待接单', '已接单', '待审核'].includes(c.status)).length;
+    const monthAccepted = Math.round(monthCards.filter(c => c.status !== '已拒绝').reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
+    const pendingPay = Math.round(allCards.filter(c => c.status === '待打款').reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
+    const cnDay = d => cnDateStr(new Date(new Date(d).getTime() + 8 * 3600 * 1000)).slice(0, 10);
+    const daily = {};
+    monthCards.forEach(c => {
+      if (c.status === '已拒绝') return;
+      const d = cnDay(c.createdAt);
+      (daily[d] = daily[d] || { date: d, accepted: 0, acceptedCount: 0, completed: 0, completedCount: 0 });
+      daily[d].accepted += (c.reward || 0); daily[d].acceptedCount++;
+      if (c.status === '已完成' && c.paidAt) {
+        const pd = cnDay(c.paidAt);
+        if (pd.startsWith(ym)) {
+          (daily[pd] = daily[pd] || { date: pd, accepted: 0, acceptedCount: 0, completed: 0, completedCount: 0 });
+          daily[pd].completed += (c.reward || 0); daily[pd].completedCount++;
+        }
+      }
+    });
+    res.json({ ok: true, ym, pendingCount, monthAccepted, pendingPay, daily: Object.values(daily).sort((a, b) => a.date.localeCompare(b.date)) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 发文字消息
+app.post('/api/messages', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const peer = String(req.body?.peer || '');
+    const text = String(req.body?.text || '').slice(0, 2000).trim();
+    if (!ObjectId.isValid(peer)) return res.status(400).json({ ok: false, error: '无效会话' });
+    const target = await db.collection('users').findOne({ _id: new ObjectId(peer) });
+    if (!target) return res.status(404).json({ ok: false, error: '对方不存在' });
+    // 权限：管理员可和所有人聊；写手之间需互为好友（同事）
+    if (req.user.role !== 'admin' && target.role !== 'admin') {
+      const me = await db.collection('users').findOne({ _id: new ObjectId(req.user.id), friends: peer });
+      if (!me) return res.status(403).json({ ok: false, error: '只能和管理员或已添加的同事聊天' });
+    }
+    if (!text) return res.status(400).json({ ok: false, error: '消息不能为空' });
+    const msg = {
+      conversation: pairKey(req.user.id, peer),
+      from: req.user.id, fromName: req.user.displayName, to: peer,
+      type: 'text', text, replyTo: cleanReplyTo(req.body?.replyTo), read: false, createdAt: new Date(),
+    };
+    const r = await db.collection('messages').insertOne(msg);
+    msg._id = r.insertedId;
+    notify(peer, 'msg', msg); notify(req.user.id, 'msg', msg);
+    res.json({ ok: true, message: msg });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 上传文件（≤25MB，任意格式，存数据库 GridFS）
+app.post('/api/files', auth, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ ok: false, error: '没有文件' });
+    // multer/busboy 用 latin1 解码文件名，中文会乱码，转回 utf8
+    try { req.file.originalname = Buffer.from(req.file.originalname, 'latin1').toString('utf8'); } catch (e) {}
+    const peer = String(req.body?.peer || '');
+    if (!ObjectId.isValid(peer)) return res.status(400).json({ ok: false, error: '无效会话' });
+    const db = await getDb();
+    const bucket = new GridFSBucket(db);
+    const meta = { from: req.user.id, to: peer, fileName: req.file.originalname };
+    const uploadStream = bucket.openUploadStream(req.file.originalname, {
+      contentType: req.file.mimetype || 'application/octet-stream', metadata: meta,
+    });
+    await new Promise((resolve, reject) => {
+      uploadStream.end(req.file.buffer, (err) => err ? reject(err) : resolve());
+    });
+    res.json({ ok: true, fileId: uploadStream.id.toString(), fileName: req.file.originalname, fileSize: req.file.size });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 下载文件（会话双方可下；支持 ?token= 供浏览器直接打开）
+app.get('/api/files/:id/download', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const bucket = new GridFSBucket(db);
+    const files = await bucket.find({ _id: new ObjectId(req.params.id) }).limit(1).toArray();
+    const f = files[0];
+    if (!f) return res.status(404).json({ ok: false, error: '文件不存在' });
+    const meta = f.metadata || {};
+    if (req.user.role !== 'admin' && meta.from !== req.user.id && meta.to !== req.user.id) {
+      return res.status(403).json({ ok: false, error: '无权访问该文件' });
+    }
+    const inline = String(req.query.inline) === '1';
+    res.setHeader('Content-Type', f.contentType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', (inline ? 'inline' : 'attachment') + "; filename*=UTF-8''" + encodeURIComponent(f.filename));
+    bucket.openDownloadStream(f._id).pipe(res);
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 发文件消息（文件先传 /api/files，再发这条）
+app.post('/api/messages/file', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const peer = String(req.body?.peer || '');
+    const fileId = String(req.body?.fileId || '');
+    const fileName = String(req.body?.fileName || '文件').slice(0, 120);
+    const fileSize = Number(req.body?.fileSize) || 0;
+    if (!ObjectId.isValid(peer) || !ObjectId.isValid(fileId)) return res.status(400).json({ ok: false, error: '参数无效' });
+    const target = await db.collection('users').findOne({ _id: new ObjectId(peer) });
+    if (!target) return res.status(404).json({ ok: false, error: '对方不存在' });
+    // 权限：管理员可和所有人聊；写手之间需互为好友（同事）
+    if (req.user.role !== 'admin' && target.role !== 'admin') {
+      const me = await db.collection('users').findOne({ _id: new ObjectId(req.user.id), friends: peer });
+      if (!me) return res.status(403).json({ ok: false, error: '只能和管理员或已添加的同事聊天' });
+    }
+    const msg = {
+      conversation: pairKey(req.user.id, peer),
+      from: req.user.id, fromName: req.user.displayName, to: peer,
+      type: 'file', fileId, fileName, fileSize, replyTo: cleanReplyTo(req.body?.replyTo), read: false, createdAt: new Date(),
+    };
+    const r = await db.collection('messages').insertOne(msg);
+    msg._id = r.insertedId;
+    notify(peer, 'msg', msg); notify(req.user.id, 'msg', msg);
+    res.json({ ok: true, message: msg });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+}
