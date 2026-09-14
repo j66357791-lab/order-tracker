@@ -483,7 +483,7 @@
         <div class="act-panel" id="atRp">
           <div class="act-card" style="margin:0">
             <h3>🧧 单单拆红包</h3>
-            <div style="font-size:12px;color:var(--sub);margin-bottom:10px">审核通过的订单可拆红包，金额=订单×1%~10%，订单打款后解冻</div>
+            <div style="font-size:12px;color:var(--sub);margin-bottom:10px">审核通过的订单可拆现金红包，金额=订单×1%~10%；一个订单终身只能拆一次，拆得金额先冻结，关联订单完结后自动解冻进钱包</div>
             <div id="rpList"></div>
             <div id="rpFrozen"></div>
           </div>
@@ -538,7 +538,7 @@
           <div class="ti">🎖️</div><div class="tt" id="lvTileName">试用期写手</div><div class="ts" id="lvTileSub">点看升级进度</div>
         </div>
         <div class="tile tap" onclick="openSub('subWallet','👛 钱包')">
-          <div class="ti">👛</div><div class="tt" id="walletTileAmt">¥--</div><div class="ts">钱包余额 · 提现</div>
+          <div class="ti">👛</div><div class="tt" id="walletTileAmt">¥--</div><div class="ts" id="walletTileSub">钱包总金额 · 提现</div>
         </div>
         <div class="tile tap" onclick="openSub('subPay','💵 薪酬结算')">
           <div class="ti">💵</div><div class="tt" id="payTileAmt">¥--</div><div class="ts">月度结算 · 走势</div>
@@ -1542,7 +1542,9 @@ async function loadWallet() {
     ME.level = j.level; paintMeExtras().catch(()=>{});
     $('lvTileName').textContent = LVNAMES[j.level] || ('LV' + j.level);
     $('lvTileSub').textContent = j.level >= 1 ? '已解锁奖励权益' : '点看升级进度';
-    $('walletTileAmt').textContent = '¥' + fmt(j.balance);
+    // 【2026-09-14 需求】钱包磁贴展示总金额（含待解冻红包）
+    $('walletTileAmt').textContent = '¥' + fmt(j.total != null ? j.total : j.balance);
+    if ($('walletTileSub')) $('walletTileSub').textContent = (j.frozenAmount || 0) > 0 ? '钱包总额 · ¥' + fmt(j.frozenAmount) + ' 待解冻' : '钱包总额 · 提现';
     $('wdBonusAmt').textContent = '¥' + fmt(j.balance);
     const pct = Math.min(100, Math.round(j.stats.paid / j.lv1Paid * 100));
     $('lvBox').innerHTML = `
@@ -1559,10 +1561,15 @@ async function loadWallet() {
       ${j.grants.length ? '<div style="margin-top:10px"><div style="font-size:12px;color:var(--sub);margin-bottom:5px">发放记录</div>' + j.grants.map(g => `<div class="kv"><span class="k">${g.month}</span><span class="v">+¥${fmt(g.amount)}${g.note ? ' <span style="color:var(--sub)">（' + g.note + '）</span>' : (g.base ? ' <span style="color:var(--sub)">（基数 ¥' + fmt(g.base) + '）</span>' : '')}</span></div>`).join('') + '</div>' : ''}`;
     $('walletBox').innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;padding:6px 2px 12px">
-        <div style="font-size:13px;color:var(--sub)">👛 钱包余额（激励奖励）</div>
+        <div style="font-size:13px;color:var(--sub)">👛 钱包总金额（激励奖励 + 红包）</div>
         <div style="flex:1"></div>
-        <div style="font-size:26px;font-weight:700;color:var(--amber)">¥${fmt(j.balance)}</div>
+        <div style="font-size:26px;font-weight:700;color:var(--amber)">¥${fmt(j.total != null ? j.total : j.balance)}</div>
       </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <div class="kv" style="flex:1;min-width:150px"><span class="k">可提余额</span><span class="v">¥${fmt(j.balance)}</span></div>
+        <div class="kv" style="flex:1;min-width:150px"><span class="k">待解冻（红包）</span><span class="v">${j.frozenAmount > 0 ? '<b style="color:var(--amber)">¥' + fmt(j.frozenAmount) + '</b>' : '¥0'}</span></div>
+      </div>
+      ${(j.frozenAmount || 0) > 0 ? `<div class="flow-tip">其中 ¥${fmt(j.frozenAmount)} 来自现金红包，关联订单完结后自动解冻入账（冻结中 ${j.frozen.length} 笔：${j.frozen.map(f => '¥' + fmt(f.amount)).join('、')}）。</div>` : ''}
       ${j.level >= 1 ? '' : '<div class="flow-tip">升到 LV1 初级写手后，每月自动发放等级奖励到这里。</div>'}`;
   } catch (e) { toast(e.message); }
 }
@@ -1570,7 +1577,7 @@ async function loadWithdraw() {
   try {
     const j = await authFetch('/api/withdraw');
     $('wdList').innerHTML = j.rows.length ? '<div style="font-size:12px;color:var(--sub);margin-bottom:5px">提现记录</div>' +
-      j.rows.map(w => `<div class="kv"><span class="k">${new Date(new Date(w.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 10).replace('-', '/')} ${w.type === 'bonus' ? '激励奖励' : '单子奖励'}</span><span class="v">¥${fmt(w.amount)} · ${w.status === '待处理' ? '<b style="color:var(--amber)">待处理</b>' : esc(w.status)}</span></div>`).join('') : '';
+      j.rows.map(w => `<div class="kv"><span class="k">${new Date(new Date(w.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 10).replace('-', '/')} ${w.type === 'bonus' ? '激励奖励' : '单子奖励'}</span><span class="v">¥${fmt(w.amount)} · ${w.status === '待处理' ? '<b style="color:var(--amber)">待处理</b>' : esc(w.status)}${w.reason ? ' <span style="color:#e11d48">（' + esc(w.reason) + '）</span>' : ''}</span></div>`).join('') : '<div class="empty" style="padding:12px;text-align:center">暂无提现记录</div>';
   } catch (e) {}
 }
 async function applyWithdraw(type) {
@@ -2124,7 +2131,7 @@ async function loadRedpacket() {
     const j = await authFetch('/api/activity/redpacket');
     const list = $('rpList'); if(!list) return;
     if (j.available.length === 0) {
-      list.innerHTML = '<div class="empty" style="padding:16px;text-align:center">今日暂无待拆红包的订单</div>';
+      list.innerHTML = '<div class="empty" style="padding:16px;text-align:center">暂无待拆红包的订单（审核通过后会出现这里）</div>';
     } else {
       list.innerHTML = j.available.map(c =>
         '<div class="rp-item"><div class="rp-icon">🧧</div><div class="rp-info"><div class="rp-title">'+esc(c.title)+'</div><div class="rp-reward">订单金额 ¥'+c.reward+'</div></div><button class="rp-btn" onclick="openRp(\''+c.cardId+'\')">拆红包</button></div>'
@@ -2133,7 +2140,8 @@ async function loadRedpacket() {
     const fr = $('rpFrozen');
     if (fr) {
       if (j.frozen.length > 0) {
-        fr.innerHTML = '<div style="font-size:12px;color:var(--sub);margin:8px 0 4px">冻结中：</div>' +
+        const frozenSum = Math.round(j.frozen.reduce((s, f) => s + f.amount, 0) * 100) / 100;
+        fr.innerHTML = '<div style="font-size:12px;color:var(--sub);margin:8px 0 4px">冻结中（合计 ¥'+frozenSum+'，订单完结后自动解冻入账）：</div>' +
           j.frozen.map(f => '<div class="rp-frozen">⏳ '+esc(f.title)+' · ¥'+f.amount+'</div>').join('');
       } else fr.innerHTML = '';
     }
