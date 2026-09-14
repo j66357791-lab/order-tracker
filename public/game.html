@@ -283,23 +283,42 @@ function renderCards(){
       <div class="card-face card-front-face" id="face${i}"></div>
     </div></div>`).join('');
 }
+function unlockCards(){
+  document.querySelectorAll('.card').forEach(c => c.classList.remove('disabled'));
+  const hasModal = $('modalRoot') && $('modalRoot').innerHTML.trim() !== '';
+  if (!hasModal) document.querySelectorAll('.card.open').forEach(c => c.classList.remove('open'));
+}
 async function flip(idx){
-  if (FLIPPING) return;          // 【2026-09-14 修复】连点锁：请求进行中禁止二次翻牌
+  if (FLIPPING) return;          // 连点锁：请求进行中禁止二次翻牌
   FLIPPING = true;
   try{
-    const r = await api('/api/game/flip',{method:'POST'});
     const face = $('face'+idx);
+    // 【2026-09-14v3 体验修复】乐观翻开：请求期间卡面立即给"翻牌中"反馈，不再全灰干等
+    document.querySelectorAll('.card').forEach(c=>c.classList.add('disabled'));
+    $('card'+idx).classList.add('open');
+    face.innerHTML = `<div class="prize-txt">翻牌中…</div>`;
+    let r;
+    try { r = await api('/api/game/flip',{method:'POST'}); }
+    catch (e) { $('card'+idx).classList.remove('open'); face.innerHTML = ''; throw e; }
     if (r.escaped){
       face.innerHTML = `<img class="bg" src="/assets/game/card_escape.png"><div class="prize-txt">奖励逃跑了！</div>`;
     } else {
-      face.innerHTML = `<img class="bg" src="https://sfile.chatglm.cn/workspace/image/cf/cfcd8c50c5.png"><img class="prize" src="${ICO[r.got.type]}"><div class="prize-txt">${CN[r.got.type]} ×${r.got.n}</div>`;
+      face.innerHTML = `<img class="bg" src="/assets/game/card_front.png"><img class="prize" src="${ICO[r.got.type]}"><div class="prize-txt">${CN[r.got.type]} ×${r.got.n}</div>`;
     }
-    document.querySelectorAll('.card').forEach(c=>c.classList.add('disabled'));
-    $('card'+idx).classList.add('open');
-    r.escaped ? FX.poof($('card'+idx)) : FX.burst($('card'+idx));
-    setTimeout(()=> onFlipResult(r), 750);
+    try { FX && (r.escaped ? FX.poof($('card'+idx)) : FX.burst($('card'+idx))); } catch (e2) { console.warn('FX', e2); }
+    setTimeout(()=> onFlipResult(r), 320);   // 【v3】Atlas 网络往返已占大头，动画等待 750→320ms
+    setTimeout(()=>{   // 【v2加固】看门狗：恢复链若因任何原因断裂，2.5s后自动救回，杜绝"必须退出重进"
+      const cards = document.querySelectorAll('.card');
+      const hasModal = $('modalRoot') && $('modalRoot').innerHTML.trim() !== '';
+      if (cards.length && !hasModal && [...cards].every(c => c.classList.contains('disabled'))) {
+        console.warn('[看门狗] 卡牌僵死，自动恢复');
+        unlockCards();
+        if (!SESS || SESS.round === undefined) refresh();
+      }
+    }, 2500);
   }catch(e){
     FLIPPING = false;
+    unlockCards();
     toast(e.message);
     // 【2026-09-14 修复】自愈：会话卡在"逃跑待处理"（如刷新页面后直接点牌）→ 自动重建处理弹窗
     if (String(e.message).indexOf('逃跑') >= 0) { refresh().then(()=>{ if (STATE.session && STATE.session.pendingEscape) showEscapeModal(STATE.session); }); }
@@ -307,6 +326,9 @@ async function flip(idx){
 }
 async function onFlipResult(r){
   FLIPPING = false;              // 释放连点锁
+  try { await _onFlip(r); } catch (e) { console.error('onFlipResult', e); toast('界面恢复中…'); try { showGame(r.session || SESS); } catch (e3) { refresh(); } }
+}
+async function _onFlip(r){
   SESS = r.session || SESS;
   if (r.escaped){
     if (r.canRevive){
