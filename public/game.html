@@ -193,6 +193,7 @@ const WAVES = ['第一波','第二波','第三波'];
 
 let STATE = null;   // /api/game/state 结果
 let SESS = null;    // 当前对局
+let FLIPPING = false; // 【2026-09-14 修复】连点锁：一次翻牌请求未落地前禁止再翻
 
 function $(id){ return document.getElementById(id); }
 function toast(msg, ms=1800){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), ms); }
@@ -222,7 +223,7 @@ function render(){
   $('btnCompose').disabled = (STATE.bag.frags||0) < STATE.activity.composeFragCost;
   renderShop();
   const s = STATE.session;
-  if (s) { showGame(s); if (s.waveDone) showWaveDone(s.wave, s.pot); }
+  if (s) { showGame(s); if (s.waveDone) showWaveDone(s.wave, s.pot); else if (s.pendingEscape) showEscapeModal(s); }
 }
 function renderShop(){
   $('shopList').innerHTML = STATE.shop.map(it => it.enabled
@@ -283,6 +284,8 @@ function renderCards(){
     </div></div>`).join('');
 }
 async function flip(idx){
+  if (FLIPPING) return;          // 【2026-09-14 修复】连点锁：请求进行中禁止二次翻牌
+  FLIPPING = true;
   try{
     const r = await api('/api/game/flip',{method:'POST'});
     const face = $('face'+idx);
@@ -295,9 +298,15 @@ async function flip(idx){
     $('card'+idx).classList.add('open');
     r.escaped ? FX.poof($('card'+idx)) : FX.burst($('card'+idx));
     setTimeout(()=> onFlipResult(r), 750);
-  }catch(e){ toast(e.message); }
+  }catch(e){
+    FLIPPING = false;
+    toast(e.message);
+    // 【2026-09-14 修复】自愈：会话卡在"逃跑待处理"（如刷新页面后直接点牌）→ 自动重建处理弹窗
+    if (String(e.message).indexOf('逃跑') >= 0) { refresh().then(()=>{ if (STATE.session && STATE.session.pendingEscape) showEscapeModal(STATE.session); }); }
+  }
 }
 async function onFlipResult(r){
+  FLIPPING = false;              // 释放连点锁
   SESS = r.session || SESS;
   if (r.escaped){
     if (r.canRevive){
@@ -337,6 +346,24 @@ function showWaveDone(wave, pot, gotTxt){
 function fmtSettled(settled){
   if (!settled) return [];
   return Object.entries(settled).filter(([k,v]) => v > 0).map(([k,v]) => `${CN[k]||k} ×${v}`);
+}
+// 【2026-09-14 修复】逃跑待处理弹窗（页面刷新/重进后重建，根治"无法继续翻"）
+// s 可为 /api/game/state 的 session 对象，或翻牌响应中拼装的同结构
+function showEscapeModal(s){
+  if (!s) return;
+  SESS = s;
+  const quotaLeft = s.reviveQuotaLeft != null ? s.reviveQuotaLeft : 2;
+  const stones = (STATE && STATE.bag && STATE.bag.revives) || 0;
+  const canRevive = stones > 0 && quotaLeft > 0;
+  if (canRevive){
+    modal(`<img class="m-ico" src="https://sfile.chatglm.cn/workspace/image/21/2164971677.png"><h3>奖励逃跑了！</h3>
+      <p>本局暂存奖励将被清空。使用 1 颗复活石可抵消本次逃跑，重新翻牌。<br>本局还可复活 ${quotaLeft} 次（背包复活石 ${stones} 颗）</p>
+      <div class="m-btns"><button class="btn" onclick="doRevive()">复活并重翻</button><button class="btn btn-danger" onclick="doGiveup()">放弃本局</button></div>`);
+  } else {
+    modal(`<img class="m-ico" src="/assets/game/card_escape.png" style="border-radius:12px;width:120px;height:auto;"><h3>奖励逃跑了…</h3>
+      <p>复活石不足（${stones} 颗）或本局复活次数已用完，本局奖励已清空。</p>
+      <div class="m-btns"><button class="btn" onclick="doGiveup()">结束本局并返回</button></div>`);
+  }
 }
 function fmtPot(pot){
   if (!pot) return '空';
