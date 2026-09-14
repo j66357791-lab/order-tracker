@@ -6,7 +6,7 @@
 //   3) 独立集合 shanhai_profiles，不污染其他游戏数据
 // 【2026-09-14】养成层（斩妖录·贰）：仙玉/灵气双货币 + 6槽装备 + 背包 + 抽卡 + 技能强化
 
-module.exports = function mountShanhaiGame(app, { auth, getDb }) {
+export default function mountShanhaiGame(app, { auth, getDb }) {
 
   // ==================== 反作弊阈值（M1 第一关口径） ====================
   const LIMITS = {
