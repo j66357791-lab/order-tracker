@@ -290,7 +290,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .eq-slot.filled { background-image: linear-gradient(rgba(50,32,8,.62), rgba(50,32,8,.62)), url('../assets/eq-slot-bg.png'); background-size: cover; background-position: center; border-color: rgba(255,215,106,.75); box-shadow: 0 0 12px rgba(255,215,106,.25), 0 0 10px rgba(255,215,106,.12) inset; }
 .eq-slot.filled:hover { border-color: #ff9a3c; }
 .eq-center { flex: 1.1; display: flex; flex-direction: column; align-items: center; justify-content: center; background-image: linear-gradient(rgba(10,8,5,.18), rgba(10,8,5,.18)), url('../assets/eq-hero-bg.png'); background-size: cover; background-position: center top; border-radius: 14px; border: 1px solid rgba(212,184,122,.45); padding: 8px 6px; box-shadow: 0 3px 14px rgba(0,0,0,.45); }
-.eq-center img { height: 138px; image-rendering: auto; filter: drop-shadow(0 6px 14px rgba(0,0,0,.55)); transition: transform .3s; }
+.eq-center img { height: 138px; max-width: 100%; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 6px 14px rgba(0,0,0,.55)); transition: transform .3s; }
 .eq-center img:hover { transform: scale(1.04); }
 .eq-power { margin-top: 6px; font-size: 13px; font-weight: 900; color: #ffd76a; letter-spacing: 2px; }
 
