@@ -3,7 +3,7 @@
 import { ObjectId } from 'mongodb';
 
 export default function mount(ctx) {
-  const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket } = ctx;
+  const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
 // 写手绑定收款方式（支付宝：姓名+账号）
 app.put('/api/me/alipay', auth, async (req, res) => {
   try {
@@ -34,7 +34,6 @@ app.put('/api/me/name', auth, async (req, res) => {
 // LV0 试用期写手（注册默认）；LV1：累计已到账 ≥500元 且 被驳回占比 <20%
 // LV1权益：已到账金额每月额外 1.5% 奖励，次月发放进钱包
 const LV1_PAID = 500, LV1_REJECT_MAX = 0.2, BONUS_RATE = 0.015;
-const ymOf = d => cnDateStr(d).slice(0, 7);
 async function levelStats(db, userId) {
   const cards = await db.collection('cards').find({ to: userId }).toArray();
   const paid = cards.filter(c => c.status === '已完成').reduce((s, c) => s + (c.reward || 0), 0);
