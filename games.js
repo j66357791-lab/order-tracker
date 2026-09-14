@@ -165,7 +165,14 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
       activity: { name: ACTIVITY.name, start: ACTIVITY.start, end: ACTIVITY.end, active: inActivity(), composeFragCost: ACTIVITY.composeFragCost },
       bag: { keys: p.keys, balls: p.balls, frags: p.frags, revives: p.revives, bagS: p.bagS, bagM: p.bagM, bagL: p.bagL },
       dailyClaimed: p.lastDailyKey === today,
-      session: session ? { wave: session.wave, round: session.round, pot: session.pot, revivesUsed: session.revivesUsed, waveDone: session.status === 'wave_done', table: tablePublic(session.wave, session.round) } : null,
+      // 【2026-09-14 修复】补 pendingEscape / status / reviveQuotaLeft：
+      // 刷新页面后前端才能重建"逃跑待处理"弹窗，否则对局永久卡死（无法继续翻）
+      session: session ? {
+        wave: session.wave, round: session.round, pot: session.pot, revivesUsed: session.revivesUsed,
+        waveDone: session.status === 'wave_done', pendingEscape: !!session.pendingEscape, status: session.status,
+        reviveQuotaLeft: Math.max(0, ACTIVITY.maxRevivesPerGame - session.revivesUsed),
+        table: tablePublic(session.wave, session.round),
+      } : null,
       shop: SHOP.map(s => ({ id: s.id, name: s.name, icon: s.icon, cost: s.cost, desc: s.desc || '', enabled: s.enabled })),
     });
   }));
@@ -190,7 +197,9 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
   app.post('/api/game/start', auth, wrap(async (req, res) => {
     const db = await getDb();
     if (!inActivity()) return bad(res, 400, '活动未开始或已结束');
-    await getActiveSession(db, req.user.id); // 顺手清理超时弃局
+    const active = await getActiveSession(db, req.user.id); // 顺手清理超时弃局
+    // 【2026-09-14 修复】开局前显式拦截：进行中/待抉择/逃跑待处理都不允许再开新局
+    if (active) return bad(res, 400, active.pendingEscape ? '上一局有逃跑待处理，请先复活或放弃' : (active.status === 'wave_done' ? '上一波还没抉择，请先落袋或继续' : '你有一局还在进行中，先完成它吧'));
     // 原子扣钥匙
     const p = await db.collection('game_profiles').findOneAndUpdate(
       { userId: req.user.id, keys: { $gt: 0 } },
@@ -430,4 +439,24 @@ module.exports = function mountGames(app, { auth, getDb, cnDayStr }) {
   }));
 
   console.log('[游戏] 魔法翻翻乐接口注册完成：/api/game/*（含管理员管控接口）');
+
+  // ==================== 索引（2026-09-14 数据库优化） ====================
+  // 旧版只在注释里"声称"有唯一索引，实际从未创建 → 并发开局可产生双会话
+  (async () => {
+    try {
+      const db = await getDb();
+      // 会话查询索引（getActiveSession 高频调用）
+      await db.collection('game_sessions').createIndex({ userId: 1, status: 1 }).catch(() => {});
+      // 每用户同时最多一局 playing / 一局 wave_done（partial unique，防并发双开局）
+      await db.collection('game_sessions').createIndex({ userId: 1 }, { name: 'uniq_playing_per_user', unique: true, partialFilterExpression: { status: 'playing' } }).catch(e => console.warn('[游戏索引] playing 唯一:', e.message));
+      await db.collection('game_sessions').createIndex({ userId: 1 }, { name: 'uniq_wavedone_per_user', unique: true, partialFilterExpression: { status: 'wave_done' } }).catch(e => console.warn('[游戏索引] wave_done 唯一:', e.message));
+      // 档案：userId 唯一（每次游戏请求都 findOne，原来全表扫描）
+      await db.collection('game_profiles').createIndex({ userId: 1 }, { unique: true }).catch(e => console.warn('[游戏索引] profiles:', e.message));
+      // 审计日志：管理端按用户/时间查询排序
+      await db.collection('game_logs').createIndexes([{ key: { userId: 1, createdAt: -1 } }, { key: { createdAt: -1 } }]).catch(() => {});
+      // 兑换记录
+      await db.collection('game_redeems').createIndexes([{ key: { createdAt: -1 } }, { key: { userId: 1 } }]).catch(() => {});
+      console.log('[游戏索引] game_sessions/profiles/logs/redeems 索引就绪');
+    } catch (e) { console.warn('[游戏索引] 初始化:', e.message); }
+  })();
 };
