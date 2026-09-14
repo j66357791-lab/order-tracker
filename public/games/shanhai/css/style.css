@@ -240,11 +240,11 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 /* 出战主视觉（居中布局） */
 .stage-visual { display: flex; flex-direction: column; align-items: center; padding: 10px 0; }
 .stage-title-bar { position: relative; display: flex; align-items: center; justify-content: center; }
-.stage-title-bar img { width: 220px; display: block; }
+.stage-title-bar img { width: 250px; height: 60px; object-fit: cover; object-position: center; border-radius: 99px; box-shadow: 0 3px 10px rgba(0,0,0,.45); display: block; }
 .stage-title-bar span { position: absolute; font: 900 17px "STKaiti", serif; color: #f0e8d0; letter-spacing: 4px; white-space: nowrap; }
 .stage-level-badge { background: rgba(42,90,74,.9); color: #f0e8d0; font: 11px "PingFang SC", sans-serif; padding: 3px 14px; border-radius: 10px; margin: 8px 0 0; letter-spacing: 2px; }
 .stage-main { position: relative; display: flex; align-items: center; justify-content: center; gap: 15px; margin: 10px 0; }
-.stage-img { width: 180px; max-height: 200px; object-fit: contain; background: transparent; }
+.stage-img { width: 185px; height: auto; max-height: 330px; object-fit: cover; }
 .stage-arrow { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.7); border: 1px solid rgba(160,140,100,.4); color: #7a8a7a; font-size: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; z-index: 2; }
 .stage-stars { display: flex; gap: 5px; justify-content: center; margin: 10px 0 5px; }
 .stage-stars img { width: 20px; height: 20px; }
@@ -256,7 +256,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 
 /* 关卡标题横条 */
 .stage-title-bar { position: relative; display: inline-block; margin-bottom: 10px; }
-.stage-title-bar img { width: 240px; display: block; }
+.stage-title-bar img { width: 250px; height: 60px; object-fit: cover; object-position: center; border-radius: 99px; }
 .stage-title-bar span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font: 900 18px "STKaiti", serif; color: #f0e8d0; letter-spacing: 4px; white-space: nowrap; }
 
 /* 关卡等级小框 */
@@ -268,7 +268,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .stage-stars img:nth-child(2), .stage-stars img:nth-child(3) { opacity: .3; }
 
 /* 主视觉盆景山（透明无框） */
-.stage-img { width: 200px; max-height: 220px; object-fit: contain; }
+.stage-img { width: 205px; height: auto; max-height: 335px; object-fit: cover; }
 
 /* ==================== 【2026-09-14】斩妖录·贰 装备页 ==================== */
 .grow-cur { display: flex; gap: 10px; margin: 4px 0 10px; }
@@ -283,14 +283,15 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 
 .equip-layout { display: flex; gap: 10px; align-items: stretch; margin: 10px 0; }
 .eq-col { flex: 1; display: flex; flex-direction: column; gap: 10px; }
-.eq-slot { background: rgba(0,0,0,.30); border: 1px solid rgba(212,184,122,.30); border-radius: 12px; padding: 10px 8px; text-align: center; cursor: pointer; transition: all .15s; min-height: 58px; }
+.eq-slot { background-image: linear-gradient(rgba(8,6,4,.55), rgba(8,6,4,.55)), url('../assets/eq-slot-bg.png'); background-size: cover; background-position: center; border: 1px solid rgba(212,184,122,.45); border-radius: 12px; padding: 10px 8px; text-align: center; cursor: pointer; transition: all .15s; min-height: 58px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
 .eq-slot i { display: block; font-style: normal; font-size: 11px; color: #A89878; letter-spacing: 3px; margin-bottom: 5px; }
 .eq-slot .eq-name { display: block; font-size: 13px; font-weight: 700; }
 .eq-slot .eq-affix { display: block; font-size: 11px; color: #E8DCC8; opacity: .85; font-style: normal; margin-top: 2px; }
-.eq-slot.filled { background: rgba(61,44,20,.35); border-color: rgba(255,215,106,.55); box-shadow: 0 0 10px rgba(255,215,106,.12) inset; }
+.eq-slot.filled { background-image: linear-gradient(rgba(50,32,8,.62), rgba(50,32,8,.62)), url('../assets/eq-slot-bg.png'); background-size: cover; background-position: center; border-color: rgba(255,215,106,.75); box-shadow: 0 0 12px rgba(255,215,106,.25), 0 0 10px rgba(255,215,106,.12) inset; }
 .eq-slot.filled:hover { border-color: #ff9a3c; }
-.eq-center { flex: 1.1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(212,184,122,.10), rgba(0,0,0,.30) 70%); border-radius: 12px; border: 1px solid rgba(212,184,122,.18); padding: 6px; }
-.eq-center img { height: 120px; image-rendering: auto; filter: drop-shadow(0 4px 12px rgba(0,0,0,.5)); }
+.eq-center { flex: 1.1; display: flex; flex-direction: column; align-items: center; justify-content: center; background-image: linear-gradient(rgba(10,8,5,.18), rgba(10,8,5,.18)), url('../assets/eq-hero-bg.png'); background-size: cover; background-position: center top; border-radius: 14px; border: 1px solid rgba(212,184,122,.45); padding: 8px 6px; box-shadow: 0 3px 14px rgba(0,0,0,.45); }
+.eq-center img { height: 138px; image-rendering: auto; filter: drop-shadow(0 6px 14px rgba(0,0,0,.55)); transition: transform .3s; }
+.eq-center img:hover { transform: scale(1.04); }
 .eq-power { margin-top: 6px; font-size: 13px; font-weight: 900; color: #ffd76a; letter-spacing: 2px; }
 
 .bag-sec { margin-top: 12px; }
@@ -313,3 +314,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .draw-pop { margin: 10px 0; padding: 10px 12px; border: 1px solid; border-radius: 10px; background: rgba(0,0,0,.3); font-size: 13px; color: #E8DCC8; animation: popin .35s ease; }
 .draw-pop small { display: block; margin-top: 4px; color: #A89878; }
 @keyframes popin { from { transform: scale(.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* ===== 【2026-09-14】山海录 + 新山图样式 ===== */
+.sh-lore { padding: 14px 12px; line-height: 1.9; font-size: 12px; color: #C9BEA0; background: linear-gradient(180deg, rgba(32,26,16,.55), rgba(16,12,8,.55)); border: 1px solid rgba(212,184,122,.22); border-radius: 12px; letter-spacing: 1px; }
+.stage-img { border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.5); }
