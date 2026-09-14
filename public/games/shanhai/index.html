@@ -65,12 +65,12 @@
       <div class="home-tab on" id="tabFight">
         <div class="stage-visual">
           <div class="stage-title-bar">
-            <img src="/games/shanhai/assets/stage-bar-transparent.png" alt="">
+            <img src="/games/shanhai/assets/stage-bar-new.png" alt="">
             <span id="stageName">南山草泽</span>
           </div>
           <div class="stage-main">
             <div class="stage-arrow left" id="stagePrev">‹</div>
-            <img src="/games/shanhai/assets/bonsai-transparent.png" class="stage-img" alt="">
+            <img src="/games/shanhai/assets/stage-mountain-new.png" class="stage-img" alt="">
             <div class="stage-arrow right" id="stageNext">›</div>
           </div>
           <div class="stage-level-badge" id="stageLevel">第 一 关</div>
@@ -93,8 +93,6 @@
           <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="growXianyu">0</b></span>
           <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="growLingqi">0</b></span>
         </div>
-        <div class="grow-sec">◆ 技能强化（战斗内永久生效）</div>
-        <div id="skillList" class="skill-list"></div>
         <div class="grow-sec">◆ 装备寻宝（<b>120</b> 仙玉一抽 · 空槽自动穿戴）</div>
         <button class="btn-jade" id="btnDraw">寻 宝 · 120 ◉</button>
         <div class="draw-result" id="drawResult"></div>
@@ -129,9 +127,16 @@
       <div class="home-tab" id="tabShop">
         <div class="empty-tip" style="padding:60px 0">商城敬请期待…</div>
       </div>
-      <!-- 山海录（占位） -->
+      <!-- 山海录：技能强化 + 斩妖图志 -->
       <div class="home-tab" id="tabShanhai">
-        <div class="empty-tip" style="padding:60px 0">山海录敬请期待…</div>
+        <div class="grow-cur">
+          <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="shXianyu">0</b></span>
+          <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="shLingqi">0</b></span>
+        </div>
+        <div class="grow-sec">◆ 技能强化（战斗内永久生效）</div>
+        <div id="skillList" class="skill-list"></div>
+        <div class="grow-sec">◆ 斩妖图志</div>
+        <div class="sh-lore">山海经异兽志 · 南山经首列：狌狌知往，鹿蜀佩宜，旋龟愈聋，鯥鱼无肿。斩妖证道，录名于此。</div>
       </div>
       <!-- 挑战（占位） -->
       <div class="home-tab" id="tabChallenge">
@@ -278,6 +283,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     $("tbLingqi").textContent = p.lingqi || 0;
     $("growXianyu").textContent = p.xianyu || 0;
     $("growLingqi").textContent = p.lingqi || 0;
+    $("shXianyu").textContent = p.xianyu || 0;   // 山海录页货币同步
+    $("shLingqi").textContent = p.lingqi || 0;
     $("tbName").textContent = p.username || "御火行者";
     const wins = p.wins || 0;
     $("tbTitle").textContent = wins >= 10 ? "山海伏妖师" : wins >= 3 ? "斩妖剑客" : wins >= 1 ? "初露锋芒" : "初入山海";
@@ -409,6 +416,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     $("" + n.dataset.tab).classList.add("on");
     if (n.dataset.tab === "tabBoard") loadBoard();
     if (n.dataset.tab === "tabGrow") renderGrow();
+    if (n.dataset.tab === "tabShanhai") renderGrow();   // 【2026-09-14】技能移入山海录
   });
 
   // —— 榜单 ——
