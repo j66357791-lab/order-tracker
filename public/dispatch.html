@@ -209,9 +209,62 @@
   html,body{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
   input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}
   body{position:fixed;inset:0;width:100%;height:100%;overflow:hidden}
-  @supports(padding:max(0px)){
-    .safe-top{padding-top:max(0px,env(safe-area-inset-top))}
-    .safe-bottom{padding-bottom:max(0px,env(safe-area-inset-bottom))}
+  /* ===== 【2026-09-14】提现审批 + 游戏工作台 ===== */
+  .wd-card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(17,24,39,.06);border-left:4px solid var(--line)}
+  .wd-card.st-待处理{border-left-color:var(--amber)}
+  .wd-card.st-已打款{border-left-color:var(--green)}
+  .wd-card.st-已驳回{border-left-color:var(--red)}
+  .wd-card .hd{display:flex;align-items:baseline;gap:10px}
+  .wd-card .who{font-weight:600;font-size:15px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wd-card .amt{font-size:20px;font-weight:700;color:var(--green-dk)}
+  .wd-card .meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--sub);margin-top:5px}
+  .wd-card .st{font-size:12px;margin-top:5px}
+
+  .gm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin:10px 0}
+  .gm-stat{background:var(--grey-bg);border-radius:10px;padding:10px 6px;text-align:center}
+  .gm-stat .v{font-size:19px;font-weight:700;color:var(--ink)}
+  .gm-stat .l{font-size:11px;color:var(--sub);margin-top:2px}
+
+  .cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:8px}
+  .cfg-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub);font-weight:600}
+  .cfg-grid input{padding:8px 10px;border-radius:10px;border:1px solid var(--line);font-size:13px;color:var(--ink);background:#fff}
+  .cfg-grid input:focus{outline:2px solid var(--blue-bg);border-color:var(--blue)}
+
+  .sh-row,.gl-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;font-size:12px;margin-bottom:4px;background:var(--grey-bg)}
+  .sh-row .rk{width:20px;height:20px;border-radius:50%;background:var(--amber-bg);color:var(--amber);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex:none}
+  .sh-row .nm{font-weight:600;min-width:64px}
+  .sh-row .dt,.gl-row .dt{color:var(--sub);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gl-row .tm{color:var(--sub);flex:none}
+  .gl-row .nm2{font-weight:600;flex:none}
+  .gl-row .us{color:var(--cyan);flex:none;font-family:monospace}
+  .gl-row .ac{flex:none;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+  .ac-reward{background:var(--green-bg);color:var(--green-dk)} .ac-escape{background:var(--red-bg);color:var(--red)}
+  .ac-revive{background:var(--purple-bg);color:var(--purple)} .ac-start{background:var(--blue-bg);color:var(--blue)}
+  .ac-giveup,.ac-lost,.ac-timeout{background:var(--grey-bg);color:var(--grey)} .ac-cashout{background:var(--amber-bg);color:var(--amber)}
+  .ac-admin_grant{background:var(--purple-bg);color:var(--purple)} .ac-shop_buy{background:var(--cyan-bg);color:var(--cyan)}
+
+  /* ===== 双端适配（2026-09-14）===== */
+  /* 页签在窄屏横滑，宽屏平铺 */
+  .subtabs{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .subtabs::-webkit-scrollbar{display:none}
+  @media(min-width:760px){ .subtabs{overflow:visible} .stab{white-space:nowrap} }
+  /* 统计磁贴自适应列数 */
+  .stats{grid-template-columns:repeat(auto-fit,minmax(104px,1fr))}
+  /* 桌面端：内容区加宽居中，列表类面板双列 */
+  @media(min-width:900px){
+    .wrap{max-width:1020px}
+    #vWd .wrap{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+    #vWd .wrap>.card{grid-column:1 / -1}
+    #vAct .wrap{max-width:1020px}
+    .ov-card{max-width:100%}
+  }
+  /* 手机端：减少留白，按钮更大更好点 */
+  @media(max-width:640px){
+    .wrap{padding:12px 10px 30px}
+    .card{padding:14px 12px}
+    .wd-card .amt{font-size:18px}
+    .gm-stat .v{font-size:17px}
+    .btn{min-height:38px}
   }
 
 </style>
@@ -235,9 +288,10 @@
 <div class="subtabs">
   <div class="stab on" data-v="vChat">💬 聊天/派单<span class="reddot" id="tabUnread" style="display:none">0</span></div>
   <div class="stab" data-v="vOver">📋 派单总览</div>
-    <div class="stab" data-v="vAd">📝 广告管理</div>
-  <div class="stab" data-v="vAct">📊 活动数据</div>
+  <div class="stab" data-v="vWd">💳 提现审批<span class="warnnum" id="wdNum" style="display:none">0</span></div>
+  <div class="stab" data-v="vAct">🎮 游戏工作台</div>
   <div class="stab" data-v="vRecon">💰 财务对账<span class="warnnum" id="reconNum" style="display:none">0</span></div>
+  <div class="stab" data-v="vAd">📝 广告管理</div>
 </div>
 
 <main class="main">
@@ -306,7 +360,33 @@
   </section>
 
 
-  <!-- 活动数据 -->
+  <!-- 💳 提现审批 -->
+  <section id="vWd" class="panel scroll">
+    <div class="wrap">
+      <div class="card">
+        <h3>💳 提现审批工作台</h3>
+        <div class="flow-tip">写手发起的提现申请会出现在这里。确认打款 = 标记已打款；订单型提现会同时结清对应的待打款派单卡、同步台账并解冻红包。驳回需填原因（写手端可见）。</div>
+        <div class="stats" style="margin-top:10px">
+          <div class="stat v-amber"><div class="v" id="wdPending">0</div><div class="l">待处理</div></div>
+          <div class="stat v-green"><div class="v" id="wdPaid">0</div><div class="l">已打款</div></div>
+          <div class="stat v-red"><div class="v" id="wdRejected">0</div><div class="l">已驳回</div></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="wdStatus" onchange="loadWithdrawals()" style="padding:8px 10px;border-radius:10px;border:1px solid var(--line)">
+            <option value="">全部状态</option><option>待处理</option><option>已打款</option><option>已驳回</option>
+          </select>
+          <select id="wdType" onchange="loadWithdrawals()" style="padding:8px 10px;border-radius:10px;border:1px solid var(--line)">
+            <option value="">全部类型</option><option value="bonus">激励奖励</option><option value="order">单子奖励</option>
+          </select>
+          <input id="wdQ" placeholder="搜索姓名 / 支付宝账号" oninput="wdSearch(this.value)" style="flex:1;min-width:150px;padding:8px 12px;border-radius:10px;border:1px solid var(--line)">
+          <button class="btn btn-ghost" onclick="loadWithdrawals()">刷新</button>
+        </div>
+      </div>
+      <div id="wdList"><div class="empty" style="padding:18px">加载中…</div></div>
+    </div>
+  </section>
+
+  <!-- 🎮 游戏工作台 -->
   <section id="vAct" class="panel scroll">
     <div class="wrap">
       <div class="card">
@@ -320,29 +400,41 @@
         </div>
       </div>
       <div class="card">
-        <h3>🎮 魔法翻翻乐</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0">
-          <div style="background:var(--grey-bg);border-radius:10px;padding:12px;text-align:center">
-            <div style="font-size:24px;font-weight:700" id="actPlayers">--</div>
-            <div style="font-size:12px;color:var(--sub)">参与人数</div>
-          </div>
-          <div style="background:var(--grey-bg);border-radius:10px;padding:12px;text-align:center">
-            <div style="font-size:24px;font-weight:700" id="actPlaying">--</div>
-            <div style="font-size:12px;color:var(--sub)">进行中</div>
-          </div>
-          <div style="background:var(--grey-bg);border-radius:10px;padding:12px;text-align:center">
-            <div style="font-size:24px;font-weight:700" id="actGames">--</div>
-            <div style="font-size:12px;color:var(--sub)">总局数</div>
-          </div>
-          <div style="background:var(--grey-bg);border-radius:10px;padding:12px;text-align:center">
-            <div style="font-size:24px;font-weight:700" id="actKeys">--</div>
-            <div style="font-size:12px;color:var(--sub)">剩余钥匙</div>
-          </div>
+        <h3>🎰 魔法翻翻乐 · 实时数据</h3>
+        <div class="gm-grid">
+          <div class="gm-stat"><div class="v" id="actPlayers">--</div><div class="l">参与人数</div></div>
+          <div class="gm-stat"><div class="v" id="actPlaying">--</div><div class="l">进行中对局</div></div>
+          <div class="gm-stat"><div class="v" id="actGames">--</div><div class="l">累计开局</div></div>
+          <div class="gm-stat"><div class="v" id="actKeys">--</div><div class="l">剩余钥匙</div></div>
+          <div class="gm-stat"><div class="v" id="actBalls">--</div><div class="l">剩余魔法球</div></div>
+          <div class="gm-stat"><div class="v" id="actCheckins">--</div><div class="l">今日签到</div></div>
         </div>
         <button class="btn btn-r" onclick="cleanupGames()" style="margin-top:10px">🧹 清理卡住的对局（退还钥匙）</button>
       </div>
       <div class="card">
-        <h3>🎁 道具发放/收回</h3>
+        <h3>🎛 翻翻乐参数热调 <span style="font-size:11px;color:var(--sub);font-weight:400">（保存后立即生效，无需重启）</span></h3>
+        <div class="cfg-grid">
+          <label>活动开始<input id="cfgStart" type="date"></label>
+          <label>活动结束<input id="cfgEnd" type="date"></label>
+          <label>每日免费钥匙<input id="cfgDailyKey" type="number" min="0" max="10"></label>
+          <label>每局复活上限<input id="cfgMaxRevives" type="number" min="0" max="5"></label>
+          <label>合成碎片数<input id="cfgFragCost" type="number" min="1" max="100"></label>
+          <label>福袋小 ¥区间<input id="cfgBagS" placeholder="如 0.30, 0.88"></label>
+          <label>福袋中 ¥区间<input id="cfgBagM" placeholder="如 1.68, 8.88"></label>
+          <label>福袋大 ¥区间<input id="cfgBagL" placeholder="如 18.88, 88.88"></label>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+          <button class="btn btn-g" onclick="saveGameConfig()">保存参数</button>
+          <span id="cfgMsg" style="font-size:12px;color:var(--sub)">未加载</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>⛰ 山海斩妖录 · 数据面板</h3>
+        <div class="gm-grid" id="shStats"><div class="gm-stat"><div class="v">--</div><div class="l">加载中</div></div></div>
+        <div id="shTop" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h3>🎁 道具发放 / 收回</h3>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
           <input id="grantPhone" placeholder="输入手机号查找" style="flex:1;min-width:120px">
           <button class="btn btn-ghost" onclick="findUser()">查找</button>
@@ -364,10 +456,26 @@
           <button class="btn btn-g" onclick="grantItem(true)">发放</button>
           <button class="btn btn-r" onclick="grantItem(false)">收回</button>
         </div>
+        <div id="grantProfile" style="margin-top:10px"></div>
       </div>
       <div class="card">
-        <h3>📅 今日签到</h3>
-        <div style="font-size:14px;margin:8px 0">今日签到人数：<b id="actCheckins">--</b></div>
+        <h3>🧾 审计日志</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <select id="glAction" onchange="loadGameLogs()" style="padding:8px 10px;border-radius:10px;border:1px solid var(--line)">
+            <option value="">全部动作</option>
+            <option value="start">开局</option><option value="reward">奖励</option><option value="escape">逃跑</option>
+            <option value="revive">复活</option><option value="giveup">弃局</option><option value="cashout">落袋</option>
+            <option value="carry">进波</option><option value="shop_buy">兑换</option><option value="daily_key">每日钥匙</option>
+            <option value="timeout">超时</option><option value="lost">判负</option><option value="admin_grant">管理发放</option>
+          </select>
+          <input id="glUser" placeholder="按用户ID过滤（可留空）" style="flex:1;min-width:140px;padding:8px 12px;border-radius:10px;border:1px solid var(--line)">
+          <button class="btn btn-ghost" onclick="loadGameLogs()">查询</button>
+        </div>
+        <div id="glList" style="max-height:340px;overflow:auto"><div class="empty" style="padding:12px">点击查询加载</div></div>
+      </div>
+      <div class="card">
+        <h3>🛒 兑换记录 <span id="redeemCost" style="font-size:12px;color:var(--red);font-weight:400"></span></h3>
+        <div id="redeemList" style="max-height:300px;overflow:auto"></div>
       </div>
     </div>
   </section>
@@ -880,18 +988,190 @@ document.querySelectorAll('.stab').forEach(t => t.onclick = () => {
   if (t.dataset.v === 'vOver' && !_overLoaded) { _overLoaded = true; loadOverview(); }
   if (t.dataset.v === 'vRecon' && !_reconLoaded) { _reconLoaded = true; loadRecon(); }
     if (t.dataset.v === 'vAd') loadAdAdmin();
-  if (t.dataset.v === 'vAct') loadActivityStats();
+  if (t.dataset.v === 'vWd') loadWithdrawals();
+  if (t.dataset.v === 'vAct') loadWorkbench();
 });
 
+/* ================= 💳 提现审批 ================= */
+let _wdAll = [];
+async function loadWithdrawals() {
+  try {
+    const status = $('wdStatus') ? $('wdStatus').value : '';
+    const type = $('wdType') ? $('wdType').value : '';
+    const q = ($('wdQ') && $('wdQ').value || '').trim();
+    const j = await authFetch('/api/admin/withdrawals?status=' + encodeURIComponent(status) + '&type=' + encodeURIComponent(type) + '&q=' + encodeURIComponent(q));
+    if (!j.ok) { $('wdList').innerHTML = '<div class="empty" style="padding:18px">' + esc(j.error || '加载失败') + '</div>'; return; }
+    $('wdPending').textContent = j.stats.pending;
+    $('wdPaid').textContent = j.stats.paid;
+    $('wdRejected').textContent = j.stats.rejected;
+    const badge = $('wdNum');
+    if (badge) { badge.style.display = j.stats.pending > 0 ? '' : 'none'; badge.textContent = j.stats.pending; }
+    _wdAll = j.withdrawals;
+    paintWithdrawals();
+  } catch (e) { $('wdList').innerHTML = '<div class="empty" style="padding:18px">' + esc(e.message) + '</div>'; }
+}
+function wdSearch() { paintWithdrawals(); }
+function paintWithdrawals() {
+  const list = $('wdList');
+  if (!_wdAll.length) { list.innerHTML = '<div class="empty" style="padding:18px">暂无提现申请</div>'; return; }
+  list.innerHTML = _wdAll.map(w => {
+    const t = new Date(new Date(w.createdAt).getTime() + 8 * 3600 * 1000);
+    const tstr = t.toISOString().slice(0, 16).replace('T', ' ');
+    const stTag = w.status === '待处理' ? '<b style="color:var(--amber)">' + w.status + '</b>'
+      : w.status === '已打款' ? '<b style="color:var(--green-dk)">' + w.status + '</b>'
+      : '<b style="color:var(--red)">' + w.status + (w.reason ? '（' + esc(w.reason) + '）' : '') + '</b>';
+    const btns = w.status === '待处理' ? `
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-g" style="flex:1" onclick="wdPay('${w._id}')">✅ 确认打款</button>
+        <button class="btn btn-r" style="flex:1" onclick="wdReject('${w._id}')">✖ 驳回</button>
+      </div>` : (w.status === '已打款' ? `<div style="font-size:12px;color:var(--sub);margin-top:8px">打款时间 ${w.paidAt ? new Date(new Date(w.paidAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') : '-'}${w.paidCards ? ' · 结清派单卡 ' + w.paidCards + ' 张' : ''}${w.note ? ' · 备注：' + esc(w.note) : ''}</div>` : '');
+    return `<div class="wd-card st-${w.status}">
+      <div class="hd">
+        <div class="who">${esc(w.displayName || '')}</div>
+        <div class="amt">¥${(w.amount || 0).toFixed(2)}</div>
+      </div>
+      <div class="meta">
+        <span>${w.type === 'bonus' ? '激励奖励' : '单子奖励'}</span>
+        <span>支付宝：${esc(w.alipay ? w.alipay.name + ' / ' + w.alipay.account : '未绑定')}</span>
+        <span>${tstr}</span>
+      </div>
+      <div class="st">${stTag}</div>
+      ${btns}
+    </div>`;
+  }).join('');
+}
+async function wdPay(id) {
+  if (!confirm('确认已通过支付宝向该写手打款？\n订单型提现将同时：结清对应派单卡 → 同步台账为已结算 → 解冻现金红包。')) return;
+  try {
+    const j = await authFetch('/api/admin/withdrawals/' + id + '/pay', { method: 'POST', body: JSON.stringify({ note: '' }) });
+    if (j.ok) { toast('已确认打款' + (j.paidCards ? '，结清派单卡 ' + j.paidCards + ' 张' : '') + ' ✅'); loadWithdrawals(); loadOverview().catch(() => {}); loadRecon().catch(() => {}); }
+    else toast(j.error || '操作失败');
+  } catch (e) { toast(e.message); }
+}
+async function wdReject(id) {
+  const reason = prompt('驳回原因（写手端可见）：');
+  if (reason === null) return;
+  try {
+    const j = await authFetch('/api/admin/withdrawals/' + id + '/reject', { method: 'POST', body: JSON.stringify({ reason }) });
+    if (j.ok) { toast('已驳回'); loadWithdrawals(); }
+    else toast(j.error || '操作失败');
+  } catch (e) { toast(e.message); }
+}
 
+/* ================= 🎮 游戏工作台 ================= */
+async function loadWorkbench() {
+  loadActivityStats();
+  loadGameConfig();
+  loadShanhaiStats();
+  loadRedeems();
+  loadWithdrawalsBadge();
+}
+async function loadWithdrawalsBadge() {
+  try {
+    const j = await authFetch('/api/admin/withdrawals?status=');
+    if (!j.ok) return;
+    const badge = $('wdNum');
+    if (badge) { badge.style.display = j.stats.pending > 0 ? '' : 'none'; badge.textContent = j.stats.pending; }
+  } catch (e) {}
+}
+async function loadActivityStats() {
+  loadMaintenanceStatus();
+  try {
+    const j = await authFetch('/api/admin/activity-stats');
+    if (!j.ok) return;
+    $('actPlayers').textContent = j.game.totalPlayers;
+    $('actPlaying').textContent = j.game.playingSessions;
+    $('actGames').textContent = j.game.totalGames;
+    $('actKeys').textContent = j.game.totalKeysLeft;
+    $('actBalls').textContent = j.game.totalBallsLeft;
+    $('actCheckins').textContent = j.checkin.today;
+  } catch(e) { console.error(e); }
+}
+async function loadGameConfig() {
+  try {
+    const j = await authFetch('/api/game/admin/config');
+    if (!j.ok) { $('cfgMsg').textContent = j.error || '加载失败'; return; }
+    const e = j.effective;
+    $('cfgStart').value = e.start; $('cfgEnd').value = e.end;
+    $('cfgDailyKey').value = e.dailyFreeKey; $('cfgMaxRevives').value = e.maxRevivesPerGame;
+    $('cfgFragCost').value = e.composeFragCost;
+    $('cfgBagS').value = e.bagS.join(', '); $('cfgBagM').value = e.bagM.join(', '); $('cfgBagL').value = e.bagL.join(', ');
+    $('cfgMsg').textContent = '已加载当前生效参数';
+  } catch (e) { $('cfgMsg').textContent = e.message; }
+}
+function parseBag(el) {
+  const parts = el.value.split(/[,，\s]+/).map(Number).filter(x => isFinite(x));
+  if (parts.length !== 2 || !(parts[1] > parts[0])) return null;
+  return parts;
+}
+async function saveGameConfig() {
+  const bagS = parseBag($('cfgBagS')), bagM = parseBag($('cfgBagM')), bagL = parseBag($('cfgBagL'));
+  const body = {
+    start: $('cfgStart').value, end: $('cfgEnd').value,
+    dailyFreeKey: Number($('cfgDailyKey').value), maxRevivesPerGame: Number($('cfgMaxRevives').value),
+    composeFragCost: Number($('cfgFragCost').value),
+  };
+  if (bagS) body.bagS = bagS; if (bagM) body.bagM = bagM; if (bagL) body.bagL = bagL;
+  try {
+    const j = await authFetch('/api/game/admin/config', { method: 'POST', body: JSON.stringify(body) });
+    if (j.ok) { $('cfgMsg').textContent = '✅ 已保存并生效（当前活动配置：' + new Date().toTimeString().slice(0, 5) + '）'; toast('游戏参数已保存 ✅'); }
+    else { $('cfgMsg').textContent = j.error || '保存失败'; toast(j.error || '保存失败'); }
+  } catch (e) { $('cfgMsg').textContent = e.message; }
+}
+async function loadShanhaiStats() {
+  try {
+    const j = await authFetch('/api/shanhai/admin/stats');
+    if (!j.ok) { $('shStats').innerHTML = '<div class="gm-stat"><div class="v">--</div><div class="l">' + esc(j.error || '加载失败') + '</div></div>'; return; }
+    const t = j.totals;
+    $('shStats').innerHTML = [
+      [j.players, '斩妖人数'], [t.plays || 0, '累计出战'], [t.wins || 0, '通关次数'], [t.totalKills || 0, '累计斩妖'],
+      [t.xianyu || 0, '流通仙玉'], [t.lingqi || 0, '流通灵气'],
+    ].map(([v, l]) => `<div class="gm-stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+    $('shTop').innerHTML = (j.top || []).length ? '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">通关榜 TOP10</div>' + j.top.map((p, i) =>
+      `<div class="sh-row"><span class="rk">${i + 1}</span><span class="nm">${esc(p.username || '')}</span><span class="dt">通关 ${p.wins} 次 · 最佳 ${p.bestTimeSec ? Math.floor(p.bestTimeSec / 60) + '分' + (p.bestTimeSec % 60) + '秒' : '-'} · 斩妖 ${p.bestKills || 0}</span></div>`).join('')
+      : '<div class="empty" style="padding:12px">暂无通关数据</div>';
+  } catch (e) { console.error(e); }
+}
+async function loadGameLogs() {
+  try {
+    const action = $('glAction').value, uid = $('glUser').value.trim();
+    const j = await authFetch('/api/game/admin/logs?action=' + encodeURIComponent(action) + '&userId=' + encodeURIComponent(uid) + '&limit=100');
+    if (!j.ok) { $('glList').innerHTML = '<div class="empty" style="padding:12px">' + esc(j.error || '查询失败') + '</div>'; return; }
+    if (!j.logs.length) { $('glList').innerHTML = '<div class="empty" style="padding:12px">无匹配日志</div>'; return; }
+    $('glList').innerHTML = j.logs.map(l => {
+      const t = new Date(new Date(l.createdAt).getTime() + 8 * 3600 * 1000);
+      return `<div class="gl-row"><span class="tm">${t.toISOString().slice(5, 16).replace('T', ' ')}</span><span class="ac ac-${l.action}">${l.action}</span><span class="us">${(l.userId || '').slice(-6)}</span><span class="dt">${esc(JSON.stringify(l.detail || {}).slice(0, 70))}</span></div>`;
+    }).join('');
+  } catch (e) { $('glList').innerHTML = '<div class="empty" style="padding:12px">' + esc(e.message) + '</div>'; }
+}
+async function loadRedeems() {
+  try {
+    const j = await authFetch('/api/game/admin/redeems?limit=100');
+    if (!j.ok) return;
+    $('redeemCost').textContent = j.redeems.length ? '（累计成本 ¥' + (j.totalCost || 0).toFixed(2) + '）' : '';
+    $('redeemList').innerHTML = j.redeems.length ? j.redeems.map(r => {
+      const t = new Date(new Date(r.createdAt).getTime() + 8 * 3600 * 1000);
+      return `<div class="gl-row"><span class="tm">${t.toISOString().slice(5, 16).replace('T', ' ')}</span><span class="nm2">${esc(r.name || '')}</span><span class="dt">-${r.cost}球 · ${esc(JSON.stringify(r.give || {}))}</span></div>`;
+    }).join('') : '<div class="empty" style="padding:12px">暂无兑换记录</div>';
+  } catch (e) {}
+}
+
+/* ================= 道具发放/收回 ================= */
 async function findUser() {
   const phone = $('grantPhone').value.trim();
   if (!phone) { alert('请输入手机号'); return; }
   try {
-    const j = await authFetch('/api/admin/find-user/' + phone);
+    const j = await authFetch('/api/admin/find-user/' + encodeURIComponent(phone));
     if (j.ok) {
       $('grantUserId').value = j.user._id;
-      alert('找到用户：' + (j.user.name || '') + ' (' + j.user.phone + ')');
+      // 拉取该用户游戏档案一并展示
+      try {
+        const p = await authFetch('/api/admin/game-profile/' + encodeURIComponent(j.user._id));
+        if (p.ok && p.profile) {
+          $('grantProfile').innerHTML = '<div class="flow-tip">当前背包：钥匙 ' + (p.profile.keys || 0) + ' · 魔法球 ' + (p.profile.balls || 0) + ' · 碎片 ' + (p.profile.frags || 0) + ' · 复活石 ' + (p.profile.revives || 0) + ' · 福袋 ' + (p.profile.bagS || 0) + '/' + (p.profile.bagM || 0) + '/' + (p.profile.bagL || 0) + '</div>';
+        } else $('grantProfile').innerHTML = '';
+      } catch (e) { $('grantProfile').innerHTML = ''; }
+      toast('找到用户：' + (j.user.name || '') + (j.user.uid ? '（工号 ' + j.user.uid + '）' : ''));
     }
   } catch(e) { alert(e.message); }
 }
@@ -899,13 +1179,18 @@ async function grantItem(isGrant) {
   const uid = $('grantUserId').value.trim();
   const item = $('grantItem').value;
   const amt = Number($('grantAmount').value) || 0;
-  if (!uid) { alert('请输入用户ID'); return; }
+  if (!uid) { alert('请先通过手机号查找用户'); return; }
   if (amt <= 0) { alert('请输入数量'); return; }
+  if (!confirm((isGrant ? '发放' : '收回') + ' ' + item + ' ×' + amt + '？')) return;
   const realAmt = isGrant ? amt : -amt;
   try {
     const j = await authFetch('/api/admin/game-grant', { method: 'POST', body: JSON.stringify({ userId: uid, item, amount: realAmt }) });
-    alert('操作成功！当前道具：' + JSON.stringify(j.profile));
-  } catch(e) { alert(e.message); }
+    if (j.ok !== false && j.profile) {
+      const p = j.profile;
+      toast((isGrant ? '已发放 ' : '已收回 ') + amt + ' ✅');
+      $('grantProfile').innerHTML = '<div class="flow-tip">操作后背包：钥匙 ' + (p.keys || 0) + ' · 魔法球 ' + (p.balls || 0) + ' · 碎片 ' + (p.frags || 0) + ' · 复活石 ' + (p.revives || 0) + ' · 福袋 ' + (p.bagS || 0) + '/' + (p.bagM || 0) + '/' + (p.bagL || 0) + '</div>';
+    } else toast(j.error || '操作失败');
+  } catch(e) { toast(e.message); }
 }
 async function toggleMaintenance() {
   const on = $('maintSwitch').checked;
@@ -1075,6 +1360,7 @@ chatRight.addEventListener('drop', async e => {
   loadChats().catch(e => toast(e.message));
   loadOverview().catch(() => {});
   loadRecon().catch(() => {});
+  loadWithdrawalsBadge().catch(() => {});   // 【2026-09-14】提现审批角标（有待处理时提醒）
 })();
 </script>
   <script>
