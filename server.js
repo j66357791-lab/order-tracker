@@ -79,9 +79,36 @@ async function getDb() {
       // 聊天信息云端只保留3天，到期自动删除（客户端本地localStorage兜底留存）
       { key: { createdAt: 1 }, expireAfterSeconds: 3 * 24 * 3600 },
     ]).catch(() => {});
-    db.collection('cards').createIndexes([{ key: { to: 1, createdAt: -1 } }, { key: { orderId: 1 } }]).catch(() => {});
-    // 【2026-09-14 修复】单单拆红包：一人一订单一天只能拆一次（数据库层强制，防并发双击）
-    db.collection('redpacket_records').createIndexes([{ key: { userId: 1, cardId: 1, date: 1 }, unique: true }]).catch(e => console.warn('[索引] redpacket_records:', e.message));
+    db.collection('cards').createIndexes([{ key: { to: 1, createdAt: -1 } }, { key: { orderId: 1 } }, { key: { createdAt: -1 } }, { key: { to: 1, status: 1 } }]).catch(() => {});
+    // 【2026-09-14 需求修正】单单拆红包：一个订单终身一次 → 迁移旧索引(userId+cardId+date)到 (userId+cardId)
+    (async () => {
+      try {
+        const col = db.collection('redpacket_records');
+        // 1) 同一订单多笔记录：保留最早一笔，其余作废（不再入账）
+        const dupGroups = await col.aggregate([
+          { $group: { _id: { userId: '$userId', cardId: '$cardId' }, ids: { $push: '$_id' }, count: { $sum: 1 } } },
+          { $match: { count: { $gt: 1 } } }
+        ]).toArray();
+        for (const g of dupGroups) {
+          const sorted = await col.find({ _id: { $in: g.ids } }).sort({ createdAt: 1 }).toArray();
+          // 保留最早一笔；其余是按天拆包旧 bug 产生的重复脏数据（从未入账），直接删除，
+          // 否则 (userId+cardId) 唯一索引建不起来
+          await col.deleteMany({ _id: { $in: sorted.slice(1).map(x => x._id) } });
+          console.log('[索引] redpacket 迁移：删除重复拆包记录', g.count - 1, '笔（', String(g._id.cardId), '）');
+        }
+        // 2) 旧唯一索引（含 date）删除 → 新唯一索引（终身一次）
+        try { await col.dropIndex('userId_1_cardId_1_date_1'); } catch (e) { /* 旧索引不存在则跳过 */ }
+        await col.createIndex({ userId: 1, cardId: 1 }, { unique: true });
+        // 3) 查询索引：按用户查冻结/解冻状态
+        await col.createIndex({ userId: 1, status: 1 });
+        console.log('[索引] redpacket_records 终身一次唯一索引迁移完成');
+      } catch (e) { console.warn('[索引] redpacket_records 迁移:', e.message); }
+    })();
+    // 【2026-09-14 数据库优化】钱包/提现/签到等高频集合补索引（原来全部只有 _id，每次查询全表扫）
+    db.collection('wallet_log').createIndexes([{ key: { userId: 1 } }, { key: { userId: 1, month: 1 } }]).catch(() => {});
+    db.collection('withdrawals').createIndexes([{ key: { userId: 1, status: 1 } }, { key: { status: 1, createdAt: -1 } }]).catch(() => {});
+    db.collection('checkin_records').createIndex({ userId: 1, date: 1 }, { unique: true }).catch(e => console.warn('[索引] checkin_records:', e.message)); // 防并发重复签到
+    db.collection('shanhai_profiles').createIndex({ userId: 1 }, { unique: true }).catch(() => {});
     db.collection('schedule_days').createIndexes([{ key: { userId: 1, date: 1 }, unique: true }]).catch(() => {});
     // 启动时清掉历史遗留的假在线标记（真实在线以内存连接表为准）
     db.collection('users').updateMany({ sockOnline: true }, { $set: { sockOnline: false } }).catch(() => {});
@@ -364,13 +391,18 @@ app.get('/api/wallet', auth, async (req, res) => {
     const grants = (await db.collection('wallet_log').find({ userId: req.user.id }).sort({ month: -1 }).toArray())
       .map(g => ({ month: g.month, amount: g.amount, note: g.note || null, base: g.base || null }));
     const balance = Math.round(grants.reduce((s, g) => s + g.amount, 0) * 100) / 100;
+    // 【2026-09-14 需求】单单拆红包冻结金额：钱包页展示 总金额（其中xx待解冻）
+    const frozenRows = (await db.collection('redpacket_records').find({ userId: req.user.id, status: '冻结' }).sort({ createdAt: 1 }).toArray())
+      .map(r => ({ cardId: String(r.cardId), amount: r.amount, title: r.title, createdAt: r.createdAt }));
+    const frozenAmount = Math.round(frozenRows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100;
+    const total = Math.round((balance + frozenAmount) * 100) / 100;
     // 本月预计奖励
     const ym = ymOf(cnNow());
     const cards = await db.collection('cards').find({ to: req.user.id, status: '已完成' }).toArray();
     const paidThisMonth = cards.filter(c => c.paidAt && ymOf(new Date(new Date(c.paidAt).getTime() + 8 * 3600 * 1000)) === ym)
       .reduce((s, c) => s + (c.reward || 0), 0);
     res.json({
-      ok: true, level, balance, stats: st,
+      ok: true, level, balance, frozenAmount, total, frozen: frozenRows, stats: st,
       estBonus: level >= 1 ? Math.round(paidThisMonth * BONUS_RATE * 100) / 100 : 0,
       estBase: Math.round(paidThisMonth * 100) / 100,
       bonusRate: BONUS_RATE, lv1Paid: LV1_PAID, lv1RejectMax: LV1_REJECT_MAX,
@@ -514,6 +546,8 @@ app.post('/api/withdraw', auth, async (req, res) => {
       const amount = Math.round(cards.reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
       if (amount <= 0) return res.status(400).json({ ok: false, error: '暂无待打款的单子奖励' });
       doc.amount = amount;
+      // 【2026-09-14】快照本次提现对应的派单卡（审批时按快照打款，避免申请后新增单子被误裹挟）
+      doc.cardIds = cards.map(c => c._id.toString());
     }
     const r = await db.collection('withdrawals').insertOne(doc);
     res.json({ ok: true, _id: r.insertedId.toString(), amount: doc.amount, type });
@@ -523,7 +557,81 @@ app.get('/api/withdraw', auth, async (req, res) => {
   try {
     const db = await getDb();
     const rows = await db.collection('withdrawals').find({ userId: req.user.id }).sort({ createdAt: -1 }).limit(30).toArray();
-    res.json({ ok: true, rows: rows.map(w => ({ _id: w._id.toString(), type: w.type, amount: w.amount, status: w.status, createdAt: w.createdAt })) });
+    res.json({ ok: true, rows: rows.map(w => ({ _id: w._id.toString(), type: w.type, amount: w.amount, status: w.status, reason: w.reason || null, createdAt: w.createdAt })) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ---------- 【2026-09-14 新增】提现审批（管理端） ----------
+// 列表：支持 status/type/q 筛选，附各状态数量
+app.get('/api/admin/withdrawals', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const status = String(req.query.status || '');
+    const type = String(req.query.type || '');
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const filter = {};
+    if (['待处理', '已打款', '已驳回'].includes(status)) filter.status = status;
+    if (['bonus', 'order'].includes(type)) filter.type = type;
+    const rows = (await db.collection('withdrawals').find(filter).sort({ createdAt: -1 }).limit(300).toArray());
+    let list = rows;
+    if (q) list = rows.filter(w =>
+      (w.displayName || '').toLowerCase().includes(q) ||
+      (w.alipay && (String(w.alipay.account || '').includes(q) || String(w.alipay.name || '').toLowerCase().includes(q))));
+    const [pending, paid, rejected] = await Promise.all([
+      db.collection('withdrawals').countDocuments({ status: '待处理' }),
+      db.collection('withdrawals').countDocuments({ status: '已打款' }),
+      db.collection('withdrawals').countDocuments({ status: '已驳回' }),
+    ]);
+    res.json({ ok: true, withdrawals: list, stats: { pending, paid, rejected } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 审批打款：标记已打款；订单型提现同时把这批派单卡结清（台账同步 + 红包解冻）
+app.post('/api/admin/withdrawals/:id/pay', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const w = await db.collection('withdrawals').findOne({ _id: new ObjectId(req.params.id) });
+    if (!w) return res.status(404).json({ ok: false, error: '提现申请不存在' });
+    if (w.status !== '待处理') return res.status(400).json({ ok: false, error: '该申请已处理过（' + w.status + '）' });
+    const note = String(req.body?.note || '').slice(0, 120);
+    let paidCards = 0;
+    if (w.type === 'order') {
+      // 快照对应的派单卡 → 逐张结清（仍处于待打款的才结）
+      const ids = (w.cardIds || []).filter(x => ObjectId.isValid(x)).map(x => new ObjectId(x));
+      const cards = ids.length ? await db.collection('cards').find({ _id: { $in: ids }, status: '待打款' }).toArray() : [];
+      for (const c of cards) {
+        await db.collection('cards').updateOne(
+          { _id: c._id, status: '待打款' },
+          { $set: { status: '已完成', paidAt: new Date(), paidVia: 'withdrawal:' + w._id.toString() } });
+        if (c.orderId && ObjectId.isValid(c.orderId)) {
+          await db.collection(CONFIG.collection).updateOne(
+            { _id: new ObjectId(c.orderId) },
+            { $set: { status: '已结算', updatedAt: new Date() } });
+        }
+        notify(c.to, 'card', { ...c, status: '已完成' });
+        paidCards++;
+      }
+      if (paidCards) cacheClear();
+      // 关联订单完结 → 红包自动解冻
+      try { await unfreezeRedpackets(db, w.userId); } catch (e) { console.warn('[红包] 提现审批解冻失败:', e.message); }
+    }
+    const r = await db.collection('withdrawals').findOneAndUpdate(
+      { _id: w._id, status: '待处理' },
+      { $set: { status: '已打款', paidAt: new Date(), note, paidCards } },
+      { returnDocument: 'after' });
+    res.json({ ok: true, withdrawal: r, paidCards });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// 驳回：写明原因（写手端可见），激励型余额随之释放可再次发起
+app.post('/api/admin/withdrawals/:id/reject', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const reason = String(req.body?.reason || '').slice(0, 120) || '管理员驳回';
+    const r = await db.collection('withdrawals').findOneAndUpdate(
+      { _id: new ObjectId(req.params.id), status: '待处理' },
+      { $set: { status: '已驳回', rejectedAt: new Date(), reason } },
+      { returnDocument: 'after' });
+    if (!r) return res.status(400).json({ ok: false, error: '该申请不存在或已处理' });
+    res.json({ ok: true, withdrawal: r });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -661,29 +769,30 @@ app.post('/api/activity/checkin', auth, async (req, res) => {
 });
 
 // ---- 单单拆红包 ----
-// GET /api/activity/redpacket - 获取当天可拆红包的订单
+// 【2026-09-14 需求修正】一个订单终身只能拆一次现金红包（不再按天刷新）；
+// 拆得金额进入冻结余额，等关联订单完结（派单卡打款完成 或 台账订单已结算）后解冻入账
+// GET /api/activity/redpacket - 获取可拆红包的订单
 app.get('/api/activity/redpacket', auth, async (req, res) => {
   try {
     const db = await getDb();
     const userId = req.user.id;
-    const today = cnDayStr(new Date());
-    // 当天审核通过（待打款）的订单
+    // 审核通过（待打款）的订单
     const cards = await db.collection('cards').find({
       to: userId, status: '待打款',
       approvedAt: { $exists: true }
     }).toArray();
-    // 已拆红包的
-    const opened = await db.collection('redpacket_records').find({ userId, date: today }).toArray();
+    // 历史已拆记录（终身维度，不看日期）
+    const opened = await db.collection('redpacket_records').find({ userId }).toArray();
     const openedCardIds = opened.map(r => String(r.cardId));
-    // 今天已开红包的订单
+    // 未拆过的订单 = 可拆（一个订单终身一次）
     const available = cards.filter(c => !openedCardIds.includes(String(c._id))).map(c => ({
       cardId: c._id, title: c.title, reward: c.reward, approvedAt: c.approvedAt
     }));
-    // 已开但冻结中的
+    // 已拆但冻结中（等待订单完结解冻）
     const frozen = opened.filter(r => r.status === '冻结').map(r => ({
       cardId: String(r.cardId), amount: r.amount, title: r.title
     }));
-    res.json({ ok: true, available, frozen, today });
+    res.json({ ok: true, available, frozen });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -694,11 +803,11 @@ app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
     const userId = req.user.id;
     const cardId = req.params.cardId;
     const today = cnDayStr(new Date());
-    // 检查是否已拆
+    // 检查是否已拆（终身一次：不限日期）
     // 【2026-09-14 修复】cardId 类型对齐（库里存 ObjectId，字符串查永远落空）+ 查重
     const ObjectId = require('mongodb').ObjectId;
-    const existing = await db.collection('redpacket_records').findOne({ userId, cardId: new ObjectId(String(cardId)), date: today });
-    if (existing) return res.status(400).json({ ok: false, error: '该订单今日已拆红包' });
+    const existing = await db.collection('redpacket_records').findOne({ userId, cardId: new ObjectId(String(cardId)) });
+    if (existing) return res.status(400).json({ ok: false, error: '该订单已拆过红包，一个订单仅可拆一次' });
     // 检查订单状态
     const card = await db.collection('cards').findOne({ _id: new (require('mongodb').ObjectId)(cardId), to: userId });
     if (!card) return res.status(404).json({ ok: false, error: '订单不存在' });
@@ -713,38 +822,51 @@ app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
         date: today, createdAt: new Date()
       });
     } catch (e) {
-      if (e.code === 11000) return res.status(400).json({ ok: false, error: '该订单今日已拆红包' }); // 并发双击兜底
+      if (e.code === 11000) return res.status(400).json({ ok: false, error: '该订单已拆过红包（并发拦截）' }); // 并发双击兜底
       throw e;
     }
     res.json({ ok: true, amount, rate: Math.round(rate * 100) / 100, title: card.title });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// 红包解冻：订单打款后自动解冻（在 pay 接口里触发）
-// 这里提供一个手动检查解冻的接口
+// 【2026-09-14 需求修正】红包解冻统一入口：
+// 解冻条件 = 派单卡已完成（打款）或 关联台账订单已结算（订单完结）；
+// 供「打款接口」自动触发 + 写手端手动检查入口调用；幂等（历史重复拆的脏记录只按最早一笔入账）
+async function unfreezeRedpackets(db, userId) {
+  const frozen = await db.collection('redpacket_records').find({ userId, status: '冻结' }).sort({ createdAt: 1 }).toArray();
+  let unlocked = 0;
+  const paidCardIds = new Set();   // 本轮已入账订单（重复拆的历史脏数据只按最早一笔算）
+  for (const r of frozen) {
+    const cid = String(r.cardId);
+    const card = await db.collection('cards').findOne({ _id: r.cardId });
+    let done = false;
+    if (card) {
+      if (card.status === '已完成') done = true;
+      else if (card.orderId && ObjectId.isValid(card.orderId)) {
+        const o = await db.collection(CONFIG.collection).findOne({ _id: new ObjectId(card.orderId) });
+        if (o && normalizeStatus(o.status) === '已结算') done = true;   // 关联订单完结
+      }
+    }
+    if (done) {
+      // 【2026-09-14 修复】幂等：同订单已入过账（本轮或历史）的重复记录作废，不再入账
+      const paid = paidCardIds.has(cid) || await db.collection('wallet_log').findOne({ userId, note: '红包奖励-' + (r.title || ''), cardId: cid });
+      if (paid) {
+        await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已作废', note: '重复拆包记录' } });
+        continue;
+      }
+      await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已解冻', unlockedAt: new Date() } });
+      await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount: r.amount, note: '红包奖励-' + r.title, cardId: cid, createdAt: new Date() });
+      paidCardIds.add(cid);
+      unlocked++;
+    }
+  }
+  return unlocked;
+}
+// 手动检查解冻入口（写手端拆红包后顺带调用）
 app.post('/api/activity/redpacket/unfreeze', auth, async (req, res) => {
   try {
     const db = await getDb();
-    const userId = req.user.id;
-    const frozen = await db.collection('redpacket_records').find({ userId, status: '冻结' }).sort({ createdAt: 1 }).toArray();
-    let unlocked = 0;
-    const paidCardIds = new Set();   // 本轮已入账订单（重复拆的历史脏数据只按最早一笔算）
-    for (const r of frozen) {
-      const cid = String(r.cardId);
-      const card = await db.collection('cards').findOne({ _id: r.cardId });
-      if (card && card.status === '已完成') {
-        // 【2026-09-14 修复】幂等：同订单已入过账（本轮或历史）的重复记录作废，不再入账
-        const paid = paidCardIds.has(cid) || await db.collection('wallet_log').findOne({ userId, note: '红包奖励-' + (r.title || ''), cardId: cid });
-        if (paid) {
-          await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已作废', note: '重复拆包记录' } });
-          continue;
-        }
-        await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已解冻', unlockedAt: new Date() } });
-        await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount: r.amount, note: '红包奖励-' + r.title, cardId: cid, createdAt: new Date() });
-        paidCardIds.add(cid);
-        unlocked++;
-      }
-    }
+    const unlocked = await unfreezeRedpackets(db, req.user.id);
     res.json({ ok: true, unlocked });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -1531,8 +1653,11 @@ async function payHandler(req, res) {
         { returnDocument: 'after' });
       if (syncedOrder) cacheClear();
     }
+    // 【2026-09-14 需求】关联订单完结（打款/台账已结算）→ 该写手冻结红包自动解冻入账
+    let unlockedRedpackets = 0;
+    try { unlockedRedpackets = await unfreezeRedpackets(db, card.to); } catch (e) { console.warn('[红包] 打款自动解冻失败:', e.message); }
     notify(card.to, 'card', r); notify(req.user.id, 'card', r);
-    res.json({ ok: true, card: r, syncedOrder });
+    res.json({ ok: true, card: r, syncedOrder: syncedOrder ? syncedOrder.value || syncedOrder : null, unlockedRedpackets });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 }
 app.post('/api/cards/:id/pay', auth, adminOnly, payHandler);
@@ -1562,13 +1687,18 @@ app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
     const st = String(req.query.status || '');
     let cards = (await db.collection('cards').find({}).sort({ createdAt: -1 }).limit(500).toArray()).map(normCard);
     if (st && CARD_STATUSES.includes(st)) cards = cards.filter(c => c.status === st);
+    // 【2026-09-14 性能修复】旧代码循环内逐卡 findOne（500 卡 = 500 次 Atlas 往返，
+    // 页面要等半分钟起步"卡成狗"）→ 改为一次 $in 批量拉取
+    const orderIds = cards.map(c => c.orderId).filter(x => x && ObjectId.isValid(x)).map(x => new ObjectId(x));
+    const orderMap = new Map();
+    if (orderIds.length) {
+      const orders = await db.collection(CONFIG.collection).find({ _id: { $in: orderIds } }).toArray();
+      for (const o of orders) orderMap.set(o._id.toString(), o);
+    }
     const rows = [];
     let totReward = 0, totShare = 0, totProfit = 0, linked = 0;
     for (const c of cards) {
-      let order = null;
-      if (c.orderId && ObjectId.isValid(c.orderId)) {
-        order = await db.collection(CONFIG.collection).findOne({ _id: new ObjectId(c.orderId) });
-      }
+      const order = c.orderId && ObjectId.isValid(c.orderId) ? (orderMap.get(String(c.orderId)) || null) : null;
       const share = order ? Math.round(order.amount * order.shareRate) / 100 : null;
       const profit = order ? Math.round((share - c.reward) * 100) / 100 : null;
       if (order) { linked++; totReward += c.reward; totShare += share; totProfit += profit; }
@@ -1600,11 +1730,16 @@ app.get('/api/dispatch/reconcile', auth, adminOnly, async (req, res) => {
     const db = await getDb();
     const cards = (await db.collection('cards').find({})
       .sort({ createdAt: -1 }).limit(500).toArray()).map(normCard);
+    // 【2026-09-14 性能修复】同样改为 $in 批量拉取订单
+    const cand = cards.filter(c => c.orderId && ObjectId.isValid(c.orderId) && ['待审核', '待打款', '已完成'].includes(c.status));
+    const orderMap = new Map();
+    if (cand.length) {
+      const orders = await db.collection(CONFIG.collection).find({ _id: { $in: cand.map(c => new ObjectId(c.orderId)) } }).toArray();
+      for (const o of orders) orderMap.set(o._id.toString(), o);
+    }
     const out = [];
-    for (const c of cards) {
-      if (!c.orderId || !ObjectId.isValid(c.orderId)) continue;
-      if (!['待审核', '待打款', '已完成'].includes(c.status)) continue;
-      const order = await db.collection(CONFIG.collection).findOne({ _id: new ObjectId(c.orderId) });
+    for (const c of cand) {
+      const order = orderMap.get(String(c.orderId));
       if (!order) continue;
       const oStatus = normalizeStatus(order.status);
       let type = null;
@@ -1865,7 +2000,8 @@ setInterval(cleanupOldData, 6 * 3600 * 1000);          // 之后每6小时清一
 app.get('/api/admin/activity-stats', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
-    const today = new Date().toISOString().slice(0,10);
+    // 【2026-09-14 修复】签到统计用北京时间口径（旧代码 UTC 日期，晚8点后统计错位一天）
+    const today = cnDayStr(new Date());
     const totalPlayers = await db.collection('game_profiles').countDocuments();
     const playingSessions = await db.collection('game_sessions').countDocuments({ status: { $in: ['playing','wave_done'] } });
     const agg = await db.collection('game_profiles').aggregate([
@@ -1925,9 +2061,14 @@ app.get('/api/admin/users', auth, adminOnly, async (req, res) => {
 app.get('/api/admin/find-user/:phone', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
-    const u = await db.collection('users').findOne({ phone: req.params.phone });
-    if (!u) return res.status(404).json({ ok: false, error: '未找到该手机号用户' });
-    res.json({ ok: true, user: { _id: u._id, phone: u.phone, name: u.name || '' } });
+    // 【2026-09-14 修复】本系统没有 users.phone 字段——手机号即登录用户名（username）；
+    // 旧代码查 phone 永远 404，管理端"查找用户发放道具"整条链路是坏的
+    const key = String(req.params.phone || '').trim();
+    const u = await db.collection('users').findOne({ username: key }) ||
+      await db.collection('users').findOne({ username: key.toLowerCase() }) ||
+      (/^\d{7}$/.test(key) ? await db.collection('users').findOne({ uid: key }) : null);
+    if (!u) return res.status(404).json({ ok: false, error: '未找到该手机号/工号对应的用户' });
+    res.json({ ok: true, user: { _id: u._id.toString(), phone: u.username, name: u.displayName || '', uid: u.uid || '' } });
   } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
