@@ -1,9 +1,13 @@
+import { ObjectId as _ObjectId } from 'mongodb';
 // routes/activity.js — 活动模块（签到 / 单单拆红包 / 月度活动）
 // 【2026-09-14v2 架构瘦身】从 server.js 抽出，行为不变
 // 挂载：require('./routes/activity')(app, { auth, getDb, cnDayStr, cnMonthStr, notify });
 import { ObjectId } from 'mongodb';
 
-export default function mountActivity(app, { auth, getDb, cnDayStr, cnMonthStr, notify }) {
+export default function mountActivity(app, deps) {
+  const { auth, getDb, cnDayStr, cnMonthStr, notify } = deps;
+  D = Object.assign({}, deps);   // ObjectId/CONFIG/normalizeStatus 由 server.js 装配时一并传入 deps
+
 
 // ---- 每日签到 ----
 // GET /api/activity/checkin - 获取签到状态
@@ -106,6 +110,15 @@ app.get('/api/activity/redpacket', auth, async (req, res) => {
 });
 
 // POST /api/activity/redpacket/:cardId - 拆红包
+// 【2026-09-14 终修】解冻路由必须先于 :cardId 注册——否则 'unfreeze' 被当作 cardId 解析直接500
+// 手动检查解冻入口（写手端拆红包后顺带调用）
+app.post('/api/activity/redpacket/unfreeze', auth, async (req, res) => {
+  try {
+    const db = await getDb();
+    const unlocked = await unfreezeRedpackets(db, req.user.id);
+    res.json({ ok: true, unlocked });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
   try {
     const db = await getDb();
@@ -150,45 +163,6 @@ app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
 // 【2026-09-14 需求修正】红包解冻统一入口：
 // 解冻条件 = 派单卡已完成（打款）或 关联台账订单已结算（订单完结）；
 // 供「打款接口」自动触发 + 写手端手动检查入口调用；幂等（历史重复拆的脏记录只按最早一笔入账）
-async function unfreezeRedpackets(db, userId) {
-  const frozen = await db.collection('redpacket_records').find({ userId, status: '冻结' }).sort({ createdAt: 1 }).toArray();
-  let unlocked = 0;
-  const paidCardIds = new Set();   // 本轮已入账订单（重复拆的历史脏数据只按最早一笔算）
-  for (const r of frozen) {
-    const cid = String(r.cardId);
-    const card = await db.collection('cards').findOne({ _id: r.cardId });
-    let done = false;
-    if (card) {
-      if (card.status === '已完成') done = true;
-      else if (card.orderId && ObjectId.isValid(card.orderId)) {
-        const o = await db.collection(CONFIG.collection).findOne({ _id: new ObjectId(card.orderId) });
-        if (o && normalizeStatus(o.status) === '已结算') done = true;   // 关联订单完结
-      }
-    }
-    if (done) {
-      // 【2026-09-14 修复】幂等：同订单已入过账（本轮或历史）的重复记录作废，不再入账
-      const paid = paidCardIds.has(cid) || await db.collection('wallet_log').findOne({ userId, note: '红包奖励-' + (r.title || ''), cardId: cid });
-      if (paid) {
-        await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已作废', note: '重复拆包记录' } });
-        continue;
-      }
-      await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已解冻', unlockedAt: new Date() } });
-      await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount: r.amount, note: '红包奖励-' + r.title, cardId: cid, createdAt: new Date() });
-      paidCardIds.add(cid);
-      try { notify(r.userId, 'msg', { title: '红包到账', content: '「' + (r.title || '') + '」订单完结，现金红包 ¥' + r.amount + ' 已解冻入账，可在钱包中查看。' }); } catch (e2) {}
-      unlocked++;
-    }
-  }
-  return unlocked;
-}
-// 手动检查解冻入口（写手端拆红包后顺带调用）
-app.post('/api/activity/redpacket/unfreeze', auth, async (req, res) => {
-  try {
-    const db = await getDb();
-    const unlocked = await unfreezeRedpackets(db, req.user.id);
-    res.json({ ok: true, unlocked });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
-});
 
 // ---- 月度活动 ----
 // GET /api/activity/monthly - 获取月度活动进度
@@ -234,4 +208,45 @@ app.post('/api/activity/monthly/claim', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+}
+
+// 打款链路共用：订单完结后自动解冻该写手冻结红包
+// 模块级依赖注入（mount 时填充；打款链路 user/cards 模块共用本函数）
+let D = { ObjectId: null, CONFIG: null, normalizeStatus: null, cnMonthStr: null, notify: null };
+
+export async function unfreezeRedpackets(db, userId) {
+  const { ObjectId, CONFIG, normalizeStatus, cnMonthStr, notify } = D;
+  const frozen = await db.collection('redpacket_records').find({ userId, status: '冻结' }).sort({ createdAt: 1 }).toArray();
+  let unlocked = 0;
+  const paidCardIds = new Set();   // 本轮已入账订单（重复拆的历史脏数据只按最早一笔算）
+  for (const r of frozen) {
+    const cid = String(r.cardId);
+    const card = await db.collection('cards').findOne({ _id: r.cardId });
+    let done = false;
+    if (card) {
+      if (card.status === '已完成') done = true;
+      else if (card.orderId) {
+        try {
+          if (ObjectId.isValid(String(card.orderId))) {
+            const o = await db.collection(CONFIG.collection).findOne({ _id: new ObjectId(String(card.orderId)) });
+            if (o && normalizeStatus(o.status) === '已结算') done = true;   // 关联订单完结
+          }
+        } catch (e3) { /* orderId 非法格式：跳过订单关联检查 */ }
+      }
+    }
+    if (done) {
+      // 【2026-09-14 修复】幂等：同订单已入过账（本轮或历史）的重复记录作废，不再入账
+      const paid = paidCardIds.has(cid) || await db.collection('wallet_log').findOne({ userId, note: '红包奖励-' + (r.title || ''), cardId: cid });
+      if (paid) {
+        await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已作废', note: '重复拆包记录' } });
+        continue;
+      }
+      await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已解冻', unlockedAt: new Date() } });
+      await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount: r.amount, note: '红包奖励-' + r.title, cardId: cid, createdAt: new Date() });
+      paidCardIds.add(cid);
+      try { notify(r.userId, 'msg', { title: '红包到账', content: '「' + (r.title || '') + '」订单完结，现金红包 ¥' + r.amount + ' 已解冻入账，可在钱包中查看。' }); } catch (e2) {}
+      unlocked++;
+    }
+  }
+  return unlocked;
 }
