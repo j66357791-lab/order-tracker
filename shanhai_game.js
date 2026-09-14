@@ -250,6 +250,29 @@ module.exports = function mountShanhaiGame(app, { auth, getDb }) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
+  // ==================== 管理端：山海数据面板（游戏工作台用） ====================
+  app.get('/api/shanhai/admin/stats', auth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ ok: false, error: '需要管理员权限' });
+    try {
+      const db = await getDb();
+      const [players, agg, top] = await Promise.all([
+        db.collection('shanhai_profiles').countDocuments(),
+        db.collection('shanhai_profiles').aggregate([
+          { $group: { _id: null, plays: { $sum: '$plays' }, wins: { $sum: '$wins' }, totalKills: { $sum: '$totalKills' }, xianyu: { $sum: '$xianyu' }, lingqi: { $sum: '$lingqi' } } }
+        ]).toArray(),
+        db.collection('shanhai_profiles').find({ wins: { $gt: 0 } })
+          .sort({ wins: -1, bestTimeSec: 1 }).limit(10)
+          .project({ username: 1, wins: 1, plays: 1, bestKills: 1, bestTimeSec: 1, maxLevel: 1 }).toArray(),
+      ]);
+      res.json({
+        ok: true,
+        players,
+        totals: agg[0] || { plays: 0, wins: 0, totalKills: 0, xianyu: 0, lingqi: 0 },
+        top,
+      });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
   // ==================== 索引 ====================
   (async () => {
     try {
