@@ -11,7 +11,7 @@ const Assets = (() => {
     const animMap = {
       hero: "hero", zheng: "zheng", shanhaogt: "shanhaogt",
       bifang: "bifang", xuangui: "xuangui", boss: "boss_shanhaoking",
-      fireball: "proj_fire", icepick: "proj_ice", rock: "proj_rock",
+      fireball: "proj_fire", icepick: "proj_ice", sword: "sword", swordspin: "sword_spin", rock: "proj_rock",
       orb: "orb", meat: "meat", hit: "fx_hit", die: "fx_die",
       levelup: "fx_levelup", smash: "fx_smash",
       tile: "tile_grass", tree1: "deco_tree1", tree2: "deco_tree2",
