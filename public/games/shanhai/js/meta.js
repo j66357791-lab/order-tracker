@@ -1,22 +1,43 @@
 // meta.js — 养成状态管理（服务端档案 + 本地缓存 + 加成计算）
+// 【2026-09-14】斩妖录·贰：仙玉/灵气双货币 + 6槽装备 + 背包
 "use strict";
 const META = (() => {
   let profile = null;
+  let stageStars = {};
 
   // —— 加成计算（战斗读这里） ——
+  // 装备词条：武器=攻击% 衣服=生命% 发冠=经验% 腰带=拾取范围% 鞋子=移速% 配饰=全伤害%
   function bonus() {
     const p = profile || {};
     const sl = p.skillLv || { fireline: 0, icepick: 0, body: 0 };
-    const w = p.equip?.weapon, t = p.equip?.talisman;
+    const eq = p.equip || {};
+    const V = k => (eq[k] ? (eq[k].val || 0) / 100 : 0);
+    const atkMul = 1 + V("weapon");
     return {
-      atkMul: 1 + (w ? w.val / 100 : 0),                  // 武器攻击%
-      hpMul: 1 + (t ? t.val / 100 : 0),                   // 护符生命%
-      fireMul: 1 + (w ? w.val / 100 : 0) + sl.fireline * 0.06,
-      iceMul: 1 + (w ? w.val / 100 : 0) + sl.icepick * 0.06,
-      bodyHpMul: 1 + sl.body * 0.08,
+      atkMul,
+      hpMul: 1 + V("armor"),
+      fireMul: atkMul + sl.fireline * 0.06,
+      iceMul: atkMul + sl.icepick * 0.06,
+      bodyHpMul: 1 + sl.body * 0.08 + V("armor"),
       fireScale: 1 + (sl.fireline * 0.12),                // 火羽视觉大小
       iceCount: 1 + (sl.icepick >= 3 ? 1 : 0),            // 3层冰锥+1枚
+      expMul: 1 + V("crown"),                             // 发冠：经验获取
+      pickupMul: 1 + V("belt"),                           // 腰带：拾取范围
+      moveMul: 1 + V("boots"),                            // 鞋子：移速
+      dmgMul: 1 + V("accessory"),                         // 配饰：全伤害
     };
+  }
+
+  async function shApi(url, body) {
+    const r = await fetch(url, {
+      method: body ? "POST" : "GET",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("jdy_token") },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (r.status === 401) { location.href = "/login.html"; throw { error: "未登录" }; }
+    const d = await r.json();
+    if (!d.ok) throw d;
+    return d;
   }
 
   async function load() {
@@ -28,24 +49,23 @@ const META = (() => {
     const h = Game.hero;
     if (!h) return null;
     try {
-      const d = await shApi("/api/shanhai/result", { method: "POST", body: JSON.stringify({
-        win, stage, timeSec: Math.round(h.timeAlive), kills: h.kills, level: h.level, dmgTaken: Math.round(h.dmgTaken),
-      }) });
-      profile = d.profile;
-      return d.gain;
-    } catch (e) { console.warn("report fail", e); return null; }
+      const d = await shApi("/api/shanhai/result", {
+        win, stage,
+        timeSec: Math.floor(h.timeAlive || 0),
+        kills: h.kills || 0,
+        level: h.level || 1,
+        dmgTaken: Math.round(h.dmgTaken || 0),
+      });
+      profile = Object.assign({}, profile, d.balance ? { xianyu: d.balance.xianyu, lingqi: d.balance.lingqi } : {});
+      if (d.stars) stageStars[stage] = d.stars;
+      return d;
+    } catch (e) { return null; }
   }
-  async function upgradeSkill(key) {
-    const d = await shApi("/api/shanhai/upgrade", { method: "POST", body: JSON.stringify({ key }) });
-    profile = d.profile;
-    return d;
-  }
-  async function draw() {
-    const d = await shApi("/api/shanhai/draw", { method: "POST", body: JSON.stringify({}) });
-    profile = d.profile;
-    return d;
-  }
+  async function upgradeSkill(key) { return shApi("/api/shanhai/upgrade", { key }); }
+  async function draw() { return shApi("/api/shanhai/draw", {}); }
+  async function equip(itemId) { return shApi("/api/shanhai/equip", { itemId }); }
+  async function unequip(slot) { return shApi("/api/shanhai/unequip", { slot }); }
 
-  return { load, report, upgradeSkill, draw, bonus, get profile() { return profile; } };
+  return { load, report, upgradeSkill, draw, equip, unequip, bonus, get profile() { return profile; }, set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
 })();
 window.META = META;
