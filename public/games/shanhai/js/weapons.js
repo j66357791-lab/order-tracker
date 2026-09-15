@@ -1,4 +1,4 @@
-// 技能系统：凤凰火线 / 寒冰锥 / 敌方弹幕（策划案第五章数值）
+// 技能系统：御剑术（初始飞剑）/ 火球术 / 寒冰锥 / 敌方弹幕
 "use strict";
 
 // —— 玩家武器总控 ——
@@ -6,7 +6,11 @@ class WeaponSystem {
   constructor(hero) {
     this.hero = hero;
     this.slots = {};          // key -> {lv, t}
-    this.addWeapon("fireline");
+    // 【2026-09-15】初始武器：御剑术（飞剑）——进游戏就有；火球术改为升级习得
+    this.addWeapon("sword");
+    // 飞剑五诀技能点（升级三选一里点）
+    this.swordSkill = { count: 0, atk: 0, spd: 0, lock: 0, burst: 0 };
+    this.swordShot = 0;       // 发剑计数（万剑归宗触发器）
   }
   has(key) { return !!this.slots[key]; }
   lv(key) { return this.slots[key] ? this.slots[key].lv : 0; }
@@ -35,6 +39,20 @@ class WeaponSystem {
     return true;
   }
 
+  // —— 飞剑参数（御剑术 + 五诀加成 + 装备武器数值）——
+  swordParams() {
+    const W = CONFIG.weapons.sword, S = this.swordSkill;
+    const wpn = (window.META && META.profile && META.profile.equip && META.profile.equip.weapon) || null;
+    const wpnAtk = wpn ? (wpn.val || 3) : 3;   // 初始新手飞剑：攻击力+3
+    return {
+      dmg: (W.baseDmg + wpnAtk) * (1 + 0.2 * S.atk) * this.hero.dmgMul,
+      cd: W.cd / (1 + 0.2 * S.spd),
+      count: 1 + S.count,                       // 诀一：+1把（可点两次→3把）
+      speed: W.projSpeed, radius: W.projRadius,
+      homing: S.lock > 0,                       // 诀四：锁定怪物（追踪弹道）
+      burst: S.burst > 0,                       // 诀五：每50发触发万剑归宗
+    };
+  }
   // 弹幕参数（按等级）
   firelineParams() {
     const W = CONFIG.weapons.fireline, lv = this.lv("fireline");
@@ -63,7 +81,34 @@ class WeaponSystem {
     for (const s of Object.values(this.slots)) s.t -= dt;
     // 索敌候选 = 小怪池 + Boss（修复：Boss 战小怪清空后停火）
     const cand = enemies.active.concat(boss && boss.alive ? [boss] : []);
-    // 凤凰火线：射最近敌人
+    // —— 御剑术：飞剑射向最近之敌 ——
+    const sp = this.swordParams();
+    const sslot = this.slots.sword;
+    if (sslot && sslot.t <= 0) {
+      const targets = nearestEnemies(cand, this.hero, Math.max(sp.count, 1));
+      if (targets.length) {
+        sslot.t = sp.cd;
+        for (const tgt of targets) {
+          const dx = tgt.x - this.hero.x, dy = tgt.y - this.hero.y;
+          const d = Math.hypot(dx, dy) || 1;
+          this.swordShot++;
+          fire("sword", this.hero.x, this.hero.y - 8, dx / d, dy / d, { ...sp, target: sp.homing ? tgt : null });
+        }
+        // 诀五·万剑归宗：每射50剑，人物同时飞出10把旋转飞剑轰向妖群（不锁定）
+        if (sp.burst && this.swordShot % 50 === 0 && cand.length) {
+          let cx = 0, cy = 0, n = 0;
+          for (const e of cand) { if (e.x !== undefined) { cx += e.x; cy += e.y; n++; } }
+          if (n) { cx /= n; cy /= n;
+            for (let i = 0; i < 10; i++) {
+              const a = Math.atan2(cy - this.hero.y, cx - this.hero.x) + (Math.random() - 0.5) * 1.6;
+              fire("swordburst", this.hero.x, this.hero.y, Math.cos(a), Math.sin(a), { ...sp, dmg: sp.dmg * 0.6, homing: false, target: null });
+            }
+            UI.toast('万剑归宗！');
+          }
+        }
+      }
+    }
+    // 火球术：射最近敌人
     const fp = this.firelineParams();
     const slot = this.slots.fireline;
     if (slot && slot.t <= 0) {
@@ -123,15 +168,46 @@ class Projectile {
     this.life = 3.2;        // 寿命
     this.spin = Math.random() * Math.PI * 2;
     this.scale = params.scale || 1;
+    // 【2026-09-15】飞剑：锁定目标（追踪）与旋转形态
+    this.target = params.target || null;
+    this.homing = !!params.homing;
+    this.isSword = (kind === "sword" || kind === "swordburst");
   }
   update(dt) {
     this.animT += dt;
     this.life -= dt;
     if (this.life <= 0) { this.alive = false; return; }
+    // 锁妖剑诀：弹道追踪目标（目标死亡则直线飞出）
+    if (this.homing && this.target && this.target.alive !== false) {
+      const tx = this.target.x - this.x, ty = this.target.y - this.y;
+      const d = Math.hypot(tx, ty) || 1;
+      const steer = 6 * dt;   // 转向速率
+      this.dx += (tx / d - this.dx) * steer;
+      this.dy += (ty / d - this.dy) * steer;
+      const dd = Math.hypot(this.dx, this.dy) || 1;
+      this.dx /= dd; this.dy /= dd;
+    } else if (this.homing) { this.homing = false; }
     this.x += this.dx * this.speed * dt;
     this.y += this.dy * this.speed * dt;
   }
   draw(ctx) {
+    if (this.isSword) {
+      if (this.kind === "swordburst") {
+        // 万剑归宗：旋转序列帧飞剑
+        this.spin += (window.Game && Game.lastDt || 0.016) * 14;
+        const f = Assets.frame("swordspin", this.animT, 10);
+        ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.spin);
+        Assets.draw(ctx, "swordspin", f, 0, 0, 1.1);
+        ctx.restore();
+      } else {
+        // 普通飞剑：剑尖朝向飞行方向（+90°，贴图竖直向上）
+        ctx.save(); ctx.translate(this.x, this.y);
+        ctx.rotate(Math.atan2(this.dy, this.dx) + Math.PI / 2);
+        Assets.draw(ctx, "sword", 0, 0, 1);
+        ctx.restore();
+      }
+      return;
+    }
     if (this.kind === "fireline") {
       const f = Assets.frame("fireball", this.animT, 12);
       Assets.draw(ctx, "fireball", f, this.x, this.y, this.scale || 1);
