@@ -9,7 +9,7 @@ import multer from 'multer';
 import { Server } from 'socket.io';
 import { ObjectId, GridFSBucket } from 'mongodb';
 
-import { CONFIG } from './config.js';
+import { CONFIG, CHANGELOG } from './config.js';
 import { getDb } from './lib/db.js';
 import {
   JWT_SECRET, signToken, publicUser, auth, adminOnly,
@@ -39,6 +39,9 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: FIL
 const notify = makeNotify(io);
 let gridBucket = null;
 const makeBucket = async () => { const db = await getDb(); gridBucket = gridBucket || new GridFSBucket(db, { bucketName: 'files' }); return gridBucket; };
+
+// ---- 版本信息（前端进入时自动检查更新） ----
+app.get('/api/version', (req, res) => res.json({ ok: true, version: CONFIG.appVersion, changelog: CHANGELOG }));
 
 // ---- PWA / 深链 ----
 app.get('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, 'public/manifest.json')));
