@@ -518,7 +518,7 @@ const FX = (() => {
   }
   document.getElementById('ffGo').onclick = async function () {
     this.style.display = 'none';
-    document.getElementById('ffSkip').textContent = '后台下载中…';
+    document.getElementById('ffTip') && (document.getElementById('ffTip').textContent = '正在预载游戏资源…');
     var done = 0, fail = 0;
     for (var i = 0; i < ASSETS.length; i++) {
       try {
@@ -533,7 +533,8 @@ const FX = (() => {
     }
     fin(!fail);
   };
-  document.getElementById('ffSkip').onclick = function () { m.remove(); };
+  // 【2026-09-15】强制预下载：进入游戏即自动开始（可切后台，不可跳过）
+  document.getElementById('ffGo').onclick();
 })();
 </script>
 </body>
