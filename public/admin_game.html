@@ -105,8 +105,8 @@ async function loadStats() {
       <div class="stat"><b>${s.game?.totalBallsLeft ?? '-'}</b><span>场外魔法球存量</span></div>
       <div class="stat"><b>${s.checkin?.today ?? '-'}</b><span>今日签到人数</span></div>`;
     const m = await api('/api/admin/activity-maintenance');
-    document.getElementById('btnMaint').textContent = '维护模式：' + (m.value ? '开启中(点击关闭)' : '关闭(点击开启)');
-    document.getElementById('btnMaint').dataset.on = m.value ? '1' : '';
+    document.getElementById('btnMaint').textContent = '维护模式：' + (m.maintenance ? '开启中(点击关闭)' : '关闭(点击开启)');
+    document.getElementById('btnMaint').dataset.on = m.maintenance ? '1' : '';
   } catch (e) { say(e.message, true); }
   try {
     const r = await api('/api/game/admin/redeems?limit=15');
@@ -168,7 +168,7 @@ async function cleanup() {
 }
 async function toggleMaint() {
   const on = !document.getElementById('btnMaint').dataset.on;
-  try { await api('/api/admin/activity-maintenance', { method: 'POST', body: { value: on } }); say(on ? '维护模式已开启' : '维护模式已关闭'); loadStats(); }
+  try { await api('/api/admin/activity-maintenance', { method: 'POST', body: { maintenance: on } }); say(on ? '维护模式已开启' : '维护模式已关闭'); loadStats(); }
   catch (e) { say(e.message, true); }
 }
 loadStats(); loadCfg();
