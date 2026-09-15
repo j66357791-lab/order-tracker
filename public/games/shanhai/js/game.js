@@ -352,6 +352,14 @@ const Game = (() => {
     // 抽 3 个不重复
     const out = [];
     const used = new Set();
+    // 【2026-09-15b】保底：前4级升级至少含一个飞剑剑诀（新人必能点到飞剑技能）
+    if (hero.level <= 4) {
+      const swordPool = pool.filter(c => c.kind === "sword");
+      if (swordPool.length) {
+        const c0 = swordPool[Math.floor(Math.random() * swordPool.length)];
+        out.push(c0); used.add(c0.key + c0.kind);
+      }
+    }
     while (out.length < 3 && pool.length) {
       const i = Math.floor(Math.random() * pool.length);
       const c = pool[i];
