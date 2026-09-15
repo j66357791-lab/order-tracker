@@ -25,8 +25,12 @@ const app = express();
 app.use(express.json({ limit: '120mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), {
-  maxAge: '30d',
-  setHeaders: (res, p) => { if (p.endsWith('.html') || p.endsWith('.json')) res.setHeader('Cache-Control', 'no-cache'); },
+  maxAge: '30d',   // 图片等长期缓存（引用带 ?v= 版本化，换图换URL）
+  setHeaders: (res, p) => {
+    // 【2026-09-15c 缓存根治】html/json/js/css 一律 no-cache（ETag 秒级再验证）
+    // ——此前 js/css 30d 缓存 + URL 不变，导致部署新版本后老客户端一直用旧逻辑
+    if (/\.(html|json|js|css|webmanifest)$/.test(p)) res.setHeader('Cache-Control', 'no-cache');
+  },
 }));
 
 const server = http.createServer(app);
