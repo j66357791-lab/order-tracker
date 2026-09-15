@@ -45,7 +45,7 @@ const UI = (() => {
     bar.innerHTML = "";
     if (!ws) return;
     const icons = { fireline: "火", icepick: "冰", body: "体" };
-    const names = { fireline: "凤凰火线", icepick: "寒冰锥", body: "修身体质" };
+    const names = { fireline: "火球术", icepick: "寒冰锥", body: "修身体质" };
     for (const [key, s] of Object.entries(ws.slots)) {
       const el = document.createElement("div");
       el.className = "skill-chip";
@@ -97,7 +97,7 @@ const UI = (() => {
     const row = $("choiceRow");
     const W = CONFIG.weapons;
     const meta = {
-      fireline: { name: "凤凰火线", icon: "火", desc: lv => `自动射出火羽灼烧最近之敌<br>${W.fireline.baseDmg + W.fireline.dmgPerLv * (lv - 1)} 伤害 · ${(W.fireline.cd + W.fireline.cdPerLv * (lv - 1)).toFixed(2)}s` },
+      fireline: { name: "火球术", icon: "火", desc: lv => `自动射出火羽灼烧最近之敌<br>${W.fireline.baseDmg + W.fireline.dmgPerLv * (lv - 1)} 伤害 · ${(W.fireline.cd + W.fireline.cdPerLv * (lv - 1)).toFixed(2)}s` },
       icepick: { name: "寒冰锥", icon: "冰", desc: lv => `穿透冰锥减速敌人<br>${W.icepick.baseDmg + W.icepick.dmgPerLv * (lv - 1)} 伤害 · 减速 ${Math.round(W.icepick.slowPct * 100)}%` },
       body: { name: "修身体质", icon: "体", desc: lv => `气血上限提升 ${W.body.hpPerLv}%<br>当前上限 +${W.body.hpPerLv}` },
     };
@@ -105,8 +105,8 @@ const UI = (() => {
       const card = document.createElement("div");
       card.className = "choice-card";
       let title, icon, desc, tag;
-      if (c.kind === "stat") {
-        title = c.name; icon = c.icon; desc = c.desc; tag = "辅修";
+      if (c.kind === "stat" || c.kind === "sword") {
+        title = c.name; icon = c.icon; desc = c.desc; tag = c.kind === "sword" ? "剑诀" : "辅修";
       } else {
         const m = meta[c.key];
         const curLv = c.kind === "new" ? 0 : window.Game.__weapons.lv(c.key);
