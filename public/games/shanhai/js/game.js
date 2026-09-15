@@ -112,11 +112,13 @@ const Game = (() => {
   }
 
   // ============ 弹幕发射桥 ============
+  let lastDt = 0.016;   // 供弹道动画用
   function fire(kind, x, y, dx, dy, params) {
     const prm = { ...params };
     if (kind === "fireline" || kind === "icepick") prm.speed = params.speed;
     projPool.spawn(kind, x, y, dx, dy, prm);
   }
+  window.Game && (Game.lastDt = 0.016);
 
   const bossApi = {
     spawnBullet(x, y, dx, dy, dmg, kind) {
@@ -144,7 +146,7 @@ const Game = (() => {
       try { update(dt); }
       catch (ex) { console.error("update error:", ex); }   // 单帧异常不冻结游戏
     }
-    render();
+    render(dt);
     requestAnimationFrame(loop);
   }
 
@@ -336,6 +338,13 @@ const Game = (() => {
     }
     // 修身体质（被动，未满级）
     if (!weapons.has("body") || weapons.lv("body") < W.body.maxLv) pool.push({ key: "body", kind: weapons.has("body") ? "up" : "new" });
+    // 【2026-09-15】飞剑五诀（御剑术专属技能点选）
+    const S = weapons.swordSkill;
+    if (S.count < 2) pool.push({ key: "swordcount", kind: "sword", name: "剑影分光", desc: "多一把飞剑齐射（" + (1 + S.count) + " → " + (2 + S.count) + "把）", icon: "剑" });
+    if (S.atk < 5) pool.push({ key: "swordatk", kind: "sword", name: "剑意淬锋", desc: "飞剑攻击力 +20%", icon: "锋" });
+    if (S.spd < 5) pool.push({ key: "swordspd", kind: "sword", name: "剑御风行", desc: "飞剑攻击速度 +20%", icon: "疾" });
+    if (S.lock < 1) pool.push({ key: "swordlock", kind: "sword", name: "锁妖剑诀", desc: "飞剑锁定敌人，弹道追踪（精英）", icon: "锁" });
+    if (S.burst < 1) pool.push({ key: "swordburst", kind: "sword", name: "万剑归宗", desc: "每射50剑，齐发10剑轰向妖群（精英）", icon: "万" });
     // 属性强化
     pool.push({ key: "atk", kind: "stat", name: "煞气淬炼", desc: "攻击力 +12%", icon: "煞" });
     pool.push({ key: "spd", kind: "stat", name: "御风步", desc: "移动速度 +8%", icon: "风" });
@@ -367,6 +376,15 @@ const Game = (() => {
   }
 
   function applyChoice(p) {
+    if (p.kind === "sword") {
+      const S = weapons.swordSkill;
+      if (p.key === "swordcount") S.count++;
+      if (p.key === "swordatk") S.atk++;
+      if (p.key === "swordspd") S.spd++;
+      if (p.key === "swordlock") S.lock = 1;
+      if (p.key === "swordburst") S.burst = 1;
+      return;
+    }
     if (p.kind === "new") weapons.addWeapon(p.key);
     else if (p.kind === "up") weapons.upgrade(p.key);
     else if (p.kind === "stat") {
@@ -377,7 +395,9 @@ const Game = (() => {
   }
 
   // ============ 渲染 ============
-  function render() {
+  function render(dt) {
+    lastDt = dt || 0.016;
+    window.Game && (Game.lastDt = lastDt);
     ctx.fillStyle = "#5E7C46";
     ctx.fillRect(0, 0, W, H);
     if (state === "title") { UI && UI.drawTitleBg && UI.drawTitleBg(ctx); return; }
