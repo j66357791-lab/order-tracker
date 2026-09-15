@@ -27,10 +27,15 @@ const CONFIG = {
     smashDmg: 30, smashRadius: 110, smashCd: 5.5,
   },
 
-  // —— 技能（策划案第五章：火系凤凰火线 / 冰系冰锥 / 通用修身体质）——
+  // —— 技能（御剑术初始飞剑 / 火系火球术 / 冰系冰锥 / 通用修身体质）——
   weapons: {
+    sword: {
+      name: "御剑术", desc: "飞剑自动射向最近之敌（初始武器）",
+      baseDmg: 9, cd: 0.55, projSpeed: 430, projRadius: 7, kind: "base",
+      lvDesc: ["飞剑1把", "技能点选强化", "技能点选强化", "技能点选强化", "技能点选强化"],
+    },
     fireline: {
-      name: "凤凰火线", desc: "灼羽射向最近之敌",
+      name: "火球术", desc: "火球射向最近之敌",
       baseDmg: 8, cd: 0.4, projSpeed: 300, projRadius: 6,
       dmgPerLv: 4, cdPerLv: -0.03, maxLv: 5,
       lvDesc: ["1枚灼羽", "伤害+4", "灼羽+1", "伤害+4", "灼羽+1·伤+4"],
