@@ -93,9 +93,6 @@
           <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="growXianyu">0</b></span>
           <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="growLingqi">0</b></span>
         </div>
-        <div class="grow-sec">◆ 装备寻宝（<b>120</b> 仙玉一抽 · 空槽自动穿戴）</div>
-        <button class="btn-jade" id="btnDraw">寻 宝 · 120 ◉</button>
-        <div class="draw-result" id="drawResult"></div>
         <div class="grow-sec">◆ 神行装束（点击已穿装备可卸下）</div>
         <div class="equip-layout">
           <div class="eq-col">
@@ -104,7 +101,7 @@
             <div class="eq-slot" data-slot="crown" id="slotCrown"><i>发冠</i><b class="eq-v">空</b></div>
           </div>
           <div class="eq-center">
-            <img src="/games/shanhai/assets/sprites/hero_front.png" id="eqHero" alt="">
+            <img src="/games/shanhai/assets/hero_full.png" id="eqHero" alt="">
             <div class="eq-power" id="eqPower">神力 0</div>
           </div>
           <div class="eq-col">
@@ -135,7 +132,11 @@
         </div>
         <div class="grow-sec">◆ 技能强化（战斗内永久生效）</div>
         <div id="skillList" class="skill-list"></div>
+        <div class="grow-sec">◆ 装备寻宝（<b>120</b> 仙玉一抽 · 空槽自动穿戴）</div>
+        <button class="btn-jade" id="btnDraw">寻 宝 · 120 ◉</button>
+        <div class="draw-result" id="drawResult"></div>
         <div class="grow-sec">◆ 斩妖图志</div>
+
         <div class="sh-lore">山海经异兽志 · 南山经首列：狌狌知往，鹿蜀佩宜，旋龟愈聋，鯥鱼无肿。斩妖证道，录名于此。</div>
       </div>
       <!-- 挑战（占位） -->
@@ -323,7 +324,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   function renderGrow() {
     const p = META.profile || {};
     const SK = [
-      { key: "fireline", name: "凤凰火线", desc: lv => `火羽伤害 +${lv * 6}% · 弹体增大` },
+      { key: "fireline", name: "火球术", desc: lv => `火球伤害 +${lv * 6}% · 弹体增大` },
       { key: "icepick", name: "寒冰锥", desc: lv => `冰锥伤害 +${lv * 6}%${lv >= 3 ? " · +1 枚" : ""}` },
       { key: "body", name: "修身体质", desc: lv => `生命上限 +${lv * 8}%` },
     ];
