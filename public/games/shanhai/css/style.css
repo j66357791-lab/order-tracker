@@ -22,7 +22,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .cover-ver { margin-top: 12px; font: 10px/1 sans-serif; color: rgba(232,220,200,.35); }
 
 /* ===== 背景（主页/加载共用） ===== */
-.home-bg { position: absolute; inset: 0; background: url(../assets/home-bg-ink.jpg) center/cover no-repeat; }
+.home-bg { position: absolute; inset: 0; background: url(../assets/home-bg-new.jpg) center/cover no-repeat; }
 .home-bg.dim { filter: brightness(.55) blur(2px); }
 .home-bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,24,20,.35), rgba(10,24,20,.05) 30%, rgba(10,24,20,.5) 100%); }
 
