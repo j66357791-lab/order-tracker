@@ -318,3 +318,9 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 /* ===== 【2026-09-14】山海录 + 新山图样式 ===== */
 .sh-lore { padding: 14px 12px; line-height: 1.9; font-size: 12px; color: #C9BEA0; background: linear-gradient(180deg, rgba(32,26,16,.55), rgba(16,12,8,.55)); border: 1px solid rgba(212,184,122,.22); border-radius: 12px; letter-spacing: 1px; }
 .stage-img { border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.5); }
+
+/* 【2026-09-15b】装备图标 */
+.eq-slot { text-align: center; }
+.eq-ico { display: block; height: 52px; max-width: 70%; margin: 0 auto 4px; object-fit: contain; filter: drop-shadow(0 3px 8px rgba(0,0,0,.45)); }
+.bag-cell .bag-ico { display: block; height: 34px; max-width: 80%; margin: 2px auto; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(0,0,0,.4)); }
+.eq-slot { min-height: 118px; }
