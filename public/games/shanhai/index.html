@@ -65,19 +65,19 @@
       <div class="home-tab on" id="tabFight">
         <div class="stage-visual">
           <div class="stage-title-bar">
-            <img src="/games/shanhai/assets/stage-bar-new.png" alt="">
+            <img src="/games/shanhai/assets/stage-bar-new.png?v=9" alt="">
             <span id="stageName">南山草泽</span>
           </div>
           <div class="stage-main">
             <div class="stage-arrow left" id="stagePrev">‹</div>
-            <img src="/games/shanhai/assets/stage-mountain-new.png" class="stage-img" alt="">
+            <img src="/games/shanhai/assets/stage-mountain-new.png?v=9" class="stage-img" alt="">
             <div class="stage-arrow right" id="stageNext">›</div>
           </div>
           <div class="stage-level-badge" id="stageLevel">第 一 关</div>
           <div class="stage-stars" id="stageStars">
-            <img src="/games/shanhai/assets/star-transparent.png" alt="">
-            <img src="/games/shanhai/assets/star-transparent.png" alt="">
-            <img src="/games/shanhai/assets/star-transparent.png" alt="">
+            <img src="/games/shanhai/assets/star-transparent.png?v=9" alt="">
+            <img src="/games/shanhai/assets/star-transparent.png?v=9" alt="">
+            <img src="/games/shanhai/assets/star-transparent.png?v=9" alt="">
           </div>
           <div class="stage-sub" id="stageSub">15 波 · 山臊王</div>
         </div>
@@ -101,7 +101,7 @@
             <div class="eq-slot" data-slot="crown" id="slotCrown"><i>发冠</i><b class="eq-v">空</b></div>
           </div>
           <div class="eq-center">
-            <img src="/games/shanhai/assets/hero_full.png" id="eqHero" alt="">
+            <img src="/games/shanhai/assets/hero_full.png?v=9" id="eqHero" alt="">
             <div class="eq-power" id="eqPower">神力 0</div>
           </div>
           <div class="eq-col">
@@ -130,14 +130,21 @@
           <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="shXianyu">0</b></span>
           <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="shLingqi">0</b></span>
         </div>
-        <div class="grow-sec">◆ 技能强化（战斗内永久生效）</div>
+        <div class="grow-sec">◆ 御剑五诀（对局内升级点选）</div>
+        <div class="sword-skills" id="swordSkillCard">
+          <div class="sk-row"><i>剑影分光</i><span>多一把飞剑齐射，最多3把同发</span></div>
+          <div class="sk-row"><i>剑意淬锋</i><span>飞剑攻击力 +20%（可叠5层）</span></div>
+          <div class="sk-row"><i>剑御风行</i><span>飞剑攻击速度 +20%（可叠5层）</span></div>
+          <div class="sk-row"><i>锁妖剑诀</i><span>精英技：飞剑锁定敌人弹道追踪</span></div>
+          <div class="sk-row"><i>万剑归宗</i><span>精英技：每射50剑，10剑齐轰妖群</span></div>
+        </div>
+        <div class="grow-sec">◆ 技能强化（火球术/寒冰锥/修身体质 · 永久生效）</div>
         <div id="skillList" class="skill-list"></div>
         <div class="grow-sec">◆ 装备寻宝（<b>120</b> 仙玉一抽 · 空槽自动穿戴）</div>
         <button class="btn-jade" id="btnDraw">寻 宝 · 120 ◉</button>
         <div class="draw-result" id="drawResult"></div>
         <div class="grow-sec">◆ 斩妖图志</div>
-
-        <div class="sh-lore">山海经异兽志 · 南山经首列：狌狌知往，鹿蜀佩宜，旋龟愈聋，鯥鱼无肿。斩妖证道，录名于此。</div>
+        <div class="sh-lore">山海经异兽志 · 南山经首列：狌狌知往，鹿蜀佩宜，旋龟愈聋，鯤鱼无肿。斩妖证道，录名于此。</div>
       </div>
       <!-- 挑战（占位） -->
       <div class="home-tab" id="tabChallenge">
@@ -361,10 +368,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       if (it) {
         power += it.val || 0;
         ico.src = `/games/shanhai/assets/${SLOT_ICON[slot] || "icon_weapon"}.png`;
-        ico.style.display = "block";
+        ico.style.display = "block"; ico.style.opacity = "1";
         v.innerHTML = `<span class="eq-name" style="color:${it.color || "#cfd8dc"}">${it.name}</span><em class="eq-affix">${it.affix || ""} +${it.val}${slot === "weapon" ? "" : "%"}</em>`;
         el.classList.add("filled");
-      } else { ico.style.display = "none"; v.innerHTML = "空"; el.classList.remove("filled"); }
+      } else { ico.src = `/games/shanhai/assets/${SLOT_ICON[slot]}.png`; ico.style.display = "block"; ico.style.opacity = ".22"; v.innerHTML = "空 · " + SLOT_NAME[slot]; el.classList.remove("filled"); }
     });
     $("eqPower").textContent = "神力 " + Math.round(power * 10) / 10;
     document.querySelectorAll(".eq-slot").forEach(el => el.onclick = async () => {
