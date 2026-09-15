@@ -75,7 +75,8 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       xianyu: META_CFG.initXianyu,     // 仙玉（通关斩妖产出，抽卡/强化消耗）
       lingqi: 0,                        // 灵气（占位积累，后续版本开放用途）
       skillLv: { fireline: 0, icepick: 0, body: 0 },
-      equip: { weapon: null, armor: null, crown: null, belt: null, boots: null, accessory: null },
+      // 【2026-09-15】初始武器：新手飞剑（白色·攻击力+3·攻速1·无附加·无技能）
+      equip: { weapon: { id: 'eq_sword_starter', slot: 'weapon', quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 }, armor: null, crown: null, belt: null, boots: null, accessory: null },
       bag: [],
       clearedStages: [],
     };
@@ -88,7 +89,14 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
   app.get('/api/shanhai/profile', auth, async (req, res) => {
     try {
       const db = await getDb();
-      const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      let p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      // 【2026-09-15】存量档案兜底：没武器的一律补发新手飞剑（进游戏就有）
+      if (!p.equip || !p.equip.weapon) {
+        await db.collection('shanhai_profiles').updateOne(
+          { userId: req.user.id },
+          { $set: { 'equip.weapon': { id: 'eq_sword_starter', slot: 'weapon', quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 } } });
+        p = await db.collection('shanhai_profiles').findOne({ userId: req.user.id });
+      }
       res.json({ ok: true, profile: p });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
