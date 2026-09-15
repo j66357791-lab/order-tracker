@@ -118,5 +118,17 @@
   "frames": 1,
   "fw": 28,
   "fh": 44
+ },
+ "sword": {
+  "file": "sword.png",
+  "frames": 1,
+  "fw": 32,
+  "fh": 32
+ },
+ "sword_spin": {
+  "file": "sword_spin.png",
+  "frames": 8,
+  "fw": 32,
+  "fh": 32
  }
 }
