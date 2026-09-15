@@ -393,7 +393,7 @@
   <div><h1>写手工作台</h1><div class="sub">派单协作系统 V17</div></div>
   <div class="grow"></div>
   <div class="me-badge">
-    <button class="hd-btn" id="btnMail" title="站内信" style="background:rgba(255,255,255,.14);color:#fff;position:relative">✉<span class="reddot" id="mailDot" style="display:none;position:absolute;top:-4px;right:-4px">0</span></button>
+    <button class="hd-btn" id="btnMail" title="广告" style="background:rgba(255,255,255,.14);color:#fff;position:relative">📢</button>
     <span class="dot d-off" id="selfDot"></span>
     <span id="whoami"></span>
     <span class="lvbadge lv-tb" id="tbLv" style="display:none">LV0</span>
@@ -761,8 +761,10 @@ function showGameCacheModal() {
     downloadNext();
   };
 
+  // 【2026-09-15】强制预载：界面资源小（~1MB），首次进入自动下载
+  setTimeout(() => { try { document.getElementById('gameCacheConfirm') ? document.getElementById('gameCacheConfirm').click() : downloadNext(); } catch (e) { downloadNext(); } }, 300);
   document.getElementById('gameCacheLater').onclick = () => {
-    modal.remove();
+    modal.remove();   // 关掉弹窗后下载仍在后台继续
   };
 }
 
@@ -1080,9 +1082,30 @@ async function sendText() {
     if (addMsg(j.message)) renderMsgs(msgs);
   } catch (e) { toast(e.message); $('chatInput').value = t; }
 }
+// 【2026-09-15】发送前自动压缩：图片>200KB 缩放到1280px + JPEG82（省流量防卡顿）
+async function compressMedia(f) {
+  if (f.type && f.type.startsWith('image/') && f.size > 200 * 1024) {
+    try {
+      const bmp = await createImageBitmap(f);
+      const sc = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+      const w = Math.round(bmp.width * sc), h = Math.round(bmp.height * sc);
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+      const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.82));
+      if (blob && blob.size < f.size) {
+        toast('已压缩 ' + (f.size / 1048576).toFixed(1) + 'MB → ' + (blob.size / 1048576).toFixed(1) + 'MB');
+        return new File([blob], f.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+      }
+    } catch (e) {}
+  }
+  return f;
+}
 async function sendFile(f) {
   if (!f || !currentPeer) return;
-  if (f.size > 100 * 1024 * 1024) return toast('文件不能超过100MB');
+  f = await compressMedia(f);   // 压缩后再走限制与上传
+  const isMedia = f.type && (f.type.startsWith('image/') || f.type.startsWith('video/'));
+  if (isMedia && f.size > 30 * 1024 * 1024) return toast('图片/视频不能超过30MB（图片会自动压缩）');
+  if (!isMedia && f.size > 100 * 1024 * 1024) return toast('文件不能超过100MB');
   toast('上传中：' + f.name + '…', 8000);
   const replyTo = quoteTarget ? { id: String(quoteTarget._id), fromName: quoteTarget.fromName || '', preview: msgPreview(quoteTarget).slice(0, 80), type: quoteTarget.type || 'text' } : null;
   clearQuote();
@@ -1500,19 +1523,17 @@ async function loadMail() {
   } catch (e) { return []; }
 }
 if($('btnMail'))$('btnMail').onclick = async () => {
-  const rows = await loadMail();
-  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
-    <h3>✉ 站内信</h3>
-    ${rows.length ? rows.map(r => `
-      <div class="fr-row" style="cursor:pointer;align-items:flex-start" onclick="readMail('${r._id}')">
-        <div style="font-size:18px;margin-top:2px">${r.read ? '📭' : '📬'}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13.5px;font-weight:600">${esc(r.title)} ${r.read ? '' : '<span style="font-size:10px;color:var(--red)">未读</span>'}</div>
-          <div style="font-size:11px;color:var(--sub);margin-top:2px">${new Date(new Date(r.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ')}</div>
-          <div style="font-size:12px;color:var(--sub);margin-top:3px;white-space:pre-wrap;max-height:${r._open ? 'none' : '3.6em'};overflow:hidden">${esc(r.content)}</div>
-        </div>
-      </div>`).join('') : '<div class="empty">暂无站内信</div>'}`;
-  $('mask').classList.add('show');
+  // 【2026-09-15】原站内信入口改为广告：点开即看广告配置内容
+  try {
+    const j = await authFetch('/api/ads');
+    const ad = j.ad || {};
+    $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+      <h3>📢 ${esc(ad.title || '广告')}</h3>
+      <div style="font-size:12px;color:var(--sub);margin:2px 0 10px">更新于 ${ad.updatedAt ? new Date(new Date(ad.updatedAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10) : '-'}</div>
+      <div>${ad.content || '<div class="empty">暂无广告内容</div>'}</div>`;
+    $('mask').classList.add('show');
+    return;
+  } catch (e) { toast(e.message); return; }
 };
 window.readMail = async function (id) {
   try { await authFetch('/api/notify/' + id + '/read', { method: 'POST', body: '{}' }); } catch (e) {}
@@ -2154,9 +2175,15 @@ async function openRp(cardId) {
   rm.querySelector('.rp-box').onclick = async () => {
     try {
       const j = await authFetch('/api/activity/redpacket/'+cardId, { method: 'POST' });
-      rm.querySelector('.rp-modal').innerHTML = '<div class="amt" style="font-size:32px;color:#ffd700;margin:20px 0">¥'+j.amount+'</div><div class="tip" style="font-size:14px;color:#fff;margin-bottom:20px">奖励比例 '+j.rate+'%</div><div style="margin-top:16px"><button class="act-btn act-btn-red" onclick="closeRp()">开心收下</button></div>';
+      rm.querySelector('.rp-modal').innerHTML = '<div class="amt" style="font-size:32px;color:#ffd700;margin:20px 0">¥'+j.amount+'</div><div class="tip" style="font-size:14px;color:#fff;margin-bottom:20px">'+(j.luckTag ? '【'+j.luckTag+'】· 奖励比例 '+j.rate+'%' : '奖励比例 '+j.rate+'%')+'</div><div style="margin-top:16px"><button class="act-btn act-btn-red" onclick="closeRp()">开心收下</button></div>';
       loadRedpacket();
-      try { await authFetch('/api/activity/redpacket/unfreeze', { method: 'POST' }); } catch(e) {}
+      // 【2026-09-15】领完不用手动刷新：钱包/工作台统计一并自动更新
+      try { loadWallet(); } catch (e) {}
+      try { loadWorkbench(); } catch (e) {}
+      try {
+        const u = await authFetch('/api/activity/redpacket/unfreeze', { method: 'POST' });
+        if (u && u.unlocked > 0) { loadWallet(); loadRedpacket(); toast('有 ' + u.unlocked + ' 笔红包解冻入账'); }
+      } catch(e) {}
     } catch(e) { alert(e.message); closeRp(); }
   };
 }
