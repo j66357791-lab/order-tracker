@@ -393,6 +393,7 @@
   <div><h1>写手工作台</h1><div class="sub">派单协作系统 V17</div></div>
   <div class="grow"></div>
   <div class="me-badge">
+    <span id="topVer" style="font-size:10.5px;color:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.2);border-radius:99px;padding:2px 8px;flex-shrink:0">v—</span>
     <button class="hd-btn" id="btnMail" title="广告" style="background:rgba(255,255,255,.14);color:#fff;position:relative">📢</button>
     <span class="dot d-off" id="selfDot"></span>
     <span id="whoami"></span>
@@ -551,6 +552,24 @@
         </div>
         <div class="tile tap" onclick="openRealname()">
           <div class="ti">🪪</div><div class="tt" id="rnTileStatus">未认证</div><div class="ts">实名认证 · 接单必需</div>
+        </div>
+      </div>
+      <div class="card" id="appMaintCard">
+        <h3>📦 应用维护</h3>
+        <div id="verBlock" style="font-size:12.5px;color:var(--sub);line-height:1.9">
+          <div>当前版本 <b id="curVer" style="color:var(--green)">—</b> · <span id="verState">检查中…</span></div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn btn-gh" id="btnCheckUpdate">🔄 检查更新</button>
+          <button class="btn btn-gh" id="btnClearCache">🧹 清理缓存</button>
+          <button class="btn btn-gh" id="btnResPack">📦 下载资源包</button>
+        </div>
+        <div id="resPackBox" style="display:none;margin-top:12px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-bottom:6px"><span id="rpTip">准备下载…</span><b id="rpPct">0%</b></div>
+          <div style="height:8px;background:var(--bg2,#eef1f5);border-radius:99px;overflow:hidden">
+            <div id="rpBar" style="height:100%;width:0%;background:linear-gradient(90deg,#07c160,#31d07a);transition:width .3s"></div>
+          </div>
+          <div style="font-size:11px;color:var(--sub);margin-top:6px" id="rpDetail"></div>
         </div>
       </div>
       <div class="card">
@@ -780,6 +799,120 @@ function showGameCacheModal() {
     }, 2000);
   });
 })();
+
+/* ================= 【2026-09-15】应用维护：更新检查 / 缓存清理 / 资源包下载 ================= */
+const APP_RES_PACK_KEY = 'res_pack_done_v1';
+// 整合资源清单（主站UI + 翻翻乐 + 山海核心美术）
+const ALL_RES = [
+  '/assets/banner-fanfanle.jpg', '/assets/banner-shanhai.jpg', '/assets/game-banner.jpg',
+  '/icon-192.png', '/icon-512.png',
+  '/assets/game/bg_main.jpg', '/assets/game/card_back.png', '/assets/game/card_front.png', '/assets/game/card_escape.png',
+  '/assets/game/icon_key.png', '/assets/game/icon_ball.png', '/assets/game/icon_frag.png', '/assets/game/icon_revive.png',
+  '/assets/game/bag_s.png', '/assets/game/bag_m.png', '/assets/game/bag_l.png',
+  '/games/shanhai/assets/cover_new.jpg', '/games/shanhai/assets/home-bg-new.jpg',
+  '/games/shanhai/assets/stage-mountain-new.png', '/games/shanhai/assets/stage-bar-new.png', '/games/shanhai/assets/stage-card-bg.jpg',
+  '/games/shanhai/assets/hero_full.png', '/games/shanhai/assets/sword_big.png',
+  '/games/shanhai/assets/icon_weapon.png', '/games/shanhai/assets/icon_armor.png', '/games/shanhai/assets/icon_crown.png',
+  '/games/shanhai/assets/icon_belt.png', '/games/shanhai/assets/icon_boots.png', '/games/shanhai/assets/icon_accessory.png',
+  '/games/shanhai/assets/sprites/hero.png', '/games/shanhai/assets/sprites/zheng.png', '/games/shanhai/assets/sprites/bifang.png',
+  '/games/shanhai/assets/sprites/xuangui.png', '/games/shanhai/assets/sprites/boss_shanhaoking.png',
+  '/games/shanhai/assets/sprites/sword.png', '/games/shanhai/assets/sprites/sword_spin.png',
+];
+
+async function checkUpdate(silent) {
+  try {
+    const r = await fetch('/api/version');
+    const j = await r.json();
+    const ver = j.version || '1.1.0';
+    localStorage.setItem('app_latest_ver', ver);
+    const seen = localStorage.getItem('app_seen_ver');
+    if ($('curVer')) $('curVer').textContent = 'v' + ver;
+    if ($('topVer')) $('topVer').textContent = 'v' + ver;
+    if ($('verState')) {
+      const mine = seen || ver;
+      $('verState').textContent = seen === ver ? '已是最新 ✓' : '有新版本 v' + ver + '（重启应用生效）';
+      $('verState').style.color = seen === ver ? 'var(--green)' : 'var(--amber,#d97706)';
+    }
+    if (!silent && seen !== ver) showChangelog(j.changelog || []);
+    localStorage.setItem('app_seen_ver', ver);
+    return j;
+  } catch (e) { if ($('verState')) $('verState').textContent = '版本服务暂不可达'; return null; }
+}
+function showChangelog(logs) {
+  const html = (logs || []).map(l => `<div style="margin-bottom:12px"><b style="color:var(--green)">v${l.ver}</b> <span style="font-size:11px;color:var(--sub)">${l.date}</span><div style="font-size:12px;color:var(--fg,#333);line-height:1.7;margin-top:4px">${(l.notes || []).map(n => '· ' + n).join('<br>')}</div></div>`).join('');
+  const m = document.createElement('div');
+  m.id = 'verModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:340px;width:100%;padding:20px;max-height:70vh;overflow:auto">
+    <h3 style="margin-bottom:8px">🎉 更新到最新版本</h3>${html || '<div style="font-size:12.5px;color:var(--sub)">例行更新</div>'}
+    <button class="btn" style="width:100%;margin-top:6px" onclick="this.closest('#verModal').remove()">知道了</button></div>`;
+  document.body.appendChild(m);
+}
+if ($('btnCheckUpdate')) $('btnCheckUpdate').onclick = () => { if ($('verState')) $('verState').textContent = '检查中…'; checkUpdate(false); };
+
+// —— 缓存清理（识别大小 → 二次确认 → 清理）——
+if ($('btnClearCache')) $('btnClearCache').onclick = async () => {
+  let usage = 0, cnt = 0;
+  try {
+    if (navigator.storage && navigator.storage.estimate) { const est = await navigator.storage.estimate(); usage = est.usage || 0; }
+    if (window.caches) { const ks = await caches.keys(); cnt = ks.length; for (const k of ks) { const c = await caches.open(k); cnt += (await c.keys()).length ? 0 : 0; } }
+  } catch (e) {}
+  const sz = usage > 1048576 ? (usage / 1048576).toFixed(1) + ' MB' : (usage / 1024).toFixed(0) + ' KB';
+  const m = document.createElement('div');
+  m.id = 'cacheModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:320px;width:100%;padding:20px;text-align:center">
+    <h3>🧹 清理缓存</h3>
+    <p style="font-size:13px;color:#666;margin:12px 0;line-height:1.7">当前缓存占用约 <b style="color:var(--amber,#d97706)">${sz}</b><br>清理后页面与图片资源将重新下载<br>（不影响账号登录与聊天记录）</p>
+    <div style="display:flex;gap:10px"><button class="btn btn-r" style="flex:1" id="ccGo">确认清理</button><button class="btn btn-gh" style="flex:1" onclick="this.closest('#cacheModal').remove()">取消</button></div></div>`;
+  document.body.appendChild(m);
+  m.querySelector('#ccGo').onclick = async () => {
+    m.remove();
+    try {
+      if (window.caches) { const ks = await caches.keys(); for (const k of ks) await caches.delete(k); }
+      const keep = { t: localStorage.getItem('jdy_token'), u: localStorage.getItem('jdy_user') };
+      localStorage.clear();
+      if (keep.t) localStorage.setItem('jdy_token', keep.t);
+      if (keep.u) localStorage.setItem('jdy_user', keep.u);
+      localStorage.removeItem(APP_RES_PACK_KEY);   // 缓存清了，资源包标记同步重置
+      toast('缓存已清理 ✨ 资源将按需重新加载');
+    } catch (e) { toast('清理失败：' + e.message); }
+  };
+};
+
+// —— 资源包主动下载（真实逐个下载 + 进度）——
+async function downloadResPack() {
+  const box = $('resPackBox'); if (!box) return;
+  box.style.display = 'block';
+  let done = 0, fail = 0, bytes = 0;
+  for (const url of ALL_RES) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.status);
+      const b = await r.blob();
+      bytes += b.size;
+    } catch (e) { fail++; }
+    done++;
+    const pct = Math.round(done / ALL_RES.length * 100);
+    if ($('rpBar')) $('rpBar').style.width = pct + '%';
+    if ($('rpPct')) $('rpPct').textContent = pct + '%';
+    if ($('rpTip')) $('rpTip').textContent = fail ? '下载中…（' + fail + ' 个失败）' : '下载中…';
+    if ($('rpDetail')) $('rpDetail').textContent = done + ' / ' + ALL_RES.length + ' 项 · 已获取 ' + (bytes / 1048576).toFixed(1) + ' MB';
+  }
+  localStorage.setItem(APP_RES_PACK_KEY, '1');
+  if ($('rpTip')) $('rpTip').textContent = fail ? '完成（' + fail + ' 项失败，可重试）' : '全部完成 ✓ 下次进入秒开';
+  if ($('btnResPack')) $('btnResPack').textContent = '📦 资源包已就绪';
+  toast('资源包' + (fail ? '下载完成（部分失败）' : '下载完成 ✓'));
+}
+if ($('btnResPack')) $('btnResPack').onclick = () => {
+  if (localStorage.getItem(APP_RES_PACK_KEY) === '1' && $('resPackBox').style.display === 'none') {
+    toast('资源包已是最新 ✓'); return;
+  }
+  downloadResPack();
+};
+// 进入时：自动检查更新 + 顶栏版本
+checkUpdate(true);
+setTimeout(() => { if (localStorage.getItem(APP_RES_PACK_KEY) !== '1' && $('btnResPack')) $('btnResPack').style.borderColor = 'var(--green)'; }, 1500);
 
 function toast(t, ms = 2200) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', ms); }
 const fmt = n => Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
