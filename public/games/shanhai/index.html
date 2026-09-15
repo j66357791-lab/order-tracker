@@ -351,15 +351,20 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const p = META.profile || {};
     const eq = p.equip || {};
     let power = 0;
+    const SLOT_ICON = { weapon: "icon_weapon", armor: "icon_armor", crown: "icon_crown", belt: "icon_belt", boots: "icon_boots", accessory: "icon_accessory" };
     document.querySelectorAll(".eq-slot").forEach(el => {
       const slot = el.dataset.slot;
       const it = eq[slot];
       const v = el.querySelector(".eq-v");
+      let ico = el.querySelector(".eq-ico");
+      if (!ico) { ico = document.createElement("img"); ico.className = "eq-ico"; el.prepend(ico); }
       if (it) {
         power += it.val || 0;
-        v.innerHTML = `<span class="eq-name" style="color:${it.color || "#cfd8dc"}">${it.name}</span><em class="eq-affix">${it.affix || ""} +${it.val}%</em>`;
+        ico.src = `/games/shanhai/assets/${SLOT_ICON[slot] || "icon_weapon"}.png`;
+        ico.style.display = "block";
+        v.innerHTML = `<span class="eq-name" style="color:${it.color || "#cfd8dc"}">${it.name}</span><em class="eq-affix">${it.affix || ""} +${it.val}${slot === "weapon" ? "" : "%"}</em>`;
         el.classList.add("filled");
-      } else { v.innerHTML = "空"; el.classList.remove("filled"); }
+      } else { ico.style.display = "none"; v.innerHTML = "空"; el.classList.remove("filled"); }
     });
     $("eqPower").textContent = "神力 " + Math.round(power * 10) / 10;
     document.querySelectorAll(".eq-slot").forEach(el => el.onclick = async () => {
@@ -375,11 +380,13 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     $("bagCount").textContent = bag.length + "/50";
     const grid = $("bagGrid");
     $("bagEmpty").style.display = bag.length ? "none" : "block";
+    const BAG_ICON = { weapon: "icon_weapon", armor: "icon_armor", crown: "icon_crown", belt: "icon_belt", boots: "icon_boots", accessory: "icon_accessory" };
     grid.innerHTML = bag.map(it => `
       <div class="bag-cell q-${it.quality}" data-id="${it.id}" title="${it.name}">
+        <img class="bag-ico" src="/games/shanhai/assets/${BAG_ICON[it.slot] || "icon_weapon"}.png" alt="">
         <i>${SLOT_NAME[it.slot] || it.slot}</i>
-        <b style="color:${it.color || "#cfd8dc"}">${(it.name || "").slice(0, 4)}</b>
-        <em>${it.affix || ""}+${it.val}%</em>
+        <b style="color:${it.color || "#cfd8dc"}">${(it.name || "").slice( 4)}</b>
+        <em>${it.affix || ""}+${it.val}${it.slot === "weapon" ? "" : "%"}</em>
       </div>`).join("");
     grid.querySelectorAll(".bag-cell").forEach(c => c.onclick = async () => {
       try { await META.equip(c.dataset.id); await META.load(); renderGrow(); renderHome(); toast("穿戴成功"); }
