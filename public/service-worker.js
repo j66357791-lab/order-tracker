@@ -2,7 +2,7 @@
  * 策略：HTML页面 network-first（总是最新），静态资源 cache-first
  * 每次部署改 CACHE_VERSION 即可自动清旧缓存
  */
-const CACHE_VERSION = 'jiedan-v7-20260914c';
+const CACHE_VERSION = 'jiedan-v8-20260915';
 const APP_SHELL = [
   '/login.html',
   '/index.html',
@@ -41,6 +41,24 @@ self.addEventListener('fetch', (event) => {
   // API 和 socket.io：绝不缓存
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // 【2026-09-15】图片/游戏美术资源：cache-first（首次网络取回后永久本地，二次进入秒开）
+  if (/\.(png|jpe?g|webp|gif|mp3|wav|mp4)$/i.test(url.pathname) ||
+      url.pathname.startsWith('/assets/') || url.pathname.startsWith('/games/')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;   // 命中缓存直接回，后台静默更新
+        return fetch(event.request).then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        }).catch(() => cached);
+      })
+    );
     return;
   }
 
