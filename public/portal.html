@@ -112,7 +112,18 @@
   footer { padding: 44px 0 60px; border-top: 1px solid var(--line); color: var(--ink2); font-size: 12.5px; }
   footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 
+  /* 登录态头部 · 个人中心容器 */
+  .hd-user { font-size: 14px; color: var(--ink); padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+  .hd-user:hover { background: var(--paper2); }
+  .me-box.guest { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 40px; text-align: center; color: var(--ink2); }
+
+  /* 锚点跳转避开吸顶导航 */
+  section[id] { scroll-margin-top: 78px; }
+
   /* 弹窗 */
+  .err { color: var(--red); font-size: 12.5px; min-height: 18px; margin: -4px 0 8px; text-align: left; }
+  .m-tip { font-size: 12px; color: var(--ink2); margin-top: 12px; text-align: center; line-height: 1.8; }
+  .m-tip a { color: var(--green); cursor: pointer; }
   .mask { position: fixed; inset: 0; background: rgba(43,42,38,.5); z-index: 100; display: none; align-items: center; justify-content: center; padding: 20px; }
   .mask.on { display: flex; }
   .modal { background: #fff; border-radius: 16px; max-width: 400px; width: 100%; padding: 28px; max-height: 86vh; overflow-y: auto; }
@@ -146,7 +157,7 @@
     <nav>
       <a href="#secGallery">文案馆</a><a href="#secService">接单介绍</a><a href="#secPkg">套餐方案</a><a href="#secAI">小沐AI</a><a href="#secMe" id="navMe">个人中心</a>
     </nav>
-    <div style="display:flex;gap:10px;margin-left:auto">
+    <div style="display:flex;gap:10px;margin-left:auto;align-items:center" id="hdAuth">
       <button class="hd-cta ghost" id="btnLogin">登录</button>
       <button class="hd-cta" id="btnReg">注册</button>
     </div>
@@ -224,7 +235,7 @@
 <section id="secMe" style="padding-top:0">
   <div class="wrap">
     <div class="sec-head"><h2 class="serif">个人中心</h2><span class="en">MY SPACE</span></div>
-    <div id="meBox" style="background:#fff;border:1px solid var(--line);border-radius:16px;padding:40px;text-align:center;color:var(--ink2)">
+    <div id="meBox" class="me-box guest">
       登录后这里显示你的资料和咨询记录<button class="btn-main" style="display:block;margin:18px auto 0" onclick="openLogin()">去登录</button>
     </div>
   </div>
@@ -237,21 +248,25 @@
   </div>
 </footer>
 
-<!-- 登录/注册/咨询 弹窗 -->
-<div class="mask" id="regMask"><div class="modal">
-  <h3 class="serif">注册 · 用户端</h3>
-  <div class="f-row"><label>昵称</label><input id="rgName" placeholder="怎么称呼你" maxlength="20"></div>
-  <div class="f-row"><label>手机号（登录账号）</label><input id="rgUser" placeholder="11位手机号" maxlength="11"></div>
-  <div class="f-row"><label>密码</label><input id="rgPwd" type="password" placeholder="至少6位" maxlength="30"></div>
-  <div class="f-row"><label>邀请码（选填）</label><input id="rgInvite" placeholder="有邀请码将注册为写手" maxlength="12"></div>
-  <button class="btn-main" id="rgGo">创建账号</button>
-  <p style="font-size:12px;color:var(--ink2);margin-top:12px">不填邀请码=用户端 · 填写有效邀请码=写手端<br>已有账号？<a href="#" onclick="openLogin();return false" style="color:var(--green)">去登录</a></p>
+<!-- 登录弹窗（用户端 · 不跳外部登录页） -->
+<div class="mask" id="loginMask"><div class="modal">
+  <h3 class="serif">登录 · 小沐文案</h3>
+  <div class="f-row"><label>手机号（登录账号）</label><input id="lgUser" placeholder="11 位手机号" maxlength="11" inputmode="numeric"></div>
+  <div class="f-row"><label>密码</label><input id="lgPwd" type="password" maxlength="30"></div>
+  <div class="err" id="lgErr"></div>
+  <button class="btn-main" id="lgGo">登录</button>
+  <p class="m-tip">没有账号？<a onclick="openReg()">注册一个新账号</a><br>写手 / 管理员请走 <a href="/login.html">内部入口</a></p>
 </div></div>
 
-  <div class="f-row"><label>账号</label><input id="lgUser" placeholder="手机号 / 用户名" maxlength="20"></div>
-  <div class="f-row"><label>密码</label><input id="lgPwd" type="password" maxlength="30"></div>
-  <button class="btn-main" id="lgGo">登录</button>
-  <p style="font-size:12px;color:var(--ink2);margin-top:12px">没有账号？<a href="#" onclick="openReg();return false" style="color:var(--green)">注册用户端</a></p>
+<!-- 注册弹窗（已合并原 portal-register.html） -->
+<div class="mask" id="regMask"><div class="modal">
+  <h3 class="serif">注册 · 小沐文案</h3>
+  <div class="f-row"><label>怎么称呼你</label><input id="rgName" placeholder="昵称（选填）" maxlength="20"></div>
+  <div class="f-row"><label>手机号（登录账号）</label><input id="rgUser" placeholder="11 位手机号" maxlength="11" inputmode="numeric"></div>
+  <div class="f-row"><label>设置密码</label><input id="rgPwd" type="password" placeholder="至少 6 位" maxlength="30"></div>
+  <div class="err" id="rgErr"></div>
+  <button class="btn-main" id="rgGo">创建账号</button>
+  <p class="m-tip">已有账号？<a onclick="openLogin()">去登录</a><br>想成为写手？请从工作室发的 <a href="/login.html">内部入口</a> 注册</p>
 </div></div>
 <div class="mask" id="leadMask"><div class="modal">
   <h3 class="serif" id="ldTitle">咨询套餐</h3>
@@ -264,39 +279,78 @@
 
 <script>
 const $ = id => document.getElementById(id);
+// HTML 转义：所有后端返回内容插入 DOM 前一律过一遍，防 XSS
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let TOKEN = localStorage.getItem('jdy_token') || '';
 let ME = null;
 try { ME = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) {}
 
 function toast(t) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', 2200); }
-function isClient() { return ME && ME.role === 'client'; }
-function openReg() { $('loginMask').classList.remove('on'); $('regMask').classList.add('on'); }
-function openLogin() { $('regMask').classList.remove('on'); $('loginMask').classList.add('on'); }
-// 【2026-09-16】统一入口：登录跳转原登录页（带人机验证），注册去用户端注册页
-$('btnReg').onclick = () => isClient() ? $('secMe').scrollIntoView({ behavior: 'smooth' }) : location.href = '/portal-register.html';
-$('btnLogin').onclick = () => isClient() ? $('secMe').scrollIntoView({ behavior: 'smooth' }) : location.href = '/login.html';
+function isClient() { return !!(ME && ME.role === 'client' && TOKEN); }
+// 与主体系一致：密码先 SHA-256 再发送
+function sha256hex(s) {
+  return crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)))
+    .then(buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join(''));
+}
+function closeMask() { ['loginMask', 'regMask', 'leadMask'].forEach(id => $(id).classList.remove('on')); }
+function openReg() { closeMask(); $('lgErr').textContent = ''; $('regMask').classList.add('on'); }
+function openLogin() { closeMask(); $('rgErr').textContent = ''; $('loginMask').classList.add('on'); }
+// 【2026-09-16 修复】登录/注册统一在首页弹窗完成，不再跳 login.html（内部端）或独立注册页
+function saveAuth(token, user) {
+  TOKEN = token; ME = user;
+  localStorage.setItem('jdy_token', token);
+  localStorage.setItem('jdy_user', JSON.stringify(user));
+  renderAuth();
+}
+function renderAuth() {
+  const box = $('hdAuth');
+  if (isClient()) {
+    box.innerHTML = `<span class="hd-user" id="hdUser">${esc(ME.displayName || '我的')}</span><button class="hd-cta ghost" id="btnOut">退出</button>`;
+    $('hdUser').onclick = () => $('secMe').scrollIntoView({ behavior: 'smooth' });
+    $('btnOut').onclick = logout;
+  } else {
+    box.innerHTML = `<button class="hd-cta ghost" id="btnLogin">登录</button><button class="hd-cta" id="btnReg">注册</button>`;
+    $('btnLogin').onclick = openLogin;
+    $('btnReg').onclick = openReg;
+  }
+}
+// 点遮罩空白处关闭弹窗
+['loginMask', 'regMask', 'leadMask'].forEach(id => {
+  $(id).addEventListener('click', e => { if (e.target.id === id) closeMask(); });
+});
 
-// —— 注册 ——
+// —— 注册（用户端 · 首页弹窗内完成） ——
 $('rgGo').onclick = async () => {
   const phone = $('rgUser').value.trim(), pwd = $('rgPwd').value, name = $('rgName').value.trim();
+  const err = $('rgErr'); err.textContent = '';
+  if (!/^1[3-9]\d{9}$/.test(phone)) { err.textContent = '请填写正确的 11 位手机号'; return; }
+  if (pwd.length < 6) { err.textContent = '密码至少 6 位'; return; }
+  $('rgGo').disabled = true; $('rgGo').textContent = '创建中…';
   try {
-    const pwHash = await (async (s) => { const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s))); return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join(''); })(pwd);
-    const r = await fetch('/api/portal/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: phone, phone, password: pwHash, displayName: name, inviteCode: $('rgInvite') ? $('rgInvite').value.trim() : '' }) });
+    const pwHash = await sha256hex(pwd);
+    const r = await fetch('/api/portal/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: phone, phone, password: pwHash, displayName: name }) });
     const j = await r.json();
-    if (!j.ok) return toast(j.error);
-    localStorage.setItem('jdy_token', j.token); localStorage.setItem('jdy_user', JSON.stringify(j.user));
-    toast(j.user.role === 'writer' ? '注册成功 · 正在进入写手端…' : '注册成功 ✓');
-    setTimeout(() => location.href = j.redirect || '/portal.html', 800);
-  } catch (e) { toast('网络异常，稍后再试'); }
+    if (!j.ok) { err.textContent = j.error || '注册失败'; $('rgGo').disabled = false; $('rgGo').textContent = '创建账号'; return; }
+    saveAuth(j.token, j.user);
+    if (j.user.role !== 'client') { toast('注册成功 · 正在进入写手端…'); setTimeout(() => location.href = j.redirect || '/writer.html', 800); return; }
+    closeMask(); toast('欢迎加入小沐 ✓'); loadMe();
+  } catch (e) { err.textContent = '网络异常，稍后再试'; }
+  $('rgGo').disabled = false; $('rgGo').textContent = '创建账号';
 };
-// —— 登录（按角色分流） ——
+// —— 登录（首页弹窗内完成，按角色分流） ——
 $('lgGo').onclick = async () => {
+  const u = $('lgUser').value.trim(), p = $('lgPwd').value;
+  const err = $('lgErr'); err.textContent = '';
+  if (!u || !p) { err.textContent = '请填写账号和密码'; return; }
+  $('lgGo').disabled = true; $('lgGo').textContent = '登录中…';
   try {
-    const r = await fetch('/api/portal/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: $('lgUser').value.trim(), password: $('lgPwd').value }) });
+    const r = await fetch('/api/portal/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: await sha256hex(p), passwordPlain: p }) });
     const j = await r.json();
-    if (!j.ok) return toast(j.error);
-    location.href = j.redirect || '/portal.html';
-  } catch (e) { toast('网络异常'); }
+    if (!j.ok) { err.textContent = j.error || '登录失败'; $('lgGo').disabled = false; $('lgGo').textContent = '登录'; return; }
+    saveAuth(j.token, j.user);
+    if (j.user.role !== 'client') { location.href = j.redirect || '/writer.html'; return; }
+    closeMask(); toast('欢迎回来 ✓'); loadMe();
+  } catch (e) { err.textContent = '网络异常，稍后再试'; $('lgGo').disabled = false; $('lgGo').textContent = '登录'; }
 };
 // —— 套餐 ——
 async function loadPkgs() {
@@ -305,12 +359,13 @@ async function loadPkgs() {
     if (!j.ok || !j.packages.length) { $('pkgGrid').innerHTML = '<div style="color:var(--ink2);font-size:13px">套餐配置中，可先咨询</div>'; return; }
     $('pkgGrid').innerHTML = j.packages.map(p => `
       <div class="p-card ${p.badge ? 'hot' : ''}">
-        ${p.badge ? `<span class="p-badge">${p.badge}</span>` : ''}
-        <h3 class="serif">${p.name}</h3><div class="p-tag">${p.tagline || ''}</div>
-        <div class="p-price"><b>¥${p.price}</b>${p.originalPrice ? `<s>¥${p.originalPrice}</s>` : ''}</div>
-        <ul>${(p.items || []).map(i => `<li>${i}</li>`).join('')}</ul>
-        <button class="btn-main" onclick="askPkg('${(p.name || '').replace(/'/g, '')}')">咨询此套餐</button>
+        ${p.badge ? `<span class="p-badge">${esc(p.badge)}</span>` : ''}
+        <h3 class="serif">${esc(p.name)}</h3><div class="p-tag">${esc(p.tagline || '')}</div>
+        <div class="p-price"><b>¥${esc(p.price)}</b>${p.originalPrice ? `<s>¥${esc(p.originalPrice)}</s>` : ''}</div>
+        <ul>${(p.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+        <button class="btn-main" data-pkg="${esc(p.name || '')}">咨询此套餐</button>
       </div>`).join('');
+    $('pkgGrid').querySelectorAll('button[data-pkg]').forEach(b => b.onclick = () => askPkg(b.dataset.pkg));
   } catch (e) {}
 }
 function askPkg(name) {
@@ -348,29 +403,41 @@ async function aiSend() {
 $('aiSend').onclick = aiSend;
 $('aiInput').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
 // —— 个人中心 ——
+const cnDate = d => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+const cnTime = d => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ');
 async function loadMe() {
-  if (!isClient()) return;
+  const box = $('meBox');
+  if (!isClient()) {
+    box.className = 'me-box guest';
+    box.innerHTML = '登录后这里显示你的资料和咨询记录<button class="btn-main" style="display:block;margin:18px auto 0" onclick="openLogin()">去登录</button>';
+    return;
+  }
   try {
-    const j = await (await fetch('/api/portal/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } })).json();
-    if (!j.ok) return;
-    $('meBox').outerHTML = `<div class="me-grid">
+    const r = await fetch('/api/portal/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+    const j = await r.json();
+    if (!j.ok) { if (r.status === 401 || r.status === 403) clearAuth(); return; }
+    box.className = 'me-box';
+    box.innerHTML = `<div class="me-grid">
       <div class="me-card">
-        <div class="me-ava">${(j.me.displayName || '客')[0]}</div>
-        <div class="serif" style="font-size:19px;margin-bottom:12px">${j.me.displayName || ''}</div>
-        <div class="me-row"><span>手机号</span><b>${j.me.phone || '-'}</b></div>
-        <div class="me-row"><span>注册时间</span><b>${new Date(new Date(j.me.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10)}</b></div>
+        <div class="me-ava">${esc((j.me.displayName || '客').slice(0, 1))}</div>
+        <div class="serif" style="font-size:19px;margin-bottom:12px">${esc(j.me.displayName || '')}</div>
+        <div class="me-row"><span>手机号</span><b>${esc(j.me.phone || '-')}</b></div>
+        <div class="me-row"><span>注册时间</span><b>${cnDate(j.me.createdAt)}</b></div>
         <div class="me-row"><span>身份</span><b>用户端</b></div>
         <button class="btn-ghost" style="width:100%;margin-top:18px" onclick="logout()">退出登录</button>
       </div>
       <div class="me-card">
         <h3 class="serif" style="font-size:17px;margin-bottom:8px">我的咨询</h3>
-        ${j.leads.length ? j.leads.map(l => `<div class="lead-row"><b>${l.packageName || '咨询'}</b> <span class="st-tag st-${l.status === '已跟进' ? 1 : 0}">${l.status}</span><div style="color:var(--ink2);margin-top:3px">${l.note || '无备注'} · ${new Date(new Date(l.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ')}</div></div>`).join('') : '<div style="color:var(--ink2);font-size:13px;padding:14px 0">还没有咨询记录，看看下面的套餐？</div>'}
+        ${j.leads.length ? j.leads.map(l => `<div class="lead-row"><b>${esc(l.packageName || '咨询')}</b> <span class="st-tag st-${l.status === '已跟进' ? 1 : 0}">${esc(l.status)}</span><div style="color:var(--ink2);margin-top:3px">${esc(l.note || '无备注')} · ${cnTime(l.createdAt)}</div></div>`).join('') : '<div style="color:var(--ink2);font-size:13px;padding:14px 0">还没有咨询记录，看看下面的套餐？</div>'}
       </div>
     </div>`;
   } catch (e) {}
 }
-function logout() { localStorage.clear(); location.href = '/portal.html'; }
-loadPkgs(); loadMe();
+function clearAuth() { TOKEN = ''; ME = null; localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); renderAuth(); loadMe(); }
+function logout() { clearAuth(); toast('已退出登录'); }
+renderAuth(); loadPkgs(); loadMe();
+// 旧链接 /portal-register.html 会带 #reg 回来，自动开注册弹窗
+if (location.hash === '#reg' || location.hash === '#login') { location.hash === '#reg' ? openReg() : openLogin(); }
 </script>
 </body>
 </html>
