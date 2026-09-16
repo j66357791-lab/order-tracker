@@ -90,11 +90,12 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
     try {
       const db = await getDb();
       let p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
-      // 【2026-09-15】存量档案兜底：没武器的一律补发新手飞剑（进游戏就有）
-      if (!p.equip || !p.equip.weapon) {
+      // 【2026-09-16】新手飞剑一次性发放（swordInit 标记）：第一次进入必得；
+      // 之后允许自由卸下/更换（卸下=裸手，角色自带基础攻击 5，游戏逻辑不断）
+      if (!p.swordInit) {
         await db.collection('shanhai_profiles').updateOne(
           { userId: req.user.id },
-          { $set: { 'equip.weapon': { id: 'eq_sword_starter', slot: 'weapon', quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 } } });
+          { $set: { swordInit: true, 'equip.weapon': p.equip && p.equip.weapon ? p.equip.weapon : { id: 'eq_sword_starter', slot: 'weapon', quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 } } });
         p = await db.collection('shanhai_profiles').findOne({ userId: req.user.id });
       }
       res.json({ ok: true, profile: p });
