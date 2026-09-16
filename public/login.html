@@ -75,7 +75,7 @@
     </div>
 
     <div id="regForm" class="hidden">
-      <label>邀请码（找管理员要）</label><input id="rInvite" placeholder="WXXXXXXXX">
+      <label>邀请码（选填：不填=用户端账号，填写=写手账号）</label><input id="rInvite" placeholder="写手必填 · 用户端留空">
       <label>显示名（如：小王）</label><input id="rName">
       <label>用户名（字母数字，3-20位）</label><input id="rUser">
       <label>密码（至少6位）</label><input id="rPass" type="password">
@@ -112,6 +112,8 @@ async function sha256hex(s) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
+let toastT = null;
+function toast(t) { let el = document.getElementById('ltoast'); if (!el) { el = document.createElement('div'); el.id = 'ltoast'; el.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 22px;border-radius:99px;font-size:13px;z-index:999;display:none'; document.body.appendChild(el); } el.textContent = t; el.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = 'none', 2000); }
 let captchaId = '';
 async function loadCaptcha() {
   try {
@@ -191,7 +193,11 @@ $('btnReg').onclick = async () => {
         captchaId, captchaAnswer: $('rCap').value.trim() }) });
     const j = await r.json();
     if (!j.ok) { err(j.error); loadCaptcha(); return; }
-    enter('writer', j.token, j.user);
+    // 【2026-09-16】注册分流：填邀请码=写手进写手端，不填=用户进用户端
+    localStorage.setItem('jdy_token', j.token);
+    localStorage.setItem('jdy_user', JSON.stringify(j.user));
+    toast('注册成功，正在进入' + (j.role === 'writer' ? '写手端…' : '用户端…'));
+    setTimeout(() => location.href = j.redirect || (j.role === 'writer' ? '/writer.html' : '/portal.html'), 700);
   } catch (e) { err(e.message); loadCaptcha(); }
 };
 [$('lPass'), $('rPass')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') el.blur(); }));
