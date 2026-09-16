@@ -4,6 +4,33 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>小沐文案 · 让每一句话都有人读</title>
+<meta name="description" content="小沐文案工作室：公众号推文、小红书种草、品牌故事、演讲稿、PPT 定制、数据整理、视频脚本。真的在写字的人，先听明白你的事再落笔，常规 48 小时交付。">
+<meta name="keywords" content="文案代写,公众号推文,小红书种草,品牌故事,演讲稿代写,PPT定制,Excel数据整理,视频脚本">
+<meta name="theme-color" content="#faf7f1">
+<meta name="format-detection" content="telephone=no">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="小沐文案">
+<meta property="og:title" content="小沐文案 · 让每一句话都有人读">
+<meta property="og:description" content="公众号、小红书、品牌故事、演讲稿、PPT——不套模板，不堆形容词。常规 48 小时交付，可先看样张。">
+<meta property="og:image" content="/assets/portal/poster.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="/portal.html">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="preload" as="image" href="/assets/portal/gallery1.jpg?v=1" fetchpriority="high">
+<script>
+// 分享/搜索需要绝对地址：部署到任何域名时自动把相对路径补全（og:image / canonical）
+(function () {
+  var o = location.origin;
+  document.querySelectorAll('meta[property^="og:"]').forEach(function (m) {
+    var c = m.getAttribute('content');
+    if (c && c.charAt(0) === '/') m.setAttribute('content', o + c);
+  });
+  var l = document.querySelector('link[rel="canonical"]');
+  if (l && l.getAttribute('href').charAt(0) === '/') l.setAttribute('href', o + '/portal.html');
+})();
+</script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
@@ -37,7 +64,7 @@
   .btn-main { background: var(--green); color: #fff; padding: 13px 30px; border-radius: 10px; font-size: 15px; border: none; cursor: pointer; }
   .btn-ghost { background: none; border: 1.5px solid var(--green); color: var(--green); padding: 13px 26px; border-radius: 10px; font-size: 15px; cursor: pointer; }
   .hero-r { flex: 1; position: relative; }
-  .hero-r img { width: 100%; border-radius: 14px; box-shadow: 0 24px 60px rgba(43,42,38,.18); }
+  .hero-r img { width: 100%; height: auto; border-radius: 14px; box-shadow: 0 24px 60px rgba(43,42,38,.18); }
   .hero-stat { position: absolute; left: -18px; bottom: 22px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; box-shadow: 0 10px 30px rgba(43,42,38,.12); font-size: 13px; }
   .hero-stat b { display: block; font-size: 22px; color: var(--green); }
 
@@ -175,7 +202,7 @@
     </div>
   </div>
   <div class="hero-r">
-    <img src="/assets/portal/gallery1.jpg" alt="作品">
+    <img src="/assets/portal/gallery1.jpg?v=1" alt="小沐文案交付过的文案作品" width="750" height="1000" decoding="async" fetchpriority="high">
     <div class="hero-stat"><b>1,200+</b>篇已交付文案</div>
   </div>
 </div>
@@ -184,12 +211,7 @@
 <section id="secGallery">
   <div class="wrap">
     <div class="sec-head"><h2 class="serif">文案馆</h2><span class="en">GALLERY</span><span class="more">都是交付过的真稿（已脱敏）</span></div>
-    <div class="g-grid">
-      <div class="g-card"><img src="/assets/portal/gallery1.jpg"><div class="gc-b"><div class="gc-t serif">公众号推文</div><div class="gc-s">茶饮品牌 · 节气借势</div><span class="gc-tag">阅读 2.4w</span></div></div>
-      <div class="g-card"><img src="/assets/portal/gallery2.jpg"><div class="gc-b"><div class="gc-t serif">小红书种草</div><div class="gc-s">文具好物 · 学生党</div><span class="gc-tag">点赞 5,700+</span></div></div>
-      <div class="g-card"><img src="/assets/portal/gallery3.jpg"><div class="gc-b"><div class="gc-t serif">品牌故事</div><div class="gc-s">民宿品牌 · 从一间房开始</div><span class="gc-tag">官网在用</span></div></div>
-      <div class="g-card"><img src="/assets/portal/gallery4.jpg"><div class="gc-b"><div class="gc-t serif">演讲稿</div><div class="gc-s">毕业致辞 · 一所中学</div><span class="gc-tag">现场 8 分钟</span></div></div>
-    </div>
+    <div class="g-grid" id="gGrid"><div style="color:var(--ink2);font-size:13px">加载中…</div></div>
   </div>
 </section>
 
@@ -264,6 +286,12 @@
   <div class="f-row"><label>怎么称呼你</label><input id="rgName" placeholder="昵称（选填）" maxlength="20"></div>
   <div class="f-row"><label>手机号（登录账号）</label><input id="rgUser" placeholder="11 位手机号" maxlength="11" inputmode="numeric"></div>
   <div class="f-row"><label>设置密码</label><input id="rgPwd" type="password" placeholder="至少 6 位" maxlength="30"></div>
+  <div class="f-row"><label>人机验证</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div id="rgCapBox" style="flex-shrink:0;cursor:pointer;line-height:0" title="看不清？点一下换一个"></div>
+      <input id="rgCap" placeholder="计算结果" inputmode="numeric" maxlength="4" style="flex:1">
+    </div>
+  </div>
   <div class="err" id="rgErr"></div>
   <button class="btn-main" id="rgGo">创建账号</button>
   <p class="m-tip">已有账号？<a onclick="openLogin()">去登录</a><br>想成为写手？请从工作室发的 <a href="/login.html">内部入口</a> 注册</p>
@@ -293,8 +321,18 @@ function sha256hex(s) {
     .then(buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join(''));
 }
 function closeMask() { ['loginMask', 'regMask', 'leadMask'].forEach(id => $(id).classList.remove('on')); }
-function openReg() { closeMask(); $('lgErr').textContent = ''; $('regMask').classList.add('on'); }
+function openReg() { closeMask(); $('lgErr').textContent = ''; $('regMask').classList.add('on'); $('rgCap').value = ''; loadCaptcha(); }
 function openLogin() { closeMask(); $('rgErr').textContent = ''; $('loginMask').classList.add('on'); }
+// 注册人机验证（防刷号）
+let capId = '';
+async function loadCaptcha() {
+  try {
+    const j = await (await fetch('/api/captcha')).json();
+    capId = j.id || '';
+    $('rgCapBox').innerHTML = j.svg || '';
+  } catch (e) { $('rgCapBox').innerHTML = '<div style="font-size:11px;color:var(--ink2);line-height:1.6">验证码加载失败<br>点此重试</div>'; }
+}
+$('rgCapBox').onclick = loadCaptcha;
 // 【2026-09-16 修复】登录/注册统一在首页弹窗完成，不再跳 login.html（内部端）或独立注册页
 function saveAuth(token, user) {
   TOKEN = token; ME = user;
@@ -325,12 +363,18 @@ $('rgGo').onclick = async () => {
   const err = $('rgErr'); err.textContent = '';
   if (!/^1[3-9]\d{9}$/.test(phone)) { err.textContent = '请填写正确的 11 位手机号'; return; }
   if (pwd.length < 6) { err.textContent = '密码至少 6 位'; return; }
+  if (!$('rgCap').value.trim()) { err.textContent = '请填写人机验证结果'; return; }
   $('rgGo').disabled = true; $('rgGo').textContent = '创建中…';
   try {
     const pwHash = await sha256hex(pwd);
-    const r = await fetch('/api/portal/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: phone, phone, password: pwHash, displayName: name }) });
+    const r = await fetch('/api/portal/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: phone, phone, password: pwHash, displayName: name, captchaId: capId, captchaAnswer: $('rgCap').value.trim() }) });
     const j = await r.json();
-    if (!j.ok) { err.textContent = j.error || '注册失败'; $('rgGo').disabled = false; $('rgGo').textContent = '创建账号'; return; }
+    if (!j.ok) {
+      err.textContent = j.error || '注册失败';
+      // 服务端验证码是一次性的：只要请求被受理过就必须换一张，否则重试必然报"验证码已过期"
+      $('rgCap').value = ''; loadCaptcha();
+      $('rgGo').disabled = false; $('rgGo').textContent = '创建账号'; return;
+    }
     saveAuth(j.token, j.user);
     if (j.user.role !== 'client') { toast('注册成功 · 正在进入写手端…'); setTimeout(() => location.href = j.redirect || '/writer.html', 800); return; }
     closeMask(); toast('欢迎加入小沐 ✓'); loadMe();
@@ -385,6 +429,23 @@ $('ldGo').onclick = async () => {
     loadMe();
   } catch (e) { toast('网络异常'); }
 };
+// —— 文案馆（内容来自后台「作品管理」，可增删改排序） ——
+async function loadGallery() {
+  try {
+    const j = await (await fetch('/api/portal/gallery')).json();
+    const list = (j.ok && j.gallery) ? j.gallery : [];
+    if (!list.length) { $('gGrid').innerHTML = '<div style="color:var(--ink2);font-size:13px">作品整理中，可先咨询</div>'; return; }
+    $('gGrid').innerHTML = list.map(g => `
+      <div class="g-card">
+        <img src="${esc(g.img)}" alt="${esc(g.title)}" width="750" height="1000" loading="lazy" decoding="async">
+        <div class="gc-b">
+          <div class="gc-t serif">${esc(g.title)}</div>
+          <div class="gc-s">${esc(g.sub || '')}</div>
+          ${g.tag ? `<span class="gc-tag">${esc(g.tag)}</span>` : ''}
+        </div>
+      </div>`).join('');
+  } catch (e) { $('gGrid').innerHTML = '<div style="color:var(--ink2);font-size:13px">作品加载失败，刷新试试</div>'; }
+}
 // —— 小沐AI ——
 async function aiSend() {
   const q = $('aiInput').value.trim(); if (!q) return;
@@ -435,7 +496,7 @@ async function loadMe() {
 }
 function clearAuth() { TOKEN = ''; ME = null; localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); renderAuth(); loadMe(); }
 function logout() { clearAuth(); toast('已退出登录'); }
-renderAuth(); loadPkgs(); loadMe();
+renderAuth(); loadPkgs(); loadGallery(); loadMe();
 // 旧链接 /portal-register.html 会带 #reg 回来，自动开注册弹窗
 if (location.hash === '#reg' || location.hash === '#login') { location.hash === '#reg' ? openReg() : openLogin(); }
 </script>
