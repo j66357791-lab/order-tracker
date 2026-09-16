@@ -2,8 +2,10 @@
  * 策略：HTML页面 network-first（总是最新），静态资源 cache-first
  * 每次部署改 CACHE_VERSION 即可自动清旧缓存
  */
-const CACHE_VERSION = 'jiedan-v10-20260916';
+const CACHE_VERSION = 'jiedan-v11-20260916';
 const APP_SHELL = [
+  '/portal.html',
+  '/member.html',
   '/login.html',
   '/index.html',
   '/dispatch.html',
@@ -73,7 +75,7 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/index.html')))
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match(url.pathname.indexOf('member') >= 0 ? '/portal.html' : '/index.html')))
     );
     return;
   }
