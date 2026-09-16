@@ -75,7 +75,7 @@
     </div>
 
     <div id="regForm" class="hidden">
-      <label>邀请码（选填：不填=用户端账号，填写=写手账号）</label><input id="rInvite" placeholder="写手必填 · 用户端留空">
+      <label>邀请码（写手必填，由工作室发放）</label><input id="rInvite" placeholder="没有邀请码？回首页注册用户账号">
       <label>显示名（如：小王）</label><input id="rName">
       <label>用户名（字母数字，3-20位）</label><input id="rUser">
       <label>密码（至少6位）</label><input id="rPass" type="password">
@@ -92,6 +92,10 @@
       <button class="primary" id="btnReg">注册并登录</button>
     </div>
     <div class="err" id="mainErr"></div>
+    <div style="margin-top:14px;text-align:center;font-size:12px">
+      <a href="/portal.html" style="color:#059a4e;font-weight:600">← 返回用户首页</a>
+      <span style="color:#94a3b8"> · 咨询下单请在这里注册</span>
+    </div>
   </div>
 </div>
 
@@ -182,8 +186,9 @@ $('btnLogin').onclick = async () => {
     enter(j.user.role, j.token, j.user);
   } catch (e) { err(e.message); }
 };
-$('btnReg').onclick = async () => {
+  $('btnReg').onclick = async () => {
   err('');
+  if (!$('rInvite').value.trim()) { err('写手注册需填邀请码；只想咨询下单请回首页注册用户账号'); return; }
   if (!$('rAgree').checked) { err('请先阅读并勾选同意《兼职写手合作签约协议》'); return; }
   if (!$('rCap').value.trim()) { err('请输入人机验证结果'); return; }
   try {
