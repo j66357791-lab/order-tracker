@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>套餐管理 · 小沐文案后台</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root { --paper:#faf7f1; --ink:#2b2a26; --ink2:#6b675e; --green:#1f4d3a; --line:#e5ddcc; --red:#b5432f; }
+  body { background: var(--paper); color: var(--ink); font: 14px/1.7 "PingFang SC","Microsoft YaHei",sans-serif; }
+  .top { background: var(--green); color: #fff; padding: 16px 26px; display: flex; align-items: center; gap: 14px; }
+  .top h1 { font-size: 17px; font-weight: 600; }
+  .top a { color: #cfe3d8; font-size: 13px; margin-left: auto; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 26px 22px 60px; }
+  .bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .bar h2 { font-size: 20px; font-family: "Songti SC", serif; }
+  .btn { background: var(--green); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13.5px; cursor: pointer; }
+  .btn.ghost { background: none; border: 1px solid var(--line); color: var(--ink2); }
+  .btn.sm { padding: 5px 12px; font-size: 12px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; }
+  .card .ch { display: flex; align-items: center; gap: 10px; }
+  .card .ch b { font-size: 16px; }
+  .price { color: var(--green); font-size: 20px; font-weight: 700; }
+  .off { display: inline-block; font-size: 11px; border-radius: 99px; padding: 1px 10px; margin-left: 8px; }
+  .on { background: #e9f4ec; color: var(--green); }
+  .off-1 { background: #f4e9e9; color: var(--red); }
+  .items { font-size: 12.5px; color: var(--ink2); margin: 8px 0 12px; }
+  .mask { position: fixed; inset: 0; background: rgba(43,42,38,.5); display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+  .mask.onx { display: flex; }
+  .modal { background: #fff; border-radius: 14px; width: 100%; max-width: 430px; padding: 24px; max-height: 88vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 14px; font-family: "Songti SC", serif; }
+  .fr { margin-bottom: 12px; }
+  .fr label { display: block; font-size: 12px; color: var(--ink2); margin-bottom: 5px; }
+  .fr input, .fr textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 14px; outline: none; font-family: inherit; }
+  .toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 9px 20px; border-radius: 99px; font-size: 13px; display: none; z-index: 99; }
+  .empty { text-align: center; color: var(--ink2); padding: 50px 0; font-size: 13px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tabs button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
+  .tabs button.on { background: var(--green); color: #fff; border-color: var(--green); }
+  .lead-row { padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="top"><h1>套餐管理 · 用户端配置</h1><a href="/index.html">← 返回主后台</a></div>
+<div class="wrap">
+  <div class="tabs"><button class="on" id="tabPkg" onclick="showTab('pkg')">套餐配置</button><button id="tabLead" onclick="showTab('lead')">用户咨询</button></div>
+  <div class="bar"><h2>套餐列表</h2><button class="btn" onclick="editPkg(null)">+ 新增套餐</button></div>
+  <div id="pkgList"><div class="empty">加载中…</div></div>
+  <div id="leadBox" style="display:none"><div class="bar"><h2>用户咨询</h2></div><div id="leadList"><div class="empty">加载中…</div></div></div>
+</div>
+<div class="mask" id="pm"><div class="modal">
+  <h3 id="pmTitle">编辑套餐</h3>
+  <input type="hidden" id="fId">
+  <div class="fr"><label>套餐名</label><input id="fName" maxlength="20"></div>
+  <div class="fr"><label>一句话卖点</label><input id="fTag" maxlength="30"></div>
+  <div class="fr"><label>现价（元）</label><input id="fPrice" type="number" min="0"></div>
+  <div class="fr"><label>原价（元，选填）</label><input id="fOrig" type="number" min="0"></div>
+  <div class="fr"><label>角标（如"最受欢迎"，选填）</label><input id="fBadge" maxlength="10"></div>
+  <div class="fr"><label>包含内容（每行一条）</label><textarea id="fItems" rows="5"></textarea></div>
+  <div class="fr"><label>排序（数字小的在前）</label><input id="fOrder" type="number" value="0"></div>
+  <div class="fr"><label><input type="checkbox" id="fActive" checked style="width:auto"> 上架显示</label></div>
+  <button class="btn" style="width:100%" onclick="savePkg()">保存</button>
+</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+const TOKEN = localStorage.getItem('jdy_token') || '';
+const H = { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' };
+function toast(t) { const e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(() => e.style.display = 'none', 2000); }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function api(p, opt) { const r = await fetch(p, { ...opt, headers: H }); const j = await r.json(); if (r.status === 401) { location.href = '/login.html'; return null; } return j; }
+function showTab(t) {
+  $('tabPkg').classList.toggle('on', t === 'pkg'); $('tabLead').classList.toggle('on', t === 'lead');
+  $('pkgList').parentElement.querySelector('.bar').style.display = t === 'pkg' ? 'flex' : 'none';
+  $('pkgList').style.display = t === 'pkg' ? 'block' : 'none';
+  $('leadBox').style.display = t === 'lead' ? 'block' : 'none';
+  if (t === 'lead') loadLeads();
+}
+async function loadPkgs() {
+  const j = await api('/api/admin/packages');
+  if (!j || !j.ok) { $('pkgList').innerHTML = '<div class="empty">' + ((j && j.error) || '加载失败') + '</div>'; return; }
+  if (!j.packages.length) { $('pkgList').innerHTML = '<div class="empty">还没有套餐，点右上新增（用户端会自动内置3个种子套餐）</div>'; return; }
+  $('pkgList').innerHTML = j.packages.map(p => `<div class="card">
+    <div class="ch"><b>${esc(p.name)}</b><span class="price">¥${p.price}</span>${p.originalPrice ? `<s style="color:var(--ink2);font-size:12px">¥${p.originalPrice}</s>` : ''}<span class="off ${p.active ? 'on' : 'off-1'}">${p.active ? '上架中' : '已下架'}</span><span style="margin-left:auto;display:flex;gap:8px"><button class="btn sm ghost" onclick="togglePkg('${p._id}',${!p.active})">${p.active ? '下架' : '上架'}</button><button class="btn sm" onclick="editPkg('${p._id}')">编辑</button></span></div>
+    <div class="items">${(p.items || []).map(i => '· ' + esc(i)).join('　')}</div>
+  </div>`).join('');
+}
+function editPkg(id) {
+  $('pm').classList.add('onx');
+  if (!id) { $('pmTitle').textContent = '新增套餐'; ['fId','fName','fTag','fPrice','fOrig','fBadge','fItems'].forEach(i => $(i).value = ''); $('fOrder').value = 99; $('fActive').checked = true; return; }
+  api('/api/admin/packages').then(j => {
+    const p = j.packages.find(x => x._id === id); if (!p) return;
+    $('pmTitle').textContent = '编辑 · ' + p.name;
+    $('fId').value = p._id; $('fName').value = p.name || ''; $('fTag').value = p.tagline || '';
+    $('fPrice').value = p.price || 0; $('fOrig').value = p.originalPrice || ''; $('fBadge').value = p.badge || '';
+    $('fItems').value = (p.items || []).join('\n'); $('fOrder').value = p.order || 0; $('fActive').checked = !!p.active;
+  });
+}
+async function savePkg() {
+  const body = { name: $('fName').value.trim(), tagline: $('fTag').value.trim(), price: Number($('fPrice').value) || 0, originalPrice: Number($('fOrig').value) || 0, badge: $('fBadge').value.trim(), items: $('fItems').value.split('\n').map(s => s.trim()).filter(Boolean), order: Number($('fOrder').value) || 0, active: $('fActive').checked };
+  if (!body.name) return toast('套餐名必填');
+  const id = $('fId').value;
+  const j = await api(id ? '/api/admin/packages/' + id : '/api/admin/packages', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+  if (j && j.ok) { $('pm').classList.remove('onx'); toast('已保存 ✓ 用户端即时生效'); loadPkgs(); } else toast((j && j.error) || '保存失败');
+}
+async function togglePkg(id, active) {
+  const j = await api('/api/admin/packages/' + id, { method: 'PUT', body: JSON.stringify({ active }) });
+  if (j && j.ok) loadPkgs(); else toast((j && j.error) || '操作失败');
+}
+async function loadLeads() {
+  const j = await api('/api/admin/leads');
+  if (!j || !j.ok) { $('leadList').innerHTML = '<div class="empty">加载失败</div>'; return; }
+  $('leadList').innerHTML = j.leads.length ? j.leads.map(l => `<div class="lead-row"><b>${esc(l.displayName)}</b> · ${esc(l.phone || '无电话')} · 咨询「${esc(l.packageName || '-')}」 ${l.status === '待跟进' ? `<button class="btn sm" style="margin-left:8px" onclick="markLead('${l._id}')">标记已跟进</button>` : '<span class="off on" style="margin-left:8px">已跟进</span>'}<div style="color:var(--ink2);margin-top:3px">${esc(l.note || '无备注')} · ${new Date(new Date(l.createdAt).getTime() + 8*3600000).toISOString().slice(5,16).replace('T',' ')}</div></div>`).join('') : '<div class="empty">还没有用户咨询</div>';
+}
+async function markLead(id) { const j = await api('/api/admin/leads/' + id, { method: 'PUT', body: JSON.stringify({ status: '已跟进' }) }); if (j && j.ok) loadLeads(); }
+loadPkgs();
+</script>
+</body>
+</html>
