@@ -10,7 +10,7 @@ import multer from 'multer';
 import { Server } from 'socket.io';
 import { ObjectId, GridFSBucket } from 'mongodb';
 
-import { CONFIG, CHANGELOG } from './config.js';
+import { CONFIG, CHANGELOG, assertConfig } from './config.js';
 import { getDb } from './lib/db.js';
 import {
   JWT_SECRET, signToken, publicUser, selfUser, auth, adminOnly,
@@ -19,6 +19,8 @@ import {
   cleanReplyTo, nextUid, assignUid, pairKey, makeNotify,
 } from './lib/core.js';
 import { STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday } from './config.js';
+
+assertConfig();   // 【V17】数据库连接串没配好就直接停下，并打印配置指引
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FILE_LIMIT = 100 * 1024 * 1024;
@@ -59,27 +61,37 @@ const notify = makeNotify(io);
 let gridBucket = null;
 const makeBucket = async () => { const db = await getDb(); gridBucket = gridBucket || new GridFSBucket(db, { bucketName: 'files' }); return gridBucket; };
 
-// ---- 部署自检（关键前端文件指纹：部署后一查便知是否传全） ----
+// ---- 部署自检（关键文件指纹：部署后一查便知是否传全） ----
 app.get('/api/deploy-check', async (req, res) => {
   try {
     const { createHash } = await import('crypto');
     const { readFile } = await import('fs/promises');
+    // 覆盖前端所有页面 + 关键后端文件。missing 数组会直接把「没传上来的文件」列出来。
     const files = [
-      'public/writer.html', 'public/game.html', 'public/index.html', 'public/portal.html',
-      'public/member.html', 'public/admin_packages.html', 'public/login.html',
+      'server.js', 'config.js', 'package.json',
+      'public/portal.html', 'public/member.html', 'public/portal-register.html', 'public/login.html',
+      'public/index.html', 'public/dispatch.html', 'public/writer.html', 'public/game.html',
+      'public/admin_packages.html', 'public/admin_game.html',
+      'public/robots.txt', 'public/service-worker.js', 'public/manifest.json',
       'public/games/shanhai/index.html', 'public/games/shanhai/css/style.css',
       'public/games/shanhai/js/weapons.js', 'public/games/shanhai/js/game.js',
       'public/games/shanhai/js/config.js', 'public/games/shanhai/js/meta.js',
       'public/games/shanhai/js/ui.js', 'public/games/shanhai/js/assets.js',
+      'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js',
+      'routes/portal.js', 'routes/authx.js', 'routes/user.js', 'routes/orders.js',
+      'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js',
     ];
-    const out = {};
+    const out = {}, missing = [];
     for (const f of files) {
       try {
         const buf = await readFile(path.join(__dirname, f));
-        out[f.split('/').pop()] = { kb: Math.round(buf.length / 1024), sha8: createHash('sha256').update(buf).digest('hex').slice(0, 8) };
-      } catch (e) { out[f] = { MISSING: true }; }
+        out[f] = { kb: Math.round(buf.length / 1024), sha8: createHash('sha256').update(buf).digest('hex').slice(0, 8) };
+      } catch (e) { out[f] = { MISSING: true }; missing.push(f); }
     }
-    res.json({ ok: true, version: CONFIG.appVersion, files: out });
+    res.json({
+      ok: true, version: CONFIG.appVersion,
+      filesTotal: files.length, missingCount: missing.length, missing, files: out,
+    });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
