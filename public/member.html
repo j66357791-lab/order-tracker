@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>我的工作台 · 小沐文案</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#faf7f1">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --paper: #faf7f1; --paper2: #f3eee3; --ink: #2b2a26; --ink2: #6b675e;
+    --green: #1f4d3a; --green2: #2e6b52; --ochre: #b0642c; --line: #e5ddcc;
+    --gold: #c9a55c; --red: #b5432f;
+  }
+  body { background: var(--paper); color: var(--ink); font: 15px/1.75 "PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; -webkit-tap-highlight-color: transparent; }
+  .serif { font-family: "Songti SC","Noto Serif SC","STSong",serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px; }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; }
+
+  header { position: sticky; top: 0; z-index: 50; background: rgba(250,247,241,.94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .hd { display: flex; align-items: center; gap: 14px; height: 62px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; }
+  .brand .seal { width: 32px; height: 32px; background: var(--red); color: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; }
+  .hd .who { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .hd .who b { font-weight: 500; }
+  .btn-s { border: 1px solid var(--line); background: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; color: var(--ink2); }
+  .btn-s:hover { background: var(--paper2); color: var(--ink); }
+
+  .shell { display: grid; grid-template-columns: 216px 1fr; gap: 26px; padding: 26px 0 70px; align-items: start; }
+  .side { position: sticky; top: 88px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+  .side button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: none; border-radius: 10px; padding: 12px 14px; font-size: 14.5px; color: var(--ink2); cursor: pointer; }
+  .side button:hover { background: var(--paper2); }
+  .side button.on { background: var(--green); color: #fff; }
+  .side .side-tip { font-size: 12px; color: var(--ink2); padding: 12px 14px 4px; line-height: 1.7; border-top: 1px dashed var(--line); margin-top: 8px; }
+
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 24px; margin-bottom: 18px; }
+  .card h2 { font-size: 19px; margin-bottom: 4px; }
+  .card .sub { font-size: 13px; color: var(--ink2); margin-bottom: 18px; }
+  .pane { display: none; }
+  .pane.on { display: block; }
+
+  .hello { display: flex; align-items: center; gap: 18px; }
+  .ava { width: 62px; height: 62px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
+  .hello h2 { font-size: 21px; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .stat { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .stat b { display: block; font-size: 26px; color: var(--green); }
+  .stat span { font-size: 12.5px; color: var(--ink2); }
+
+  .quick { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .quick button { text-align: left; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; cursor: pointer; font-size: 14.5px; color: var(--ink); }
+  .quick button:hover { background: #fff; box-shadow: 0 8px 22px rgba(43,42,38,.07); }
+  .quick button em { display: block; font-style: normal; font-size: 12.5px; color: var(--ink2); margin-top: 4px; }
+
+  .p-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 22px 20px; position: relative; display: flex; flex-direction: column; }
+  .p-card.hot { border-color: var(--gold); box-shadow: 0 12px 32px rgba(201,165,92,.16); }
+  .p-badge { position: absolute; top: -11px; left: 20px; background: var(--gold); color: #fff; font-size: 11.5px; border-radius: 99px; padding: 3px 12px; }
+  .p-card h3 { font-size: 18px; }
+  .p-card .p-tag { font-size: 12.5px; color: var(--ink2); margin: 3px 0 12px; }
+  .p-card .p-price b { font-size: 28px; color: var(--green); }
+  .p-card .p-price s { color: var(--ink2); font-size: 13px; margin-left: 6px; }
+  .p-card ul { list-style: none; margin: 14px 0 18px; flex: 1; }
+  .p-card li { font-size: 13px; padding: 5px 0 5px 22px; position: relative; color: var(--ink); }
+  .p-card li::before { content: "✓"; position: absolute; left: 0; color: var(--green2); font-weight: 700; }
+  .p-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .btn-main { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 11px 20px; font-size: 14px; cursor: pointer; }
+  .btn-main:hover { filter: brightness(1.06); }
+  .btn-ghost { background: none; border: 1.5px solid var(--green); color: var(--green); border-radius: 10px; padding: 10px 18px; font-size: 14px; cursor: pointer; }
+  .btn-main[disabled] { opacity: .6; cursor: default; }
+
+  .notice { background: #fdf7ec; border: 1px solid #f0e2c6; border-radius: 12px; padding: 14px 18px; font-size: 13px; color: #7a5a22; line-height: 1.8; }
+  .notice b { color: var(--ochre); }
+
+  .lead { padding: 15px 0; border-bottom: 1px dashed var(--line); }
+  .lead:last-child { border-bottom: none; }
+  .lead .l-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lead .l-top b { font-size: 15px; }
+  .lead .l-note { font-size: 13px; color: var(--ink2); margin-top: 5px; }
+  .lead .l-time { font-size: 12px; color: var(--ink2); margin-top: 3px; }
+  .tag { font-size: 11px; border-radius: 99px; padding: 1px 10px; }
+  .t0 { background: #fdf3e7; color: var(--ochre); }
+  .t1 { background: #e9f4ec; color: var(--green); }
+
+  .f-row { margin-bottom: 14px; }
+  .f-row label { display: block; font-size: 12.5px; color: var(--ink2); margin-bottom: 6px; }
+  .f-row input, .f-row textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; font-size: 14px; outline: none; background: var(--paper); font-family: inherit; }
+  .f-row input:disabled { color: var(--ink2); background: var(--paper2); }
+
+  .ai-box { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #fff; }
+  .ai-logs { height: 340px; overflow-y: auto; padding: 18px; background: var(--paper); }
+  .msg { max-width: 78%; padding: 10px 14px; border-radius: 12px; font-size: 13.5px; margin-bottom: 10px; line-height: 1.7; word-break: break-word; }
+  .msg.u { background: var(--green); color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+  .msg.a { background: #fff; border: 1px solid var(--line); margin-right: auto; border-bottom-left-radius: 4px; }
+  .ai-chips { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px 0; background: #fff; }
+  .ai-chips button { background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); border-radius: 99px; padding: 5px 13px; font-size: 12.5px; cursor: pointer; }
+  .ai-input { display: flex; gap: 10px; padding: 12px 14px 14px; border-top: 1px solid var(--line); background: #fff; }
+  .ai-input input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; font-size: 14px; outline: none; background: var(--paper); min-width: 0; }
+  .ai-input button { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 0 22px; font-size: 14px; cursor: pointer; }
+
+  .mask { position: fixed; inset: 0; background: rgba(43,42,38,.5); z-index: 100; display: none; align-items: center; justify-content: center; padding: 20px; }
+  .mask.on { display: flex; }
+  .modal { background: #fff; border-radius: 16px; max-width: 420px; width: 100%; padding: 26px; max-height: 86vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 16px; font-size: 19px; }
+  .modal .btn-main { width: 100%; }
+  .err { color: var(--red); font-size: 12.5px; min-height: 18px; margin: -4px 0 8px; }
+  .toast { position: fixed; left: 50%; top: 76px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 22px; border-radius: 99px; font-size: 13px; z-index: 200; display: none; max-width: 88vw; text-align: center; }
+  .empty { text-align: center; color: var(--ink2); font-size: 13.5px; padding: 34px 0; }
+
+  .mtab { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: rgba(250,247,241,.98); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); backdrop-filter: blur(8px); }
+  .mtab button { flex: 1; background: none; border: none; padding: 8px 0; font-size: 12px; color: var(--ink2); cursor: pointer; }
+  .mtab button b { display: block; font-size: 17px; font-weight: 400; line-height: 1.3; }
+  .mtab button.on { color: var(--green); }
+
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; gap: 16px; padding: 16px 0 90px; }
+    .side { display: none; }
+    .mtab { display: flex; }
+    .stats { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .stat { padding: 12px 12px; }
+    .stat b { font-size: 21px; }
+    .p-grid { grid-template-columns: 1fr; }
+    .quick { grid-template-columns: 1fr; }
+    .card { padding: 18px; border-radius: 14px; }
+    .ai-logs { height: 300px; }
+    .hello h2 { font-size: 19px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap hd">
+    <a class="brand serif" href="/portal.html"><span class="seal">沐</span>小沐文案</a>
+    <div class="who">
+      <a class="btn-s" href="/portal.html">回首页</a>
+      <b id="hdName" class="serif">…</b>
+    </div>
+  </div>
+</header>
+
+<div class="wrap shell">
+  <aside class="side" id="side">
+    <button class="on" data-pane="home"><span>概览</span></button>
+    <button data-pane="leads"><span>我的咨询</span></button>
+    <button data-pane="ai"><span>小沐AI</span></button>
+    <button data-pane="me"><span>我的资料</span></button>
+    <div class="side-tip" id="sideTip">会员权益（专属折扣、优先排期、每月配额）正在开发中。</div>
+  </aside>
+
+  <main>
+    <!-- 概览 -->
+    <section class="pane on" id="pane-home">
+      <div class="card">
+        <div class="hello">
+          <div class="ava" id="ava">客</div>
+          <div>
+            <h2 class="serif" id="helloName">你好</h2>
+            <div class="sub" style="margin:0" id="helloSay">这里是你的专属工作台，需求和进度都在这里。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="serif">我的进度</h2>
+        <div class="sub">咨询提交后，管理员会在 48 小时内联系你</div>
+        <div class="stats">
+          <div class="stat"><b id="stAll">0</b><span>累计咨询</span></div>
+          <div class="stat"><b id="stWait">0</b><span>待跟进</span></div>
+          <div class="stat"><b id="stDone">0</b><span>已跟进</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="serif">继续下单</h2>
+        <div class="sub">选一档直接提交需求，我们先给方案和报价</div>
+        <div class="p-grid" id="pkgGrid"><div class="empty">套餐加载中…</div></div>
+      </div>
+
+      <div class="card">
+        <h2 class="serif">快捷入口</h2>
+        <div class="sub">常用功能一步到</div>
+        <div class="quick">
+          <button onclick="openLead('')">提交新需求<em>用途 / 字数 / 交付时间，写清就行</em></button>
+          <button onclick="go('ai')">问问小沐<em>价格、交付、能做什么，直接问</em></button>
+          <button onclick="location.href='/portal.html#secGallery'">逛逛文案馆<em>看看我们交付过的稿子</em></button>
+          <button onclick="location.href='/portal.html#secFaq'">常见问题<em>改稿、保密、付款方式</em></button>
+        </div>
+      </div>
+
+      <div class="notice">
+        <b>会员权益即将上线</b> —— 专属折扣、优先排期、每月内容配额正在开发。上线后这里会显示你的会员卡和剩余配额，不用另外申请。
+      </div>
+    </section>
+
+    <!-- 我的咨询 -->
+    <section class="pane" id="pane-leads">
+      <div class="card">
+        <h2 class="serif">我的咨询</h2>
+        <div class="sub">共 <span id="leadCount">0</span> 条 · 状态由管理员更新</div>
+        <button class="btn-main" onclick="openLead('')">+ 提交新需求</button>
+        <div id="leadList" style="margin-top:12px"><div class="empty">加载中…</div></div>
+      </div>
+    </section>
+
+    <!-- 小沐AI -->
+    <section class="pane" id="pane-ai">
+      <div class="card">
+        <h2 class="serif">小沐AI</h2>
+        <div class="sub">价格、交付时间、能做什么——直接问。复杂需求帮你转真人</div>
+        <div class="ai-box">
+          <div class="ai-logs" id="aiLogs"><div class="msg a">在的～有什么想了解的？问价格、问交付时间都可以。</div></div>
+          <div class="ai-chips" id="aiChips">
+            <button data-q="你们能做什么？">你们能做什么？</button>
+            <button data-q="套餐多少钱？">套餐多少钱？</button>
+            <button data-q="多久能交付？">多久能交付？</button>
+          </div>
+          <div class="ai-input"><input id="aiInput" placeholder="比如：公众号一篇多少钱？"><button id="aiSend">发送</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 我的资料 -->
+    <section class="pane" id="pane-me">
+      <div class="card">
+        <h2 class="serif">我的资料</h2>
+        <div class="sub">手机号即登录账号，暂不支持修改；昵称可以随时改</div>
+        <div class="f-row"><label>昵称</label><input id="fName" maxlength="20"></div>
+        <div class="f-row"><label>手机号（登录账号）</label><input id="fPhone" disabled></div>
+        <div class="f-row"><label>注册时间</label><input id="fTime" disabled></div>
+        <div class="err" id="meErr"></div>
+        <button class="btn-main" id="saveMe">保存昵称</button>
+      </div>
+      <div class="card">
+        <h2 class="serif">账号</h2>
+        <div class="sub">退出后需要重新登录才能提交需求和查看进度</div>
+        <button class="btn-ghost" id="logoutBtn">退出登录</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- 移动端底部 Tab -->
+<nav class="mtab" id="mtab">
+  <button class="on" data-pane="home"><b>◉</b>概览</button>
+  <button data-pane="leads"><b>≡</b>咨询</button>
+  <button data-pane="ai"><b>✳</b>小沐AI</button>
+  <button data-pane="me"><b>○</b>我的</button>
+</nav>
+
+<!-- 提交需求 -->
+<div class="mask" id="leadMask"><div class="modal">
+  <h3 class="serif" id="ldTitle">提交需求</h3>
+  <div class="f-row"><label>想做什么（选填，也可以只留联系方式）</label><textarea id="ldNote" rows="3" placeholder="比如：每个月 4 篇小红书，学生党文具类目"></textarea></div>
+  <div class="f-row"><label>联系手机（默认账号手机）</label><input id="ldPhone" maxlength="11" inputmode="numeric"></div>
+  <div class="err" id="ldErr"></div>
+  <button class="btn-main" id="ldGo">提交</button>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const TOKEN = localStorage.getItem('jdy_token') || '';
+let ME = null;
+try { ME = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) {}
+const cnDate = d => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+const cnTime = d => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ');
+
+function toast(t) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', 2400); }
+
+// 未登录 / 非用户端角色：一律送回该去的地方
+if (!TOKEN || !ME) location.replace('/portal.html#login');
+else if (ME.role === 'writer') location.replace('/writer.html');
+else if (ME.role === 'admin') location.replace('/dispatch.html');
+
+// ——— Tab 切换 ———
+function go(pane) {
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + pane));
+  document.querySelectorAll('[data-pane]').forEach(b => b.classList.toggle('on', b.dataset.pane === pane));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (pane === 'ai') setTimeout(() => $('aiInput').focus(), 300);
+}
+document.querySelectorAll('[data-pane]').forEach(b => b.onclick = () => go(b.dataset.pane));
+
+// ——— 资料 & 概览 ———
+let LEADS = [];
+async function loadMe() {
+  try {
+    const r = await fetch('/api/portal/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+    if (r.status === 401 || r.status === 403) { location.replace('/portal.html#login'); return; }
+    const j = await r.json();
+    if (!j.ok) return;
+    const me = j.me || {};
+    LEADS = j.leads || [];
+    const name = me.displayName || '用户';
+    $('hdName').textContent = name;
+    $('ava').textContent = name.slice(0, 1);
+    $('helloName').textContent = name + '，你好';
+    $('helloSay').textContent = '注册于 ' + cnDate(me.createdAt) + ' · 需求和进度都在这里。';
+    $('fName').value = name;
+    $('fPhone').value = me.phone || '-';
+    $('fTime').value = cnDate(me.createdAt);
+    $('stAll').textContent = LEADS.length;
+    $('stWait').textContent = LEADS.filter(l => l.status !== '已跟进').length;
+    $('stDone').textContent = LEADS.filter(l => l.status === '已跟进').length;
+    $('leadCount').textContent = LEADS.length;
+    renderLeads();
+  } catch (e) { toast('资料加载失败，稍后刷新试试'); }
+}
+function renderLeads() {
+  if (!LEADS.length) {
+    $('leadList').innerHTML = '<div class="empty">还没有提交过需求。<br>选一档套餐，或直接点上面的蓝色按钮写需求。</div>';
+    return;
+  }
+  $('leadList').innerHTML = LEADS.map(l => `<div class="lead">
+    <div class="l-top"><b>${esc(l.packageName || '一般咨询')}</b><span class="tag ${l.status === '已跟进' ? 't1' : 't0'}">${esc(l.status)}</span></div>
+    ${l.note ? `<div class="l-note">${esc(l.note)}</div>` : ''}
+    <div class="l-time">提交于 ${cnTime(l.createdAt)}${l.phone ? ' · 联系 ' + esc(l.phone) : ''}</div>
+  </div>`).join('');
+}
+$('saveMe').onclick = async () => {
+  const name = $('fName').value.trim();
+  $('meErr').textContent = '';
+  if (!name) { $('meErr').textContent = '昵称不能为空'; return; }
+  $('saveMe').disabled = true; $('saveMe').textContent = '保存中…';
+  try {
+    const r = await fetch('/api/portal/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ displayName: name }) });
+    const j = await r.json();
+    if (!j.ok) { $('meErr').textContent = j.error || '保存失败'; }
+    else {
+      ME.displayName = name; localStorage.setItem('jdy_user', JSON.stringify(ME));
+      $('hdName').textContent = name; $('ava').textContent = name.slice(0, 1); $('helloName').textContent = name + '，你好';
+      toast('昵称已更新 ✓');
+    }
+  } catch (e) { $('meErr').textContent = '网络异常，稍后再试'; }
+  $('saveMe').disabled = false; $('saveMe').textContent = '保存昵称';
+};
+$('logoutBtn').onclick = () => {
+  localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user');
+  location.href = '/portal.html';
+};
+
+// ——— 套餐（购买驱动） ———
+async function loadPkgs() {
+  try {
+    const j = await (await fetch('/api/portal/packages')).json();
+    if (!j.ok || !j.packages.length) { $('pkgGrid').innerHTML = '<div class="empty">套餐配置中，可直接提交需求让我们报价</div>'; return; }
+    $('pkgGrid').innerHTML = j.packages.map(p => `
+      <div class="p-card ${p.badge ? 'hot' : ''}">
+        ${p.badge ? `<span class="p-badge">${esc(p.badge)}</span>` : ''}
+        <h3 class="serif">${esc(p.name)}</h3><div class="p-tag">${esc(p.tagline || '')}</div>
+        <div class="p-price"><b>¥${esc(p.price)}</b>${p.originalPrice ? `<s>¥${esc(p.originalPrice)}</s>` : ''}</div>
+        <ul>${(p.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+        <button class="btn-main" data-pkg="${esc(p.name || '')}">我要这个</button>
+      </div>`).join('');
+    $('pkgGrid').querySelectorAll('button[data-pkg]').forEach(b => b.onclick = () => openLead(b.dataset.pkg));
+  } catch (e) { $('pkgGrid').innerHTML = '<div class="empty">套餐加载失败</div>'; }
+}
+
+// ——— 提交需求 ———
+function openLead(pkg) {
+  $('ldTitle').textContent = pkg ? '下单需求 · ' + pkg : '提交需求';
+  $('ldNote').dataset.pkg = pkg || '';
+  $('ldNote').value = '';
+  $('ldPhone').value = $('fPhone').value === '-' ? '' : $('fPhone').value;
+  $('ldErr').textContent = '';
+  $('leadMask').classList.add('on');
+}
+$('ldGo').onclick = async () => {
+  const phone = $('ldPhone').value.trim();
+  if (phone && !/^1[3-9]\d{9}$/.test(phone)) { $('ldErr').textContent = '手机号格式不对'; return; }
+  $('ldGo').disabled = true; $('ldGo').textContent = '提交中…';
+  try {
+    const r = await fetch('/api/portal/lead', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ packageName: $('ldNote').dataset.pkg || '一般咨询', note: $('ldNote').value, contact: phone }) });
+    const j = await r.json();
+    if (!j.ok) { $('ldErr').textContent = j.error || '提交失败'; }
+    else { $('leadMask').classList.remove('on'); toast('已提交，我们尽快联系你 ✓'); go('leads'); loadMe(); }
+  } catch (e) { $('ldErr').textContent = '网络异常，稍后再试'; }
+  $('ldGo').disabled = false; $('ldGo').textContent = '提交';
+};
+$('leadMask').addEventListener('click', e => { if (e.target.id === 'leadMask') $('leadMask').classList.remove('on'); });
+
+// ——— 小沐AI ———
+async function aiSend(preset) {
+  const q = (preset || $('aiInput').value).trim(); if (!q) return;
+  $('aiInput').value = '';
+  const logs = $('aiLogs');
+  logs.insertAdjacentHTML('beforeend', `<div class="msg u">${esc(q)}</div>`);
+  logs.scrollTop = logs.scrollHeight;
+  try {
+    const r = await fetch('/api/portal/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ message: q }) });
+    const j = await r.json();
+    logs.insertAdjacentHTML('beforeend', `<div class="msg a">${esc(j.reply || '稍后再试试')}</div>`);
+  } catch (e) { logs.insertAdjacentHTML('beforeend', `<div class="msg a">网络开小差了，再发一次？</div>`); }
+  logs.scrollTop = logs.scrollHeight;
+}
+$('aiSend').onclick = () => aiSend();
+$('aiInput').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
+$('aiChips').addEventListener('click', e => { if (e.target.dataset && e.target.dataset.q) aiSend(e.target.dataset.q); });
+
+if (TOKEN && ME && ME.role === 'client') { loadMe(); loadPkgs(); }
+</script>
+<script>
+// PWA：加到手机桌面可离线打开
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('/service-worker.js').catch(function () {}); });
+}
+</script>
+</body>
+</html>
