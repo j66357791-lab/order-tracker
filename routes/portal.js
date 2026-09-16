@@ -2,12 +2,13 @@
 // 【2026-09-16】用户端专属：开放注册（写手端仍需邀请码）
 import { ObjectId } from 'mongodb';
 import bcrypt from 'bcryptjs';
+import { limit, limitPass } from '../lib/ratelimit.js';
 
 export default function mountPortal(app, ctx = {}) {
-  const { auth, getDb, signToken, publicUser, notify, adminOnly, verifyCaptcha } = ctx;
+  const { auth, getDb, signToken, publicUser, selfUser, notify, adminOnly, verifyCaptcha } = ctx;
 
   // ---------- 用户端注册（开放，无需邀请码 · 需图形验证码防刷） ----------
-  app.post('/api/portal/register', async (req, res) => {
+  app.post('/api/portal/register', limit({ name: 'reg-portal', max: 10, windowMs: 10 * 60 * 1000, msg: '注册请求过于频繁，请 10 分钟后再试' }), async (req, res) => {
     try {
       const capErr = verifyCaptcha(req);
       if (capErr) return res.status(400).json({ ok: false, error: capErr, needCaptcha: true });
@@ -33,12 +34,12 @@ export default function mountPortal(app, ctx = {}) {
       };
       const r = await db.collection('users').insertOne(doc);
       const u = { ...doc, _id: r.insertedId };
-      res.json({ ok: true, token: signToken(u), user: publicUser(u), redirect: role === 'writer' ? '/writer.html' : '/portal.html' });
+      res.json({ ok: true, token: signToken(u), user: selfUser(u), redirect: role === 'writer' ? '/writer.html' : '/portal.html' });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
   // ---------- 用户端登录（按角色分流：client→portal / writer→writer / admin→后台） ----------
-  app.post('/api/portal/login', async (req, res) => {
+  app.post('/api/portal/login', limit({ name: 'login-portal', max: 15, windowMs: 5 * 60 * 1000, msg: '登录尝试次数过多，请 5 分钟后再试' }), async (req, res) => {
     try {
       const db = await getDb();
       const { username, password } = req.body || {};
@@ -47,7 +48,8 @@ export default function mountPortal(app, ctx = {}) {
       const ok = u && (await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false)
         || await bcrypt.compare(String(req.body?.passwordPlain || ''), u.passwordHash).catch(() => false));
       if (!ok) return res.status(401).json({ ok: false, error: '账号或密码错误' });
-      res.json({ ok: true, token: signToken(u), user: publicUser(u), redirect: u.role === 'admin' ? '/dispatch.html' : (u.role === 'writer' ? '/writer.html' : '/portal.html') });
+      limitPass(req);   // 登录成功，清掉尝试计数
+      res.json({ ok: true, token: signToken(u), user: selfUser(u), redirect: u.role === 'admin' ? '/dispatch.html' : (u.role === 'writer' ? '/writer.html' : '/portal.html') });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
@@ -94,7 +96,7 @@ export default function mountPortal(app, ctx = {}) {
   });
 
   // ---------- 咨询/下单（用户端提交，管理端跟进） ----------
-  app.post('/api/portal/lead', auth, async (req, res) => {
+  app.post('/api/portal/lead', auth, limit({ name: 'lead', max: 10, windowMs: 10 * 60 * 1000, byUser: true, msg: '提交太频繁了，请稍后再试' }), async (req, res) => {
     try {
       if (req.user.role !== 'client') return res.status(403).json({ ok: false, error: '仅用户端账号可提交' });
       const db = await getDb();
@@ -116,7 +118,7 @@ export default function mountPortal(app, ctx = {}) {
   });
 
   // ---------- 小沐AI（关键词引导 + 价格实时读后台套餐，避免与配置脱钩） ----------
-  app.post('/api/portal/ai', auth, async (req, res) => {
+  app.post('/api/portal/ai', auth, limit({ name: 'ai', max: 30, windowMs: 60 * 1000, byUser: true, msg: '问得有点快，歇一分钟再问小沐～' }), async (req, res) => {
     try {
       const { message } = req.body || {};
       const q = String(message || '').slice(0, 300);
