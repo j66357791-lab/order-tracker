@@ -54,8 +54,13 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const db = await getDb();
     const { inviteCode, username, password, displayName, email } = req.body || {};
-    const inv = await db.collection('invites').findOne({ code: String(inviteCode || '').trim().toUpperCase() });
-    if (!inv || inv.usedBy) return res.status(400).json({ ok: false, error: '邀请码无效或已被使用' });
+    // 【2026-09-16】统一注册：邀请码选填——不填=用户端(client)，填写并有效=写手(writer)
+    const hasInvite = String(inviteCode || '').trim().length > 0;
+    let inv = null;
+    if (hasInvite) {
+      inv = await db.collection('invites').findOne({ code: String(inviteCode).trim().toUpperCase() });
+      if (!inv || inv.usedBy) return res.status(400).json({ ok: false, error: '邀请码无效或已被使用' });
+    }
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(username || '')) return res.status(400).json({ ok: false, error: '用户名限3-20位字母数字下划线' });
     if (!password || String(password).length < 6) return res.status(400).json({ ok: false, error: '密码至少6位' });
     if (!req.body?.agree) return res.status(400).json({ ok: false, error: '请先阅读并同意《兼职写手合作签约协议》' });
@@ -63,23 +68,27 @@ app.post('/api/auth/register', async (req, res) => {
     if (capErr) return res.status(400).json({ ok: false, error: capErr });
     const exists = await db.collection('users').findOne({ username });
     if (exists) return res.status(400).json({ ok: false, error: '用户名已被占用' });
+    const role = hasInvite ? 'writer' : 'client';
     const doc = {
       username, passwordHash: await bcrypt.hash(String(password), 8),
-      displayName: String(displayName || username).slice(0, 20), role: 'writer',
+      displayName: String(displayName || username).slice(0, 20), role,
       shift: false, sockOnline: false, email: String(email || '').slice(0, 60),
+      phone: String(req.body?.phone || '').slice(0, 11),
       level: 0, createdAt: new Date(),
     };
     const r = await db.collection('users').insertOne(doc);
     const myUid = await assignUid(db, r.insertedId);
-    // 注册即签署合作协议
+    // 注册即签署合作协议（写手；用户端免协议）
+    if (role === 'writer') {
     await db.collection('contracts').insertOne({ userId: r.insertedId.toString(), name: doc.displayName, uid: myUid, displayName: doc.displayName, version: CONTRACT_VERSION, title: CONTRACT_TITLE, signedAt: new Date(), source: 'register' });
     // 欢迎站内信
     await db.collection('announcements').insertOne({
       title: '👋 欢迎加入写手大家庭！', targets: [r.insertedId.toString()], readBy: [], createdAt: new Date(),
       content: `你好呀，${doc.displayName}！\n\n欢迎加入平台，这里有一份快速上手指南：\n\n① 去「工作台」看看待完成的单子，点「接单」开始赚第一笔；\n② 接单前记得先完成「实名认证」（我的-实名认证），否则接不了单哦；\n③ 「我的-钱包」里绑定收款方式（需与实名一致），审核通过后管理员会打款给你；\n④ 考勤页可以抢班、打卡，等级 LV1 有每月 1.5% 的激励奖励；\n⑤ 有问题随时在「聊天」里联系管理员，或留意顶部 ✉ 站内信通知。\n\n祝你接单顺利，稿费满满！`,
     });
-    await db.collection('invites').updateOne({ _id: inv._id }, { $set: { usedBy: r.insertedId.toString(), usedAt: new Date() } });
-    res.json({ ok: true, token: signToken({ _id: r.insertedId, role: 'writer' }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
+    }
+    if (inv) await db.collection('invites').updateOne({ _id: inv._id }, { $set: { usedBy: r.insertedId.toString(), usedAt: new Date() } });
+    res.json({ ok: true, role, redirect: role === 'writer' ? '/writer.html' : '/portal.html', token: signToken({ _id: r.insertedId, role }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 app.get('/api/me', auth, (req, res) => res.json({ ok: true, user: req.user }));
