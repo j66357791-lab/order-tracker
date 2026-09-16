@@ -25,7 +25,7 @@ export default function mountPortal(app, ctx = {}) {
         await db.collection('invites').updateOne({ _id: inv._id }, { $set: { usedBy: username, usedAt: new Date() } });
       }
       const doc = {
-        username, phone, passwordHash: await bcrypt.hash(String(password), 8),
+        username, phone, passwordHash: await bcrypt.hash(String(password), 8),   // password 已是前端 SHA-256
         displayName: String(displayName || '').slice(0, 20) || (role === 'writer' ? '写手' : '用户') + String(username).slice(0, 4),
         role, createdAt: new Date(), portalLeads: 0, shift: false, sockOnline: false, email: '', level: 0,
       };
@@ -41,7 +41,9 @@ export default function mountPortal(app, ctx = {}) {
       const db = await getDb();
       const { username, password } = req.body || {};
       const u = await db.collection('users').findOne({ username: String(username || '') });
-      const ok = u && await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false);
+      // 【2026-09-16 修复】主体系密码为 SHA-256 预哈希后 bcrypt；兼容明文注册的旧测试号
+      const ok = u && (await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false)
+        || await bcrypt.compare(String(req.body?.passwordPlain || ''), u.passwordHash).catch(() => false));
       if (!ok) return res.status(401).json({ ok: false, error: '账号或密码错误' });
       res.json({ ok: true, token: signToken(u), user: publicUser(u), redirect: u.role === 'admin' ? '/dispatch.html' : (u.role === 'writer' ? '/writer.html' : '/portal.html') });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
