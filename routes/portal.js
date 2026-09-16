@@ -148,12 +148,14 @@ export default function mountPortal(app, ctx = {}) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
-  // ---------- 文案馆（公开只读 + 管理端配置） ----------
+  // ---------- 作品（公开只读 + 管理端配置） ----------
+  // cat 分类对应前台「作品 · 能做什么」的四个标签，老数据没有 cat 时前台默认归到「文案」
+  const GALLERY_CATS = ['文案', '演示', '数据', '视频'];
   const GALLERY_SEED = [
-    { title: '公众号推文', sub: '茶饮品牌 · 节气借势', tag: '阅读 2.4w', img: '/assets/portal/gallery1.jpg?v=1', order: 1, active: true },
-    { title: '小红书种草', sub: '文具好物 · 学生党', tag: '点赞 5,700+', img: '/assets/portal/gallery2.jpg?v=1', order: 2, active: true },
-    { title: '品牌故事', sub: '民宿品牌 · 从一间房开始', tag: '官网在用', img: '/assets/portal/gallery3.jpg?v=1', order: 3, active: true },
-    { title: '演讲稿', sub: '毕业致辞 · 一所中学', tag: '现场 8 分钟', img: '/assets/portal/gallery4.jpg?v=1', order: 4, active: true },
+    { title: '公众号推文', sub: '茶饮品牌 · 节气借势', tag: '阅读 2.4w', img: '/assets/portal/gallery1.jpg?v=1', cat: '文案', order: 1, active: true },
+    { title: '小红书种草', sub: '文具好物 · 学生党', tag: '点赞 5,700+', img: '/assets/portal/gallery2.jpg?v=1', cat: '文案', order: 2, active: true },
+    { title: '品牌故事', sub: '民宿品牌 · 从一间房开始', tag: '官网在用', img: '/assets/portal/gallery3.jpg?v=1', cat: '文案', order: 3, active: true },
+    { title: '演讲稿', sub: '毕业致辞 · 一所中学', tag: '现场 8 分钟', img: '/assets/portal/gallery4.jpg?v=1', cat: '文案', order: 4, active: true },
   ];
   app.get('/api/portal/gallery', async (req, res) => {
     try {
@@ -190,6 +192,7 @@ export default function mountPortal(app, ctx = {}) {
       const doc = {
         title: String(b.title).slice(0, 20), sub: String(b.sub || '').slice(0, 30),
         tag: String(b.tag || '').slice(0, 14), img: String(b.img).slice(0, 300),
+        cat: GALLERY_CATS.includes(String(b.cat)) ? String(b.cat) : '文案',
         order: Number(b.order) || 99, active: b.active !== false, createdAt: new Date(),
       };
       const r = await db.collection('portal_gallery').insertOne(doc);
@@ -201,6 +204,7 @@ export default function mountPortal(app, ctx = {}) {
       const db = await getDb();
       const b = req.body || {}, set = {};
       for (const k of ['title', 'sub', 'tag', 'img']) if (b[k] !== undefined) set[k] = String(b[k]).slice(0, k === 'img' ? 300 : 30);
+      if (b.cat !== undefined && GALLERY_CATS.includes(String(b.cat))) set.cat = String(b.cat);
       if (b.order !== undefined) set.order = Number(b.order) || 0;
       if (b.active !== undefined) set.active = !!b.active;
       await db.collection('portal_gallery').updateOne({ _id: new ObjectId(req.params.id) }, { $set: set });
