@@ -62,6 +62,18 @@ export default function mountPortal(app, ctx = {}) {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
+  // ---------- 修改我的资料（用户端工作台） ----------
+  app.put('/api/portal/profile', auth, async (req, res) => {
+    try {
+      if (req.user.role !== 'client') return res.status(403).json({ ok: false, error: '仅用户端账号' });
+      const name = String((req.body || {}).displayName || '').trim().slice(0, 20);
+      if (!name) return res.status(400).json({ ok: false, error: '昵称不能为空' });
+      const db = await getDb();
+      await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { displayName: name } });
+      res.json({ ok: true, displayName: name });
+    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
   // ---------- 套餐（公开只读 + 管理端配置） ----------
   app.get('/api/portal/packages', async (req, res) => {
     try {
