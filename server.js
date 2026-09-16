@@ -1,6 +1,7 @@
 // server.js — 入口（ES6 模块化架构 v4 · 2026-09-14）
 // 职责只剩：装配中间件 → 挂载各业务模块 → 启动 HTTP/WebSocket
 // 业务代码全部拆分至 routes/ 与 lib/，游戏在 games.js / shanhai_game.js
+import { envReport } from './lib/env.js';   // 必须最先：先加载 .env，后面的模块才能读到配置
 import express from 'express';
 import http from 'http';
 import path from 'path';
@@ -12,7 +13,7 @@ import { ObjectId, GridFSBucket } from 'mongodb';
 import { CONFIG, CHANGELOG } from './config.js';
 import { getDb } from './lib/db.js';
 import {
-  JWT_SECRET, signToken, publicUser, auth, adminOnly,
+  JWT_SECRET, signToken, publicUser, selfUser, auth, adminOnly,
   cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr,
   sha256hex, captchaStore, verifyCaptcha, rnd, ymOf, toMin, cnTimeStr,
   cleanReplyTo, nextUid, assignUid, pairKey, makeNotify,
@@ -22,6 +23,17 @@ import { STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, loca
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FILE_LIMIT = 100 * 1024 * 1024;
 const app = express();
+app.disable('x-powered-by');
+// 【2026-09-17 安全加固】部署在 nginx / 宝塔等反向代理后面时，把 TRUST_PROXY 设为 1，
+// 否则限流看到的全是代理 IP（127.0.0.1），会把所有人算成同一个人。
+if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  next();
+});
 app.use(express.json({ limit: '120mb' }));
 app.use(express.urlencoded({ extended: true }));
 // 【2026-09-16】根路径直达用户端落地页
@@ -84,7 +96,7 @@ const unfreezeRedpackets = activityMod.unfreezeRedpackets;
 const contract = await import('./routes/misc.js');
 const bcrypt = (await import('bcryptjs')).default;
 const jwt = (await import('jsonwebtoken')).default;
-const ctx = { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket,
+const ctx = { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket,
   rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday,
   CONTRACT_VERSION: contract.CONTRACT_VERSION, CONTRACT_TITLE: contract.CONTRACT_TITLE, CONTRACT_TEXT: contract.CONTRACT_TEXT,
   unfreezeRedpackets };
@@ -124,6 +136,10 @@ try {
 // ---- 兜底与启动 ----
 app.use((req, res) => res.status(404).json({ ok: false, error: '接口不存在' }));
 server.listen(CONFIG.port, () => {
-  console.log(`订单统计系统V10（ES6模块化）已启动: http://localhost:${CONFIG.port}`);
-  console.log(`架构: server.js 入口 + config.js + lib/{db,core}.js + routes/ 8 个业务模块 + 2 个游戏模块`);
+  console.log(`订单统计系统V15（ES6模块化）已启动: http://localhost:${CONFIG.port}`);
+  console.log(`架构: server.js 入口 + config.js + lib/{db,core,env,ratelimit}.js + routes/ 9 个业务模块 + 2 个游戏模块`);
+  const r = envReport();
+  console.log('[自检] JWT_SECRET: ' + (r.JWT_SECRET ? '已配置 ✓' : '未配置 ⚠ 使用随机密钥，重启后需重新登录（建议在 .env 里配置）'));
+  console.log('[自检] MONGO_URI : ' + (r.MONGO_URI ? '已配置 ✓' : '未配置（使用 config.js 默认值）'));
+  console.log('[自检] TRUST_PROXY: ' + (r.TRUST_PROXY ? '已开启（反代后面部署）' : '关闭（直连部署）'));
 });
