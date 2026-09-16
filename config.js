@@ -1,6 +1,6 @@
 // config.js — 全局配置与状态常量
 export const CONFIG = {
-  appVersion: '1.1.1',
+  appVersion: '1.2.0',
   mongoUri: process.env.MONGO_URI ||
     'mongodb+srv://j66357791_db_user:hjh628727@cluster0.oiwbvje.mongodb.net/invest-jiedanyuan?retryWrites=true&w=majority',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
@@ -21,6 +21,7 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '1.2.0', date: '2026-09-16', notes: ['全新用户端上线：文案馆/接单介绍卡组/套餐方案/小沐AI/个人中心', '网站首页直达用户端，用户可开放注册', '写手注册仅限邀请码，旧账号登录自动分流到对应端', '管理员端新增：用户端套餐配置+用户咨询跟进', '新增部署自检接口 /api/deploy-check（治上传不完整）', '山海：飞剑玩法与美术复验通过'] },
   { ver: '1.1.1', date: '2026-09-15', notes: ['【重要】修复缓存根疾：此前 js/css/图片被浏览器缓存30天且地址不变，导致部署新版后手机一直用旧资源', '山海：星星/横幅/头像框全部重绘（完美透明）', '山海：御剑五诀技能卡置顶展示', '山海：空装备槽显示半透明装备剪影', '装备页/关卡页实拍验收通过'] },
   { ver: '1.1.0', date: '2026-09-15', notes: ['聊天图片自动压缩（30MB上限）', '红包领取免手动刷新', '顶部邮箱改为广告入口', '游戏资源强制预下载+秒开缓存', '山海：新首页美术+装备图标+寻宝挪山海录', '御剑术玩法：初始飞剑+剑诀五技能', '新增：更新检查/缓存清理/资源包下载'] },
 ];
