@@ -54,6 +54,7 @@ app.get('/api/deploy-check', async (req, res) => {
     const { readFile } = await import('fs/promises');
     const files = [
       'public/writer.html', 'public/game.html', 'public/index.html', 'public/portal.html',
+      'public/member.html', 'public/admin_packages.html', 'public/login.html',
       'public/games/shanhai/index.html', 'public/games/shanhai/css/style.css',
       'public/games/shanhai/js/weapons.js', 'public/games/shanhai/js/game.js',
       'public/games/shanhai/js/config.js', 'public/games/shanhai/js/meta.js',
