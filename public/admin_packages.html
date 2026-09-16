@@ -71,6 +71,14 @@
 <div class="mask" id="gm"><div class="modal">
   <h3 id="gmTitle">编辑作品</h3>
   <input type="hidden" id="gId">
+  <div class="fr"><label>分类（对应首页「作品 · 能做什么」的标签）</label>
+    <select id="gCat" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:14px;outline:none;font-family:inherit;background:#fff;color:var(--ink)">
+      <option value="文案">文案定制</option>
+      <option value="演示">演示定制</option>
+      <option value="数据">数据整理</option>
+      <option value="视频">视频脚本</option>
+    </select>
+  </div>
   <div class="fr"><label>标题（如：公众号推文）</label><input id="gTitle" maxlength="20"></div>
   <div class="fr"><label>副标题（如：茶饮品牌 · 节气借势）</label><input id="gSub" maxlength="30"></div>
   <div class="fr"><label>角标（如：阅读 2.4w，选填）</label><input id="gTag" maxlength="14"></div>
@@ -146,7 +154,7 @@ async function loadGal() {
     <div class="ch" style="align-items:flex-start">
       <img src="${esc(g.img)}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;background:#f1efe8" onerror="this.style.opacity=.2">
       <div style="flex:1;min-width:0">
-        <b>${esc(g.title)}</b> <span class="off ${g.active ? 'on' : 'off-1'}">${g.active ? '显示中' : '已隐藏'}</span>
+        <b>${esc(g.title)}</b> <span class="off on">${esc(g.cat || '文案')}</span> <span class="off ${g.active ? 'on' : 'off-1'}">${g.active ? '显示中' : '已隐藏'}</span>
         <div class="items" style="margin:6px 0 0">${esc(g.sub || '')}${g.tag ? ' · ' + esc(g.tag) : ''} · 排序 ${esc(g.order)}</div>
       </div>
       <span style="display:flex;gap:8px;flex-shrink:0">
@@ -161,19 +169,20 @@ function editGal(id) {
   if (!id) {
     $('gmTitle').textContent = '新增作品'; $('gDel').style.display = 'none';
     ['gId', 'gTitle', 'gSub', 'gTag', 'gImg'].forEach(i => $(i).value = '');
+    $('gCat').value = '文案';
     $('gOrder').value = 99; $('gActive').checked = true; $('gPrev').removeAttribute('src'); return;
   }
   api('/api/admin/gallery').then(j => {
     const g = (j && j.gallery || []).find(x => x._id === id); if (!g) return;
     $('gmTitle').textContent = '编辑 · ' + g.title; $('gDel').style.display = 'block';
-    $('gId').value = g._id; $('gTitle').value = g.title || ''; $('gSub').value = g.sub || '';
+    $('gId').value = g._id; $('gCat').value = g.cat || '文案'; $('gTitle').value = g.title || ''; $('gSub').value = g.sub || '';
     $('gTag').value = g.tag || ''; $('gImg').value = g.img || '';
     $('gOrder').value = g.order || 0; $('gActive').checked = !!g.active;
     $('gPrev').src = g.img || '';
   });
 }
 async function saveGal() {
-  const body = { title: $('gTitle').value.trim(), sub: $('gSub').value.trim(), tag: $('gTag').value.trim(), img: $('gImg').value.trim(), order: Number($('gOrder').value) || 0, active: $('gActive').checked };
+  const body = { cat: $('gCat').value, title: $('gTitle').value.trim(), sub: $('gSub').value.trim(), tag: $('gTag').value.trim(), img: $('gImg').value.trim(), order: Number($('gOrder').value) || 0, active: $('gActive').checked };
   if (!body.title) return toast('标题必填');
   if (!body.img) return toast('图片地址必填');
   const id = $('gId').value;
