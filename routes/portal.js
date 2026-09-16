@@ -10,20 +10,28 @@ export default function mountPortal(app, ctx = {}) {
   app.post('/api/portal/register', async (req, res) => {
     try {
       const db = await getDb();
-      const { username, password, displayName, phone } = req.body || {};
+      const { username, password, displayName, phone, inviteCode } = req.body || {};
       if (!/^1[3-9]\d{9}$/.test(String(phone || ''))) return res.status(400).json({ ok: false, error: '请填写正确的手机号' });
       if (!/^[a-zA-Z0-9_]{3,20}$/.test(String(username || ''))) return res.status(400).json({ ok: false, error: '账号限3-20位字母数字下划线' });
       if (!password || String(password).length < 6) return res.status(400).json({ ok: false, error: '密码至少6位' });
       const exists = await db.collection('users').findOne({ username });
       if (exists) return res.status(400).json({ ok: false, error: '账号已被占用' });
+      // 【2026-09-16】统一注册：选填邀请码——填了且有效=写手，不填=用户端
+      let role = 'client';
+      if (String(inviteCode || '').trim()) {
+        const inv = await db.collection('invites').findOne({ code: String(inviteCode).trim().toUpperCase() });
+        if (!inv || inv.usedBy) return res.status(400).json({ ok: false, error: '邀请码无效或已被使用' });
+        role = 'writer';
+        await db.collection('invites').updateOne({ _id: inv._id }, { $set: { usedBy: username, usedAt: new Date() } });
+      }
       const doc = {
         username, phone, passwordHash: await bcrypt.hash(String(password), 8),
-        displayName: String(displayName || '').slice(0, 20) || '用户' + String(username).slice(0, 4),
-        role: 'client', createdAt: new Date(), portalLeads: 0,
+        displayName: String(displayName || '').slice(0, 20) || (role === 'writer' ? '写手' : '用户') + String(username).slice(0, 4),
+        role, createdAt: new Date(), portalLeads: 0, shift: false, sockOnline: false, email: '', level: 0,
       };
       const r = await db.collection('users').insertOne(doc);
       const u = { ...doc, _id: r.insertedId };
-      res.json({ ok: true, token: signToken(u), user: publicUser(u) });
+      res.json({ ok: true, token: signToken(u), user: publicUser(u), redirect: role === 'writer' ? '/writer.html' : '/portal.html' });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
@@ -35,7 +43,7 @@ export default function mountPortal(app, ctx = {}) {
       const u = await db.collection('users').findOne({ username: String(username || '') });
       const ok = u && await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false);
       if (!ok) return res.status(401).json({ ok: false, error: '账号或密码错误' });
-      res.json({ ok: true, token: signToken(u), user: publicUser(u), redirect: u.role === 'admin' ? '/index.html' : (u.role === 'writer' ? '/writer.html' : '/portal.html') });
+      res.json({ ok: true, token: signToken(u), user: publicUser(u), redirect: u.role === 'admin' ? '/dispatch.html' : (u.role === 'writer' ? '/writer.html' : '/portal.html') });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
   });
 
