@@ -43,9 +43,10 @@ class WeaponSystem {
   swordParams() {
     const W = CONFIG.weapons.sword, S = this.swordSkill;
     const wpn = (window.META && META.profile && META.profile.equip && META.profile.equip.weapon) || null;
-    const wpnAtk = wpn ? (wpn.val || 3) : 3;   // 初始新手飞剑：攻击力+3
+    // 【2026-09-16】卸掉武器也能打：角色基础攻击力 5（武器数值叠在其上）
+    const wpnAtk = wpn ? (wpn.val || 0) : 0;
     return {
-      dmg: (W.baseDmg + wpnAtk) * (1 + 0.2 * S.atk) * this.hero.dmgMul,
+      dmg: (5 + wpnAtk) * (1 + 0.2 * S.atk) * this.hero.dmgMul,
       cd: W.cd / (1 + 0.2 * S.spd),
       count: 1 + S.count,                       // 诀一：+1把（可点两次→3把）
       speed: W.projSpeed, radius: W.projRadius,
@@ -200,10 +201,18 @@ class Projectile {
         Assets.draw(ctx, "swordspin", f, 0, 0, 1.1);
         ctx.restore();
       } else {
-        // 普通飞剑：剑尖朝向飞行方向（+90°，贴图竖直向上）
+        // 普通飞剑：剑尖朝向飞行方向（+90°，贴图竖直向上）+ 剑光拖尾强化方向感
+        ctx.save();
+        ctx.strokeStyle = "rgba(230, 245, 235, .5)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(this.x - this.dx * 22, this.y - this.dy * 22);
+        ctx.lineTo(this.x - this.dx * 6, this.y - this.dy * 6);
+        ctx.stroke();
+        ctx.restore();
         ctx.save(); ctx.translate(this.x, this.y);
         ctx.rotate(Math.atan2(this.dy, this.dx) + Math.PI / 2);
-        Assets.draw(ctx, "sword", 0, 0, 1);
+        Assets.draw(ctx, "sword", 0, 0, 1.25);
         ctx.restore();
       }
       return;
