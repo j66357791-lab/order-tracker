@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /member.html
+Disallow: /portal-register.html
+Disallow: /login.html
+Disallow: /index.html
+Disallow: /dispatch.html
+Disallow: /writer.html
+Disallow: /admin_game.html
+Disallow: /admin_packages.html
+Disallow: /games/
+Disallow: /api/
