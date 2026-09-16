@@ -2,8 +2,11 @@
 // 【2026-09-14 ES6 重构】自 server.js 原样迁出，行为不变
 import { ObjectId, GridFSBucket } from 'mongodb';
 
+import { limit, limitPass } from '../lib/ratelimit.js';
+import { INLINE_SAFE_TYPES } from '../lib/core.js';
+
 export default function mount(ctx) {
-  const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
+  const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
 // ---------- 初始化：创建管理员（仅当没有任何账号时） ----------
 app.get('/api/setup/state', async (req, res) => {
   try {
@@ -27,12 +30,12 @@ app.post('/api/setup', async (req, res) => {
     };
     const r = await db.collection('users').insertOne(doc);
     await assignUid(db, r.insertedId);
-    res.json({ ok: true, token: signToken({ _id: r.insertedId, role: 'admin' }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
+    res.json({ ok: true, token: signToken({ _id: r.insertedId, role: 'admin' }), user: { ...selfUser(doc), id: r.insertedId.toString() } });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 // ---------- 登录 / 注册（写手凭邀请码） ----------
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', limit({ name: 'login-internal', max: 15, windowMs: 5 * 60 * 1000, msg: '登录尝试次数过多，请 5 分钟后再试' }), async (req, res) => {
   try {
     const db = await getDb();
     const { username, password, passwordPlain } = req.body || {};
@@ -47,10 +50,11 @@ app.post('/api/auth/login', async (req, res) => {
       // 静默升级：换成SHA-256预哈希存储，此后登录不再传输明文
       await db.collection('users').updateOne({ _id: u._id }, { $set: { passwordHash: await bcrypt.hash(String(password), 8) } }).catch(() => {});
     }
-    res.json({ ok: true, token: signToken(u), user: publicUser(u) });
+    limitPass(req);   // 登录成功，清掉尝试计数
+    res.json({ ok: true, token: signToken(u), user: selfUser(u) });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', limit({ name: 'reg-internal', max: 10, windowMs: 10 * 60 * 1000, msg: '注册请求过于频繁，请 10 分钟后再试' }), async (req, res) => {
   try {
     const db = await getDb();
     const { inviteCode, username, password, displayName, email } = req.body || {};
@@ -88,7 +92,7 @@ app.post('/api/auth/register', async (req, res) => {
     });
     }
     if (inv) await db.collection('invites').updateOne({ _id: inv._id }, { $set: { usedBy: r.insertedId.toString(), usedAt: new Date() } });
-    res.json({ ok: true, role, redirect: role === 'writer' ? '/writer.html' : '/portal.html', token: signToken({ _id: r.insertedId, role }), user: { ...publicUser(doc), id: r.insertedId.toString() } });
+    res.json({ ok: true, role, redirect: role === 'writer' ? '/writer.html' : '/portal.html', token: signToken({ _id: r.insertedId, role }), user: { ...selfUser(doc), id: r.insertedId.toString() } });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 app.get('/api/me', auth, (req, res) => res.json({ ok: true, user: req.user }));
@@ -119,7 +123,7 @@ app.get('/api/team', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
     const users = await db.collection('users').find({ role: 'writer' }).sort({ createdAt: 1 }).toArray();
-    res.json({ ok: true, users: users.map(publicUser) });
+    res.json({ ok: true, users: users.map(selfUser) });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 app.post('/api/shift', auth, async (req, res) => {
@@ -144,7 +148,7 @@ app.get('/api/chats', auth, async (req, res) => {
         const conv = pairKey(req.user.id, w._id.toString());
         const last = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: -1 }).limit(1).toArray();
         const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
-        list.push({ user: publicUser(w), unread, last: last[0] || null });
+        list.push({ user: selfUser(w), unread, last: last[0] || null });
       }
       return res.json({ ok: true, chats: list });
     }
@@ -158,7 +162,7 @@ app.get('/api/chats', auth, async (req, res) => {
       const conv = pairKey(req.user.id, a._id.toString());
       const last = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: -1 }).limit(1).toArray();
       const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
-      list.push({ user: publicUser(a), unread, last: last[0] || null });
+      list.push({ user: selfUser(a), unread, last: last[0] || null });
     }
     list.sort((x, y) => (y.last?.createdAt || y.user.createdAt || 0) - (x.last?.createdAt || x.user.createdAt || 0));
     res.json({ ok: true, chats: list });
@@ -297,8 +301,12 @@ app.get('/api/files/:id/download', auth, async (req, res) => {
     if (req.user.role !== 'admin' && meta.from !== req.user.id && meta.to !== req.user.id) {
       return res.status(403).json({ ok: false, error: '无权访问该文件' });
     }
-    const inline = String(req.query.inline) === '1';
-    res.setHeader('Content-Type', f.contentType || 'application/octet-stream');
+    // 【2026-09-17 安全加固】inline 只放行浏览器可安全内联渲染的类型；
+    // html / svg / js 等一律强制 attachment，否则上传一个网页发给你，点开就在同域执行脚本（存储型 XSS）
+    const ct = String(f.contentType || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+    const inline = String(req.query.inline) === '1' && INLINE_SAFE_TYPES.test(ct);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', ct);
     res.setHeader('Content-Disposition', (inline ? 'inline' : 'attachment') + "; filename*=UTF-8''" + encodeURIComponent(f.filename));
     bucket.openDownloadStream(f._id).pipe(res);
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
