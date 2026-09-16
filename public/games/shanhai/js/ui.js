@@ -44,13 +44,18 @@ const UI = (() => {
     const ws = window.Game && Game.__weapons;
     bar.innerHTML = "";
     if (!ws) return;
-    const icons = { fireline: "火", icepick: "冰", body: "体" };
-    const names = { fireline: "火球术", icepick: "寒冰锥", body: "修身体质" };
+    const icons = { sword: "剑", fireline: "火", icepick: "冰", body: "体" };
+    const names = { sword: "御剑术", fireline: "火球术", icepick: "寒冰锥", body: "修身体质" };
     for (const [key, s] of Object.entries(ws.slots)) {
       const el = document.createElement("div");
       el.className = "skill-chip";
-      const max = CONFIG.weapons[key].maxLv;
-      el.innerHTML = `<span class="sk-ico">${icons[key] || "?"}</span><span class="sk-name">${names[key]}</span><span class="sk-lv">${s.lv}/${max}</span>`;
+      const max = CONFIG.weapons[key] ? CONFIG.weapons[key].maxLv : 1;
+      let lvTxt = s.lv + "/" + max;
+      if (key === "sword" && ws.swordSkill) {
+        const S = ws.swordSkill;
+        lvTxt = (1 + S.count) + "剑" + (S.atk + S.spd > 0 ? " · 诀" + (S.atk + S.spd + S.lock + S.burst) : "");
+      }
+      el.innerHTML = `<span class="sk-ico">${icons[key] || "?"}</span><span class="sk-name">${names[key] || key}</span><span class="sk-lv">${lvTxt}</span>`;
       if (s.lv >= max) el.classList.add("maxed");
       bar.appendChild(el);
     }
