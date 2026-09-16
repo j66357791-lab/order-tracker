@@ -243,11 +243,13 @@
   <div class="f-row"><label>昵称</label><input id="rgName" placeholder="怎么称呼你" maxlength="20"></div>
   <div class="f-row"><label>手机号（登录账号）</label><input id="rgUser" placeholder="11位手机号" maxlength="11"></div>
   <div class="f-row"><label>密码</label><input id="rgPwd" type="password" placeholder="至少6位" maxlength="30"></div>
+  <div class="f-row"><label>邀请码（选填）</label><input id="rgInvite" placeholder="有邀请码将注册为写手" maxlength="12"></div>
   <button class="btn-main" id="rgGo">创建账号</button>
-  <p style="font-size:12px;color:var(--ink2);margin-top:12px">已有账号？<a href="#" onclick="openLogin();return false" style="color:var(--green)">去登录</a>　·　写手注册需要邀请码，<a href="/login.html" style="color:var(--green)">点这里</a></p>
+  <p style="font-size:12px;color:var(--ink2);margin-top:12px">不填邀请码=用户端 · 填写有效邀请码=写手端<br>已有账号？<a href="#" onclick="openLogin();return false" style="color:var(--green)">去登录</a></p>
 </div></div>
 <div class="mask" id="loginMask"><div class="modal">
-  <h3 class="serif">登录</h3>
+  <h3 class="serif">统一登录</h3>
+  <p style="font-size:12px;color:var(--ink2);margin:-8px 0 14px">管理员 / 写手 / 用户都用这一个入口，登录后自动进入对应端</p>
   <div class="f-row"><label>账号</label><input id="lgUser" placeholder="手机号 / 用户名" maxlength="20"></div>
   <div class="f-row"><label>密码</label><input id="lgPwd" type="password" maxlength="30"></div>
   <button class="btn-main" id="lgGo">登录</button>
@@ -279,11 +281,12 @@ $('btnLogin').onclick = () => isClient() ? $('secMe').scrollIntoView({ behavior:
 $('rgGo').onclick = async () => {
   const phone = $('rgUser').value.trim(), pwd = $('rgPwd').value, name = $('rgName').value.trim();
   try {
-    const r = await fetch('/api/portal/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: phone, phone, password: pwd, displayName: name }) });
+    const r = await fetch('/api/portal/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: phone, phone, password: pwd, displayName: name, inviteCode: $('rgInvite') ? $('rgInvite').value.trim() : '' }) });
     const j = await r.json();
     if (!j.ok) return toast(j.error);
     localStorage.setItem('jdy_token', j.token); localStorage.setItem('jdy_user', JSON.stringify(j.user));
-    location.reload();
+    toast(j.user.role === 'writer' ? '注册成功 · 正在进入写手端…' : '注册成功 ✓');
+    setTimeout(() => location.href = j.redirect || '/portal.html', 800);
   } catch (e) { toast('网络异常，稍后再试'); }
 };
 // —— 登录（按角色分流） ——
