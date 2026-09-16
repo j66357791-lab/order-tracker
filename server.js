@@ -24,6 +24,9 @@ const FILE_LIMIT = 100 * 1024 * 1024;
 const app = express();
 app.use(express.json({ limit: '120mb' }));
 app.use(express.urlencoded({ extended: true }));
+// 【2026-09-16】根路径直达用户端落地页
+app.get('/', (req, res) => res.redirect('/portal.html'));
+
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: '30d',   // 图片等长期缓存（引用带 ?v= 版本化，换图换URL）
   setHeaders: (res, p) => {
@@ -43,6 +46,29 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: FIL
 const notify = makeNotify(io);
 let gridBucket = null;
 const makeBucket = async () => { const db = await getDb(); gridBucket = gridBucket || new GridFSBucket(db, { bucketName: 'files' }); return gridBucket; };
+
+// ---- 部署自检（关键前端文件指纹：部署后一查便知是否传全） ----
+app.get('/api/deploy-check', async (req, res) => {
+  try {
+    const { createHash } = await import('crypto');
+    const { readFile } = await import('fs/promises');
+    const files = [
+      'public/writer.html', 'public/game.html', 'public/index.html', 'public/portal.html',
+      'public/games/shanhai/index.html', 'public/games/shanhai/css/style.css',
+      'public/games/shanhai/js/weapons.js', 'public/games/shanhai/js/game.js',
+      'public/games/shanhai/js/config.js', 'public/games/shanhai/js/meta.js',
+      'public/games/shanhai/js/ui.js', 'public/games/shanhai/js/assets.js',
+    ];
+    const out = {};
+    for (const f of files) {
+      try {
+        const buf = await readFile(path.join(__dirname, f));
+        out[f.split('/').pop()] = { kb: Math.round(buf.length / 1024), sha8: createHash('sha256').update(buf).digest('hex').slice(0, 8) };
+      } catch (e) { out[f] = { MISSING: true }; }
+    }
+    res.json({ ok: true, version: CONFIG.appVersion, files: out });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 
 // ---- 版本信息（前端进入时自动检查更新） ----
 app.get('/api/version', (req, res) => res.json({ ok: true, version: CONFIG.appVersion, changelog: CHANGELOG }));
@@ -73,6 +99,7 @@ try {
 (await import('./routes/cards.js')).default(ctx);
 (await import('./routes/worktime.js')).default(ctx);
 (await import('./routes/gameadmin.js')).default(ctx);
+(await import('./routes/portal.js')).default(app, ctx);
 // ---- 游戏模块 ----
 try {
   (await import('./games.js')).default(app, { auth, getDb, cnDayStr });
