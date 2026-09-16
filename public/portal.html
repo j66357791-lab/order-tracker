@@ -264,34 +264,24 @@
   .lb-in .lb-close { margin-top: 16px; background: none; border: 1px solid rgba(255,255,255,.5); color: #fff; border-radius: 99px; padding: 8px 22px; font-size: 13px; cursor: pointer; transition: background .2s; }
   .lb-in .lb-close:hover { background: rgba(255,255,255,.14); }
 
-  /* ============ AI 悬浮窗（伪 3D 球 + 可拖动） ============ */
-  .ai-fab { position: fixed; right: 26px; bottom: 26px; z-index: 90; width: 62px; height: 62px; border-radius: 50%; border: none;
-            cursor: grab; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0;
-            background: radial-gradient(circle at 34% 26%, #74b492 0%, #3f8768 26%, #235b45 58%, #113324 100%);
-            box-shadow: 0 16px 32px rgba(14,42,30,.42), 0 4px 8px rgba(0,0,0,.22),
-                        inset 0 -7px 14px rgba(0,0,0,.44), inset 0 7px 12px rgba(255,255,255,.26);
-            transition: transform .3s var(--ease-back), box-shadow .3s;
+  /* ============ AI 悬浮球（扁平纸感 · 印章风 · 可拖动） ============ */
+  .ai-fab { position: fixed; right: 26px; bottom: 26px; z-index: 90; width: 56px; height: 56px; border-radius: 16px; border: none; padding: 0;
+            cursor: grab; background: var(--green); color: #f6f2e8; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 6px 18px rgba(31,77,58,.24), 0 2px 4px rgba(31,77,58,.12);
+            transition: transform .28s var(--ease-back), box-shadow .28s, background .28s;
             touch-action: none; -webkit-user-select: none; user-select: none; }
-  .ai-fab svg { width: 28px; height: 28px; position: relative; z-index: 2; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.35)); }
-  .ai-fab::before { content: ""; position: absolute; left: 19%; top: 12%; width: 36%; height: 27%; border-radius: 50%;
-                    background: radial-gradient(circle at 42% 42%, rgba(255,255,255,.92), rgba(255,255,255,0) 72%);
-                    filter: blur(1.5px); pointer-events: none; }
-  .ai-fab::after { content: ""; position: absolute; left: 23%; bottom: 9%; width: 54%; height: 19%; border-radius: 50%;
-                   background: radial-gradient(ellipse at 50% 50%, rgba(152,228,192,.42), rgba(152,228,192,0) 72%);
-                   filter: blur(2px); pointer-events: none; }
-  .ai-fab:hover { transform: translateY(-3px) scale(1.04);
-                  box-shadow: 0 20px 40px rgba(14,42,30,.5), 0 4px 8px rgba(0,0,0,.22),
-                              inset 0 -7px 14px rgba(0,0,0,.44), inset 0 7px 12px rgba(255,255,255,.3); }
-  .ai-fab:active { transform: scale(.95); }
-  .ai-fab.dragging { cursor: grabbing; transform: scale(1.07);
-                     box-shadow: 0 26px 50px rgba(14,42,30,.55), inset 0 -7px 14px rgba(0,0,0,.44), inset 0 7px 12px rgba(255,255,255,.3); }
-  .ai-fab .ring { position: absolute; inset: -2px; border-radius: 50%; border: 1.5px solid rgba(46,107,82,.42);
-                  animation: ringOut 2.6s var(--ease) infinite; pointer-events: none; }
-  .ai-fab .dot { position: absolute; top: 0; right: 0; width: 15px; height: 15px; border-radius: 50%; background: var(--red);
-                 border: 2px solid var(--paper); animation: breathe 1.8s ease-in-out infinite; z-index: 3; }
-  .ai-fab.opened { transform: scale(.9); }
+  .ai-fab svg { width: 26px; height: 26px; transition: transform .35s var(--ease-back); }
+  .ai-fab:hover { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(31,77,58,.3), 0 3px 6px rgba(31,77,58,.16); }
+  .ai-fab:active { transform: scale(.96); }
+  .ai-fab.dragging { cursor: grabbing; transform: scale(1.06) rotate(-3deg); box-shadow: 0 16px 32px rgba(31,77,58,.32); }
+  .ai-fab .ring { position: absolute; inset: -5px; border-radius: 20px; border: 1px solid rgba(31,77,58,.28);
+                  animation: hintPulse 3s ease-in-out infinite; pointer-events: none; }
+  @keyframes hintPulse { 0%, 100% { opacity: .5; } 50% { opacity: 0; } }
+  .ai-fab .dot { position: absolute; top: -3px; right: -3px; width: 13px; height: 13px; border-radius: 50%; background: var(--red);
+                 border: 2px solid var(--paper); animation: breathe 1.9s ease-in-out infinite; }
+  .ai-fab.opened { background: var(--ink); }
+  .ai-fab.opened svg { transform: rotate(45deg); }
   .ai-fab.opened .ring, .ai-fab.opened .dot { display: none; }
-  .ai-fab.opened svg { transform: rotate(90deg); transition: transform .35s var(--ease-back); }
   .ai-hint { position: fixed; right: 96px; bottom: 40px; z-index: 89; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 16px; font-size: 13px; box-shadow: 0 10px 26px rgba(43,42,38,.12);
              opacity: 0; transform: translateX(14px); transition: opacity .4s var(--ease), transform .4s var(--ease); pointer-events: none; }
   .ai-hint.on { opacity: 1; transform: none; }
@@ -511,12 +501,13 @@
 </div>
 
 <!-- AI 悬浮窗 -->
-<button class="ai-fab" id="aiFab" aria-label="小沐AI，可拖动" title="问小沐（可拖动）">
+<button class="ai-fab" id="aiFab" aria-label="问小沐（可拖动）" title="问小沐 · 可拖动，双击复位">
   <span class="ring"></span>
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <rect x="3.2" y="4.2" width="17.6" height="13.4" rx="5" fill="rgba(255,255,255,.95)"/>
-    <path d="M7.6 17.2l-.9 3.4 3.9-3.4z" fill="rgba(255,255,255,.95)"/>
-    <path d="M12.4 7.4l.88 2.12 2.12.88-2.12.88-.88 2.12-.88-2.12L9.4 10.4l2.12-.88z" fill="#235b45"/>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M20.4 11.8c0 3.9-3.75 7.05-8.4 7.05-.98 0-1.92-.14-2.79-.4L4.6 20.2l1.24-3.5C4.6 15.36 4 13.68 4 11.8c0-3.9 3.75-7.05 8.4-7.05s8 3.15 8 7.05z"/>
+    <circle cx="8.9" cy="11.8" r=".95" fill="currentColor" stroke="none"/>
+    <circle cx="12.4" cy="11.8" r=".95" fill="currentColor" stroke="none"/>
+    <circle cx="15.9" cy="11.8" r=".95" fill="currentColor" stroke="none"/>
   </svg>
   <span class="dot" id="aiDot"></span>
 </button>
@@ -743,6 +734,26 @@ const SERVICES = [
     desc: '口播、短剧、宣传片分镜脚本。逐句台词加画面说明，拿着就能拍，不用二次翻译。',
     points: ['口播 / 短剧 / 宣传片分镜', '逐句台词 + 画面说明 + 时长标注', '可按平台节奏调整（抖音 / 视频号）'] },
 ];
+// 内置作品示例：某个分类还没在后台上传作品时用来展示（都是我们自己做的版面示例）
+// 一旦在后台「作品管理」里给该分类加了记录，这里就不再显示。
+const DEMO_CASES = {
+  '文案': [
+    { title: '公众号长图文', sub: '标题 · 正文 · 配图一次交付', tag: '作品示例', img: '/assets/portal/show-copy-1.svg' },
+    { title: '小红书图文', sub: '封面 · 标题 · 正文 · 标签', tag: '作品示例', img: '/assets/portal/show-copy-2.svg' },
+  ],
+  '演示': [
+    { title: '成套演示设计', sub: '封面 · 数据页 · 图表页', tag: '作品示例', img: '/assets/portal/show-ppt-1.svg' },
+    { title: '版式规范与母版', sub: '栅格 · 字号层级 · 配色', tag: '作品示例', img: '/assets/portal/show-ppt-2.svg' },
+  ],
+  '数据': [
+    { title: '经营数据看板', sub: 'KPI · 趋势 · 门店排行', tag: '作品示例', img: '/assets/portal/show-data-1.svg' },
+    { title: '台账与条件格式', sub: '异常自动标色 · 公式可编辑', tag: '作品示例', img: '/assets/portal/show-data-2.svg' },
+  ],
+  '视频': [
+    { title: '短视频分镜脚本', sub: '镜号 · 画面 · 台词 · 时长', tag: '作品示例', img: '/assets/portal/show-video-1.svg' },
+    { title: '口播脚本', sub: '节奏标注 · 停顿 · 重音', tag: '作品示例', img: '/assets/portal/show-video-2.svg' },
+  ],
+};
 let GALLERY = [];
 let SVC = '文案';
 let SVC_CASES = [];
@@ -767,7 +778,11 @@ function setSvc(key) {
   $('svcTabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.k === key));
   renderCases();
 }
-function casesOf(key) { return GALLERY.filter(g => (g.cat || '文案') === key); }
+function casesOf(key) {
+  const real = GALLERY.filter(g => (g.cat || '文案') === key);
+  if (real.length) return real;                 // 后台有真实案例就优先用
+  return DEMO_CASES[key] || [];                 // 否则用设计样张补位
+}
 function renderCases() {
   SVC_CASES = casesOf(SVC);
   CASE_IDX = 0;
