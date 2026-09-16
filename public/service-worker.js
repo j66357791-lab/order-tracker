@@ -2,7 +2,7 @@
  * 策略：HTML页面 network-first（总是最新），静态资源 cache-first
  * 每次部署改 CACHE_VERSION 即可自动清旧缓存
  */
-const CACHE_VERSION = 'jiedan-v9-20260915b';
+const CACHE_VERSION = 'jiedan-v10-20260916';
 const APP_SHELL = [
   '/login.html',
   '/index.html',
