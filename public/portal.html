@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>小沐文案 · 让每一句话都有人读</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --paper: #faf7f1; --paper2: #f3eee3; --ink: #2b2a26; --ink2: #6b675e;
+    --green: #1f4d3a; --green2: #2e6b52; --ochre: #b0642c; --line: #e5ddcc;
+    --gold: #c9a55c; --red: #b5432f;
+  }
+  body { background: var(--paper); color: var(--ink); font: 15px/1.75 "PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+  .serif { font-family: "Songti SC","Noto Serif SC","STSong",serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px; }
+  a { color: inherit; text-decoration: none; }
+
+  /* 顶栏 */
+  header { position: sticky; top: 0; z-index: 50; background: rgba(250,247,241,.94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .hd { display: flex; align-items: center; gap: 18px; height: 62px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 20px; }
+  .brand .seal { width: 34px; height: 34px; background: var(--red); color: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; }
+  nav { display: flex; gap: 4px; margin-left: auto; }
+  nav a { padding: 8px 14px; font-size: 14px; color: var(--ink2); border-radius: 8px; }
+  nav a:hover { background: var(--paper2); color: var(--ink); }
+  .hd-cta { background: var(--green); color: #fff; border-radius: 8px; padding: 9px 18px; font-size: 14px; }
+  .hd-cta.ghost { background: none; border: 1px solid var(--line); color: var(--ink); }
+
+  /* Hero */
+  .hero { padding: 72px 0 64px; display: flex; gap: 40px; align-items: center; }
+  .hero-l { flex: 1.2; }
+  .hero-l h1 { font-size: 44px; line-height: 1.3; letter-spacing: 2px; margin-bottom: 18px; }
+  .hero-l h1 em { font-style: normal; color: var(--ochre); }
+  .hero-l p { color: var(--ink2); font-size: 16px; margin-bottom: 28px; max-width: 30em; }
+  .hero-btns { display: flex; gap: 14px; }
+  .btn-main { background: var(--green); color: #fff; padding: 13px 30px; border-radius: 10px; font-size: 15px; border: none; cursor: pointer; }
+  .btn-ghost { background: none; border: 1.5px solid var(--green); color: var(--green); padding: 13px 26px; border-radius: 10px; font-size: 15px; cursor: pointer; }
+  .hero-r { flex: 1; position: relative; }
+  .hero-r img { width: 100%; border-radius: 14px; box-shadow: 0 24px 60px rgba(43,42,38,.18); }
+  .hero-stat { position: absolute; left: -18px; bottom: 22px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; box-shadow: 0 10px 30px rgba(43,42,38,.12); font-size: 13px; }
+  .hero-stat b { display: block; font-size: 22px; color: var(--green); }
+
+  /* 区块标题 */
+  section { padding: 64px 0; }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 30px; }
+  .sec-head h2 { font-size: 30px; letter-spacing: 3px; }
+  .sec-head .en { color: var(--gold); font-size: 13px; letter-spacing: 4px; }
+  .sec-head .more { margin-left: auto; font-size: 13px; color: var(--ink2); }
+
+  /* 文案馆卡组 */
+  .g-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .g-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; transition: transform .25s, box-shadow .25s; cursor: pointer; }
+  .g-card:hover { transform: translateY(-6px); box-shadow: 0 18px 44px rgba(43,42,38,.14); }
+  .g-card img { width: 100%; height: 230px; object-fit: cover; display: block; }
+  .g-card .gc-b { padding: 14px 16px 16px; }
+  .g-card .gc-t { font-size: 16px; margin-bottom: 4px; }
+  .g-card .gc-s { font-size: 12.5px; color: var(--ink2); }
+  .g-card .gc-tag { display: inline-block; font-size: 11px; color: var(--ochre); border: 1px solid currentColor; border-radius: 99px; padding: 1px 10px; margin-top: 8px; }
+
+  /* 接单介绍卡组 */
+  .s-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .s-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 24px 20px 20px; position: relative; }
+  .s-card .sc-ico { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 14px; }
+  .s-card h3 { font-size: 17px; margin-bottom: 8px; }
+  .s-card p { font-size: 13px; color: var(--ink2); line-height: 1.8; }
+  .s-card .sc-price { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 13px; color: var(--ink2); }
+  .s-card .sc-price b { color: var(--red); font-size: 17px; }
+
+  /* 套餐 */
+  #secPkg { background: var(--paper2); }
+  .p-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .p-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; position: relative; }
+  .p-card.hot { border-color: var(--gold); box-shadow: 0 14px 40px rgba(201,165,92,.18); }
+  .p-badge { position: absolute; top: -12px; left: 24px; background: var(--gold); color: #fff; font-size: 12px; border-radius: 99px; padding: 3px 14px; }
+  .p-card h3 { font-size: 20px; }
+  .p-card .p-tag { font-size: 13px; color: var(--ink2); margin: 4px 0 16px; }
+  .p-card .p-price { display: flex; align-items: baseline; gap: 8px; }
+  .p-card .p-price b { font-size: 34px; color: var(--green); }
+  .p-card .p-price s { color: var(--ink2); font-size: 14px; }
+  .p-card ul { list-style: none; margin: 18px 0 22px; }
+  .p-card li { font-size: 13.5px; color: var(--ink); padding: 7px 0 7px 24px; position: relative; }
+  .p-card li::before { content: "✓"; position: absolute; left: 2px; color: var(--green2); font-weight: 700; }
+  .p-card .btn-main { width: 100%; }
+
+  /* 小沐AI */
+  .ai-box { background: #fff; border: 1px solid var(--line); border-radius: 16px; display: flex; overflow: hidden; max-width: 780px; }
+  .ai-side { width: 200px; background: var(--green); color: #e9f2ec; padding: 26px 20px; }
+  .ai-side .ai-ava { width: 54px; height: 54px; border-radius: 50%; background: #fff; color: var(--green); display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 14px; }
+  .ai-side h3 { font-size: 18px; color: #fff; }
+  .ai-side p { font-size: 12px; opacity: .8; margin-top: 10px; line-height: 1.8; }
+  .ai-main { flex: 1; display: flex; flex-direction: column; }
+  .ai-logs { height: 300px; overflow-y: auto; padding: 18px; }
+  .msg { max-width: 78%; padding: 10px 14px; border-radius: 12px; font-size: 13.5px; margin-bottom: 10px; line-height: 1.7; }
+  .msg.u { background: var(--green); color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+  .msg.a { background: var(--paper2); margin-right: auto; border-bottom-left-radius: 4px; }
+  .ai-input { display: flex; gap: 10px; padding: 14px; border-top: 1px solid var(--line); }
+  .ai-input input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; font-size: 14px; outline: none; background: var(--paper); }
+  .ai-input button { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 0 22px; font-size: 14px; cursor: pointer; }
+
+  /* 个人中心 */
+  .me-grid { display: grid; grid-template-columns: 300px 1fr; gap: 22px; }
+  .me-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 26px; }
+  .me-ava { width: 66px; height: 66px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 12px; }
+  .me-row { display: flex; justify-content: space-between; font-size: 13.5px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
+  .lead-row { padding: 12px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .lead-row b { font-size: 14px; }
+  .st-tag { font-size: 11px; border-radius: 99px; padding: 1px 10px; }
+  .st-0 { background: #fdf3e7; color: var(--ochre); }
+  .st-1 { background: #e9f4ec; color: var(--green); }
+
+  footer { padding: 44px 0 60px; border-top: 1px solid var(--line); color: var(--ink2); font-size: 12.5px; }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+
+  /* 弹窗 */
+  .mask { position: fixed; inset: 0; background: rgba(43,42,38,.5); z-index: 100; display: none; align-items: center; justify-content: center; padding: 20px; }
+  .mask.on { display: flex; }
+  .modal { background: #fff; border-radius: 16px; max-width: 400px; width: 100%; padding: 28px; max-height: 86vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 16px; font-size: 19px; }
+  .f-row { margin-bottom: 14px; }
+  .f-row label { display: block; font-size: 12.5px; color: var(--ink2); margin-bottom: 6px; }
+  .f-row input, .f-row textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; font-size: 14px; outline: none; background: var(--paper); font-family: inherit; }
+  .modal .btn-main { width: 100%; margin-top: 6px; }
+
+  .toast { position: fixed; left: 50%; top: 76px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 22px; border-radius: 99px; font-size: 13px; z-index: 200; display: none; }
+
+  @media (max-width: 860px) {
+    .hero { flex-direction: column; padding: 44px 0; }
+    .hero-l h1 { font-size: 32px; }
+    .g-grid, .s-grid { grid-template-columns: repeat(2, 1fr); }
+    .p-grid { grid-template-columns: 1fr; }
+    .me-grid { grid-template-columns: 1fr; }
+    .ai-box { flex-direction: column; }
+    .ai-side { width: 100%; display: flex; gap: 14px; align-items: center; }
+    .ai-side .ai-ava { margin-bottom: 0; }
+    .ai-logs { height: 260px; }
+    nav { display: none; }
+    .sec-head h2 { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap hd">
+    <a class="brand serif" href="/portal.html"><span class="seal">沐</span>小沐文案</a>
+    <nav>
+      <a href="#secGallery">文案馆</a><a href="#secService">接单介绍</a><a href="#secPkg">套餐方案</a><a href="#secAI">小沐AI</a><a href="#secMe" id="navMe">个人中心</a>
+    </nav>
+    <div style="display:flex;gap:10px;margin-left:auto">
+      <button class="hd-cta ghost" id="btnLogin">登录</button>
+      <button class="hd-cta" id="btnReg">注册</button>
+    </div>
+  </div>
+</header>
+
+<!-- Hero -->
+<div class="wrap hero">
+  <div class="hero-l">
+    <h1 class="serif">让每一句话<br>都<em>有人读</em>，有人记住</h1>
+    <p>我们是十几个真的在写字的人。公众号、小红书、品牌故事、演讲稿、PPT——不套模板，不堆形容词，先把你的事听明白，再落笔。</p>
+    <div class="hero-btns">
+      <button class="btn-main" onclick="document.getElementById('secPkg').scrollIntoView({behavior:'smooth'})">看看套餐</button>
+      <button class="btn-ghost" onclick="document.getElementById('secAI').scrollIntoView({behavior:'smooth'})">先和小沐聊聊</button>
+    </div>
+  </div>
+  <div class="hero-r">
+    <img src="/assets/portal/gallery1.jpg" alt="作品">
+    <div class="hero-stat"><b>1,200+</b>篇已交付文案</div>
+  </div>
+</div>
+
+<!-- 文案馆 -->
+<section id="secGallery">
+  <div class="wrap">
+    <div class="sec-head"><h2 class="serif">文案馆</h2><span class="en">GALLERY</span><span class="more">都是交付过的真稿（已脱敏）</span></div>
+    <div class="g-grid">
+      <div class="g-card"><img src="/assets/portal/gallery1.jpg"><div class="gc-b"><div class="gc-t serif">公众号推文</div><div class="gc-s">茶饮品牌 · 节气借势</div><span class="gc-tag">阅读 2.4w</span></div></div>
+      <div class="g-card"><img src="/assets/portal/gallery2.jpg"><div class="gc-b"><div class="gc-t serif">小红书种草</div><div class="gc-s">文具好物 · 学生党</div><span class="gc-tag">点赞 5,700+</span></div></div>
+      <div class="g-card"><img src="/assets/portal/gallery3.jpg"><div class="gc-b"><div class="gc-t serif">品牌故事</div><div class="gc-s">民宿品牌 · 从一间房开始</div><span class="gc-tag">官网在用</span></div></div>
+      <div class="g-card"><img src="/assets/portal/gallery4.jpg"><div class="gc-b"><div class="gc-t serif">演讲稿</div><div class="gc-s">毕业致辞 · 一所中学</div><span class="gc-tag">现场 8 分钟</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 接单介绍 -->
+<section id="secService" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head"><h2 class="serif">接单介绍</h2><span class="en">SERVICE</span><span class="more">四类活儿 · 都按这个流程走</span></div>
+    <div class="s-grid">
+      <div class="s-card"><div class="sc-ico" style="background:#f0e9d8">✍️</div><h3 class="serif">文案定制</h3><p>公众号推文、小红书笔记、品牌故事、演讲稿。先聊清楚再写，48 小时初稿。</p><div class="sc-price">按篇计 <b>¥39</b> 起</div></div>
+      <div class="s-card"><div class="sc-ico" style="background:#e9eef4">📊</div><h3 class="serif">演示定制</h3><p>述职、路演、课件 PPT。内容逻辑+排版一起做，可先看样张再开工。</p><div class="sc-price">按页计 <b>¥8</b>/页 起</div></div>
+      <div class="s-card"><div class="sc-ico" style="background:#e8f2ea">📈</div><h3 class="serif">数据整理</h3><p>Excel 台账、数据清洗、图表汇总。交付可直接用的表，不是截图。</p><div class="sc-price">按表计 <b>¥59</b> 起</div></div>
+      <div class="s-card"><div class="sc-ico" style="background:#f4e9e9">🎬</div><h3 class="serif">视频脚本</h3><p>口播、短剧、宣传片分镜脚本。逐句台词+画面说明，拿着就能拍。</p><div class="sc-price">按分钟 <b>¥99</b> 起</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 套餐 -->
+<section id="secPkg">
+  <div class="wrap">
+    <div class="sec-head"><h2 class="serif">套餐方案</h2><span class="en">PLANS</span><span class="more">单篇按次 · 长期按月</span></div>
+    <div class="p-grid" id="pkgGrid"><div style="color:var(--ink2);font-size:13px">套餐加载中…</div></div>
+  </div>
+</section>
+
+<!-- 小沐AI -->
+<section id="secAI">
+  <div class="wrap">
+    <div class="sec-head"><h2 class="serif">小沐AI</h2><span class="en">AI HELPER</span><span class="more">常见问题直接问，个性需求转真人</span></div>
+    <div class="ai-box">
+      <div class="ai-side">
+        <div class="ai-ava">沐</div>
+        <div><h3>小沐</h3><p>文案馆的值班助手。<br>价格、交付、能做什么——问我。<br>复杂需求帮你转给真人写手。</p></div>
+      </div>
+      <div class="ai-main">
+        <div class="ai-logs" id="aiLogs"><div class="msg a">你好呀，我是小沐。想了解哪类服务？可以问我「能做什么」「多久交付」「套餐多少钱」～</div></div>
+        <div class="ai-input"><input id="aiInput" placeholder="比如：公众号一篇多少钱？"><button id="aiSend">发送</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 个人中心 -->
+<section id="secMe" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head"><h2 class="serif">个人中心</h2><span class="en">MY SPACE</span></div>
+    <div id="meBox" style="background:#fff;border:1px solid var(--line);border-radius:16px;padding:40px;text-align:center;color:var(--ink2)">
+      登录后这里显示你的资料和咨询记录<button class="btn-main" style="display:block;margin:18px auto 0" onclick="openLogin()">去登录</button>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 小沐文案工作室</span>
+    <span>写手请从邀请链接进入 · 用户咨询 48h 内必回</span>
+  </div>
+</footer>
+
+<!-- 登录/注册/咨询 弹窗 -->
+<div class="mask" id="regMask"><div class="modal">
+  <h3 class="serif">注册 · 用户端</h3>
+  <div class="f-row"><label>昵称</label><input id="rgName" placeholder="怎么称呼你" maxlength="20"></div>
+  <div class="f-row"><label>手机号（登录账号）</label><input id="rgUser" placeholder="11位手机号" maxlength="11"></div>
+  <div class="f-row"><label>密码</label><input id="rgPwd" type="password" placeholder="至少6位" maxlength="30"></div>
+  <button class="btn-main" id="rgGo">创建账号</button>
+  <p style="font-size:12px;color:var(--ink2);margin-top:12px">已有账号？<a href="#" onclick="openLogin();return false" style="color:var(--green)">去登录</a>　·　写手注册需要邀请码，<a href="/login.html" style="color:var(--green)">点这里</a></p>
+</div></div>
+<div class="mask" id="loginMask"><div class="modal">
+  <h3 class="serif">登录</h3>
+  <div class="f-row"><label>账号</label><input id="lgUser" placeholder="手机号 / 用户名" maxlength="20"></div>
+  <div class="f-row"><label>密码</label><input id="lgPwd" type="password" maxlength="30"></div>
+  <button class="btn-main" id="lgGo">登录</button>
+  <p style="font-size:12px;color:var(--ink2);margin-top:12px">没有账号？<a href="#" onclick="openReg();return false" style="color:var(--green)">注册用户端</a></p>
+</div></div>
+<div class="mask" id="leadMask"><div class="modal">
+  <h3 class="serif" id="ldTitle">咨询套餐</h3>
+  <div class="f-row"><label>想了解的细节（选填）</label><textarea id="ldNote" rows="3" placeholder="比如：每个月大概 4 篇小红书，能做吗？"></textarea></div>
+  <div class="f-row"><label>联系手机（默认账号手机）</label><input id="ldPhone" placeholder="方便联系你的号码" maxlength="11"></div>
+  <button class="btn-main" id="ldGo">提交咨询</button>
+  <p style="font-size:12px;color:var(--ink2);margin-top:12px">提交后管理员会尽快联系你（48 小时内）</p>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let TOKEN = localStorage.getItem('jdy_token') || '';
+let ME = null;
+try { ME = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) {}
+
+function toast(t) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', 2200); }
+function isClient() { return ME && ME.role === 'client'; }
+function openReg() { $('loginMask').classList.remove('on'); $('regMask').classList.add('on'); }
+function openLogin() { $('regMask').classList.remove('on'); $('loginMask').classList.add('on'); }
+$('btnReg').onclick = () => isClient() ? location.reload() : openReg();
+$('btnLogin').onclick = () => isClient() ? $('secMe').scrollIntoView({ behavior: 'smooth' }) : openLogin();
+
+// —— 注册 ——
+$('rgGo').onclick = async () => {
+  const phone = $('rgUser').value.trim(), pwd = $('rgPwd').value, name = $('rgName').value.trim();
+  try {
+    const r = await fetch('/api/portal/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: phone, phone, password: pwd, displayName: name }) });
+    const j = await r.json();
+    if (!j.ok) return toast(j.error);
+    localStorage.setItem('jdy_token', j.token); localStorage.setItem('jdy_user', JSON.stringify(j.user));
+    location.reload();
+  } catch (e) { toast('网络异常，稍后再试'); }
+};
+// —— 登录（按角色分流） ——
+$('lgGo').onclick = async () => {
+  try {
+    const r = await fetch('/api/portal/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: $('lgUser').value.trim(), password: $('lgPwd').value }) });
+    const j = await r.json();
+    if (!j.ok) return toast(j.error);
+    location.href = j.redirect || '/portal.html';
+  } catch (e) { toast('网络异常'); }
+};
+// —— 套餐 ——
+async function loadPkgs() {
+  try {
+    const j = await (await fetch('/api/portal/packages')).json();
+    if (!j.ok || !j.packages.length) { $('pkgGrid').innerHTML = '<div style="color:var(--ink2);font-size:13px">套餐配置中，可先咨询</div>'; return; }
+    $('pkgGrid').innerHTML = j.packages.map(p => `
+      <div class="p-card ${p.badge ? 'hot' : ''}">
+        ${p.badge ? `<span class="p-badge">${p.badge}</span>` : ''}
+        <h3 class="serif">${p.name}</h3><div class="p-tag">${p.tagline || ''}</div>
+        <div class="p-price"><b>¥${p.price}</b>${p.originalPrice ? `<s>¥${p.originalPrice}</s>` : ''}</div>
+        <ul>${(p.items || []).map(i => `<li>${i}</li>`).join('')}</ul>
+        <button class="btn-main" onclick="askPkg('${(p.name || '').replace(/'/g, '')}')">咨询此套餐</button>
+      </div>`).join('');
+  } catch (e) {}
+}
+function askPkg(name) {
+  if (!isClient()) { toast('请先登录或注册'); openReg(); return; }
+  $('ldTitle').textContent = '咨询 · ' + name;
+  $('ldNote').dataset.pkg = name;
+  $('ldPhone').value = (ME && ME.phone) || '';
+  $('leadMask').classList.add('on');
+}
+$('ldGo').onclick = async () => {
+  try {
+    const r = await fetch('/api/portal/lead', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ packageName: $('ldNote').dataset.pkg, note: $('ldNote').value, contact: $('ldPhone').value }) });
+    const j = await r.json();
+    if (!j.ok) return toast(j.error);
+    $('leadMask').classList.remove('on');
+    toast('已提交，管理员会尽快联系你');
+    loadMe();
+  } catch (e) { toast('网络异常'); }
+};
+// —— 小沐AI ——
+async function aiSend() {
+  const q = $('aiInput').value.trim(); if (!q) return;
+  $('aiInput').value = '';
+  const logs = $('aiLogs');
+  logs.insertAdjacentHTML('beforeend', `<div class="msg u">${q.replace(/</g, '&lt;')}</div>`);
+  logs.scrollTop = logs.scrollHeight;
+  if (!isClient()) { logs.insertAdjacentHTML('beforeend', `<div class="msg a">先注册一个账号，我们聊得更准～（右上角注册，10 秒就好）</div>`); logs.scrollTop = logs.scrollHeight; return; }
+  try {
+    const r = await fetch('/api/portal/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ message: q }) });
+    const j = await r.json();
+    logs.insertAdjacentHTML('beforeend', `<div class="msg a">${(j.reply || '稍后再试试').replace(/</g, '&lt;')}</div>`);
+  } catch (e) { logs.insertAdjacentHTML('beforeend', `<div class="msg a">网络开小差了，再发一次？</div>`); }
+  logs.scrollTop = logs.scrollHeight;
+}
+$('aiSend').onclick = aiSend;
+$('aiInput').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
+// —— 个人中心 ——
+async function loadMe() {
+  if (!isClient()) return;
+  try {
+    const j = await (await fetch('/api/portal/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } })).json();
+    if (!j.ok) return;
+    $('meBox').outerHTML = `<div class="me-grid">
+      <div class="me-card">
+        <div class="me-ava">${(j.me.displayName || '客')[0]}</div>
+        <div class="serif" style="font-size:19px;margin-bottom:12px">${j.me.displayName || ''}</div>
+        <div class="me-row"><span>手机号</span><b>${j.me.phone || '-'}</b></div>
+        <div class="me-row"><span>注册时间</span><b>${new Date(new Date(j.me.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10)}</b></div>
+        <div class="me-row"><span>身份</span><b>用户端</b></div>
+        <button class="btn-ghost" style="width:100%;margin-top:18px" onclick="logout()">退出登录</button>
+      </div>
+      <div class="me-card">
+        <h3 class="serif" style="font-size:17px;margin-bottom:8px">我的咨询</h3>
+        ${j.leads.length ? j.leads.map(l => `<div class="lead-row"><b>${l.packageName || '咨询'}</b> <span class="st-tag st-${l.status === '已跟进' ? 1 : 0}">${l.status}</span><div style="color:var(--ink2);margin-top:3px">${l.note || '无备注'} · ${new Date(new Date(l.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ')}</div></div>`).join('') : '<div style="color:var(--ink2);font-size:13px;padding:14px 0">还没有咨询记录，看看下面的套餐？</div>'}
+      </div>
+    </div>`;
+  } catch (e) {}
+}
+function logout() { localStorage.clear(); location.href = '/portal.html'; }
+loadPkgs(); loadMe();
+</script>
+</body>
+</html>
