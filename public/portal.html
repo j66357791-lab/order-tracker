@@ -37,89 +37,138 @@
     --paper: #faf7f1; --paper2: #f3eee3; --ink: #2b2a26; --ink2: #6b675e;
     --green: #1f4d3a; --green2: #2e6b52; --ochre: #b0642c; --line: #e5ddcc;
     --gold: #c9a55c; --red: #b5432f;
+    --ease: cubic-bezier(.22,.61,.36,1);          /* 丝滑减速，用于位移/淡入 */
+    --ease-io: cubic-bezier(.65,.05,.36,1);       /* 进出对称，用于开合 */
+    --ease-back: cubic-bezier(.34,1.42,.64,1);    /* 轻微回弹，用于卡片弹入 */
   }
-  body { background: var(--paper); color: var(--ink); font: 15px/1.75 "PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; -webkit-tap-highlight-color: transparent; }
+  body { background: var(--paper); color: var(--ink); font: 15px/1.75 "PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
   .serif { font-family: "Songti SC","Noto Serif SC","STSong",serif; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px; }
   a { color: inherit; text-decoration: none; }
   button { font-family: inherit; }
+  img { display: block; }
 
-  /* 顶栏 */
-  header { position: sticky; top: 0; z-index: 50; background: rgba(250,247,241,.94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  /* ============ 入场动画 ============ */
+  @keyframes floatUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: none; } }
+  @keyframes fadeScale { from { opacity: 0; transform: scale(.94) translateY(18px); } to { opacity: 1; transform: none; } }
+  @keyframes popIn { 0% { opacity: 0; transform: scale(.8) translateY(14px); } 100% { opacity: 1; transform: none; } }
+  @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+  @keyframes ringOut { 0% { transform: scale(.75); opacity: .55; } 100% { transform: scale(1.7); opacity: 0; } }
+  .anim-up { opacity: 0; animation: floatUp .8s var(--ease) forwards; }
+  .a1 { animation-delay: .08s } .a2 { animation-delay: .2s } .a3 { animation-delay: .32s } .a4 { animation-delay: .44s } .a5 { animation-delay: .56s }
+  .hero-r img { opacity: 0; animation: fadeScale 1s var(--ease) .22s forwards; }
+  .hero-stat { opacity: 0; animation: popIn .7s var(--ease-back) .72s forwards; }
+  /* 滚动入场 */
+  .reveal { opacity: 0; transform: translateY(28px); transition: opacity .8s var(--ease), transform .8s var(--ease); }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001s !important; transition-duration: .001s !important; }
+    .anim-up, .hero-r img, .hero-stat, .reveal { opacity: 1 !important; transform: none !important; }
+  }
+
+  /* ============ 顶栏 ============ */
+  header { position: sticky; top: 0; z-index: 50; background: rgba(250,247,241,.9); backdrop-filter: blur(10px); border-bottom: 1px solid transparent; transition: border-color .3s, box-shadow .3s, background .3s; }
+  header.scrolled { border-bottom-color: var(--line); box-shadow: 0 6px 24px rgba(43,42,38,.06); }
   .hd { display: flex; align-items: center; gap: 18px; height: 62px; }
   .brand { display: flex; align-items: center; gap: 10px; font-size: 20px; flex-shrink: 0; }
   .brand .seal { width: 34px; height: 34px; background: var(--red); color: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; }
   nav { display: flex; gap: 4px; margin-left: auto; }
-  nav a { padding: 8px 14px; font-size: 14px; color: var(--ink2); border-radius: 8px; }
+  nav a { padding: 8px 14px; font-size: 14px; color: var(--ink2); border-radius: 8px; transition: background .2s, color .2s; }
   nav a:hover { background: var(--paper2); color: var(--ink); }
-  .hd-cta { background: var(--green); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 14px; cursor: pointer; }
+  .hd-cta { background: var(--green); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 14px; cursor: pointer; transition: transform .2s var(--ease), filter .2s; }
+  .hd-cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  .hd-cta:active { transform: scale(.96); }
   .hd-cta.ghost { background: none; border: 1px solid var(--line); color: var(--ink); }
-  .hd-cta:hover { filter: brightness(1.06); }
   .burger { display: none; width: 40px; height: 40px; border: 1px solid var(--line); background: #fff; border-radius: 9px; cursor: pointer; position: relative; }
-  .burger span { position: absolute; left: 11px; right: 11px; height: 1.5px; background: var(--ink); border-radius: 2px; }
-  .burger span:nth-child(1) { top: 14px; }
-  .burger span:nth-child(2) { top: 19.5px; }
-  .burger span:nth-child(3) { top: 25px; }
-  .m-nav { display: none; border-bottom: 1px solid var(--line); background: #fff; }
-  .m-nav.on { display: block; }
+  .burger span { position: absolute; left: 11px; right: 11px; height: 1.5px; background: var(--ink); border-radius: 2px; transition: transform .3s var(--ease), opacity .2s; }
+  .burger span:nth-child(1) { top: 14px; } .burger span:nth-child(2) { top: 19.5px; } .burger span:nth-child(3) { top: 25px; }
+  .burger.on span:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+  .burger.on span:nth-child(2) { opacity: 0; }
+  .burger.on span:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+  .m-nav { overflow: hidden; max-height: 0; transition: max-height .38s var(--ease-io); background: #fff; border-bottom: 1px solid transparent; }
+  .m-nav.on { max-height: 340px; border-bottom-color: var(--line); }
   .m-nav a { display: block; padding: 14px 22px; font-size: 15px; border-bottom: 1px solid var(--paper2); color: var(--ink); }
 
-  /* Hero */
-  .hero { padding: 76px 0 68px; display: flex; gap: 44px; align-items: center; }
+  /* ============ Hero ============ */
+  .hero { padding: 74px 0 66px; display: flex; gap: 44px; align-items: center; }
   .hero-l { flex: 1.15; }
-  .hero-l h1 { font-size: 44px; line-height: 1.3; letter-spacing: 2px; margin-bottom: 18px; }
-  .hero-l h1 em { font-style: normal; color: var(--ochre); }
+  .hero-l h1 { font-size: 46px; line-height: 1.28; letter-spacing: 2px; margin-bottom: 18px; }
+  .hero-l h1 em { font-style: normal; color: var(--ochre); position: relative; }
+  .hero-l h1 em::after { content: ""; position: absolute; left: 0; right: 0; bottom: 4px; height: 8px; background: rgba(176,100,44,.16); border-radius: 4px; z-index: -1; }
   .hero-l p { color: var(--ink2); font-size: 16px; margin-bottom: 24px; max-width: 30em; }
   .hero-btns { display: flex; gap: 14px; flex-wrap: wrap; }
-  .btn-main { background: var(--green); color: #fff; padding: 13px 30px; border-radius: 10px; font-size: 15px; border: none; cursor: pointer; }
-  .btn-main:hover { filter: brightness(1.06); }
-  .btn-ghost { background: none; border: 1.5px solid var(--green); color: var(--green); padding: 13px 26px; border-radius: 10px; font-size: 15px; cursor: pointer; }
-  .btn-ghost:hover { background: rgba(31,77,58,.06); }
+  .btn-main { background: var(--green); color: #fff; padding: 13px 30px; border-radius: 10px; font-size: 15px; border: none; cursor: pointer; transition: transform .22s var(--ease-back), box-shadow .25s, filter .2s; }
+  .btn-main:hover { filter: brightness(1.08); box-shadow: 0 12px 26px rgba(31,77,58,.22); transform: translateY(-2px); }
+  .btn-main:active { transform: scale(.97); }
+  .btn-ghost { background: none; border: 1.5px solid var(--green); color: var(--green); padding: 13px 26px; border-radius: 10px; font-size: 15px; cursor: pointer; transition: background .22s, transform .22s var(--ease-back); }
+  .btn-ghost:hover { background: rgba(31,77,58,.07); transform: translateY(-2px); }
+  .btn-ghost:active { transform: scale(.97); }
   .trust { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 22px; font-size: 13px; color: var(--ink2); }
   .trust i { font-style: normal; color: var(--green2); margin-right: 4px; }
   .hero-r { flex: 1; position: relative; }
-  .hero-r img { width: 100%; height: auto; border-radius: 14px; box-shadow: 0 24px 60px rgba(43,42,38,.18); }
-  .hero-stat { position: absolute; left: -18px; bottom: 22px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; box-shadow: 0 10px 30px rgba(43,42,38,.12); font-size: 13px; }
+  .hero-r img { width: 100%; height: auto; border-radius: 14px; box-shadow: 0 26px 64px rgba(43,42,38,.2); }
+  .hero-stat { position: absolute; left: -18px; bottom: 22px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; box-shadow: 0 12px 32px rgba(43,42,38,.12); font-size: 13px; }
   .hero-stat b { display: block; font-size: 22px; color: var(--green); }
 
-  /* 区块标题 */
-  section { padding: 64px 0; }
+  /* ============ 区块通用 ============ */
+  section { padding: 66px 0; }
   section[id] { scroll-margin-top: 78px; }
   .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 30px; flex-wrap: wrap; }
   .sec-head h2 { font-size: 30px; letter-spacing: 3px; }
   .sec-head .en { color: var(--gold); font-size: 13px; letter-spacing: 4px; }
   .sec-head .more { margin-left: auto; font-size: 13px; color: var(--ink2); }
 
-  /* 文案馆 */
-  .g-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-  .g-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; transition: transform .25s, box-shadow .25s; cursor: pointer; }
-  .g-card:hover { transform: translateY(-6px); box-shadow: 0 18px 44px rgba(43,42,38,.14); }
-  .g-card img { width: 100%; height: 230px; object-fit: cover; display: block; }
-  .g-card .gc-b { padding: 14px 16px 16px; }
-  .g-card .gc-t { font-size: 16px; margin-bottom: 4px; }
-  .g-card .gc-s { font-size: 12.5px; color: var(--ink2); }
-  .g-card .gc-tag { display: inline-block; font-size: 11px; color: var(--ochre); border: 1px solid currentColor; border-radius: 99px; padding: 1px 10px; margin-top: 8px; }
+  /* ============ 作品 × 能做什么（合并板块） ============ */
+  #secWork { background: linear-gradient(180deg, var(--paper) 0%, var(--paper2) 100%); }
+  .svc-tabs { display: flex; gap: 10px; margin-bottom: 26px; flex-wrap: wrap; }
+  .svc-tabs button { background: #fff; border: 1px solid var(--line); color: var(--ink2); border-radius: 99px; padding: 10px 22px; font-size: 14px; cursor: pointer; transition: all .28s var(--ease); }
+  .svc-tabs button:hover { border-color: var(--green2); color: var(--ink); transform: translateY(-1px); }
+  .svc-tabs button.on { background: var(--green); border-color: var(--green); color: #fff; box-shadow: 0 8px 20px rgba(31,77,58,.2); }
+  .svc-body { display: grid; grid-template-columns: 300px 1fr; gap: 26px; align-items: start; }
+  .svc-info { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 26px 22px; }
+  .svc-info .ico { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 14px; transition: transform .4s var(--ease-back); }
+  .svc-info.swap .ico { transform: rotate(-8deg) scale(1.06); }
+  .svc-info h3 { font-size: 19px; margin-bottom: 8px; }
+  .svc-info p { font-size: 13.5px; color: var(--ink2); line-height: 1.85; min-height: 74px; }
+  .svc-info .price { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 13px; color: var(--ink2); }
+  .svc-info .price b { color: var(--red); font-size: 18px; }
+  .svc-info .btn-main { width: 100%; margin-top: 14px; padding: 11px 0; }
+  .swap-fade { animation: none; }
+  .swap-fade.on { animation: fadeScale .45s var(--ease); }
 
-  /* 接单介绍 */
-  .s-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-  .s-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 24px 20px 20px; }
-  .s-card .sc-ico { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 14px; }
-  .s-card h3 { font-size: 17px; margin-bottom: 8px; }
-  .s-card p { font-size: 13px; color: var(--ink2); line-height: 1.8; }
-  .s-card .sc-price { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 13px; color: var(--ink2); }
-  .s-card .sc-price b { color: var(--red); font-size: 17px; }
+  /* 案例滑动轨道 */
+  .case-wrap { position: relative; min-width: 0; }
+  .case-track { display: flex; gap: 18px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 2px 16px; scrollbar-width: none; -ms-overflow-style: none; }
+  .case-track::-webkit-scrollbar { display: none; }
+  .case-card { flex: 0 0 min(86%, 430px); scroll-snap-align: center; background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; cursor: pointer; transition: transform .35s var(--ease), box-shadow .35s; }
+  .case-card:hover { transform: translateY(-6px); box-shadow: 0 20px 46px rgba(43,42,38,.14); }
+  .case-card img { width: 100%; height: 300px; object-fit: cover; }
+  .case-card .cc-b { padding: 15px 18px 17px; }
+  .case-card .cc-t { font-size: 16.5px; }
+  .case-card .cc-s { font-size: 12.5px; color: var(--ink2); margin-top: 3px; }
+  .case-card .cc-tag { display: inline-block; font-size: 11px; color: var(--ochre); border: 1px solid currentColor; border-radius: 99px; padding: 1px 10px; margin-top: 9px; }
+  .case-empty { background: #fff; border: 1px dashed var(--line); border-radius: 16px; padding: 60px 24px; text-align: center; color: var(--ink2); font-size: 13.5px; }
+  .cv-btn { position: absolute; top: 128px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line); background: #fff; color: var(--ink); font-size: 19px; line-height: 1; cursor: pointer; box-shadow: 0 8px 22px rgba(43,42,38,.12); transition: transform .25s var(--ease-back), background .2s, opacity .25s; z-index: 3; }
+  .cv-btn:hover { transform: scale(1.09); background: var(--green); color: #fff; border-color: var(--green); }
+  .cv-btn[disabled] { opacity: .35; cursor: default; transform: none; }
+  .cv-btn.prev { left: -14px; } .cv-btn.next { right: -14px; }
+  .cv-dots { display: flex; gap: 7px; justify-content: center; margin-top: 6px; }
+  .cv-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); cursor: pointer; transition: all .3s var(--ease); }
+  .cv-dots i.on { width: 22px; border-radius: 99px; background: var(--green2); }
 
-  /* 流程 */
-  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; counter-reset: st; }
-  .step { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 22px 20px; position: relative; }
+  /* ============ 流程 ============ */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .step { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 22px 20px; transition: transform .35s var(--ease), box-shadow .35s; }
+  .step:hover { transform: translateY(-5px); box-shadow: 0 16px 36px rgba(43,42,38,.1); }
   .step .no { width: 30px; height: 30px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; margin-bottom: 12px; }
   .step h3 { font-size: 16px; margin-bottom: 6px; }
   .step p { font-size: 13px; color: var(--ink2); line-height: 1.8; }
 
-  /* 套餐 */
+  /* ============ 套餐 ============ */
   #secPkg { background: var(--paper2); }
   .p-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
-  .p-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; position: relative; }
+  .p-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; position: relative; transition: transform .35s var(--ease), box-shadow .35s; }
+  .p-card:hover { transform: translateY(-6px); box-shadow: 0 20px 46px rgba(43,42,38,.12); }
   .p-card.hot { border-color: var(--gold); box-shadow: 0 14px 40px rgba(201,165,92,.18); }
   .p-badge { position: absolute; top: -12px; left: 24px; background: var(--gold); color: #fff; font-size: 12px; border-radius: 99px; padding: 3px 14px; }
   .p-card h3 { font-size: 20px; }
@@ -128,93 +177,132 @@
   .p-card .p-price b { font-size: 34px; color: var(--green); }
   .p-card .p-price s { color: var(--ink2); font-size: 14px; }
   .p-card ul { list-style: none; margin: 18px 0 22px; }
-  .p-card li { font-size: 13.5px; color: var(--ink); padding: 7px 0 7px 24px; position: relative; }
+  .p-card li { font-size: 13.5px; padding: 7px 0 7px 24px; position: relative; }
   .p-card li::before { content: "✓"; position: absolute; left: 2px; color: var(--green2); font-weight: 700; }
   .p-card .btn-main { width: 100%; }
 
-  /* 小沐AI */
-  .ai-box { background: #fff; border: 1px solid var(--line); border-radius: 16px; display: flex; overflow: hidden; max-width: 780px; }
-  .ai-side { width: 200px; background: var(--green); color: #e9f2ec; padding: 26px 20px; }
-  .ai-side .ai-ava { width: 54px; height: 54px; border-radius: 50%; background: #fff; color: var(--green); display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 14px; }
-  .ai-side h3 { font-size: 18px; color: #fff; }
-  .ai-side p { font-size: 12px; opacity: .8; margin-top: 10px; line-height: 1.8; }
-  .ai-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .ai-logs { height: 300px; overflow-y: auto; padding: 18px; }
-  .msg { max-width: 78%; padding: 10px 14px; border-radius: 12px; font-size: 13.5px; margin-bottom: 10px; line-height: 1.7; word-break: break-word; }
-  .msg.u { background: var(--green); color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
-  .msg.a { background: var(--paper2); margin-right: auto; border-bottom-left-radius: 4px; }
-  .ai-chips { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 18px 12px; }
-  .ai-chips button { background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); border-radius: 99px; padding: 5px 13px; font-size: 12.5px; cursor: pointer; }
-  .ai-chips button:hover { background: #fff; color: var(--ink); }
-  .ai-input { display: flex; gap: 10px; padding: 14px; border-top: 1px solid var(--line); }
-  .ai-input input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; font-size: 14px; outline: none; background: var(--paper); min-width: 0; }
-  .ai-input button { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 0 22px; font-size: 14px; cursor: pointer; }
-
-  /* FAQ */
-  .faq { max-width: 780px; }
-  .faq details { background: #fff; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+  /* ============ FAQ ============ */
+  .faq { max-width: 800px; }
+  .faq details { background: #fff; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; transition: box-shadow .3s, border-color .3s; }
+  .faq details:hover { border-color: #d8cdb4; }
+  .faq details[open] { box-shadow: 0 10px 26px rgba(43,42,38,.07); }
   .faq summary { padding: 16px 20px; font-size: 15px; cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; }
   .faq summary::-webkit-details-marker { display: none; }
-  .faq summary::before { content: "＋"; color: var(--green2); font-size: 14px; }
+  .faq summary::before { content: "＋"; color: var(--green2); font-size: 14px; transition: transform .3s var(--ease); }
   .faq details[open] summary::before { content: "－"; }
-  .faq .fa { padding: 0 20px 18px 44px; font-size: 13.5px; color: var(--ink2); line-height: 1.85; }
+  .faq .fa { padding: 0 20px 18px 44px; font-size: 13.5px; color: var(--ink2); line-height: 1.85; animation: floatUp .45s var(--ease); }
 
-  /* 底部转化条 */
-  .cta-band { background: var(--green); color: #fff; }
-  .cta-band .wrap { padding: 54px 22px; display: flex; align-items: center; gap: 30px; flex-wrap: wrap; }
+  /* ============ 底部转化 & 页脚 ============ */
+  .cta-band { background: var(--green); color: #fff; position: relative; overflow: hidden; }
+  .cta-band::after { content: ""; position: absolute; width: 420px; height: 420px; border-radius: 50%; background: rgba(255,255,255,.05); right: -120px; top: -140px; }
+  .cta-band .wrap { padding: 56px 22px; display: flex; align-items: center; gap: 30px; flex-wrap: wrap; position: relative; z-index: 2; }
   .cta-band h2 { font-size: 26px; letter-spacing: 2px; }
-  .cta-band p { opacity: .82; font-size: 14px; margin-top: 8px; }
+  .cta-band p { opacity: .84; font-size: 14px; margin-top: 8px; }
   .cta-band .btns { margin-left: auto; display: flex; gap: 12px; flex-wrap: wrap; }
   .cta-band .btn-main { background: #fff; color: var(--green); }
   .cta-band .btn-ghost { border-color: rgba(255,255,255,.55); color: #fff; }
-  .cta-band .btn-ghost:hover { background: rgba(255,255,255,.12); }
-
-  footer { padding: 40px 0 50px; border-top: 1px solid var(--line); color: var(--ink2); font-size: 12.5px; }
+  .cta-band .btn-ghost:hover { background: rgba(255,255,255,.14); }
+  footer { padding: 40px 0 52px; border-top: 1px solid var(--line); color: var(--ink2); font-size: 12.5px; }
   footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
   footer a { color: var(--green); }
 
-  /* 弹窗 */
-  .mask { position: fixed; inset: 0; background: rgba(43,42,38,.5); z-index: 100; display: none; align-items: center; justify-content: center; padding: 20px; }
-  .mask.on { display: flex; }
-  .modal { background: #fff; border-radius: 16px; max-width: 400px; width: 100%; padding: 28px; max-height: 86vh; overflow-y: auto; }
+  /* ============ 口袋式弹窗 ============ */
+  .mask { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px;
+          background: rgba(43,42,38,0); visibility: hidden;
+          transition: background .34s var(--ease), visibility 0s .5s; }
+  .mask.on { background: rgba(43,42,38,.5); visibility: visible; transition: background .34s var(--ease), visibility 0s; }
+  .modal { background: #fff; border-radius: 18px; max-width: 400px; width: 100%; padding: 28px; max-height: 86vh; overflow-y: auto;
+           clip-path: circle(0% at var(--ox, 50%) var(--oy, 120%)); opacity: 0;
+           transition: clip-path .52s var(--ease-io), opacity .3s var(--ease), transform .52s var(--ease-io);
+           transform: translateY(16px) scale(.96); }
+  .mask.on .modal { clip-path: circle(150% at var(--ox, 50%) var(--oy, 120%)); opacity: 1; transform: none; }
+  .modal > * { opacity: 0; transform: translateY(10px); }
+  .mask.on .modal > * { animation: floatUp .5s var(--ease) forwards; }
+  .mask.on .modal > *:nth-child(1) { animation-delay: .1s } .mask.on .modal > *:nth-child(2) { animation-delay: .15s }
+  .mask.on .modal > *:nth-child(3) { animation-delay: .2s }  .mask.on .modal > *:nth-child(4) { animation-delay: .25s }
+  .mask.on .modal > *:nth-child(5) { animation-delay: .3s }  .mask.on .modal > *:nth-child(6) { animation-delay: .35s }
+  .mask.on .modal > *:nth-child(7) { animation-delay: .4s }  .mask.on .modal > *:nth-child(n+8) { animation-delay: .45s }
   .modal h3 { margin-bottom: 16px; font-size: 19px; }
   .f-row { margin-bottom: 14px; }
   .f-row label { display: block; font-size: 12.5px; color: var(--ink2); margin-bottom: 6px; }
-  .f-row input, .f-row textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; font-size: 14px; outline: none; background: var(--paper); font-family: inherit; }
+  .f-row input, .f-row textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; font-size: 14px; outline: none; background: var(--paper); font-family: inherit; transition: border-color .2s, box-shadow .2s; }
+  .f-row input:focus, .f-row textarea:focus { border-color: var(--green2); box-shadow: 0 0 0 3px rgba(46,107,82,.1); }
   .modal .btn-main { width: 100%; margin-top: 6px; }
   .err { color: var(--red); font-size: 12.5px; min-height: 18px; margin: -4px 0 8px; text-align: left; }
   .m-tip { font-size: 12px; color: var(--ink2); margin-top: 12px; text-align: center; line-height: 1.8; }
   .m-tip a { color: var(--green); cursor: pointer; }
 
-  /* 大图查看 */
-  .lb { position: fixed; inset: 0; background: rgba(20,19,17,.86); z-index: 150; display: none; align-items: center; justify-content: center; padding: 24px; }
-  .lb.on { display: flex; }
-  .lb-in { max-width: 560px; width: 100%; text-align: center; }
-  .lb-in img { width: 100%; max-height: 74vh; object-fit: contain; border-radius: 12px; background: #fff; }
+  /* ============ 大图 ============ */
+  .lb { position: fixed; inset: 0; background: rgba(20,19,17,0); z-index: 150; display: flex; align-items: center; justify-content: center; padding: 24px; visibility: hidden; transition: background .35s var(--ease), visibility 0s .4s; }
+  .lb.on { background: rgba(20,19,17,.88); visibility: visible; transition: background .35s var(--ease), visibility 0s; }
+  .lb-in { max-width: 560px; width: 100%; text-align: center; transform: scale(.9); opacity: 0; transition: transform .42s var(--ease-back), opacity .3s; }
+  .lb.on .lb-in { transform: none; opacity: 1; }
+  .lb-in img { width: 100%; max-height: 72vh; object-fit: contain; border-radius: 12px; background: #fff; }
   .lb-in .lb-cap { color: #f2ece0; font-size: 14px; margin-top: 14px; }
-  .lb-in .lb-close { margin-top: 16px; background: none; border: 1px solid rgba(255,255,255,.5); color: #fff; border-radius: 99px; padding: 8px 22px; font-size: 13px; cursor: pointer; }
+  .lb-in .lb-close { margin-top: 16px; background: none; border: 1px solid rgba(255,255,255,.5); color: #fff; border-radius: 99px; padding: 8px 22px; font-size: 13px; cursor: pointer; transition: background .2s; }
+  .lb-in .lb-close:hover { background: rgba(255,255,255,.14); }
 
-  .toast { position: fixed; left: 50%; top: 76px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 22px; border-radius: 99px; font-size: 13px; z-index: 200; display: none; max-width: 88vw; text-align: center; }
+  /* ============ AI 悬浮窗 ============ */
+  .ai-fab { position: fixed; right: 26px; bottom: 26px; z-index: 90; width: 60px; height: 60px; border-radius: 50%; border: none; cursor: pointer;
+            background: var(--green); color: #fff; font-size: 22px; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 14px 34px rgba(31,77,58,.34); transition: transform .3s var(--ease-back), box-shadow .3s; }
+  .ai-fab:hover { transform: scale(1.07) translateY(-2px); box-shadow: 0 18px 40px rgba(31,77,58,.42); }
+  .ai-fab:active { transform: scale(.95); }
+  .ai-fab .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(31,77,58,.45); animation: ringOut 2.4s var(--ease) infinite; }
+  .ai-fab .dot { position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--red); border: 2px solid var(--paper); animation: breathe 1.8s ease-in-out infinite; }
+  .ai-fab.opened { transform: rotate(90deg) scale(.92); }
+  .ai-fab.opened .ring, .ai-fab.opened .dot { display: none; }
+  .ai-hint { position: fixed; right: 96px; bottom: 40px; z-index: 89; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 16px; font-size: 13px; box-shadow: 0 10px 26px rgba(43,42,38,.12);
+             opacity: 0; transform: translateX(14px); transition: opacity .4s var(--ease), transform .4s var(--ease); pointer-events: none; }
+  .ai-hint.on { opacity: 1; transform: none; }
+  .ai-hint::after { content: ""; position: absolute; right: -6px; top: 50%; margin-top: -6px; width: 12px; height: 12px; background: #fff; border-right: 1px solid var(--line); border-top: 1px solid var(--line); transform: rotate(45deg); }
+  .ai-panel { position: fixed; right: 26px; bottom: 100px; z-index: 91; width: 366px; max-width: calc(100vw - 32px); height: 496px; max-height: calc(100vh - 140px);
+              background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 26px 66px rgba(43,42,38,.24); overflow: hidden;
+              display: flex; flex-direction: column; transform-origin: bottom right;
+              opacity: 0; transform: scale(.55) translateY(26px); visibility: hidden;
+              transition: opacity .26s var(--ease), transform .42s var(--ease-back), visibility 0s .42s; }
+  .ai-panel.on { opacity: 1; transform: none; visibility: visible; transition: opacity .3s var(--ease), transform .46s var(--ease-back), visibility 0s; }
+  .ai-head { background: var(--green); color: #fff; padding: 14px 16px; display: flex; align-items: center; gap: 11px; }
+  .ai-head .ava { width: 36px; height: 36px; border-radius: 50%; background: #fff; color: var(--green); display: flex; align-items: center; justify-content: center; font-size: 17px; }
+  .ai-head b { font-size: 15px; font-weight: 500; }
+  .ai-head small { display: block; font-size: 11.5px; opacity: .8; }
+  .ai-head .x { margin-left: auto; background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; line-height: 1; opacity: .8; }
+  .ai-head .x:hover { opacity: 1; }
+  .ai-logs { flex: 1; overflow-y: auto; padding: 16px; background: var(--paper); }
+  .msg { max-width: 82%; padding: 10px 14px; border-radius: 12px; font-size: 13.5px; margin-bottom: 10px; line-height: 1.7; word-break: break-word; animation: floatUp .4s var(--ease); }
+  .msg.u { background: var(--green); color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+  .msg.a { background: #fff; border: 1px solid var(--line); margin-right: auto; border-bottom-left-radius: 4px; }
+  .msg.typing { display: flex; gap: 4px; align-items: center; }
+  .msg.typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--ink2); animation: breathe 1s infinite; }
+  .msg.typing i:nth-child(2) { animation-delay: .15s } .msg.typing i:nth-child(3) { animation-delay: .3s }
+  .ai-chips { display: flex; gap: 7px; flex-wrap: wrap; padding: 0 14px 10px; background: #fff; }
+  .ai-chips button { background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); border-radius: 99px; padding: 5px 12px; font-size: 12px; cursor: pointer; transition: all .2s; }
+  .ai-chips button:hover { background: var(--green); border-color: var(--green); color: #fff; }
+  .ai-input { display: flex; gap: 9px; padding: 12px 14px 14px; border-top: 1px solid var(--line); background: #fff; }
+  .ai-input input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; font-size: 14px; outline: none; background: var(--paper); min-width: 0; }
+  .ai-input input:focus { border-color: var(--green2); }
+  .ai-input button { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 0 20px; font-size: 14px; cursor: pointer; transition: filter .2s; }
+  .ai-input button:hover { filter: brightness(1.1); }
 
-  /* 移动端常驻转化条 */
+  .toast { position: fixed; left: 50%; top: 76px; transform: translateX(-50%) translateY(-8px); background: var(--ink); color: #fff; padding: 10px 22px; border-radius: 99px; font-size: 13px; z-index: 200; opacity: 0; visibility: hidden; transition: all .3s var(--ease); max-width: 88vw; text-align: center; }
+  .toast.on { opacity: 1; visibility: visible; transform: translateX(-50%); }
+
   .m-bar { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: rgba(250,247,241,.97); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); gap: 10px; backdrop-filter: blur(8px); }
   .m-bar button { flex: 1; }
   .m-bar .btn-main, .m-bar .btn-ghost { padding: 12px 0; font-size: 15px; }
 
+  @media (max-width: 940px) {
+    .svc-body { grid-template-columns: 1fr; }
+    .case-card { flex: 0 0 min(88%, 380px); }
+  }
   @media (max-width: 860px) {
-    .hero { flex-direction: column; padding: 44px 0 52px; gap: 30px; }
+    .hero { flex-direction: column; padding: 42px 0 50px; gap: 28px; }
     .hero-l h1 { font-size: 32px; }
     .hero-r { width: 100%; }
     .hero-stat { left: 12px; bottom: 12px; padding: 10px 14px; }
     .hero-stat b { font-size: 19px; }
-    .g-grid, .s-grid, .steps { grid-template-columns: repeat(2, 1fr); }
+    .steps { grid-template-columns: repeat(2, 1fr); gap: 14px; }
     .p-grid { grid-template-columns: 1fr; }
-    .steps { gap: 14px; }
-    .ai-box { flex-direction: column; }
-    .ai-side { width: 100%; display: flex; gap: 14px; align-items: center; padding: 18px 20px; }
-    .ai-side .ai-ava { margin-bottom: 0; width: 46px; height: 46px; font-size: 22px; }
-    .ai-side p { margin-top: 4px; }
-    .ai-logs { height: 260px; }
     nav { display: none; }
     .burger { display: block; margin-left: auto; }
     .hd { gap: 10px; }
@@ -229,20 +317,25 @@
     .m-bar { display: flex; }
     body { padding-bottom: 74px; }
     section { padding: 48px 0; }
+    .case-card { flex: 0 0 86%; }
+    .case-card img { height: 240px; }
+    .cv-btn { display: none; }
+    .ai-fab { right: 16px; bottom: 84px; width: 54px; height: 54px; }
+    .ai-panel { right: 12px; left: 12px; bottom: 78px; width: auto; height: 62vh; }
+    .ai-hint { display: none; }
   }
   @media (max-width: 420px) {
-    .g-grid, .s-grid { grid-template-columns: 1fr; }
-    .steps { grid-template-columns: 1fr; }
     .hero-l h1 { font-size: 28px; }
+    .steps { grid-template-columns: 1fr; }
   }
 </style>
 </head>
 <body>
-<header>
+<header id="hdr">
   <div class="wrap hd">
     <a class="brand serif" href="/portal.html"><span class="seal">沐</span>小沐文案</a>
     <nav>
-      <a href="#secGallery">文案馆</a><a href="#secService">能做什么</a><a href="#secFlow">流程</a><a href="#secPkg">套餐方案</a><a href="#secFaq">常见问题</a>
+      <a href="#secWork">作品 · 能做什么</a><a href="#secFlow">怎么合作</a><a href="#secPkg">套餐方案</a><a href="#secFaq">常见问题</a>
     </nav>
     <button class="burger" id="burger" aria-label="菜单"><span></span><span></span><span></span></button>
     <div style="display:flex;gap:10px;align-items:center" id="hdAuth">
@@ -251,9 +344,8 @@
     </div>
   </div>
   <div class="m-nav" id="mNav">
-    <a href="#secGallery">文案馆</a>
-    <a href="#secService">能做什么</a>
-    <a href="#secFlow">流程</a>
+    <a href="#secWork">作品 · 能做什么</a>
+    <a href="#secFlow">怎么合作</a>
     <a href="#secPkg">套餐方案</a>
     <a href="#secFaq">常见问题</a>
   </div>
@@ -262,13 +354,13 @@
 <!-- Hero -->
 <div class="wrap hero" id="hdTop">
   <div class="hero-l">
-    <h1 class="serif">让每一句话<br>都<em>有人读</em>，有人记住</h1>
-    <p>我们是十几个真的在写字的人。公众号、小红书、品牌故事、演讲稿、PPT——不套模板，不堆形容词，先把你的事听明白，再落笔。</p>
-    <div class="hero-btns">
+    <h1 class="serif"><span class="anim-up a1" style="display:block">让每一句话</span><span class="anim-up a2" style="display:block">都<em>有人读</em>，有人记住</span></h1>
+    <p class="anim-up a3">我们是十几个真的在写字的人。公众号、小红书、品牌故事、演讲稿、PPT——不套模板，不堆形容词，先把你的事听明白，再落笔。</p>
+    <div class="hero-btns anim-up a4">
       <button class="btn-main" id="heroCta">免费咨询需求</button>
-      <button class="btn-ghost" onclick="document.getElementById('secGallery').scrollIntoView({behavior:'smooth'})">先看看作品</button>
+      <button class="btn-ghost" onclick="document.getElementById('secWork').scrollIntoView({behavior:'smooth'})">先看看作品</button>
     </div>
-    <div class="trust">
+    <div class="trust anim-up a5">
       <span><i>·</i>常规 48 小时交付</span>
       <span><i>·</i>可先看样张再开工</span>
       <span><i>·</i>改到满意为止</span>
@@ -280,23 +372,25 @@
   </div>
 </div>
 
-<!-- 文案馆 -->
-<section id="secGallery">
+<!-- 作品 × 能做什么（合并板块） -->
+<section id="secWork">
   <div class="wrap">
-    <div class="sec-head"><h2 class="serif">文案馆</h2><span class="en">GALLERY</span><span class="more">都是交付过的真稿 · 点开看大图</span></div>
-    <div class="g-grid" id="gGrid"><div style="color:var(--ink2);font-size:13px">加载中…</div></div>
-  </div>
-</section>
-
-<!-- 能做什么 -->
-<section id="secService" style="padding-top:0">
-  <div class="wrap">
-    <div class="sec-head"><h2 class="serif">能做什么</h2><span class="en">SERVICE</span><span class="more">四类活儿 · 都按下面的流程走</span></div>
-    <div class="s-grid">
-      <div class="s-card"><div class="sc-ico" style="background:#f0e9d8">✍️</div><h3 class="serif">文案定制</h3><p>公众号推文、小红书笔记、品牌故事、演讲稿。先聊清楚再写，48 小时初稿。</p><div class="sc-price">按篇计 <b>¥39</b> 起</div></div>
-      <div class="s-card"><div class="sc-ico" style="background:#e9eef4">📊</div><h3 class="serif">演示定制</h3><p>述职、路演、课件 PPT。内容逻辑+排版一起做，可先看样张再开工。</p><div class="sc-price">按页计 <b>¥8</b>/页 起</div></div>
-      <div class="s-card"><div class="sc-ico" style="background:#e8f2ea">📈</div><h3 class="serif">数据整理</h3><p>Excel 台账、数据清洗、图表汇总。交付可直接用的表，不是截图。</p><div class="sc-price">按表计 <b>¥59</b> 起</div></div>
-      <div class="s-card"><div class="sc-ico" style="background:#f4e9e9">🎬</div><h3 class="serif">视频脚本</h3><p>口播、短剧、宣传片分镜脚本。逐句台词+画面说明，拿着就能拍。</p><div class="sc-price">按分钟 <b>¥99</b> 起</div></div>
+    <div class="sec-head reveal"><h2 class="serif">作品 · 能做什么</h2><span class="en">WORK</span><span class="more">点分类看案例 · 点案例看大图</span></div>
+    <div class="svc-tabs reveal" id="svcTabs"></div>
+    <div class="svc-body reveal">
+      <div class="svc-info" id="svcInfo">
+        <div class="ico" id="svcIco">✍️</div>
+        <h3 class="serif" id="svcTitle">文案定制</h3>
+        <p id="svcDesc"></p>
+        <div class="price" id="svcPrice"></div>
+        <button class="btn-main" id="svcCta">咨询这类需求</button>
+      </div>
+      <div class="case-wrap">
+        <button class="cv-btn prev" id="cvPrev" aria-label="上一个">‹</button>
+        <button class="cv-btn next" id="cvNext" aria-label="下一个">›</button>
+        <div class="case-track" id="caseTrack"><div class="case-empty">加载中…</div></div>
+        <div class="cv-dots" id="cvDots"></div>
+      </div>
     </div>
   </div>
 </section>
@@ -304,12 +398,12 @@
 <!-- 流程 -->
 <section id="secFlow" style="padding-top:0">
   <div class="wrap">
-    <div class="sec-head"><h2 class="serif">怎么合作</h2><span class="en">PROCESS</span><span class="more">四步走完，不需要你盯</span></div>
+    <div class="sec-head reveal"><h2 class="serif">怎么合作</h2><span class="en">PROCESS</span><span class="more">四步走完，不需要你盯</span></div>
     <div class="steps">
-      <div class="step"><div class="no">1</div><h3 class="serif">说清楚需求</h3><p>注册后在工作台提交需求，写下用途、字数、交付时间和参考风格。</p></div>
-      <div class="step"><div class="no">2</div><h3 class="serif">确认方案与报价</h3><p>我们回你一篇思路或样张，确认方向和价格，不满意可以直接改需求。</p></div>
-      <div class="step"><div class="no">3</div><h3 class="serif">开始写作</h3><p>分配写手，常规 48 小时内出初稿；加急可以插队，会提前跟你确认。</p></div>
-      <div class="step"><div class="no">4</div><h3 class="serif">交付与改稿</h3><p>源文件一并给你，改稿直接在工作台留言，改到能用为止。</p></div>
+      <div class="step reveal"><div class="no">1</div><h3 class="serif">说清楚需求</h3><p>注册后在工作台提交需求，写下用途、字数、交付时间和参考风格。</p></div>
+      <div class="step reveal"><div class="no">2</div><h3 class="serif">确认方案与报价</h3><p>我们回你一篇思路或样张，确认方向和价格，不满意可以直接改需求。</p></div>
+      <div class="step reveal"><div class="no">3</div><h3 class="serif">开始写作</h3><p>分配写手，常规 48 小时内出初稿；加急可以插队，会提前跟你确认。</p></div>
+      <div class="step reveal"><div class="no">4</div><h3 class="serif">交付与改稿</h3><p>源文件一并给你，改稿直接在工作台留言，改到能用为止。</p></div>
     </div>
   </div>
 </section>
@@ -317,43 +411,21 @@
 <!-- 套餐 -->
 <section id="secPkg">
   <div class="wrap">
-    <div class="sec-head"><h2 class="serif">套餐方案</h2><span class="en">PLANS</span><span class="more">单篇按次 · 长期按月</span></div>
+    <div class="sec-head reveal"><h2 class="serif">套餐方案</h2><span class="en">PLANS</span><span class="more">单篇按次 · 长期按月</span></div>
     <div class="p-grid" id="pkgGrid"><div style="color:var(--ink2);font-size:13px">套餐加载中…</div></div>
   </div>
 </section>
 
-<!-- 小沐AI -->
-<section id="secAI">
-  <div class="wrap">
-    <div class="sec-head"><h2 class="serif">小沐AI</h2><span class="en">AI HELPER</span><span class="more">常见问题直接问，个性需求转真人</span></div>
-    <div class="ai-box">
-      <div class="ai-side">
-        <div class="ai-ava">沐</div>
-        <div><h3>小沐</h3><p>文案馆的值班助手。<br>价格、交付、能做什么——问我。<br>复杂需求帮你转给真人写手。</p></div>
-      </div>
-      <div class="ai-main">
-        <div class="ai-logs" id="aiLogs"><div class="msg a">你好呀，我是小沐。想了解哪类服务？可以问我「能做什么」「多久交付」「套餐多少钱」～</div></div>
-        <div class="ai-chips" id="aiChips">
-          <button data-q="你们能做什么？">你们能做什么？</button>
-          <button data-q="套餐多少钱？">套餐多少钱？</button>
-          <button data-q="多久能交付？">多久能交付？</button>
-        </div>
-        <div class="ai-input"><input id="aiInput" placeholder="比如：公众号一篇多少钱？"><button id="aiSend">发送</button></div>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- 常见问题 -->
-<section id="secFaq" style="padding-top:0">
+<section id="secFaq">
   <div class="wrap">
-    <div class="sec-head"><h2 class="serif">常见问题</h2><span class="en">FAQ</span></div>
+    <div class="sec-head reveal"><h2 class="serif">常见问题</h2><span class="en">FAQ</span></div>
     <div class="faq">
-      <details><summary>多久能交付？</summary><div class="fa">常规文案 48 小时内出初稿；PPT、视频脚本按页数/分钟数排期。加急可以插队，下单前会先跟你确认时间。</div></details>
-      <details><summary>可以改稿吗？</summary><div class="fa">可以。按套餐不同有对应的免费改稿次数，改稿直接在工作台留言说明，我们按你的意见调整；超出次数的少量修改不额外收费。</div></details>
-      <details><summary>稿件是原创的吗？</summary><div class="fa">全部真人原创，不套模板、不用拼接稿。写之前会跟你确认资料和口径，避免出现不实信息。</div></details>
-      <details><summary>怎么付款？</summary><div class="fa">确认需求和报价后付款，支持微信/支付宝。可以要求先看样张或提纲，确认没问题再开工。</div></details>
-      <details><summary>我的内容会保密吗？</summary><div class="fa">一对一对接，资料只用于本次写作，不外传。作品要上「文案馆」展示前会先脱敏，并征得你同意。</div></details>
+      <details class="reveal"><summary>多久能交付？</summary><div class="fa">常规文案 48 小时内出初稿；PPT、视频脚本按页数/分钟数排期。加急可以插队，下单前会先跟你确认时间。</div></details>
+      <details class="reveal"><summary>可以改稿吗？</summary><div class="fa">可以。按套餐不同有对应的免费改稿次数，改稿直接在工作台留言说明，我们按你的意见调整；超出次数的少量修改不额外收费。</div></details>
+      <details class="reveal"><summary>稿件是原创的吗？</summary><div class="fa">全部真人原创，不套模板、不用拼接稿。写之前会跟你确认资料和口径，避免出现不实信息。</div></details>
+      <details class="reveal"><summary>怎么付款？</summary><div class="fa">确认需求和报价后付款，支持微信/支付宝。可以要求先看样张或提纲，确认没问题再开工。</div></details>
+      <details class="reveal"><summary>我的内容会保密吗？</summary><div class="fa">一对一对接，资料只用于本次写作，不外传。作品要上「作品」展示前会先脱敏，并征得你同意。</div></details>
     </div>
   </div>
 </section>
@@ -361,11 +433,11 @@
 <!-- 底部转化 -->
 <div class="cta-band">
   <div class="wrap">
-    <div>
+    <div class="reveal">
       <h2 class="serif">把你的需求发过来</h2>
       <p>先聊清楚再报价，不合适也不会硬推。注册只要 10 秒。</p>
     </div>
-    <div class="btns">
+    <div class="btns reveal">
       <button class="btn-main" id="bandCta">免费咨询</button>
       <button class="btn-ghost" onclick="document.getElementById('secPkg').scrollIntoView({behavior:'smooth'})">看套餐方案</button>
     </div>
@@ -383,6 +455,24 @@
 <div class="m-bar" id="mBar">
   <button class="btn-ghost" onclick="document.getElementById('secPkg').scrollIntoView({behavior:'smooth'})">看套餐</button>
   <button class="btn-main" id="mBarCta">免费咨询</button>
+</div>
+
+<!-- AI 悬浮窗 -->
+<button class="ai-fab" id="aiFab" aria-label="小沐AI"><span class="ring"></span>沐<span class="dot" id="aiDot"></span></button>
+<div class="ai-hint" id="aiHint">有问题问我，价格和交付时间都能答～</div>
+<div class="ai-panel" id="aiPanel" role="dialog" aria-label="小沐AI对话">
+  <div class="ai-head">
+    <div class="ava">沐</div>
+    <div><b>小沐</b><small>文案馆值班助手 · 在线</small></div>
+    <button class="x" id="aiClose" aria-label="关闭">×</button>
+  </div>
+  <div class="ai-logs" id="aiLogs"><div class="msg a">你好呀，我是小沐。想了解哪类服务？可以问我「能做什么」「多久交付」「套餐多少钱」～</div></div>
+  <div class="ai-chips" id="aiChips">
+    <button data-q="你们能做什么？">你们能做什么？</button>
+    <button data-q="套餐多少钱？">套餐多少钱？</button>
+    <button data-q="多久能交付？">多久能交付？</button>
+  </div>
+  <div class="ai-input"><input id="aiInput" placeholder="比如：公众号一篇多少钱？"><button id="aiSend">发送</button></div>
 </div>
 
 <!-- 登录弹窗 -->
@@ -414,7 +504,7 @@
 
 <!-- 咨询弹窗 -->
 <div class="mask" id="leadMask"><div class="modal">
-  <h3 class="serif" id="ldTitle">咨询套餐</h3>
+  <h3 class="serif" id="ldTitle">咨询需求</h3>
   <div class="f-row"><label>想了解的细节（选填）</label><textarea id="ldNote" rows="3" placeholder="比如：每个月大概 4 篇小红书，能做吗？"></textarea></div>
   <div class="f-row"><label>联系手机（默认账号手机）</label><input id="ldPhone" placeholder="方便联系你的号码" maxlength="11"></div>
   <button class="btn-main" id="ldGo">提交咨询</button>
@@ -432,21 +522,62 @@
 
 <script>
 const $ = id => document.getElementById(id);
-// HTML 转义：所有后端返回内容插入 DOM 前一律过一遍，防 XSS
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let TOKEN = localStorage.getItem('jdy_token') || '';
 let ME = null;
 try { ME = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) {}
 
-function toast(t) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', 2400); }
+/* ========== 基础 ========== */
+let toastT = null;
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2400); }
 function isClient() { return !!(ME && ME.role === 'client' && TOKEN); }
 function sha256hex(s) {
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)))
     .then(buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join(''));
 }
-function closeMask() { ['loginMask', 'regMask', 'leadMask'].forEach(id => $(id).classList.remove('on')); }
-function openReg() { closeMask(); $('lgErr').textContent = ''; $('regMask').classList.add('on'); $('rgCap').value = ''; loadCaptcha(); }
-function openLogin() { closeMask(); $('rgErr').textContent = ''; $('loginMask').classList.add('on'); }
+
+/* ========== 滚动入场 & 顶栏 ========== */
+const hdr = $('hdr');
+addEventListener('scroll', () => hdr.classList.toggle('scrolled', scrollY > 8), { passive: true });
+(function initReveal() {
+  const items = [...document.querySelectorAll('.reveal')];
+  if (!('IntersectionObserver' in window)) { items.forEach(el => el.classList.add('in')); return; }
+  const io = new IntersectionObserver((ents) => {
+    ents.forEach((e, i) => {
+      if (!e.isIntersecting) return;
+      const el = e.target;
+      // 同一屏内多个元素依次入场，形成流水感
+      el.style.transitionDelay = (i * 0.07) + 's';
+      el.classList.add('in');
+      io.unobserve(el);
+    });
+  }, { threshold: 0.14, rootMargin: '0px 0px -8% 0px' });
+  items.forEach(el => io.observe(el));
+})();
+
+/* ========== 口袋式弹窗（从触发按钮位置张开） ========== */
+function openModal(maskId, trigger) {
+  closeMaskSilent();
+  const mask = $(maskId);
+  const modal = mask.querySelector('.modal');
+  // 把触发按钮的中心换算成弹窗内的百分比坐标，clip-path 就从那儿张开
+  if (trigger && modal) {
+    const r = trigger.getBoundingClientRect();
+    const m = modal.getBoundingClientRect();
+    if (m.width && m.height) {
+      const ox = ((r.left + r.width / 2 - m.left) / m.width) * 100;
+      const oy = ((r.top + r.height / 2 - m.top) / m.height) * 100;
+      modal.style.setProperty('--ox', Math.max(-20, Math.min(120, ox)).toFixed(1) + '%');
+      modal.style.setProperty('--oy', Math.max(-20, Math.min(120, oy)).toFixed(1) + '%');
+    }
+  }
+  mask.classList.add('on');
+}
+function closeMaskSilent() { ['loginMask', 'regMask', 'leadMask'].forEach(id => $(id).classList.remove('on')); }
+function closeMask() { closeMaskSilent(); }
+
+function openReg(trigger) { $('lgErr').textContent = ''; $('rgCap').value = ''; openModal('regMask', trigger); loadCaptcha(); }
+function openLogin(trigger) { $('rgErr').textContent = ''; openModal('loginMask', trigger); }
 let capId = '';
 async function loadCaptcha() {
   try {
@@ -456,7 +587,11 @@ async function loadCaptcha() {
   } catch (e) { $('rgCapBox').innerHTML = '<div style="font-size:11px;color:var(--ink2);line-height:1.6">验证码加载失败<br>点此重试</div>'; }
 }
 $('rgCapBox').onclick = loadCaptcha;
+['loginMask', 'regMask', 'leadMask'].forEach(id => {
+  $(id).addEventListener('click', e => { if (e.target.id === id) closeMask(); });
+});
 
+/* ========== 登录态 ========== */
 function saveAuth(token, user) {
   TOKEN = token; ME = user;
   localStorage.setItem('jdy_token', token);
@@ -470,26 +605,22 @@ function renderAuth() {
     $('goMember').onclick = () => location.href = '/member.html';
   } else {
     box.innerHTML = `<button class="hd-cta ghost" id="btnLogin">登录</button><button class="hd-cta" id="btnReg">免费咨询</button>`;
-    $('btnLogin').onclick = openLogin;
-    $('btnReg').onclick = openReg;
+    $('btnLogin').onclick = e => openLogin(e.currentTarget);
+    $('btnReg').onclick = e => openReg(e.currentTarget);
   }
   const hero = $('heroCta'), band = $('bandCta'), bar = $('mBarCta');
-  const label = isClient() ? '进入我的工作台' : '免费咨询需求';
-  const bandLabel = isClient() ? '进入我的工作台' : '免费咨询';
-  const barLabel = isClient() ? '我的工作台' : '免费咨询';
-  if (hero) { hero.textContent = label; hero.onclick = mainCta; }
-  if (band) { band.textContent = bandLabel; band.onclick = mainCta; }
-  if (bar) { bar.textContent = barLabel; bar.onclick = mainCta; }
+  if (hero) { hero.textContent = isClient() ? '进入我的工作台' : '免费咨询需求'; hero.onclick = mainCta; }
+  if (band) { band.textContent = isClient() ? '进入我的工作台' : '免费咨询'; band.onclick = mainCta; }
+  if (bar) { bar.textContent = isClient() ? '我的工作台' : '免费咨询'; bar.onclick = mainCta; }
 }
-// 主转化按钮：已登录进工作台，未登录走注册（访客转化率最高）
-function mainCta() { isClient() ? location.href = '/member.html' : openReg(); }
-function needAuth() { openReg(); toast('先注册一个账号，10 秒就好'); }
+function mainCta(e) { isClient() ? location.href = '/member.html' : openReg(e && e.currentTarget); }
+function needAuth(trigger) { openReg(trigger); toast('先注册一个账号，10 秒就好'); }
 
-// 移动端菜单
-$('burger').onclick = () => $('mNav').classList.toggle('on');
-$('mNav').addEventListener('click', e => { if (e.target.tagName === 'A') $('mNav').classList.remove('on'); });
+/* ========== 移动端菜单 ========== */
+$('burger').onclick = () => { $('burger').classList.toggle('on'); $('mNav').classList.toggle('on'); };
+$('mNav').addEventListener('click', e => { if (e.target.tagName === 'A') { $('burger').classList.remove('on'); $('mNav').classList.remove('on'); } });
 
-// —— 注册（注册成功直接进工作台） ——
+/* ========== 注册 / 登录 ========== */
 $('rgGo').onclick = async () => {
   const phone = $('rgUser').value.trim(), pwd = $('rgPwd').value, name = $('rgName').value.trim();
   const err = $('rgErr'); err.textContent = '';
@@ -503,8 +634,7 @@ $('rgGo').onclick = async () => {
     const j = await r.json();
     if (!j.ok) {
       err.textContent = j.error || '注册失败';
-      // 服务端验证码是一次性的：只要请求被受理过就必须换一张，否则重试必然报"验证码已过期"
-      $('rgCap').value = ''; loadCaptcha();
+      $('rgCap').value = ''; loadCaptcha();   // 验证码一次性，失败必须换一张
       $('rgGo').disabled = false; $('rgGo').textContent = '创建账号'; return;
     }
     saveAuth(j.token, j.user);
@@ -514,7 +644,6 @@ $('rgGo').onclick = async () => {
   } catch (e) { err.textContent = '网络异常，稍后再试'; }
   $('rgGo').disabled = false; $('rgGo').textContent = '创建账号';
 };
-// —— 登录（登录成功直接进工作台，不再停留在宣传页） ——
 $('lgGo').onclick = async () => {
   const u = $('lgUser').value.trim(), p = $('lgPwd').value;
   const err = $('lgErr'); err.textContent = '';
@@ -530,35 +659,134 @@ $('lgGo').onclick = async () => {
     setTimeout(() => location.href = '/member.html', 600);
   } catch (e) { err.textContent = '网络异常，稍后再试'; $('lgGo').disabled = false; $('lgGo').textContent = '登录'; }
 };
-// 点遮罩关闭
-['loginMask', 'regMask', 'leadMask'].forEach(id => {
-  $(id).addEventListener('click', e => { if (e.target.id === id) closeMask(); });
-});
-$('lb').addEventListener('click', e => { if (e.target.id === 'lb') closeLb(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMask(); closeLb(); } });
 
-// —— 套餐 ——
+/* ========== 作品 × 能做什么 ========== */
+const SERVICES = [
+  { key: '文案', ico: '✍️', bg: '#f0e9d8', title: '文案定制', desc: '公众号推文、小红书笔记、品牌故事、演讲稿。先聊清楚你的受众和口径再落笔，常规 48 小时出初稿。', price: '按篇计 <b>¥39</b> 起' },
+  { key: '演示', ico: '📊', bg: '#e9eef4', title: '演示定制', desc: '述职、路演、课件 PPT。内容逻辑和排版一起做，可以先出一页样张给你确认风格再铺开。', price: '按页计 <b>¥8</b>/页 起' },
+  { key: '数据', ico: '📈', bg: '#e8f2ea', title: '数据整理', desc: 'Excel 台账、数据清洗、图表汇总。交付的是能直接用的表，公式保留可编辑，不是截图。', price: '按表计 <b>¥59</b> 起' },
+  { key: '视频', ico: '🎬', bg: '#f4e9e9', title: '视频脚本', desc: '口播、短剧、宣传片分镜脚本。逐句台词加画面说明，拿着就能拍，不用二次翻译。', price: '按分钟 <b>¥99</b> 起' },
+];
+let GALLERY = [];
+let SVC = '文案';
+let SVC_CASES = [];
+
+function renderTabs() {
+  $('svcTabs').innerHTML = SERVICES.map(s => `<button data-k="${esc(s.key)}" class="${s.key === SVC ? 'on' : ''}">${esc(s.ico + ' ' + s.title)}</button>`).join('');
+  $('svcTabs').querySelectorAll('button').forEach(b => b.onclick = () => setSvc(b.dataset.k));
+}
+function setSvc(key) {
+  SVC = key;
+  const s = SERVICES.find(x => x.key === key) || SERVICES[0];
+  const info = $('svcInfo');
+  $('svcIco').textContent = s.ico;
+  $('svcIco').style.background = s.bg;
+  $('svcTitle').textContent = s.title;
+  $('svcDesc').textContent = s.desc;
+  $('svcPrice').innerHTML = s.price;
+  info.classList.remove('swap'); void info.offsetWidth; info.classList.add('swap');
+  $('svcCta').onclick = e => askSvc(s.title, e.currentTarget);
+  $('svcTabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.k === key));
+  renderCases();
+}
+function casesOf(key) { return GALLERY.filter(g => (g.cat || '文案') === key); }
+function renderCases() {
+  SVC_CASES = casesOf(SVC);
+  const track = $('caseTrack');
+  if (!SVC_CASES.length) {
+    track.innerHTML = `<div class="case-empty">这类的作品还在整理中。<br>想看类似案例可以直接问右下角的小沐，或者提交需求我们发你样张。</div>`;
+    $('cvDots').innerHTML = ''; updateArrows(); return;
+  }
+  track.innerHTML = SVC_CASES.map((g, i) => `
+    <article class="case-card" data-i="${i}">
+      <img src="${esc(g.img)}" alt="${esc(g.title)}" width="750" height="1000" loading="lazy" decoding="async">
+      <div class="cc-b">
+        <div class="cc-t serif">${esc(g.title)}</div>
+        <div class="cc-s">${esc(g.sub || '')}</div>
+        ${g.tag ? `<span class="cc-tag">${esc(g.tag)}</span>` : ''}
+      </div>
+    </article>`).join('');
+  track.querySelectorAll('.case-card').forEach(c => c.onclick = () => openLb(+c.dataset.i));
+  $('cvDots').innerHTML = SVC_CASES.map((_, i) => `<i data-i="${i}"></i>`).join('');
+  $('cvDots').querySelectorAll('i').forEach(d => d.onclick = () => scrollToCase(+d.dataset.i));
+  track.scrollLeft = 0;
+  setTimeout(() => { syncDots(); updateArrows(); }, 30);
+}
+function stepW() { const c = $('caseTrack').querySelector('.case-card'); return c ? c.offsetWidth + 18 : 448; }
+function scrollToCase(i) {
+  const track = $('caseTrack');
+  track.scrollTo({ left: i * stepW(), behavior: 'smooth' });
+}
+function syncDots() {
+  const track = $('caseTrack');
+  const idx = Math.round(track.scrollLeft / stepW());
+  $('cvDots').querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i === Math.min(idx, SVC_CASES.length - 1)));
+  updateArrows();
+}
+function updateArrows() {
+  const track = $('caseTrack');
+  const max = track.scrollWidth - track.clientWidth - 4;
+  $('cvPrev').disabled = track.scrollLeft <= 4;
+  $('cvNext').disabled = SVC_CASES.length < 2 || track.scrollLeft >= max;
+}
+$('cvPrev').onclick = () => scrollToCase(Math.max(0, Math.round($('caseTrack').scrollLeft / stepW()) - 1));
+$('cvNext').onclick = () => scrollToCase(Math.round($('caseTrack').scrollLeft / stepW()) + 1);
+$('caseTrack').addEventListener('scroll', () => { clearTimeout(window._st); window._st = setTimeout(syncDots, 60); }, { passive: true });
+addEventListener('keydown', e => {
+  if ($('lb').classList.contains('on') || document.querySelector('.mask.on')) return;
+  if (e.key === 'ArrowLeft') { $('cvPrev').click(); }
+  if (e.key === 'ArrowRight') { $('cvNext').click(); }
+});
+
+async function loadGallery() {
+  try {
+    const j = await (await fetch('/api/portal/gallery')).json();
+    GALLERY = (j.ok && j.gallery) ? j.gallery : [];
+  } catch (e) { GALLERY = []; }
+  renderCases();
+}
+
+/* ========== 大图 ========== */
+function openLb(i) {
+  const g = SVC_CASES[i]; if (!g) return;
+  $('lbImg').src = g.img; $('lbImg').alt = g.title || '';
+  $('lbCap').textContent = [g.title, g.sub, g.tag].filter(Boolean).join(' · ');
+  $('lb').classList.add('on');
+}
+function closeLb() { $('lb').classList.remove('on'); setTimeout(() => $('lbImg').removeAttribute('src'), 380); }
+$('lb').addEventListener('click', e => { if (e.target.id === 'lb') closeLb(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMask(); closeLb(); toggleAi(false); } });
+
+/* ========== 套餐 ========== */
 async function loadPkgs() {
   try {
     const j = await (await fetch('/api/portal/packages')).json();
     if (!j.ok || !j.packages.length) { $('pkgGrid').innerHTML = '<div style="color:var(--ink2);font-size:13px">套餐配置中，可先咨询</div>'; return; }
     $('pkgGrid').innerHTML = j.packages.map(p => `
-      <div class="p-card ${p.badge ? 'hot' : ''}">
+      <div class="p-card ${p.badge ? 'hot' : ''} reveal">
         ${p.badge ? `<span class="p-badge">${esc(p.badge)}</span>` : ''}
         <h3 class="serif">${esc(p.name)}</h3><div class="p-tag">${esc(p.tagline || '')}</div>
         <div class="p-price"><b>¥${esc(p.price)}</b>${p.originalPrice ? `<s>¥${esc(p.originalPrice)}</s>` : ''}</div>
         <ul>${(p.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul>
         <button class="btn-main" data-pkg="${esc(p.name || '')}">咨询此套餐</button>
       </div>`).join('');
-    $('pkgGrid').querySelectorAll('button[data-pkg]').forEach(b => b.onclick = () => askPkg(b.dataset.pkg));
+    $('pkgGrid').querySelectorAll('button[data-pkg]').forEach(b => b.onclick = e => askPkg(b.dataset.pkg, e.currentTarget));
+    observeNew($('pkgGrid'));
   } catch (e) {}
 }
-function askPkg(name) {
-  if (!isClient()) { needAuth(); return; }
+function askPkg(name, trigger) {
+  if (!isClient()) { needAuth(trigger); return; }
   $('ldTitle').textContent = '咨询 · ' + name;
   $('ldNote').dataset.pkg = name;
   $('ldPhone').value = (ME && ME.phone) || '';
-  $('leadMask').classList.add('on');
+  openModal('leadMask', trigger);
+}
+function askSvc(title, trigger) {
+  if (!isClient()) { needAuth(trigger); return; }
+  $('ldTitle').textContent = '咨询 · ' + title;
+  $('ldNote').dataset.pkg = title;
+  $('ldPhone').value = (ME && ME.phone) || '';
+  openModal('leadMask', trigger);
 }
 $('ldGo').onclick = async () => {
   try {
@@ -570,34 +798,35 @@ $('ldGo').onclick = async () => {
   } catch (e) { toast('网络异常'); }
 };
 
-// —— 文案馆（内容来自后台「作品管理」） ——
-let GALLERY = [];
-async function loadGallery() {
-  try {
-    const j = await (await fetch('/api/portal/gallery')).json();
-    GALLERY = (j.ok && j.gallery) ? j.gallery : [];
-    if (!GALLERY.length) { $('gGrid').innerHTML = '<div style="color:var(--ink2);font-size:13px">作品整理中，可先咨询</div>'; return; }
-    $('gGrid').innerHTML = GALLERY.map((g, i) => `
-      <div class="g-card" data-i="${i}">
-        <img src="${esc(g.img)}" alt="${esc(g.title)}" width="750" height="1000" loading="lazy" decoding="async">
-        <div class="gc-b">
-          <div class="gc-t serif">${esc(g.title)}</div>
-          <div class="gc-s">${esc(g.sub || '')}</div>
-          ${g.tag ? `<span class="gc-tag">${esc(g.tag)}</span>` : ''}
-        </div>
-      </div>`).join('');
-    $('gGrid').querySelectorAll('.g-card').forEach(c => c.onclick = () => openLb(+c.dataset.i));
-  } catch (e) { $('gGrid').innerHTML = '<div style="color:var(--ink2);font-size:13px">作品加载失败，刷新试试</div>'; }
+/* 动态插入的卡片也要能滚动入场 */
+function observeNew(root) {
+  if (!('IntersectionObserver' in window)) return;
+  const io = new IntersectionObserver(ents => ents.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: 0.12 });
+  root.querySelectorAll('.reveal').forEach(el => io.observe(el));
 }
-function openLb(i) {
-  const g = GALLERY[i]; if (!g) return;
-  $('lbImg').src = g.img; $('lbImg').alt = g.title || '';
-  $('lbCap').textContent = [g.title, g.sub, g.tag].filter(Boolean).join(' · ');
-  $('lb').classList.add('on');
-}
-function closeLb() { $('lb').classList.remove('on'); $('lbImg').removeAttribute('src'); }
 
-// —— 小沐AI ——
+/* ========== 小沐AI 悬浮窗 ========== */
+const aiPanel = $('aiPanel'), aiFab = $('aiFab'), aiHint = $('aiHint');
+function toggleAi(open) {
+  const on = open === undefined ? !aiPanel.classList.contains('on') : open;
+  aiPanel.classList.toggle('on', on);
+  aiFab.classList.toggle('opened', on);
+  aiHint.classList.remove('on');
+  if (on) {
+    $('aiDot').style.display = 'none';
+    setTimeout(() => { if (innerWidth > 860) $('aiInput').focus(); }, 420);
+  }
+}
+aiFab.onclick = () => toggleAi();
+$('aiClose').onclick = () => toggleAi(false);
+// 进站 4 秒后冒个提示气泡，点开过就不再冒
+setTimeout(() => {
+  if (sessionStorage.getItem('aiHinted') || aiPanel.classList.contains('on')) return;
+  aiHint.classList.add('on');
+  sessionStorage.setItem('aiHinted', '1');
+  setTimeout(() => aiHint.classList.remove('on'), 6000);
+}, 4000);
+
 async function aiSend(preset) {
   const q = (preset || $('aiInput').value).trim(); if (!q) return;
   $('aiInput').value = '';
@@ -607,20 +836,24 @@ async function aiSend(preset) {
   if (!isClient()) {
     logs.insertAdjacentHTML('beforeend', `<div class="msg a">先注册一个账号，我就能正式回答你了～（10 秒，注册完可在工作台继续聊）</div>`);
     logs.scrollTop = logs.scrollHeight;
-    needAuth(); return;
+    needAuth(aiFab); return;
   }
+  const tip = document.createElement('div');
+  tip.className = 'msg a typing'; tip.innerHTML = '<i></i><i></i><i></i>';
+  logs.appendChild(tip); logs.scrollTop = logs.scrollHeight;
   try {
     const r = await fetch('/api/portal/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ message: q }) });
     const j = await r.json();
-    logs.insertAdjacentHTML('beforeend', `<div class="msg a">${esc(j.reply || '稍后再试试')}</div>`);
-  } catch (e) { logs.insertAdjacentHTML('beforeend', `<div class="msg a">网络开小差了，再发一次？</div>`); }
+    tip.outerHTML = `<div class="msg a">${esc(j.reply || '稍后再试试')}</div>`;
+  } catch (e) { tip.outerHTML = `<div class="msg a">网络开小差了，再发一次？</div>`; }
   logs.scrollTop = logs.scrollHeight;
 }
 $('aiSend').onclick = () => aiSend();
 $('aiInput').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
 $('aiChips').addEventListener('click', e => { if (e.target.dataset && e.target.dataset.q) aiSend(e.target.dataset.q); });
 
-renderAuth(); loadPkgs(); loadGallery();
+/* ========== 启动 ========== */
+renderAuth(); loadPkgs(); loadGallery(); renderTabs(); setSvc('文案');
 if (location.hash === '#reg') openReg();
 else if (location.hash === '#login') openLogin();
 </script>
