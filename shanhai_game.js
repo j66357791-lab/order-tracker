@@ -5,6 +5,8 @@
 //   2) 档案更新走 findOneAndUpdate + $inc/$max 原子操作，并发刷不掉
 //   3) 独立集合 shanhai_profiles，不污染其他游戏数据
 // 【2026-09-14】养成层（斩妖录·贰）：仙玉/灵气双货币 + 6槽装备 + 背包 + 抽卡 + 技能强化
+// 【2026-09-17 安全修复】补战绩上限/关卡上限/接口限流，堵住脚本刷仙玉的口子
+import { limit } from './lib/ratelimit.js';
 
 export default function mountShanhaiGame(app, { auth, getDb }) {
 
@@ -14,6 +16,8 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
     maxKillsPerMin: 120,     // 击杀/分钟上限（第一关波次密度 < 60）
     maxLevel: 40,            // 第一关经验总量对应等级上限
     winMinTimeSec: 60,       // 通关最短合理用时（15波+Boss < 1min 不可能）
+    maxStage: 3,             // 关卡数上限——与前端 index.html 的 STAGES 数组保持一致
+    killHardCap: 20000,      // 单局击杀硬上限（防超长挂机脚本刷仙玉）
   };
 
   // ==================== 养成层配置 ====================
@@ -99,11 +103,12 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         p = await db.collection('shanhai_profiles').findOne({ userId: req.user.id });
       }
       res.json({ ok: true, profile: p });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 战绩上报（含养成奖励结算） ====================
-  app.post('/api/shanhai/result', auth, async (req, res) => {
+  // 【2026-09-17 安全加固】限流：一局至少一分钟，10次/分钟足够正常上报，脚本高频刷分会被挡下
+  app.post('/api/shanhai/result', auth, limit({ name: 'shanhai-result', max: 10, windowMs: 60 * 1000, msg: '战绩上报太频繁，请稍后再试' }), async (req, res) => {
     try {
       const db = await getDb();
       const { win, timeSec, kills, level, dmgTaken, stage } = req.body || {};
@@ -111,12 +116,16 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       const k = Math.floor(Number(kills) || 0);
       const lv = Math.floor(Number(level) || 1);
       const isWin = !!win;
-      const st = Math.max(1, Math.floor(Number(stage) || 1));
+      const st = Math.floor(Number(stage) || 1);
 
       // —— 合理性校验（不合格只记战绩不发奖励） ——
+      // 【2026-09-17 安全修复】原校验在 t≤30 秒时不检查击杀上限（上报 timeSec=30,
+      // kills=100万 可白拿百万仙玉），且 stage 无上限可无限刷首通奖励——补上绝对上限
+      const kCap = Math.min(LIMITS.killHardCap, Math.ceil(Math.max(t, 60) / 60) * LIMITS.maxKillsPerMin + 50);
       const bad = t < 0 || t > LIMITS.maxTimeSec
-        || k < 0 || (t > 30 && k / (t / 60) > LIMITS.maxKillsPerMin)
+        || k < 0 || k > kCap
         || lv < 1 || lv > LIMITS.maxLevel
+        || st < 1 || st > LIMITS.maxStage
         || (isWin && t < LIMITS.winMinTimeSec);
       if (bad) return res.status(400).json({ ok: false, error: '战绩数据异常，本局不计' });
 
@@ -128,15 +137,20 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       const gainXianyu = k * META_CFG.killXianyu + (isWin ? META_CFG.winXianyu : 0) + (firstClear ? META_CFG.firstClearXianyu : 0);
       const gainLingqi = isWin ? META_CFG.winLingqi : 0;
       const stars = isWin ? (t < 180 ? 3 : t < 360 ? 2 : 1) : 0;
+      // 【二次复核修正】bestTimeSec 原来用对象展开生成第二个 $set，首通那一局会把
+      // 前面 $set 里的 username/updatedAt 整体覆盖丢掉——改为预先组装同一个 $set
+      const setResult = { username: req.user.displayName || req.user.username, updatedAt: new Date() };
+      if (isWin && t > 0 && before.bestTimeSec == null) setResult.bestTimeSec = t;
+      const upd = {
+        $inc: { plays: 1, wins: isWin ? 1 : 0, totalKills: k, xianyu: gainXianyu, lingqi: gainLingqi },
+        $max: { bestKills: k, maxLevel: lv },
+        $set: setResult,
+        ...(firstClear ? { $addToSet: { clearedStages: st } } : {}),
+      };
+      if (isWin && t > 0 && before.bestTimeSec != null) upd.$min = { bestTimeSec: t };
       const r = await db.collection('shanhai_profiles').findOneAndUpdate(
         { userId: req.user.id },
-        {
-          $inc: { plays: 1, wins: isWin ? 1 : 0, totalKills: k, xianyu: gainXianyu, lingqi: gainLingqi },
-          $max: { bestKills: k, maxLevel: lv },
-          $set: { username: req.user.displayName || req.user.username, updatedAt: new Date() },
-          ...(isWin && t > 0 ? (before.bestTimeSec == null ? { $set: { bestTimeSec: t } } : { $min: { bestTimeSec: t } }) : {}),
-          ...(firstClear ? { $addToSet: { clearedStages: st } } : {}),
-        },
+        upd,
         { returnDocument: 'after', upsert: true }
       );
       const p = r.value || r;
@@ -146,7 +160,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         balance: { xianyu: p.xianyu, lingqi: p.lingqi },
         profile: { plays: p.plays, wins: p.wins, bestTimeSec: p.bestTimeSec, bestKills: p.bestKills },
       });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 技能强化（此前服务端缺失，前端404修复） ====================
@@ -168,39 +182,65 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       if (!r || (!r.value && !r)) return res.status(400).json({ ok: false, error: '仙玉不足' });
       const np = r.value || r;
       res.json({ ok: true, skillLv: np.skillLv, xianyu: np.xianyu });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 装备寻宝（抽卡，此前服务端缺失，前端404修复） ====================
-  app.post('/api/shanhai/draw', auth, async (req, res) => {
+  // 品质序：数值越小越差（用于满包替换）
+  const QUALITY_ORDER = { white: 0, green: 1, blue: 2, purple: 3, gold: 4 };
+  app.post('/api/shanhai/draw', auth, limit({ name: 'shanhai-draw', max: 30, windowMs: 60 * 1000, msg: '抽太快了，歇一下再抽～' }), async (req, res) => {
     try {
       const db = await getDb();
       const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
       if ((p.xianyu || 0) < META_CFG.drawCost) return res.status(400).json({ ok: false, error: '仙玉不足' });
       const item = rollItem();
+      // 【2026-09-17 修复】满包替换逻辑：原 $slice: -50 丢的是"最早抽到的"，
+      // 早期抽到的金装会被静默销毁；现在改为替换品质最低的一件（同品质替换最早抽到的）
+      // 【2026-09-17 二次复核修正】背包未满时改回原子 $push（并发双击不再互相覆盖丢装备）；
+      // 仅满包替换时才走读-改-写路径（该路径并发下仍可能丢一件，概率极低且满包本身就是极端场景）
+      const bagLen = (p.bag || []).length;
+      let upd;
+      let replaced = null;
+      if (bagLen < META_CFG.bagMax) {
+        upd = { $inc: { xianyu: -META_CFG.drawCost }, $push: { bag: item }, $set: { updatedAt: new Date() } };
+      } else {
+        const bag = [...(p.bag || [])];
+        let wi = 0;
+        for (let i = 1; i < bag.length; i++) {
+          const a = QUALITY_ORDER[bag[i]?.quality] ?? 0, b = QUALITY_ORDER[bag[wi]?.quality] ?? 0;
+          if (a <= b) wi = i;
+        }
+        replaced = bag[wi];
+        bag.splice(wi, 1);
+        bag.push(item);
+        upd = { $inc: { xianyu: -META_CFG.drawCost }, $set: { bag, updatedAt: new Date() } };
+      }
       const r = await db.collection('shanhai_profiles').findOneAndUpdate(
         { userId: req.user.id, xianyu: { $gte: META_CFG.drawCost } },
-        {
-          $inc: { xianyu: -META_CFG.drawCost },
-          $set: { updatedAt: new Date() },
-          // 背包满（50）时只入袋不入背包？——抽卡保底：满时自动替换最差白装
-          $push: { bag: { $each: [item], $slice: -META_CFG.bagMax } },
-        },
+        upd,
         { returnDocument: 'after' }
       );
-      if (!r) return res.status(400).json({ ok: false, error: '仙玉不足' });
+      if (!r || (!r.value && !r)) return res.status(400).json({ ok: false, error: '仙玉不足' });
       const np = r.value || r;
+      // 【二次复核补充】49/50 满包临界时并发 $push 可能超额，超限则裁掉最早抽到的（回到旧口径兜底）
+      if (np.bag && np.bag.length > META_CFG.bagMax) {
+        const trimmed = np.bag.slice(np.bag.length - META_CFG.bagMax);
+        await db.collection('shanhai_profiles').updateOne(
+          { userId: req.user.id }, { $set: { bag: trimmed } });
+        np.bag = trimmed;
+      }
       // 槽位空着 → 自动穿上（白嫖体验，玩家可在装备页换装）
       let autoEquipped = false;
       if (!np.equip || !np.equip[item.slot]) {
-        await db.collection('shanhai_profiles').updateOne(
+        const ae = await db.collection('shanhai_profiles').updateOne(
           { userId: req.user.id, [`equip.${item.slot}`]: null },
           { $set: { [`equip.${item.slot}`]: item, updatedAt: new Date() }, $pull: { bag: { id: item.id } } }
         );
-        autoEquipped = true;
+        // 【2026-09-17 修复】只有真的穿上才报 autoEquipped（原来条件不满足也报 true）
+        autoEquipped = ae.modifiedCount > 0;
       }
-      res.json({ ok: true, item, xianyu: np.xianyu - (autoEquipped ? 0 : 0), autoEquipped });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+      res.json({ ok: true, item, xianyu: np.xianyu, autoEquipped, replaced });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 穿装备 / 脱装备 ====================
@@ -221,8 +261,10 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         },
         { returnDocument: 'after' }
       );
-      res.json({ ok: true, equip: (r.value || r).equip, bag: (r.value || r).bag });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+      // 【二次复核补充】并发同装备双穿时匹配落空会返回 null，直接取 .equip 会 500
+      if (!r) return res.status(400).json({ ok: false, error: '该装备已被操作，请刷新' });
+      res.json({ ok: true, equip: r.equip, bag: r.bag });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
   app.post('/api/shanhai/unequip', auth, async (req, res) => {
@@ -239,8 +281,9 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         { $set: { [`equip.${slot}`]: null, updatedAt: new Date() }, $push: { bag: item } },
         { returnDocument: 'after' }
       );
-      res.json({ ok: true, equip: (r.value || r).equip, bag: (r.value || r).bag });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+      if (!r) return res.status(400).json({ ok: false, error: '操作失败，请刷新' });
+      res.json({ ok: true, equip: r.equip, bag: r.bag });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 排行榜（通关最快/击杀最多 各前20） ====================
@@ -256,7 +299,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         .sort({ bestKills: -1 }).limit(20)
         .project({ username: 1, bestKills: 1, bestTimeSec: 1, wins: 1 }).toArray();
       res.json({ ok: true, timeBoard, killBoard });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 管理端：山海数据面板（游戏工作台用） ====================
@@ -279,7 +322,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         totals: agg[0] || { plays: 0, wins: 0, totalKills: 0, xianyu: 0, lingqi: 0 },
         top,
       });
-    } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 索引 ====================
