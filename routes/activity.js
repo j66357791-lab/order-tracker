@@ -38,7 +38,7 @@ app.get('/api/activity/checkin', auth, async (req, res) => {
       else break;
     }
     res.json({ ok: true, today: today, signedToday: !!todayRec, todayAmount: todayRec ? todayRec.amount : 0, streak, signedDays, month, eligible: takenCnt > 0 });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // POST /api/activity/checkin - 签到
@@ -74,11 +74,17 @@ app.post('/api/activity/checkin', auth, async (req, res) => {
       while (true) { d.setDate(d.getDate() - 1); const rec = await db.collection('checkin_records').findOne({ userId, date: cnDayStr(d) }); if (rec) s++; else break; }
       streak = s;
     }
-    await db.collection('checkin_records').insertOne({ userId, date: today, amount, streak, createdAt: new Date() });
+    // 【2026-09-17 修复】并发双击兜底：唯一索引(userId+date)拦截同一秒内的重复签到
+    try {
+      await db.collection('checkin_records').insertOne({ userId, date: today, amount, streak, createdAt: new Date() });
+    } catch (e) {
+      if (e.code === 11000) return res.status(400).json({ ok: false, error: '今日已签到' });
+      throw e;
+    }
     // 入账 wallet_log
     await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount, note: '每日签到', createdAt: new Date() });
     res.json({ ok: true, amount, streak });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---- 单单拆红包 ----
@@ -106,7 +112,7 @@ app.get('/api/activity/redpacket', auth, async (req, res) => {
       cardId: String(r.cardId), amount: r.amount, title: r.title
     }));
     res.json({ ok: true, available, frozen });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // POST /api/activity/redpacket/:cardId - 拆红包
@@ -117,7 +123,7 @@ app.post('/api/activity/redpacket/unfreeze', auth, async (req, res) => {
     const db = await getDb();
     const unlocked = await unfreezeRedpackets(db, req.user.id);
     res.json({ ok: true, unlocked });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
   try {
@@ -157,7 +163,7 @@ app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
       throw e;
     }
     res.json({ ok: true, amount, rate: Math.round(rate * 100) / 100, luckTag, title: card.title, orderReward: reward });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // 【2026-09-14 需求修正】红包解冻统一入口：
@@ -183,7 +189,7 @@ app.get('/api/activity/monthly', auth, async (req, res) => {
     // 是否已领
     const claimed = await db.collection('monthly_claims').findOne({ userId, month });
     res.json({ ok: true, month, earned, target, reward, claimed: !!claimed, claimable: earned >= target && !claimed });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // POST /api/activity/monthly/claim - 领取月度奖励
@@ -202,10 +208,16 @@ app.post('/api/activity/monthly/claim', auth, async (req, res) => {
     const earned = cards.reduce((s, c) => s + (c.reward || 0), 0);
     if (earned < 500) return res.status(400).json({ ok: false, error: '本月接单金额未满500元' });
     const reward = 8.88;
-    await db.collection('monthly_claims').insertOne({ userId, month, reward, claimedAt: new Date() });
+    // 【2026-09-17 修复】并发双击兜底：唯一索引(userId+month)拦截重复领取
+    try {
+      await db.collection('monthly_claims').insertOne({ userId, month, reward, claimedAt: new Date() });
+    } catch (e) {
+      if (e.code === 11000) return res.status(400).json({ ok: false, error: '本月奖励已领取' });
+      throw e;
+    }
     await db.collection('wallet_log').insertOne({ userId, month, amount: reward, note: '月度活动奖励', createdAt: new Date() });
     res.json({ ok: true, reward });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 }
@@ -241,7 +253,12 @@ export async function unfreezeRedpackets(db, userId) {
         await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已作废', note: '重复拆包记录' } });
         continue;
       }
-      await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已解冻', unlockedAt: new Date() } });
+      // 【二次复核修正】原"查重→无条件改状态→入账"三步非原子，打款自动触发与手动解冻并发时
+      // 同一红包会重复入账两次（真金流水）——改为条件更新抢占，只有改成功的那个请求入账
+      const claim = await db.collection('redpacket_records').updateOne(
+        { _id: r._id, status: '冻结' },
+        { $set: { status: '已解冻', unlockedAt: new Date() } });
+      if (!claim.modifiedCount) { paidCardIds.add(cid); continue; }
       await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount: r.amount, note: '红包奖励-' + r.title, cardId: cid, createdAt: new Date() });
       paidCardIds.add(cid);
       try { notify(r.userId, 'msg', { title: '红包到账', content: '「' + (r.title || '') + '」订单完结，现金红包 ¥' + r.amount + ' 已解冻入账，可在钱包中查看。' }); } catch (e2) {}
