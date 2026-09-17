@@ -166,6 +166,9 @@
   .qref:hover{filter:brightness(.96)}
   .msg .rbtn{position:absolute;font-size:11px;color:var(--sub);background:#fff;border:1px solid var(--line);border-radius:99px;padding:2px 9px;cursor:pointer;opacity:0;transition:opacity .15s;top:-6px}
   .imgmsg{max-width:220px;max-height:220px;border-radius:10px;display:block;cursor:zoom-in;background:linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%);background-size:200% 100%;animation:skeleton 1.5s infinite}
+  /* 【2026-09-17 性能修复】图片加载完成后停掉骨架屏 shimmer 动画——
+     原来是 infinite，聊天里每张已加载的图背后都在持续重绘，拖累整体帧率 */
+  .imgmsg.ld{animation:none;background:#eef1f4}
   @keyframes skeleton{0%{background-position:200% 0}100%{background-position:-200% 0}}
   @media(max-width:640px){.imgmsg{max-width:150px;max-height:150px}}
   /* 文件消息卡片 */
@@ -835,20 +838,25 @@ async function checkUpdate(silent) {
       $('verState').textContent = seen === ver ? '已是最新 ✓' : '有新版本 v' + ver + '（重启应用生效）';
       $('verState').style.color = seen === ver ? 'var(--green)' : 'var(--amber,#d97706)';
     }
-    if (!silent && seen !== ver) showChangelog(j.changelog || []);
-    localStorage.setItem('app_seen_ver', ver);
+    if (!silent && seen !== ver) showChangelog(j.changelog || [], ver);
+    // 【2026-09-17 修复】原来无条件把 seen 写成最新版本，导致"有新版本"提示与更新日志弹窗永远不触发；
+    // 现在只在用户点过更新弹窗的"知道了"后才落 seen（见 showChangelog）
     return j;
   } catch (e) { if ($('verState')) $('verState').textContent = '版本服务暂不可达'; return null; }
 }
-function showChangelog(logs) {
-  const html = (logs || []).map(l => `<div style="margin-bottom:12px"><b style="color:var(--green)">v${l.ver}</b> <span style="font-size:11px;color:var(--sub)">${l.date}</span><div style="font-size:12px;color:var(--fg,#333);line-height:1.7;margin-top:4px">${(l.notes || []).map(n => '· ' + n).join('<br>')}</div></div>`).join('');
+function showChangelog(logs, ver) {
+  const html = (logs || []).map(l => `<div style="margin-bottom:12px"><b style="color:var(--green)">v${esc(l.ver)}</b> <span style="font-size:11px;color:var(--sub)">${esc(l.date)}</span><div style="font-size:12.5px;color:var(--fg,#333);line-height:1.7;margin-top:4px">${(l.notes || []).map(n => '· ' + esc(n)).join('<br>')}</div></div>`).join('');
   const m = document.createElement('div');
   m.id = 'verModal';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   m.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:340px;width:100%;padding:20px;max-height:70vh;overflow:auto">
     <h3 style="margin-bottom:8px">🎉 更新到最新版本</h3>${html || '<div style="font-size:12.5px;color:var(--sub)">例行更新</div>'}
-    <button class="btn" style="width:100%;margin-top:6px" onclick="this.closest('#verModal').remove()">知道了</button></div>`;
+    <button class="btn" style="width:100%;margin-top:6px">知道了</button></div>`;
   document.body.appendChild(m);
+  m.querySelector('button.btn').onclick = () => {
+    try { localStorage.setItem('app_seen_ver', String(ver || '')); } catch (e) {}
+    m.remove();
+  };
 }
 if ($('btnCheckUpdate')) $('btnCheckUpdate').onclick = () => { if ($('verState')) $('verState').textContent = '检查中…'; checkUpdate(false); };
 
@@ -857,7 +865,8 @@ if ($('btnClearCache')) $('btnClearCache').onclick = async () => {
   let usage = 0, cnt = 0;
   try {
     if (navigator.storage && navigator.storage.estimate) { const est = await navigator.storage.estimate(); usage = est.usage || 0; }
-    if (window.caches) { const ks = await caches.keys(); cnt = ks.length; for (const k of ks) { const c = await caches.open(k); cnt += (await c.keys()).length ? 0 : 0; } }
+    // 【2026-09-17 修复】原来 (keys()).length ? 0 : 0 恒等于加 0，缓存条目数从未统计生效
+    if (window.caches) { const ks = await caches.keys(); cnt = ks.length; for (const k of ks) { const c = await caches.open(k); cnt += (await c.keys()).length; } }
   } catch (e) {}
   const sz = usage > 1048576 ? (usage / 1048576).toFixed(1) + ' MB' : (usage / 1024).toFixed(0) + ' KB';
   const m = document.createElement('div');
@@ -1046,11 +1055,14 @@ function updateConvItem(peerId) {
   } else if (oldUnread) oldUnread.remove();
 
   // 移到最上面（搜索框下面）
+  // 【二次复核修正】原来 insertBefore(el, searchBox.nextSibling) 中 searchBox 是 input 本身、
+  // 其 nextSibling 恒为 null，等价于把会话追加到列表末尾（与设计相反）——
+  // 改为插到搜索框包裹层 div 之后
   const convList = $('convList');
-  const searchBox = convList.querySelector('input');
+  const searchWrap = convList.querySelector('input')?.parentElement;
   if (convList.firstElementChild !== el) {
-    if (searchBox) {
-      convList.insertBefore(el, searchBox.nextSibling);
+    if (searchWrap && searchWrap.parentElement === convList) {
+      convList.insertBefore(el, searchWrap.nextSibling);
     } else {
       convList.insertBefore(el, convList.firstChild);
     }
@@ -1086,7 +1098,9 @@ function renderCardBub(c) {
   else if (s === '已驳回') ops = `<button class="btn btn-r btn-sm" onclick="actRedo('${c._id}')">重新做单</button>`;
   else if (s === '待审核') ops = `<span style="font-size:11px;color:var(--purple)">⏳ 等待管理员审核</span>`;
   else if (s === '待打款') ops = `<span style="font-size:11px;color:var(--cyan)">✅ 审核通过 · 等待打款</span>`;
-  return `<div class="card-bub">
+  // 【二次复核修正】卡片气泡外层的 .msg 绑了 openMsgOps（消息操作面板），
+  // 卡内按钮/详情链接点击会冒泡过去把内容覆盖掉——整卡内容拦截冒泡
+  return `<div class="card-bub" onclick="event.stopPropagation()">
     <div class="cb-hd">🃏 <span class="cb-t">${esc(c.title)}</span>${stPill(s)}</div>
     <div class="cb-meta"><span>报酬 <b>¥${c.reward}</b></span>${c.deadline ? '<span>截止 ' + esc(c.deadline) + '</span>' : ''}${c.orderNo ? '<span>单号 ' + esc(c.orderNo) + '</span>' : ''}</div>
     ${c.requirement ? '<div class="cb-req">' + esc(c.requirement) + '</div>' : ''}
@@ -1126,7 +1140,7 @@ function renderMsgs(list) {
       const isImg = /\.(png|jpe?g|gif|webp|bmp)$/i.test(m.fileName || '');
       previewIndex[m.fileId] = { url: dl(m.fileId), name: m.fileName || '' };
       const body = isImg
-        ? `${qref}<img class="imgmsg" src="${dl(m.fileId)}" loading="lazy" onclick="event.stopPropagation();openPreview('${m.fileId}')"><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}${watermark}</div>`
+        ? `${qref}<img class="imgmsg" src="${dl(m.fileId)}" loading="lazy" decoding="async" onload="this.classList.add('ld')" onclick="event.stopPropagation();openPreview('${m.fileId}')"><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}${watermark}</div>`
         : `${qref}<div class="filecard"><div class="fic">${fileIcon(m.fileName)}</div><div class="fbody">
             <div class="fn">${esc(m.fileName)}</div><div class="fs">${fmtSize(m.fileSize)}</div>
             <div class="fo"><button class="fc-prev" onclick="event.stopPropagation();openPreview('${m.fileId}')">预览</button><a class="fc-dl" href="${dl(m.fileId)}" download="${esc(m.fileName)}" onclick="event.stopPropagation()">下载</a></div>
@@ -1612,7 +1626,9 @@ async function paintMeExtras() {
   // 实名 V 标：黄色=已认证，灰色=未认证
   const vn = $('meV'); if (vn) { vn.className = 'vbadge' + (ME.realname ? ' on' : ''); vn.textContent = 'V'; vn.title = ME.realname ? '已实名：' + ME.realname.name : '未实名认证'; }
   /* 月度结算预览 */
-  try { const pj = await authFetch('/api/payroll?month=' + new Date().toISOString().slice(0,7)); const pa = $('payTileAmt'); if(pa) pa.textContent = '¥' + (pj.paid||0); } catch(e){}
+  // 【二次复核修正】/api/payroll 返回的已到账在 j.totals.paid（1569 行 loadPay 读法正确），
+  // 磁贴这里原来读 j.paid（不存在）永远显示 ¥0
+  try { const pj = await authFetch('/api/payroll?month=' + cnDateStr(cnNow()).slice(0,7)); const pa = $('payTileAmt'); if(pa) pa.textContent = '¥' + ((pj.totals && pj.totals.paid) || 0); } catch(e){}
   /* 合同状态 */
   try { const cj = await authFetch('/api/contract'); const ct = $('ctTileStatus'); if(ct) { ct.textContent = cj.signed ? '已签署' : '待签署'; ct.style.color = cj.signed ? 'var(--green-dk)' : 'var(--amber)'; } } catch(e){}
   const rnT = $('rnTileStatus'); if (rnT) { rnT.textContent = ME.realname ? '已认证 ' + ME.realname.name : '未认证'; rnT.style.color = ME.realname ? 'var(--green-dk)' : 'var(--amber)'; }
@@ -1651,9 +1667,7 @@ function openRealname() {
 async function loadMail() {
   try {
     const j = await authFetch('/api/notify');
-    const dot = $('mailDot');
-    dot.style.display = j.unread ? 'flex' : 'none';
-    dot.textContent = j.unread > 9 ? '9+' : j.unread;
+    // 【二次复核清理】顶栏邮箱按钮已改为广告入口，#mailDot 元素不存在，以下两行恒抛错（死代码）
     return j.rows;
   } catch (e) { return []; }
 }
@@ -1755,12 +1769,17 @@ async function loadFriends() {
       <div class="fr-row">
         <div class="avatar" style="width:38px;height:38px;font-size:15px">${esc((u.displayName || '?')[0])}<span class="dot ${u.online ? 'd-on' : 'd-off'}"></span></div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13.5px;font-weight:600">${esc(u.displayName)} ${u.role === 'admin' ? '<span class="tag tg-warn">管理</span>' : '<span class="lvbadge ' + (u.level >= 1 ? 'lv1' : '') + '">LV' + (u.level || 0) + '</span> <span class="vbadge' + (u.realname ? ' on' : '') + '" title="' + (u.realname ? '已实名' : '未实名') + '">V</span>'}</div>
+          <div style="font-size:13.5px;font-weight:600">${esc(u.displayName)} ${u.role === 'admin' ? '<span class="tag tg-warn">管理</span>' : '<span class="lvbadge ' + (u.level >= 1 ? 'lv1' : '') + '">LV' + (u.level || 0) + '</span> <span class="vbadge' + (u.hasRealname ? ' on' : '') + '" title="' + (u.hasRealname ? '已实名' : '未实名') + '">V</span>'}</div>
           <div style="font-size:11px;color:var(--sub)">ID ${u.uid || '—'} · ${u.online ? '在线' : '离线'}</div>
         </div>
         <button class="btn btn-g btn-sm" onclick="chatWith('${u.id}')">💬 聊天</button>
-        <button class="btn btn-gh btn-sm" onclick="delFriend('${u.id}','${esc(u.displayName).replace(/'/g, '')}')">删除</button>
+        <button class="btn btn-gh btn-sm" data-del="${u.id}" data-name="${esc(u.displayName)}">删除</button>
       </div>`).join('') : '<div class="empty">还没有同事，用上方搜索添加吧</div>';
+    // 【2026-09-17 安全修复】删除按钮改事件委托 + dataset 传参：
+    // 原来把昵称拼进 onclick="delFriend('id','昵称')" 字符串，昵称含单引号即可注入任意 JS（跨用户 XSS）
+    $('frList').querySelectorAll('[data-del]').forEach(b => {
+      b.onclick = () => delFriend(b.dataset.del, b.dataset.name);
+    });
   } catch (e) { toast(e.message); }
 }
 if($('btnAddFriend'))$('btnAddFriend').onclick = async () => {
@@ -1904,13 +1923,8 @@ async function unclaimShift(id) {
 }
 
 /* ================= Tab切换 ================= */
-/* 广告加载 */
-async function loadAd() {
-  try {
-    const j = await fetch('/api/ads').then(r=>r.json());
-    document.getElementById('adContent').innerHTML = '<h4 style="font-size:15px;margin-bottom:8px">' + (j.ad.title||'') + '</h4>' + (j.ad.content||'');
-  } catch(e){}
-}
+/* 【2026-09-17 清理】原 loadAd() 往不存在的 #adContent 元素写内容，每次进活动中心都抛被吞掉的异常；
+   公告实际由 loadAdPopup()（#adPopup）负责展示，此处死代码已删除 */
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
   document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
@@ -1984,7 +1998,11 @@ function showNotifBanner(name, preview) {
     bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 12px rgba(0,0,0,.2);transform:translateY(-100%);transition:transform .3s ease;font-size:13px';
     document.body.appendChild(bar);
   }
-  bar.innerHTML = '<div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px">💬</div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px">' + name + '</div><div style="opacity:.9;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + preview + '</div></div><div style="font-size:11px;opacity:.7">点击查看</div>';
+  // 【2026-09-17 安全修复】name/preview 来自对方用户名与消息原文，原样拼 innerHTML 是存储型 XSS
+  // （发一条含 <img onerror=...> 的消息即可在收信人页面执行脚本）；改用 textContent 写入
+  bar.innerHTML = '<div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px">💬</div><div style="flex:1;min-width:0"><div class="nb-name" style="font-weight:600;font-size:14px"></div><div class="nb-preview" style="opacity:.9;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div></div><div style="font-size:11px;opacity:.7">点击查看</div>';
+  bar.querySelector('.nb-name').textContent = name;
+  bar.querySelector('.nb-preview').textContent = preview;
   bar.style.transform = 'translateY(0)';
   bar.onclick = () => { bar.style.transform = 'translateY(-100%)'; openChatByName(name); };
   if (notifBannerTimer) clearTimeout(notifBannerTimer);
@@ -2029,7 +2047,20 @@ socket.on('msg', m => {
   }
   if (m.type === 'file' && isCurrent) toast((m.fromName || '') + ' 发来文件：' + m.fileName);
 });
-socket.on('card', c => { cardsMap[c._id] = c; renderMsgs(msgs); if ($('pCards').classList.contains('on')) reloadCards(); toast('派单卡更新：' + c.title + ' → ' + c.status); });
+// 【2026-09-17 性能修复】批量审批时每张卡都触发一次 renderMsgs 整区重建，页面明显掉帧——
+// 数据照常实时入 cardsMap，重绘合并到 400ms 内只做一次
+let _cardPaintTimer = null;
+socket.on('card', c => {
+  cardsMap[c._id] = c;
+  if (!_cardPaintTimer) {
+    _cardPaintTimer = setTimeout(() => {
+      _cardPaintTimer = null;
+      renderMsgs(msgs);
+      if ($('pCards').classList.contains('on')) reloadCards();
+    }, 400);
+  }
+  toast('派单卡更新：' + c.title + ' → ' + c.status);
+});
 socket.on('presence', p => {
   if (p.userId === ME.id) { if (p.shift !== undefined) { ME.shift = p.shift; paintMe(); } return; }
   const c = chats.find(x => x.user.id === p.userId);
@@ -2380,7 +2411,6 @@ async function loadActivity() {
   loadCheckin();
   loadRedpacket();
   loadMonthly();
-  loadAd();
 }
 </script>
 
