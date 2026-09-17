@@ -193,6 +193,12 @@
   .day-modal .table-card{max-height:56vh}
   .day-modal table{min-width:840px}
 
+  /* ===== embed 嵌入模式（管理工作台 iframe 内）：隐藏自家侧栏与顶部链接行 ===== */
+  body.embed .sidebar { display: none; }
+  body.embed header .meta a { display: none; }
+  body.embed .main .wrap { max-width: none; padding: 10px 16px 30px; }
+  body.embed { padding-top: 0; }
+
   /* ===== 移动端App体验优化 ===== */
   html,body{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
   input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}
@@ -400,7 +406,12 @@
 /* V7 登录门卫：本页仅管理员可用，未登录/写手一律跳登录页 */
 const TOKEN = localStorage.getItem('jdy_token');
 const ME = JSON.parse(localStorage.getItem('jdy_user') || 'null');
-if (!TOKEN || !ME || ME.role !== 'admin') location.href = '/login.html';
+// 【v20.3】embed=1 嵌入管理工作台 iframe；preview=1 演示模式（401 不跳转、走本地空数据）
+const EMBED = location.search.includes('embed=1');
+const PREVIEW = location.search.includes('preview=1');
+if (EMBED) document.body.classList.add('embed');
+if (PREVIEW) document.title = '台账（预览）· 小沐文案';
+if ((!TOKEN || !ME || ME.role !== 'admin') && !PREVIEW) location.href = '/login.html';
 const AH = () => ({ Authorization: 'Bearer ' + TOKEN });
 
 const API = '/api/orders';
@@ -419,7 +430,12 @@ const localDate = (d = new Date()) =>
 async function loadOrders() {
   try {
     const r = await fetch(API + '?' + Math.random(), { signal: AbortSignal.timeout(6000), headers: AH() });
-    if (r.status === 401) { localStorage.removeItem('jdy_token'); location.href = '/login.html'; return; }
+    if (r.status === 401) {
+      if (PREVIEW) throw 0;   // 预览模式：走本地空数据
+      localStorage.removeItem('jdy_token');
+      if (EMBED) { parent.location.href = '/login.html'; return; }   // 嵌入模式：整个壳一起跳登录，避免壳内套登录页
+      location.href = '/login.html'; return;
+    }
     if (!r.ok) throw 0;
     const j = await r.json();
     orders = j.orders || [];
