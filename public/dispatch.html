@@ -21,7 +21,7 @@
   #connBar{display:none;background:linear-gradient(90deg,#fef3c7,#fde68a);color:#92400e;font-size:12px;text-align:center;padding:6px 12px;flex-shrink:0}
   #connBar.on{display:block}
 
-  .topbar{background:linear-gradient(135deg,#1f2937,#111827);color:#fff;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+  .topbar{background:linear-gradient(135deg,#1f2937,#111827);color:#fff;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.15)} body.embed .topbar{display:none}
   .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#60a5fa,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
   .topbar h1{font-size:15px;font-weight:600}
   .topbar .sub{font-size:11px;opacity:.65;margin-top:1px}
@@ -504,6 +504,9 @@
 const $ = id => document.getElementById(id);
 const TOKEN = localStorage.getItem('jdy_token');
 const USER = JSON.parse(localStorage.getItem('jdy_user') || 'null');
+// 【v20.3】embed=1 嵌入管理工作台 iframe：隐藏自家顶栏
+const EMBED = location.search.includes('embed=1');
+if (EMBED) document.body.classList.add('embed');
 if (!TOKEN || !USER || USER.role !== 'admin') location.href = '/login.html';
 let ME = null;
 
