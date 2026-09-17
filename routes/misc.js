@@ -16,18 +16,30 @@ app.get('/api/captcha', (req, res) => {
   if (captchaStore.size > 500) for (const [k, v] of captchaStore) if (v.exp < Date.now()) captchaStore.delete(k);
   const noise = Array.from({ length: 3 }, () => `<path d="M${rnd(120)} ${rnd(44)} Q ${rnd(160)} ${rnd(60)} ${120 + rnd(80)} ${rnd(50)}" stroke="#94a3b8${rnd(9)}" fill="none" stroke-width="1.5" opacity=".5"/>`).join('');
   const dots = Array.from({ length: 26 }, () => `<circle cx="${rnd(200)}" cy="${rnd(56)}" r="${rnd(2) + 1}" fill="#cbd5e1" opacity=".7"/>`).join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="56" viewBox="0 0 200 56"><rect width="200" height="56" rx="10" fill="#f1f5f9"/>${noise}${dots}
-    <text x="100" y="36" text-anchor="middle" font-size="26" font-weight="700" font-family="Georgia,serif" fill="#1f2937" letter-spacing="4" transform="rotate(${rnd(7) - 3} 100 30)">${a} ${op} ${b} = ?</text></svg>`;
+  // 【2026-09-17 加固】逐字符错位/旋转/字号抖动：原来算式是一整段明文 <text>，
+  // 脚本不用OCR、直接正则抠文本就能算出答案，验证码形同虚设
+  const expr = `${a} ${op} ${b} = ?`;
+  const chars = expr.split('');
+  const startX = 100 - (chars.length - 1) * 9;
+  const glyphs = chars.map((ch, i) => {
+    const x = startX + i * 18, y = 30 + rnd(9);
+    return `<text x="${x}" y="${y}" text-anchor="middle" font-size="${23 + rnd(5)}" font-weight="700" font-family="Georgia,serif" fill="#1f2937" transform="rotate(${rnd(17) - 8} ${x} ${y})">${ch}</text>`;
+  }).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="56" viewBox="0 0 200 56"><rect width="200" height="56" rx="10" fill="#f1f5f9"/>${noise}${dots}${glyphs}</svg>`;
   res.json({ ok: true, id, svg });
 });
-// 临时：清空所有聊天记录（管理员调用一次即可删除）
+// 临时：清空所有聊天记录（管理员调用，需带确认参数，误触即不可恢复）
 app.post('/api/admin/clear-chats', auth, adminOnly, async (req, res) => {
   try {
+    // 【2026-09-17 修复】一次删全站聊天且无确认，误触即不可恢复——必须显式传 confirm:"清空全部聊天"
+    if (String((req.body || {}).confirm || '') !== '清空全部聊天') {
+      return res.status(400).json({ ok: false, error: '请携带 confirm:"清空全部聊天" 确认执行' });
+    }
     const db = await getDb();
     const r1 = await db.collection('messages').deleteMany({});
     const r2 = await db.collection('chats').deleteMany({});
     res.json({ ok: true, messages: r1.deletedCount, chats: r2.deletedCount });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 
@@ -42,7 +54,7 @@ app.get('/api/contract', auth, async (req, res) => {
       realname: req.user.realname || null,
       contracts: rows.map(r => ({ _id: r._id.toString(), name: r.name, version: r.version, signedAt: r.signedAt })),
     });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.post('/api/contract/sign', auth, async (req, res) => {
   try {
@@ -58,7 +70,7 @@ app.post('/api/contract/sign', auth, async (req, res) => {
     if (exist) return res.json({ ok: true, already: true });
     await db.collection('contracts').insertOne({ userId: req.user.id, name, uid: req.user.uid, displayName: req.user.displayName, version: CONTRACT_VERSION, title: CONTRACT_TITLE, signedAt: new Date() });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---------- 实名认证（姓名+身份证18位位数校验，只存掩码与哈希） ----------
@@ -75,11 +87,17 @@ app.put('/api/me/realname', auth, async (req, res) => {
     if (dup) return res.status(400).json({ ok: false, error: '该身份证号已被其他账号认证' });
     const idMask = idCard.slice(0, 3) + '***********' + idCard.slice(-4);
     const realname = { name, idMask, idHash, verifiedAt: new Date() };
-    await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { realname } });
+    try {
+      await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { realname } });
+    } catch (e) {
+      // 【二次复核补充】realname.idHash 唯一索引兜底：并发绑定同一身份证时返回友好提示
+      if (e && e.code === 11000) return res.status(400).json({ ok: false, error: '该身份证号已被其他账号认证' });
+      throw e;
+    }
     // 自动关联合同：已签合同签署姓名同步为实名姓名
     await db.collection('contracts').updateMany({ userId: req.user.id }, { $set: { name, linkedRealname: true } });
     res.json({ ok: true, realname: { name, idMask, verifiedAt: realname.verifiedAt } });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---------- 站内信（管理员群发/定向，写手查看） ----------
@@ -100,7 +118,7 @@ app.post('/api/notify', auth, adminOnly, async (req, res) => {
     await db.collection('announcements').insertOne({ title, content, from: '系统', targets, readBy: [], createdAt: new Date() });
     targets.forEach(t => notify(t, 'announce', { title }));
     res.json({ ok: true, count: targets.length });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.get('/api/notify', auth, async (req, res) => {
   try {
@@ -110,21 +128,21 @@ app.get('/api/notify', auth, async (req, res) => {
       ok: true, rows: rows.map(r => ({ _id: r._id.toString(), title: r.title, content: r.content, createdAt: r.createdAt, read: (r.readBy || []).includes(req.user.id) })),
       unread: rows.filter(r => !(r.readBy || []).includes(req.user.id)).length,
     });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.post('/api/notify/:id/read', auth, async (req, res) => {
   try {
     const db = await getDb();
     await db.collection('announcements').updateOne({ _id: new ObjectId(req.params.id) }, { $addToSet: { readBy: req.user.id } });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.get('/api/notify/admin', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
     const rows = await db.collection('announcements').find().sort({ createdAt: -1 }).limit(50).toArray();
     res.json({ ok: true, rows: rows.map(r => ({ _id: r._id.toString(), title: r.title, content: r.content, createdAt: r.createdAt, targets: (r.targets || []).length, reads: (r.readBy || []).length })) });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---------- 好友申请（需对方确认） ----------
@@ -142,7 +160,7 @@ app.get('/api/friends/requests', auth, async (req, res) => {
       incoming: rows.filter(r => r.to === req.user.id).map(r => ({ _id: r._id.toString(), from: r.from, name: um[r.from]?.displayName || '写手', uid: um[r.from]?.uid || null, createdAt: r.createdAt })),
       outgoing: rows.filter(r => r.from === req.user.id).map(r => ({ _id: r._id.toString(), to: r.to, name: um[r.to]?.displayName || '写手', uid: um[r.to]?.uid || null, createdAt: r.createdAt })),
     });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.post('/api/friends/requests/:id/accept', auth, async (req, res) => {
   try {
@@ -153,7 +171,7 @@ app.post('/api/friends/requests/:id/accept', auth, async (req, res) => {
     await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $addToSet: { friends: r.from } });
     await db.collection('users').updateOne({ _id: new ObjectId(r.from) }, { $addToSet: { friends: req.user.id } });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.post('/api/friends/requests/:id/reject', auth, async (req, res) => {
   try {
@@ -162,7 +180,7 @@ app.post('/api/friends/requests/:id/reject', auth, async (req, res) => {
     if (!r || (r.to !== req.user.id && r.from !== req.user.id) || r.status !== '待确认') return res.status(400).json({ ok: false, error: '申请不存在或已处理' });
     await db.collection('friend_requests').updateOne({ _id: r._id }, { $set: { status: r.to === req.user.id ? '已拒绝' : '已撤回', handledAt: new Date() } });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 }
 
