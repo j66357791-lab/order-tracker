@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>提现审批 · 管理后台</title>
+<meta name="robots" content="noindex">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root { --paper:#faf7f1; --paper2:#f3eee3; --ink:#2b2a26; --ink2:#6b675e; --green:#1f4d3a; --green-dk:#175239; --green2:#2e6b52; --ochre:#b0642c; --amber:#d97706; --line:#e5ddcc; --red:#b5432f; --sub:#6b675e; --cyan:#0e7490; }
+  body { font:15px/1.75 'PingFang SC','Microsoft YaHei',sans-serif; background:var(--paper); color:var(--ink); }
+  .wrap { max-width:860px; margin:0 auto; padding:20px 16px 50px; }
+  .crumb { font-size:12.5px; color:var(--ink2); margin-bottom:6px; }
+  .crumb a { color:var(--green2); cursor:pointer; }
+  h1 { font-size:21px; font-family:'Songti SC',serif; margin-bottom:14px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:16px; }
+  h3 { font-size:16px; margin-bottom:6px; }
+  .flow-tip { font-size:12.5px; color:var(--ink2); line-height:1.8; margin-bottom:10px; }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:10px 0; }
+  .stat { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:12px 14px; text-align:center; }
+  .stat .v { font-size:22px; font-weight:700; }
+  .stat .l { font-size:12px; color:var(--ink2); }
+  .v-amber .v { color:var(--amber); } .v-green .v { color:var(--green2); } .v-red .v { color:var(--red); }
+  select, input { font-size:14px; padding:8px 10px; border-radius:10px; border:1px solid var(--line); background:#fff; outline:none; }
+  .empty { text-align:center; color:var(--ink2); font-size:13.5px; padding:20px 0; }
+  .btn { font-size:13.5px; border:none; border-radius:10px; padding:9px 16px; cursor:pointer; }
+  .btn-g { background:var(--green); color:#fff; } .btn-r { background:var(--red); color:#fff; }
+  .btn-ghost { background:none; border:1px solid var(--line); color:var(--ink2); }
+  .wd-card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:16px 18px; margin-bottom:12px; }
+  .wd-card .hd { display:flex; justify-content:space-between; align-items:center; }
+  .wd-card .who { font-size:15.5px; font-weight:600; }
+  .wd-card .amt { font-size:20px; font-weight:700; color:var(--green); }
+  .wd-card .meta { display:flex; gap:14px; flex-wrap:wrap; font-size:12.5px; color:var(--ink2); margin-top:4px; }
+  .wd-card .st { margin-top:6px; font-size:13px; }
+  @media(max-width:640px){ .stats{gap:6px} .stat{padding:8px} .stat .v{font-size:18px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumb"><a onclick="goHome()">🏠 工作台</a> / 提现审批</div>
+  <h1>💳 提现审批</h1>
+  <div class="card">
+    <h3>提现审批工作台</h3>
+    <div class="flow-tip">写手发起的提现申请会出现在这里。确认打款 = 标记已打款；订单型提现会同时结清对应的待打款派单卡、同步台账并解冻红包。驳回需填原因（写手端可见）。</div>
+    <div class="stats">
+      <div class="stat v-amber"><div class="v" id="wdPending">0</div><div class="l">待处理</div></div>
+      <div class="stat v-green"><div class="v" id="wdPaid">0</div><div class="l">已打款</div></div>
+      <div class="stat v-red"><div class="v" id="wdRejected">0</div><div class="l">已驳回</div></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="wdStatus" onchange="loadWithdrawals()">
+        <option value="">全部状态</option><option>待处理</option><option>已打款</option><option>已驳回</option>
+      </select>
+      <select id="wdType" onchange="loadWithdrawals()">
+        <option value="">全部类型</option><option value="bonus">激励奖励</option><option value="order">单子奖励</option>
+      </select>
+      <input id="wdQ" placeholder="搜索姓名 / 支付宝账号 / 金额" oninput="wdSearch()" style="flex:1;min-width:150px">
+      <button class="btn btn-ghost" onclick="loadWithdrawals()">刷新</button>
+    </div>
+  </div>
+  <div id="wdList"><div class="empty">加载中…</div></div>
+</div>
+<div class="toast" id="toast" style="position:fixed;left:50%;top:20px;transform:translateX(-50%);background:#2b2a26;color:#fff;padding:9px 20px;border-radius:99px;font-size:13px;display:none;z-index:99"></div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const TOKEN = localStorage.getItem('jdy_token');
+const USER = JSON.parse(localStorage.getItem('jdy_user') || 'null');
+const EMBED = location.search.includes('embed=1');
+function toast(t) { const e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(() => e.style.display = 'none', 2400); }
+function goHome() { if (EMBED && window.parent !== window) { try { window.parent.navGo('home'); return; } catch (e) {} } location.href = '/admin.html'; }
+function goLogin() { const d = () => location.href = '/login.html'; if (EMBED && window.parent !== window) { try { window.parent.location.href = '/login.html'; return; } catch (e) {} } d(); }
+if (!TOKEN || !USER || USER.role !== 'admin') goLogin();
+async function authFetch(url, opt) {
+  opt = opt || {};
+  opt.headers = Object.assign({}, opt.headers, { 'Authorization': 'Bearer ' + TOKEN });
+  if (opt.body && typeof opt.body !== 'string') { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(opt.body); }
+  const r = await fetch(url, opt);
+  if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); goLogin(); throw new Error('未登录'); }
+  const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
+  if (!j.ok) throw new Error(j.error || '请求失败');
+  return j;
+}
+
+let _wdAll = [];
+async function loadWithdrawals() {
+  try {
+    const status = $('wdStatus') ? $('wdStatus').value : '';
+    const type = $('wdType') ? $('wdType').value : '';
+    const j = await authFetch('/api/admin/withdrawals?status=' + encodeURIComponent(status) + '&type=' + encodeURIComponent(type) + '&q=');
+    $('wdPending').textContent = j.stats.pending;
+    $('wdPaid').textContent = j.stats.paid;
+    $('wdRejected').textContent = j.stats.rejected;
+    _wdAll = j.withdrawals;
+    paintWithdrawals();
+  } catch (e) { $('wdList').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+function wdSearch() { paintWithdrawals(); }
+function paintWithdrawals() {
+  const list = $('wdList');
+  if (!_wdAll.length) { list.innerHTML = '<div class="empty">暂无提现申请</div>'; return; }
+  const q = (($('wdQ') && $('wdQ').value) || '').trim().toLowerCase();
+  const rows = q ? _wdAll.filter(w =>
+    (w.displayName || '').toLowerCase().includes(q) ||
+    (w.amount != null && String(w.amount).includes(q)) ||
+    (w.alipay && (String(w.alipay.account || '').toLowerCase().includes(q) || String(w.alipay.name || '').toLowerCase().includes(q)))
+  ) : _wdAll;
+  if (!rows.length) { list.innerHTML = '<div class="empty">没有匹配的提现申请</div>'; return; }
+  list.innerHTML = rows.map(w => {
+    const t = new Date(new Date(w.createdAt).getTime() + 8 * 3600 * 1000);
+    const tstr = t.toISOString().slice(0, 16).replace('T', ' ');
+    const stTag = w.status === '待处理' ? '<b style="color:var(--amber)">' + w.status + '</b>'
+      : w.status === '已打款' ? '<b style="color:var(--green-dk)">' + w.status + '</b>'
+      : '<b style="color:var(--red)">' + w.status + (w.reason ? '（' + esc(w.reason) + '）' : '') + '</b>';
+    const btns = w.status === '待处理' ? `
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-g" style="flex:1" onclick="wdPay('${w._id}')">✅ 确认打款</button>
+        <button class="btn btn-r" style="flex:1" onclick="wdReject('${w._id}')">✖ 驳回</button>
+      </div>` : (w.status === '已打款' ? `<div style="font-size:12px;color:var(--sub);margin-top:8px">打款时间 ${w.paidAt ? new Date(new Date(w.paidAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') : '-'}${w.paidCards ? ' · 结清派单卡 ' + w.paidCards + ' 张' : ''}${w.note ? ' · 备注：' + esc(w.note) : ''}</div>` : '');
+    return `<div class="wd-card">
+      <div class="hd">
+        <div class="who">${esc(w.displayName || '')}</div>
+        <div class="amt">¥${(w.amount || 0).toFixed(2)}</div>
+      </div>
+      <div class="meta">
+        <span>${w.type === 'bonus' ? '激励奖励' : '单子奖励'}</span>
+        <span>支付宝：${esc(w.alipay ? w.alipay.name + ' / ' + w.alipay.account : '未绑定')}</span>
+        <span>${tstr}</span>
+      </div>
+      <div class="st">${stTag}</div>
+      ${btns}
+    </div>`;
+  }).join('');
+}
+async function wdPay(id) {
+  if (!confirm('确认已通过支付宝向该写手打款？\n订单型提现将同时：结清对应派单卡 → 同步台账为已结算 → 解冻现金红包。')) return;
+  try {
+    const j = await authFetch('/api/admin/withdrawals/' + id + '/pay', { method: 'POST', body: JSON.stringify({ note: '' }) });
+    if (j.ok) { toast('已确认打款' + (j.paidCards ? '，结清派单卡 ' + j.paidCards + ' 张' : '') + ' ✅'); loadWithdrawals(); }
+    else toast(j.error || '操作失败');
+  } catch (e) { toast(e.message); }
+}
+async function wdReject(id) {
+  const reason = prompt('驳回原因（写手端可见）：');
+  if (reason === null) return;
+  try {
+    const j = await authFetch('/api/admin/withdrawals/' + id + '/reject', { method: 'POST', body: JSON.stringify({ reason }) });
+    if (j.ok) { toast('已驳回'); loadWithdrawals(); }
+    else toast(j.error || '操作失败');
+  } catch (e) { toast(e.message); }
+}
+loadWithdrawals();
+</script>
+</body>
+</html>
