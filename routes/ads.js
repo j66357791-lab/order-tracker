@@ -34,8 +34,9 @@ app.get('/api/ads', async (req, res) => {
   try {
     const db = await getDb();
     let ad = await db.collection('ads').findOne({ _id: 'main' });
-    if (!ad || (ad.content && ad.content.indexOf('签收完成30天') === -1)) {
-      // 首次部署或广告内容过时，用默认内容覆盖
+    if (!ad) {
+      // 【2026-09-17 修复】只在首次部署（库里没有广告）时写默认内容；
+      // 原逻辑"内容不含'签收完成30天'就覆盖"，管理员发的任何新公告都会被默认内容静默清掉
       ad = { _id: 'main', ...DEFAULT_AD, updatedAt: new Date() };
       await db.collection('ads').replaceOne({ _id: 'main' }, ad, { upsert: true });
     }
@@ -55,7 +56,7 @@ app.post('/api/ads', auth, adminOnly, async (req, res) => {
     );
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
   }
 });
 }
