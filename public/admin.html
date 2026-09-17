@@ -27,7 +27,7 @@
       <div class="content-head">
         <div>
           <h1 class="serif" id="helloName">管理员，欢迎回来</h1>
-          <div class="sub">游戏 / 用户端 / 安全已站内切换，台账与派单点击导航直达</div>
+          <div class="sub">十项功能全部就位——点左侧导航即点即达，无需离开管理界面</div>
         </div>
         <div class="spacer"></div>
         <a class="btn-ghost" href="/portal.html">回首页</a>
@@ -54,8 +54,28 @@
           <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
         </a>
         <a class="card" href="#" onclick="return navGo('dispatch')" style="display:block">
-          <h2 class="serif">🎧 派单工作台</h2>
-          <div class="sub">与写手聊天派单、审核交稿、提现审批、财务对账、公告管理</div>
+          <h2 class="serif">🎧 派单聊天</h2>
+          <div class="sub">与写手沟通、发派单卡、传附件——聊天里直接审核和打款</div>
+          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
+        </a>
+        <a class="card" href="#" onclick="return navGo('overview')" style="display:block">
+          <h2 class="serif">📋 派单总览</h2>
+          <div class="sub">全部派单卡进度：接单 / 审核 / 打款 / 驳回，按状态筛选</div>
+          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
+        </a>
+        <a class="card" href="#" onclick="return navGo('withdraw')" style="display:block">
+          <h2 class="serif">💳 提现审批</h2>
+          <div class="sub">写手提现申请处理：打款 / 驳回，订单型自动结清台账</div>
+          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
+        </a>
+        <a class="card" href="#" onclick="return navGo('recon')" style="display:block">
+          <h2 class="serif">💰 财务对账</h2>
+          <div class="sub">台账到账 × 派单卡打款交叉核对，差异一目了然</div>
+          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
+        </a>
+        <a class="card" href="#" onclick="return navGo('ads')" style="display:block">
+          <h2 class="serif">📝 广告管理</h2>
+          <div class="sub">写手端活动中心公告：标题 + 内容（支持 HTML），即时生效</div>
           <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
         </a>
         <a class="card" href="#" onclick="return navGo('game')" style="display:block">
@@ -115,7 +135,7 @@ if (guardAdmin()) {
     mall: { el: document.getElementById('panel-mall'), mount: mountMall },
     security: { el: document.getElementById('panel-security'), mount: mountSecurity },
   };
-  const FRAMES = { orders: '/index.html?embed=1', dispatch: '/dispatch.html?embed=1' };
+  const FRAMES = { orders: '/index.html?embed=1', dispatch: '/dispatch.html?embed=1', overview: '/dispatch-overview.html?embed=1', withdraw: '/withdraw.html?embed=1', recon: '/dispatch-overview.html?embed=1&tab=recon', ads: '/ads.html?embed=1' };
   const mounted = {};
   let current = 'home';
 
@@ -215,7 +235,7 @@ if (guardAdmin()) {
 
   // 初始面板：支持 #game / #mall / #security 直达
   const init = (location.hash || '').replace('#', '');
-  navigate(['game', 'mall', 'security', 'orders', 'dispatch'].includes(init) ? init : 'home');
+  navigate(['game', 'mall', 'security', 'orders', 'dispatch', 'overview', 'withdraw', 'recon', 'ads'].includes(init) ? init : 'home');
 }
 </script>
 <script>
