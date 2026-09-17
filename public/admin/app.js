@@ -58,8 +58,8 @@ export async function copyText(text) {
 // 迁移进度：工作台=panel；其余 5 项暂时 link，后续每步迁一个改为 panel
 export const NAV_ITEMS = [
   { key: 'home',  icon: '🏠', title: '工作台',     type: 'panel' },
-  { key: 'orders',   icon: '📒', title: '台账',           type: 'link', href: '/index.html', desc: '接单台账与利润统计' },
-  { key: 'dispatch', icon: '🎧', title: '派单工作台', type: 'link', href: '/dispatch.html', desc: '聊天派单 / 审核 / 提现 / 对账' },
+  { key: 'orders',   icon: '📒', title: '台账',           type: 'frame', href: '/index.html?embed=1', desc: '接单台账与利润统计' },
+  { key: 'dispatch', icon: '🎧', title: '派单工作台', type: 'frame', href: '/dispatch.html?embed=1', desc: '聊天派单 / 审核 / 提现 / 对账' },
   { key: 'game',     icon: '🎮', title: '游戏控制器', type: 'panel', desc: '翻翻乐配置 / 山海数据 / 道具 / 审计' },
   { key: 'mall',     icon: '🛍', title: '用户端配置', type: 'panel', desc: '套餐 / 文案馆作品 / 咨询' },
   { key: 'security', icon: '🛡', title: '安全与用户', type: 'panel', desc: '账号 / 密码重置 / 站内信 / 危险操作' },
@@ -72,7 +72,7 @@ export function renderNav(currentKey, badges = {}) {
   host.innerHTML = NAV_ITEMS.map(item => {
     const b = badges[item.key];
     const badge = b ? `<span class="badge">${b}</span>` : '';
-    if (item.type === 'panel') {
+    if (item.type === 'panel' || item.type === 'frame') {
       return `<button class="nav-item ${item.key === currentKey ? 'on' : ''}" data-nav="${item.key}"><span class="ico">${item.icon}</span><span>${item.title}</span>${badge}</button>`;
     }
     return `<a class="nav-item external" href="${item.href}" title="${esc(item.desc || '')}"><span class="ico">${item.icon}</span><span>${item.title}</span>${badge}</a>`;
