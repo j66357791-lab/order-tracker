@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>管理工作台 · 小沐文案</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#faf7f1">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --paper: #faf7f1; --paper2: #f3eee3; --ink: #2b2a26; --ink2: #6b675e;
+    --green: #1f4d3a; --green2: #2e6b52; --ochre: #b0642c; --line: #e5ddcc;
+    --gold: #c9a55c; --red: #b5432f;
+  }
+  body { background: var(--paper); color: var(--ink); font: 15px/1.75 "PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; -webkit-tap-highlight-color: transparent; }
+  .serif { font-family: "Songti SC","Noto Serif SC","STSong",serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px; }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; }
+
+  header { position: sticky; top: 0; z-index: 50; background: rgba(250,247,241,.94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .hd { display: flex; align-items: center; gap: 14px; height: 62px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; }
+  .brand .seal { width: 32px; height: 32px; background: var(--red); color: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; }
+  .hd .tag-admin { font-size: 12px; background: var(--green); color: #fff; border-radius: 99px; padding: 2px 12px; letter-spacing: 2px; }
+  .hd .who { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .btn-s { border: 1px solid var(--line); background: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; color: var(--ink2); }
+  .btn-s:hover { background: var(--paper2); color: var(--ink); }
+
+  .hello { padding: 34px 0 8px; display: flex; align-items: center; gap: 18px; }
+  .hello .ava { width: 62px; height: 62px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
+  .hello h1 { font-size: 23px; }
+  .hello .sub { font-size: 13px; color: var(--ink2); margin-top: 2px; }
+
+  /* 数据摘要条 */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 18px 0 26px; }
+  .stat { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; cursor: pointer; transition: transform .15s, box-shadow .15s; }
+  .stat:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(43,42,38,.08); }
+  .stat b { display: block; font-size: 26px; color: var(--green); line-height: 1.3; }
+  .stat span { font-size: 12.5px; color: var(--ink2); }
+  .stat.warn b { color: var(--ochre); }
+
+  /* 五宫格入口 */
+  .hub { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; padding-bottom: 60px; }
+  .hub a.card { display: flex; gap: 16px; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 24px 22px; transition: transform .16s, box-shadow .16s, border-color .16s; position: relative; overflow: hidden; }
+  .hub a.card:hover { transform: translateY(-3px); box-shadow: 0 16px 38px rgba(43,42,38,.12); border-color: var(--gold); }
+  .hub .ico { width: 54px; height: 54px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
+  .hub .card h3 { font-size: 18px; margin-bottom: 3px; }
+  .hub .card p { font-size: 12.5px; color: var(--ink2); line-height: 1.7; }
+  .hub .card .arr { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); color: var(--line); font-size: 22px; transition: color .16s, right .16s; }
+  .hub .card:hover .arr { color: var(--green2); right: 14px; }
+  .i1 { background: #e9f4ec; } .i2 { background: #fdf3e7; } .i3 { background: #eeeafa; } .i4 { background: #fdf0ee; } .i5 { background: #eef3f8; }
+  .hub .badge { position: absolute; top: 14px; right: 44px; background: var(--red); color: #fff; font-size: 11px; border-radius: 99px; padding: 1px 9px; }
+
+  .foot-tip { background: #fdf7ec; border: 1px solid #f0e2c6; border-radius: 12px; padding: 13px 18px; font-size: 12.5px; color: #7a5a22; line-height: 1.8; margin-bottom: 40px; }
+  .foot-tip b { color: var(--ochre); }
+
+  .toast { position: fixed; left: 50%; top: 76px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 22px; border-radius: 99px; font-size: 13px; z-index: 200; display: none; max-width: 88vw; text-align: center; }
+
+  @media (max-width: 860px) {
+    .hub { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .hello h1 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap hd">
+    <a class="brand serif" href="/portal.html"><span class="seal">沐</span>小沐文案</a>
+    <span class="tag-admin">管理中心</span>
+    <div class="who">
+      <a class="btn-s" href="/portal.html">回首页</a>
+      <b id="hdName" class="serif">…</b>
+      <button class="btn-s" id="logoutBtn">退出</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hello">
+    <div class="ava" id="ava">管</div>
+    <div>
+      <h1 class="serif" id="helloName">管理员，欢迎回来</h1>
+      <div class="sub">这里是管理工作台——五个板块各管一摊，点卡片进入对应页面</div>
+    </div>
+  </div>
+
+  <!-- 数据摘要（点击直达对应板块） -->
+  <div class="stats">
+    <a class="stat warn" href="/dispatch.html"><b id="stWd">--</b><span>待审批提现</span></a>
+    <a class="stat" href="/admin_game.html"><b id="stPlaying">--</b><span>进行中对局</span></a>
+    <a class="stat" href="/admin_game.html"><b id="stPlayers">--</b><span>游戏玩家</span></a>
+    <a class="stat" href="/admin_security.html"><b id="stUsers">--</b><span>平台账号</span></a>
+  </div>
+
+  <!-- 五宫格 -->
+  <div class="hub">
+    <a class="card" href="/index.html">
+      <div class="ico i1">📒</div>
+      <div><h3 class="serif">台账</h3><p>接单台账与利润统计：订单录入、分单、收支口径、导出台账报表</p></div>
+      <span class="arr">›</span>
+    </a>
+    <a class="card" href="/dispatch.html">
+      <div class="ico i2">🎧</div>
+      <div><h3 class="serif">派单工作台</h3><p>与写手聊天派单、审核交稿、提现审批、财务对账、公告管理</p></div>
+      <span class="arr">›</span>
+    </a>
+    <a class="card" href="/admin_game.html">
+      <div class="ico i3">🎮</div>
+      <div><h3 class="serif">游戏控制器</h3><p>翻翻乐配置热调与维护开关、玩家查询、道具发放、清场与审计日志</p></div>
+      <span class="arr">›</span>
+    </a>
+    <a class="card" href="/admin_packages.html">
+      <div class="ico i4">🛍</div>
+      <div><h3 class="serif">用户端配置</h3><p>用户端商城的套餐上架、文案馆作品管理、用户咨询跟进</p></div>
+      <span class="arr">›</span>
+    </a>
+    <a class="card" href="/admin_security.html">
+      <div class="ico i5">🛡</div>
+      <div><h3 class="serif">网站安全与用户管理</h3><p>平台账号列表、按手机号/工号查人、站内信群发、部署文件核验、危险操作</p></div>
+      <span class="arr">›</span>
+    </a>
+  </div>
+
+  <div class="foot-tip">
+    <b>提示</b>：写手端、用户端不需要在这里管理——写手有自己的工作台，用户走文案馆。
+    各板块页面顶部都有「返回管理工作台」入口，不会迷路。
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const TOKEN = localStorage.getItem('jdy_token') || '';
+let ME = null;
+try { ME = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) {}
+function toast(t) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', 2400); }
+
+// 守卫：仅管理员
+if (!TOKEN || !ME) location.replace('/login.html');
+else if (ME.role === 'writer') location.replace('/writer.html');
+else if (ME.role === 'client') location.replace('/portal.html');
+
+if (TOKEN && ME && ME.role === 'admin') {
+  const name = ME.displayName || '管理员';
+  $('hdName').textContent = name;
+  $('ava').textContent = name.slice(0, 1);
+  $('helloName').textContent = name + '，欢迎回来';
+  $('logoutBtn').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+
+  const H = { 'Authorization': 'Bearer ' + TOKEN };
+  // 摘要：提现待审
+  fetch('/api/admin/withdrawals?status=', { headers: H }).then(r => r.json()).then(j => { if (j.ok && j.stats) $('stWd').textContent = j.stats.pending; }).catch(() => {});
+  // 摘要：游戏数据（翻翻乐 + 山海玩家数）
+  fetch('/api/admin/activity-stats', { headers: H }).then(r => r.json()).then(j => { if (j.ok && j.game) $('stPlaying').textContent = j.game.playingSessions; }).catch(() => {});
+  fetch('/api/shanhai/admin/stats', { headers: H }).then(r => r.json()).then(j => { if (j.ok) $('stPlayers').textContent = j.players; }).catch(() => {});
+  // 摘要：账号数（安全页同源接口）
+  fetch('/api/admin/users', { headers: H }).then(r => r.json()).then(j => { if (j.ok && Array.isArray(j.users)) $('stUsers').textContent = j.users.length + '+'; }).catch(() => {});
+}
+</script>
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('/service-worker.js').catch(function () {}); }); }
+</script>
+</body>
+</html>
