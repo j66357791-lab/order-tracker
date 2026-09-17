@@ -65,7 +65,7 @@ app.post('/api/schedule', auth, async (req, res) => {
     }
     await db.collection('schedules').updateOne({ userId: req.user.id }, { $set: { days, updatedAt: new Date() } }, { upsert: true });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 单日排班（日历视图）：写手提前一天安排具体某天的班次（小时级）
 app.get('/api/schedule/days', auth, async (req, res) => {
@@ -77,7 +77,7 @@ app.get('/api/schedule/days', auth, async (req, res) => {
       .find({ userId: uid, date: { $regex: '^' + req.query.ym } })
       .project({ date: 1, start: 1, end: 1, _id: 0 }).toArray();
     res.json({ ok: true, days: rows });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.post('/api/schedule/day', auth, async (req, res) => {
   try {
@@ -98,7 +98,7 @@ app.post('/api/schedule/day', auth, async (req, res) => {
       { userId: req.user.id, date },
       { $set: { userId: req.user.id, date, start, end, updatedAt: new Date() } }, { upsert: true });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 打卡上班
 app.post('/api/attendance/clockin', auth, async (req, res) => {
@@ -127,7 +127,7 @@ app.post('/api/attendance/clockin', auth, async (req, res) => {
     await db.collection('users').updateOne({ _id: req.user._id }, { $set: { shift: true } });
     io.emit('presence', { userId: req.user.id, shift: true, sockOnline: true });
     res.json({ ok: true, attendance: doc });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 打卡下班（到点须签退；早退会被记录）
 app.post('/api/attendance/clockout', auth, async (req, res) => {
@@ -144,7 +144,7 @@ app.post('/api/attendance/clockout', auth, async (req, res) => {
     await db.collection('users').updateOne({ _id: req.user._id }, { $set: { shift: false } });
     io.emit('presence', { userId: req.user.id, shift: false, sockOnline: true });
     res.json({ ok: true, clockOut: time, status });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 考勤记录（本人或管理员查指定写手）
 app.get('/api/attendance', auth, async (req, res) => {
@@ -157,7 +157,7 @@ app.get('/api/attendance', auth, async (req, res) => {
     if (month) q.date = { $regex: '^' + month };
     const rows = await db.collection('attendance').find(q).sort({ date: -1 }).limit(100).toArray();
     res.json({ ok: true, rows });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 薪酬（按派单卡统计：已完成=已到手；待打款=审核通过待打款；其余在途；已驳回/已拒绝不计钱）
 app.get('/api/payroll', auth, async (req, res) => {
@@ -175,7 +175,7 @@ app.get('/api/payroll', auth, async (req, res) => {
     });
     ['paid', 'pending', 'ongoing'].forEach(k => tot[k] = Math.round(tot[k] * 100) / 100);
     res.json({ ok: true, month, cards: rows, totals: tot });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---------- WebSocket 实时推送 ----------
