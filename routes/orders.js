@@ -73,7 +73,7 @@ app.get('/api/orders', auth, adminOnly, async (req, res) => {
     }
     res.json({ ok: true, orders });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
   }
 });
 
@@ -88,7 +88,7 @@ app.post('/api/orders', auth, adminOnly, async (req, res) => {
     cacheClear();
     res.json({ ok: true, _id: r.insertedId, order: doc });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
   }
 });
 
@@ -109,7 +109,7 @@ app.put('/api/orders/:id', auth, adminOnly, async (req, res) => {
     cacheClear();
     res.json({ ok: true, order: r });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
   }
 });
 
@@ -123,7 +123,7 @@ app.delete('/api/orders/:id', auth, adminOnly, async (req, res) => {
     cacheClear();
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
   }
 });
 
@@ -144,7 +144,7 @@ app.post('/api/orders/batch', auth, adminOnly, async (req, res) => {
     cacheClear();
     res.json({ ok: true, inserted: r.insertedCount });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
   }
 });
 }
