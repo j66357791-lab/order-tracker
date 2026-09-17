@@ -49,7 +49,7 @@ app.post('/api/cards', auth, adminOnly, async (req, res) => {
     const msg = await insertCardMessage(db, card, req.user, to);
     notify(to, 'msg', msg); notify(to, 'card', card);
     res.json({ ok: true, card });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 写手：我的派单卡
 app.get('/api/mycards', auth, async (req, res) => {
@@ -57,7 +57,7 @@ app.get('/api/mycards', auth, async (req, res) => {
     const db = await getDb();
     const cards = (await db.collection('cards').find({ to: req.user.id }).sort({ createdAt: -1 }).limit(200).toArray()).map(normCard);
     res.json({ ok: true, cards });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 写手：接单（锁定）
 app.post('/api/cards/:id/accept', auth, async (req, res) => {
@@ -72,7 +72,7 @@ app.post('/api/cards/:id/accept', auth, async (req, res) => {
       { _id: card._id }, { $set: { status: '已接单', acceptedAt: new Date() } }, { returnDocument: 'after' });
     notify(card.from, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 写手：拒绝（未接单时可拒）
 app.post('/api/cards/:id/decline', auth, async (req, res) => {
@@ -85,7 +85,7 @@ app.post('/api/cards/:id/decline', auth, async (req, res) => {
       { _id: card._id }, { $set: { status: '已拒绝' } }, { returnDocument: 'after' });
     notify(card.from, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 写手：提交审核（做单完成 → 等管理员审核；此时不动台账）
 async function submitHandler(req, res) {
@@ -101,7 +101,7 @@ async function submitHandler(req, res) {
       { returnDocument: 'after' });
     notify(card.from, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 }
 app.post('/api/cards/:id/submit', auth, submitHandler);
 app.post('/api/cards/:id/deliver', auth, submitHandler);   // 兼容旧客户端
@@ -116,7 +116,7 @@ app.post('/api/cards/:id/redo', auth, async (req, res) => {
       { _id: card._id }, { $set: { status: '已接单', rejectReason: null } }, { returnDocument: 'after' });
     notify(card.from, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 管理员：审核通过 → 待打款；联动同步原单（状态→待结算，完单日→今天）
 app.post('/api/cards/:id/approve', auth, adminOnly, async (req, res) => {
@@ -139,7 +139,7 @@ app.post('/api/cards/:id/approve', auth, adminOnly, async (req, res) => {
     }
     notify(card.to, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r, syncedOrder });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 管理员：驳回（待审核 → 已驳回，带原因；写手可重新做单；台账不动）
 app.post('/api/cards/:id/reject', auth, adminOnly, async (req, res) => {
@@ -153,7 +153,7 @@ app.post('/api/cards/:id/reject', auth, adminOnly, async (req, res) => {
       { _id: card._id }, { $set: { status: '已驳回', rejectReason: reason, rejectedAt: new Date() } }, { returnDocument: 'after' });
     notify(card.to, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 管理员：确认打款（待打款 → 已完成）；联动同步原单（状态→已结算）
 async function payHandler(req, res) {
@@ -179,7 +179,7 @@ async function payHandler(req, res) {
     try { unlockedRedpackets = await unfreezeRedpackets(db, card.to); } catch (e) { console.warn('[红包] 打款自动解冻失败:', e.message); }
     notify(card.to, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r, syncedOrder: syncedOrder ? syncedOrder.value || syncedOrder : null, unlockedRedpackets });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 }
 app.post('/api/cards/:id/pay', auth, adminOnly, payHandler);
 app.post('/api/cards/:id/finish', auth, adminOnly, payHandler);   // 兼容旧客户端
@@ -198,7 +198,7 @@ app.post('/api/cards/:id/syncorder', auth, adminOnly, async (req, res) => {
     cacheClear();
     notify(card.to, 'card', card);
     res.json({ ok: true, syncedOrder: r });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 管理员：派单总览（含利润联动：原单分成 - 派单报酬；支持 q 关键词 / status 筛选）
 app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
@@ -239,7 +239,7 @@ app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
       rows.push(row);
     }
     res.json({ ok: true, rows, totals: { linked, totReward: Math.round(totReward*100)/100, totShare: Math.round(totShare*100)/100, totProfit: Math.round(totProfit*100)/100 } });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // 管理员：财务对账——台账到账状态 × 派单卡打款状态 交叉核对
@@ -276,6 +276,6 @@ app.get('/api/dispatch/reconcile', auth, adminOnly, async (req, res) => {
     }
     out.sort((a, b) => (a.type === 'needReview' ? -1 : a.type === 'needPay' ? 0 : 1) - (b.type === 'needReview' ? -1 : b.type === 'needPay' ? 0 : 1));
     res.json({ ok: true, items: out });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 }
