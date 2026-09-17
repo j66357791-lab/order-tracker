@@ -7,6 +7,7 @@ import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
+import compression from 'compression';
 import { Server } from 'socket.io';
 import { ObjectId, GridFSBucket } from 'mongodb';
 
@@ -23,7 +24,11 @@ import { STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, loca
 assertConfig();   // 【V17】数据库连接串没配好就直接停下，并打印配置指引
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FILE_LIMIT = 100 * 1024 * 1024;
+// 【2026-09-17 安全加固】原全局 JSON 上限 120MB、上传 100MB 全进内存、socket 单包 100MB，
+// 几个并发大请求即可打爆内存。调整为：通用 JSON 2MB（聊天/公告等业务足够），
+// 聊天附件维持文档承诺的 25MB，socket 只传通知消息 1MB 足够。
+const FILE_LIMIT = 25 * 1024 * 1024;
+const JSON_LIMIT = '2mb';
 const app = express();
 app.disable('x-powered-by');
 // 【2026-09-17 安全加固】部署在 nginx / 宝塔等反向代理后面时，把 TRUST_PROXY 设为 1，
@@ -36,8 +41,11 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   next();
 });
-app.use(express.json({ limit: '120mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: JSON_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: JSON_LIMIT }));
+// 【2026-09-17 性能优化】gzip 压缩响应：HTML/JS/CSS/JSON/SVG 文本类体积通常再省 60~70%，
+// 大于 1KB 才压缩（小包压缩反而浪费 CPU）。图片本身已压缩，交给浏览器协商处理。
+app.use(compression({ threshold: 1024 }));
 // 【2026-09-16】根路径直达用户端落地页
 app.get('/', (req, res) => res.redirect('/portal.html'));
 
@@ -52,7 +60,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  maxHttpBufferSize: FILE_LIMIT,
+  maxHttpBufferSize: 1 * 1024 * 1024,
   pingInterval: 20000, pingTimeout: 25000,
   transports: ['websocket', 'polling'],
 });
@@ -62,25 +70,47 @@ let gridBucket = null;
 const makeBucket = async () => { const db = await getDb(); gridBucket = gridBucket || new GridFSBucket(db, { bucketName: 'files' }); return gridBucket; };
 
 // ---- 部署自检（关键文件指纹：部署后一查便知是否传全） ----
+// 覆盖前端所有页面 + 关键后端文件。missing 数组会直接把「没传上来的文件」列出来。
+const DEPLOY_CHECK_FILES = [
+  'server.js', 'config.js', 'package.json',
+  'public/portal.html', 'public/member.html', 'public/portal-register.html', 'public/login.html',
+  'public/index.html', 'public/dispatch.html', 'public/writer.html', 'public/game.html',
+  'public/admin_packages.html', 'public/admin_game.html',
+  'public/admin.html', 'public/admin_security.html',
+  'public/robots.txt', 'public/service-worker.js', 'public/manifest.json',
+  'public/games/shanhai/index.html', 'public/games/shanhai/css/style.css',
+  'public/games/shanhai/js/weapons.js', 'public/games/shanhai/js/game.js',
+  'public/games/shanhai/js/config.js', 'public/games/shanhai/js/meta.js',
+  'public/games/shanhai/js/ui.js', 'public/games/shanhai/js/assets.js',
+  'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js',
+  'routes/portal.js', 'routes/authx.js', 'routes/user.js', 'routes/orders.js',
+  'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js',
+  // 【终审补充】漏列的三个后端文件：activity.js 承载红包解冻打款链路，games/shanhai 是两个游戏模块
+  'routes/activity.js', 'games.js', 'shanhai_game.js',
+];
+// 【2026-09-17 安全加固】原接口无鉴权公开返回全部文件名/大小/SHA-256 指纹，等于帮攻击者做资产测绘。
+// 现拆两级：公开版只回 version/missingCount（部署核验够用）；完整清单仅管理员可见。
 app.get('/api/deploy-check', async (req, res) => {
   try {
     const { createHash } = await import('crypto');
     const { readFile } = await import('fs/promises');
-    // 覆盖前端所有页面 + 关键后端文件。missing 数组会直接把「没传上来的文件」列出来。
-    const files = [
-      'server.js', 'config.js', 'package.json',
-      'public/portal.html', 'public/member.html', 'public/portal-register.html', 'public/login.html',
-      'public/index.html', 'public/dispatch.html', 'public/writer.html', 'public/game.html',
-      'public/admin_packages.html', 'public/admin_game.html',
-      'public/robots.txt', 'public/service-worker.js', 'public/manifest.json',
-      'public/games/shanhai/index.html', 'public/games/shanhai/css/style.css',
-      'public/games/shanhai/js/weapons.js', 'public/games/shanhai/js/game.js',
-      'public/games/shanhai/js/config.js', 'public/games/shanhai/js/meta.js',
-      'public/games/shanhai/js/ui.js', 'public/games/shanhai/js/assets.js',
-      'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js',
-      'routes/portal.js', 'routes/authx.js', 'routes/user.js', 'routes/orders.js',
-      'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js',
-    ];
+    const files = DEPLOY_CHECK_FILES;
+    const missing = [];
+    for (const f of files) {
+      try { await readFile(path.join(__dirname, f)); } catch (e) { missing.push(f); }
+    }
+    // 【二次复核修正】公开版不再返回 missing 文件名清单（原先仍外泄文件名），只回计数
+    res.json({
+      ok: true, version: CONFIG.appVersion,
+      filesTotal: files.length, missingCount: missing.length,
+    });
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+});
+app.get('/api/deploy-check/detail', auth, adminOnly, async (req, res) => {
+  try {
+    const { createHash } = await import('crypto');
+    const { readFile } = await import('fs/promises');
+    const files = DEPLOY_CHECK_FILES;
     const out = {}, missing = [];
     for (const f of files) {
       try {
@@ -92,7 +122,7 @@ app.get('/api/deploy-check', async (req, res) => {
       ok: true, version: CONFIG.appVersion,
       filesTotal: files.length, missingCount: missing.length, missing, files: out,
     });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---- 版本信息（前端进入时自动检查更新） ----
@@ -140,7 +170,8 @@ try {
 (async () => {
   try {
     const db = await getDb();
-    const miss = await db.collection('users').find({ uid: null }).limit(50).toArray();
+    // 【2026-09-17 修复】uid: null 匹配不到"字段不存在"的旧账号，补齐迁移会漏人
+    const miss = await db.collection('users').find({ $or: [{ uid: null }, { uid: { $exists: false } }] }).limit(50).toArray();
     for (const u of miss) await assignUid(db, u._id);
   } catch (e) { console.error('uid补齐失败:', e.message); }
 })();
