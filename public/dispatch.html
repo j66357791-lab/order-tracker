@@ -286,14 +286,10 @@
 </header>
 
 <div class="subtabs">
-  <div class="stab" onclick="location.href='/admin.html'" style="color:var(--green2)">🏠 工作台</div>
-      <div class="stab" onclick="location.href='/admin.html#game'" style="color:#7c4dff">🎮 游戏控制器</div>
+  <div class="stab" onclick="pGo('/admin.html','home')" style="color:var(--green2)">🏠 工作台</div>
+      <div class="stab" onclick="pGo('/admin.html#game','game')" style="color:#7c4dff">🎮 游戏控制器</div>
       <div class="stab on" data-v="vChat">💬 聊天/派单<span class="reddot" id="tabUnread" style="display:none">0</span></div>
-  <div class="stab" data-v="vOver">📋 派单总览</div>
-  <div class="stab" data-v="vWd">💳 提现审批<span class="warnnum" id="wdNum" style="display:none">0</span></div>
-  <div class="stab" data-v="vRecon">💰 财务对账<span class="warnnum" id="reconNum" style="display:none">0</span></div>
-  <div class="stab" data-v="vAd">📝 广告管理</div>
-  <div class="stab" onclick="location.href='/admin_packages.html'">📦 用户端套餐</div>
+  <div class="stab" onclick="pGo('/admin.html#mall','mall')">📦 用户端配置</div>
   <div class="stab" onclick="location.href='/index.html'">📊 台账统计</div>
 </div>
 
@@ -322,177 +318,6 @@
     </div>
   </section>
 
-  <!-- 派单总览 -->
-  <section id="vOver" class="panel scroll">
-    <div class="wrap">
-      <div class="flow-tip">🔄 流程：<b>派单</b> → 写手<b>接单</b> → 做单 → 写手<b>提交审核</b> → 我<b>审核</b>（通过→<b>待打款</b>，联动台账单变<b style="color:var(--amber)">待结算</b>；不通过→<b style="color:var(--red)">驳回</b>）→ <b>确认打款</b>（台账单变<b>已结算</b>）</div>
-      <div class="stats">
-        <div class="stat v-green"><div class="v" id="ovProfit">0</div><div class="l">已联动预估利润 ¥</div></div>
-        <div class="stat v-amber"><div class="v" id="ovReward">0</div><div class="l">派单报酬合计 ¥</div></div>
-        <div class="stat v-cyan"><div class="v" id="ovShare">0</div><div class="l">关联单分成合计 ¥</div></div>
-      </div>
-      <div class="filter-bar">
-        <input id="ovQ" placeholder="🔍 搜标题 / 写手 / 台账单号…">
-        <select id="ovSt">
-          <option value="">全部状态</option>
-          <option>待接单</option><option>已接单</option><option>待审核</option>
-          <option>待打款</option><option>已完成</option><option>已驳回</option><option>已拒绝</option>
-        </select>
-      </div>
-      <div id="ovList"></div>
-    </div>
-  </section>
-
-
-  
-  <!-- 广告管理 -->
-  <section id="vAd" class="panel scroll">
-    <div class="wrap">
-      <div class="card">
-        <h3>📝 编辑广告内容</h3>
-        <div class="flow-tip">广告会显示在写手端「活动中心」页面，支持 HTML 标签。</div>
-        <input id="adTitle" placeholder="广告标题" style="width:100%;margin-bottom:9px">
-        <textarea id="adContent" rows="12" placeholder="广告内容（支持HTML）" style="width:100%;border-radius:10px;border:1px solid var(--line);padding:10px 12px;font-size:13px;resize:vertical;margin-bottom:10px"></textarea>
-        <button class="btn btn-g" id="btnSaveAd">保存广告</button>
-      </div>
-      <div class="card">
-        <h3>👁 预览</h3>
-        <div id="adPreview" style="border:1px solid var(--line);border-radius:10px;padding:12px;min-height:100px"></div>
-      </div>
-    </div>
-  </section>
-
-
-  <!-- 💳 提现审批 -->
-  <section id="vWd" class="panel scroll">
-    <div class="wrap">
-      <div class="card">
-        <h3>💳 提现审批工作台</h3>
-        <div class="flow-tip">写手发起的提现申请会出现在这里。确认打款 = 标记已打款；订单型提现会同时结清对应的待打款派单卡、同步台账并解冻红包。驳回需填原因（写手端可见）。</div>
-        <div class="stats" style="margin-top:10px">
-          <div class="stat v-amber"><div class="v" id="wdPending">0</div><div class="l">待处理</div></div>
-          <div class="stat v-green"><div class="v" id="wdPaid">0</div><div class="l">已打款</div></div>
-          <div class="stat v-red"><div class="v" id="wdRejected">0</div><div class="l">已驳回</div></div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <select id="wdStatus" onchange="loadWithdrawals()" style="padding:8px 10px;border-radius:10px;border:1px solid var(--line)">
-            <option value="">全部状态</option><option>待处理</option><option>已打款</option><option>已驳回</option>
-          </select>
-          <select id="wdType" onchange="loadWithdrawals()" style="padding:8px 10px;border-radius:10px;border:1px solid var(--line)">
-            <option value="">全部类型</option><option value="bonus">激励奖励</option><option value="order">单子奖励</option>
-          </select>
-          <input id="wdQ" placeholder="搜索姓名 / 支付宝账号" oninput="wdSearch(this.value)" style="flex:1;min-width:150px;padding:8px 12px;border-radius:10px;border:1px solid var(--line)">
-          <button class="btn btn-ghost" onclick="loadWithdrawals()">刷新</button>
-        </div>
-      </div>
-      <div id="wdList"><div class="empty" style="padding:18px">加载中…</div></div>
-    </div>
-  </section>
-
-  <!-- 🎮 游戏工作台 -->
-  <section id="vAct" class="panel scroll">
-    <div class="wrap">
-      <div class="card">
-        <h3>🔧 活动维护开关</h3>
-        <div style="display:flex;align-items:center;gap:10px;margin:10px 0">
-          <label style="flex:1">开启维护后，用户端活动显示"维护中"，网站其他功能正常</label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" id="maintSwitch" onchange="toggleMaintenance()">
-            <span id="maintLabel">已关闭</span>
-          </label>
-        </div>
-      </div>
-      <div class="card">
-        <h3>🎰 魔法翻翻乐 · 实时数据</h3>
-        <div class="gm-grid">
-          <div class="gm-stat"><div class="v" id="actPlayers">--</div><div class="l">参与人数</div></div>
-          <div class="gm-stat"><div class="v" id="actPlaying">--</div><div class="l">进行中对局</div></div>
-          <div class="gm-stat"><div class="v" id="actGames">--</div><div class="l">累计开局</div></div>
-          <div class="gm-stat"><div class="v" id="actKeys">--</div><div class="l">剩余钥匙</div></div>
-          <div class="gm-stat"><div class="v" id="actBalls">--</div><div class="l">剩余魔法球</div></div>
-          <div class="gm-stat"><div class="v" id="actCheckins">--</div><div class="l">今日签到</div></div>
-        </div>
-        <button class="btn btn-r" onclick="cleanupGames()" style="margin-top:10px">🧹 清理卡住的对局（退还钥匙）</button>
-      </div>
-      <div class="card">
-        <h3>🎛 翻翻乐参数热调 <span style="font-size:11px;color:var(--sub);font-weight:400">（保存后立即生效，无需重启）</span></h3>
-        <div class="cfg-grid">
-          <label>活动开始<input id="cfgStart" type="date"></label>
-          <label>活动结束<input id="cfgEnd" type="date"></label>
-          <label>每日免费钥匙<input id="cfgDailyKey" type="number" min="0" max="10"></label>
-          <label>每局复活上限<input id="cfgMaxRevives" type="number" min="0" max="5"></label>
-          <label>合成碎片数<input id="cfgFragCost" type="number" min="1" max="100"></label>
-          <label>福袋小 ¥区间<input id="cfgBagS" placeholder="如 0.30, 0.88"></label>
-          <label>福袋中 ¥区间<input id="cfgBagM" placeholder="如 1.68, 8.88"></label>
-          <label>福袋大 ¥区间<input id="cfgBagL" placeholder="如 18.88, 88.88"></label>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-          <button class="btn btn-g" onclick="saveGameConfig()">保存参数</button>
-          <span id="cfgMsg" style="font-size:12px;color:var(--sub)">未加载</span>
-        </div>
-      </div>
-      <div class="card">
-        <h3>⛰ 山海斩妖录 · 数据面板</h3>
-        <div class="gm-grid" id="shStats"><div class="gm-stat"><div class="v">--</div><div class="l">加载中</div></div></div>
-        <div id="shTop" style="margin-top:10px"></div>
-      </div>
-      <div class="card">
-        <h3>🎁 道具发放 / 收回</h3>
-        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-          <input id="grantPhone" placeholder="输入手机号查找" style="flex:1;min-width:120px">
-          <button class="btn btn-ghost" onclick="findUser()">查找</button>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-          <input id="grantUserId" placeholder="用户ID（查找后自动填充）" style="flex:1;min-width:120px" readonly>
-          <select id="grantItem" style="width:100px">
-            <option value="keys">钥匙</option>
-            <option value="balls">魔法球</option>
-            <option value="frags">碎片</option>
-            <option value="revives">复活石</option>
-            <option value="bagS">福袋小</option>
-            <option value="bagM">福袋中</option>
-            <option value="bagL">福袋大</option>
-          </select>
-          <input id="grantAmount" type="number" placeholder="数量" style="width:70px">
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-g" onclick="grantItem(true)">发放</button>
-          <button class="btn btn-r" onclick="grantItem(false)">收回</button>
-        </div>
-        <div id="grantProfile" style="margin-top:10px"></div>
-      </div>
-      <div class="card">
-        <h3>🧾 审计日志</h3>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <select id="glAction" onchange="loadGameLogs()" style="padding:8px 10px;border-radius:10px;border:1px solid var(--line)">
-            <option value="">全部动作</option>
-            <option value="start">开局</option><option value="reward">奖励</option><option value="escape">逃跑</option>
-            <option value="revive">复活</option><option value="giveup">弃局</option><option value="cashout">落袋</option>
-            <option value="carry">进波</option><option value="shop_buy">兑换</option><option value="daily_key">每日钥匙</option>
-            <option value="timeout">超时</option><option value="lost">判负</option><option value="admin_grant">管理发放</option>
-          </select>
-          <input id="glUser" placeholder="按用户ID过滤（可留空）" style="flex:1;min-width:140px;padding:8px 12px;border-radius:10px;border:1px solid var(--line)">
-          <button class="btn btn-ghost" onclick="loadGameLogs()">查询</button>
-        </div>
-        <div id="glList" style="max-height:340px;overflow:auto"><div class="empty" style="padding:12px">点击查询加载</div></div>
-      </div>
-      <div class="card">
-        <h3>🛒 兑换记录 <span id="redeemCost" style="font-size:12px;color:var(--red);font-weight:400"></span></h3>
-        <div id="redeemList" style="max-height:300px;overflow:auto"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 财务对账 -->
-  <section id="vRecon" class="panel scroll">
-    <div class="wrap">
-      <div class="flow-tip">💡 交叉核对<b>台账到账状态</b> × <b>派单卡打款状态</b>：客户的钱到账了（台账=已结算），就该给写手打款了；给写手打完款（卡=已完成），台账也得标已结算。</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <button class="btn btn-gh btn-sm" id="btnReconRefresh">🔄 刷新核对</button>
-      </div>
-      <div id="reconList"><div class="empty">加载中…</div></div>
-    </div>
-  </section>
 </main>
 
 <div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
@@ -505,9 +330,15 @@ const $ = id => document.getElementById(id);
 const TOKEN = localStorage.getItem('jdy_token');
 const USER = JSON.parse(localStorage.getItem('jdy_user') || 'null');
 // 【v20.3】embed=1 嵌入管理工作台 iframe：隐藏自家顶栏
+// 【v20.4】嵌套修复：嵌入模式下所有页面跳转改走壳导航（parent.navGo），
+// 否则 iframe 里再加载整个后台会无限嵌套
 const EMBED = location.search.includes('embed=1');
 if (EMBED) document.body.classList.add('embed');
-if (!TOKEN || !USER || USER.role !== 'admin') location.href = '/login.html';
+function pGo(path, panelKey) {
+  if (EMBED && window.parent && window.parent.navGo) { window.parent.navGo(panelKey); return; }
+  location.href = path;
+}
+if (!TOKEN || !USER || USER.role !== 'admin') { if (EMBED) { parent.location.href = '/login.html'; } else location.href = '/login.html'; }
 let ME = null;
 
 function toast(t, ms = 2200) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', ms); }
@@ -522,7 +353,7 @@ async function authFetch(url, opt = {}) {
   opt.headers = Object.assign({}, opt.headers, { 'Authorization': 'Bearer ' + TOKEN });
   if (opt.body && !(opt.body instanceof FormData) && !opt.headers['Content-Type']) opt.headers['Content-Type'] = 'application/json';
   const r = await fetch(url, opt);
-  if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; throw new Error('未登录'); }
+  if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); if (EMBED) { parent.location.href = '/login.html'; } else location.href = '/login.html'; throw new Error('未登录'); }
   const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
   if (!j.ok) throw new Error(j.error || '请求失败');
   return j;
@@ -742,7 +573,7 @@ async function cardAct(id, path, body, okMsg) {
   try {
     const j = await authFetch('/api/cards/' + id + '/' + path, { method: 'POST', body: JSON.stringify(body || {}) });
     toast(okMsg);
-    await Promise.all([loadChats(), loadOverview(), loadRecon()]);
+    await loadChats();
     if (j.syncedOrder) toast(okMsg + '（台账单已同步为「' + j.syncedOrder.status + '」）');
   } catch (e) { toast(e.message); }
 }
@@ -768,88 +599,6 @@ window.actPay = id => {
   if (confirm(msg)) cardAct(id, 'pay', {}, '打款完成 💸');
 };
 window.actSync = id => { if (confirm('将该卡关联的台账订单标记为「已结算」？')) cardAct(id, 'syncorder', {}, '台账已同步 ✅'); };
-
-/* ================= 财务对账 ================= */
-async function loadRecon() {
-  try {
-    const j = await authFetch('/api/dispatch/reconcile');
-    const items = j.items || [];
-    const badge = $('reconNum');
-    badge.style.display = items.length ? 'inline-block' : 'none';
-    badge.textContent = items.length > 99 ? '99+' : items.length;
-    window._reconItems = items;
-    if (!$('vRecon').classList.contains('on')) return;
-    paintRecon(items);
-  } catch (e) { if ($('vRecon').classList.contains('on')) toast(e.message); }
-}
-function paintRecon(items) {
-  const MAP = {
-    needReview: { t: '🔔 台账已到账，但这单还在「待审核」', c: 't-needReview', ops: id => `<button class="btn btn-g btn-sm" onclick="actApprove('${id}')">✔ 审核通过</button><button class="btn btn-r btn-sm" onclick="actReject('${id}')">✖ 驳回</button>` },
-    needPay: { t: '💰 客户已到账，可以给写手打款了', c: 't-needPay', ops: id => `<button class="btn btn-cy btn-sm" onclick="actPay('${id}')">💸 确认打款</button>` },
-    unsynced: { t: '⚠️ 已给写手打款，但台账还没标已结算', c: 't-unsynced', ops: id => `<button class="btn btn-gh btn-sm" onclick="actSync('${id}')">🔄 补台账同步</button>` },
-  };
-  $('reconList').innerHTML = items.length ? items.map(it => {
-    const m = MAP[it.type];
-    const ali = alipayOf(it.card.to);
-    return `<div class="recon-item ${m.c}">
-      <div class="rt">${m.t}</div>
-      <div class="rd">
-        <span>🃏 <b>${esc(it.card.title)}</b></span>
-        <span>写手 ${esc(it.card.toName)}</span>
-        <span>报酬 <b>¥${it.card.reward}</b></span>
-        <span>台账单 ${esc(it.order.orderNo)}（¥${it.order.amount} · ${stPill(it.order.status)}）</span>
-        ${ali ? '<span>收款：' + esc(ali.name) + '（' + esc(ali.account) + '）</span>' : '<span style="color:var(--red)">写手未绑定收款方式</span>'}
-      </div>
-      <div class="ops" style="display:flex;gap:8px;justify-content:flex-end">${m.ops(it.card._id)}</div>
-    </div>`;
-  }).join('') : '<div class="empty">✅ 台账与派单卡状态全部一致，没有待处理的差异</div>';
-}
-$('btnReconRefresh').onclick = loadRecon;
-
-/* ================= 派单总览 ================= */
-async function loadOverview() {
-  try {
-    const j = await authFetch('/api/dispatch/overview');
-    window._ovRows = j.rows;
-    $('ovProfit').textContent = j.totals.totProfit; $('ovReward').textContent = j.totals.totReward; $('ovShare').textContent = j.totals.totShare;
-    // 状态筛选选项带上数量，一眼看清各环节压了多少单
-    const cnt = {};
-    j.rows.forEach(r => cnt[r.status] = (cnt[r.status] || 0) + 1);
-    [...$('ovSt').options].forEach(op => {
-      if (op.value) op.textContent = op.value + (cnt[op.value] ? '（' + cnt[op.value] + '）' : '');
-    });
-    paintOverview();
-  } catch (e) { toast(e.message); }
-}
-function paintOverview() {
-  const q = $('ovQ').value.trim().toLowerCase();
-  const st = $('ovSt').value;
-  const rows = (window._ovRows || []).filter(r => {
-    if (st && r.status !== st) return false;
-    if (q && ![r.title, r.toName, r.orderNo].some(x => String(x || '').toLowerCase().includes(q))) return false;
-    return true;
-  });
-  $('ovList').innerHTML = rows.length ? rows.map(r => {
-    let note = '';
-    if (r.status === '已驳回' && r.rejectReason) note = '<div class="note warn">❌ 已驳回：' + esc(r.rejectReason) + '</div>';
-    if (r.status === '待审核' && r.submitNote) note = '<div class="note info">📝 写手提交说明：' + esc(r.submitNote) + '</div>';
-    let ops = '';
-    if (r.status === '待审核') ops = `<button class="btn btn-g btn-sm" onclick="actApprove('${r._id}')">✔ 审核通过</button><button class="btn btn-r btn-sm" onclick="actReject('${r._id}')">✖ 驳回</button>`;
-    else if (r.status === '待打款' || r.status === '已交付') ops = `<button class="btn btn-cy btn-sm" onclick="actPay('${r._id}')">💸 确认打款 ¥${r.reward}</button>`;
-    return `<div class="ov-card">
-      <div class="hd"><span class="t">${esc(r.title)}</span>${stPill(r.status)}</div>
-      <div class="meta">
-        <span>✍️ ${esc(r.toName)}</span><span class="money">报酬 <b>¥${r.reward}</b></span>
-        ${r.orderNo ? `<span>🔗 ${esc(r.orderNo)}</span><span>原单 ¥${r.orderAmount} → 分成 ¥${r.orderShare} → <b>利润 ¥${r.profit}</b></span>` : '<span style="color:var(--red)">未关联台账单</span>'}
-        <span>${fmtT(r.createdAt)}</span>
-      </div>
-      ${note}
-      <div class="ops">${ops}</div>
-    </div>`;
-  }).join('') : '<div class="empty">没有符合条件的派单卡</div>';
-}
-$('ovQ').oninput = paintOverview;
-$('ovSt').onchange = paintOverview;
 
 /* ================= 发派单卡（订单选择器带搜索） ================= */
 let pickedOrder = null, ordPool = [];
@@ -940,7 +689,6 @@ async function submitCard() {
     closeSheet();
     toast('派单卡已发出 ✅');
     loadChats().catch(() => {});
-    loadOverview().catch(() => {});
   } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = '发送派单卡'; }
 }
 window.closeSheet = () => $('mask').classList.remove('show');
@@ -964,275 +712,6 @@ $('btnInvite').onclick = async () => {
   };
 };
 
-let _overLoaded=false,_reconLoaded=false,_noticeLoaded=false;
-/* ================= 广告管理 ================= */
-async function loadAdAdmin() {
-  try {
-    const j = await authFetch('/api/ads');
-    $('adTitle').value = j.ad.title || '';
-    $('adContent').value = j.ad.content || '';
-    renderAdPreview();
-  } catch (e) { toast(e.message); }
-}
-function renderAdPreview() {
-  $('adPreview').innerHTML = '<h4 style="font-size:15px;margin-bottom:8px">' + esc($('adTitle').value) + '</h4>' + $('adContent').value;
-}
-if($('adContent'))$('adContent').oninput = renderAdPreview;
-if($('btnSaveAd'))$('btnSaveAd').onclick = async () => {
-  try {
-    await authFetch('/api/ads', { method: 'POST', body: JSON.stringify({ title: $('adTitle').value, content: $('adContent').value }) });
-    toast('广告已保存 ✅');
-  } catch (e) { toast(e.message); }
-};
-
-/* ================= 页签切换 ================= */
-// 【二次复核修正】选择器改为 .stab[data-v]——原写法把两个 inline onclick 跳转页签
-//（用户端套餐/台账统计）也绑成切换页签，点击时 dataset.v 为 undefined 直接抛错变空白页
-document.querySelectorAll('.stab[data-v]').forEach(t => t.onclick = () => {
-  document.querySelectorAll('.stab').forEach(x => x.classList.remove('on'));
-  document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
-  t.classList.add('on');
-  $(t.dataset.v).classList.add('on');
-  if (t.dataset.v === 'vOver' && !_overLoaded) { _overLoaded = true; loadOverview(); }
-  if (t.dataset.v === 'vRecon' && !_reconLoaded) { _reconLoaded = true; loadRecon(); }
-    if (t.dataset.v === 'vAd') loadAdAdmin();
-  if (t.dataset.v === 'vWd') loadWithdrawals();
-});
-
-/* ================= 💳 提现审批 ================= */
-let _wdAll = [];
-async function loadWithdrawals() {
-  try {
-    const status = $('wdStatus') ? $('wdStatus').value : '';
-    const type = $('wdType') ? $('wdType').value : '';
-    // 【二次复核修正】关键词不再传给服务端：服务端过滤不含金额、会先把列表滤空，
-    // 导致 paintWithdrawals 里的本地过滤（含按金额搜）永远轮不到——过滤统一走本地
-    const j = await authFetch('/api/admin/withdrawals?status=' + encodeURIComponent(status) + '&type=' + encodeURIComponent(type) + '&q=');
-    if (!j.ok) { $('wdList').innerHTML = '<div class="empty" style="padding:18px">' + esc(j.error || '加载失败') + '</div>'; return; }
-    $('wdPending').textContent = j.stats.pending;
-    $('wdPaid').textContent = j.stats.paid;
-    $('wdRejected').textContent = j.stats.rejected;
-    const badge = $('wdNum');
-    if (badge) { badge.style.display = j.stats.pending > 0 ? '' : 'none'; badge.textContent = j.stats.pending; }
-    _wdAll = j.withdrawals;
-    paintWithdrawals();
-  } catch (e) { $('wdList').innerHTML = '<div class="empty" style="padding:18px">' + esc(e.message) + '</div>'; }
-}
-function wdSearch() { paintWithdrawals(); }
-function paintWithdrawals() {
-  const list = $('wdList');
-  if (!_wdAll.length) { list.innerHTML = '<div class="empty" style="padding:18px">暂无提现申请</div>'; return; }
-  // 【2026-09-17 修复】搜索框原来只重绘、从未过滤数据（输入关键词无效）——补本地过滤
-  const q = (($('wdQ') && $('wdQ').value) || '').trim().toLowerCase();
-  const rows = q ? _wdAll.filter(w =>
-    (w.displayName || '').toLowerCase().includes(q) ||
-    (w.amount != null && String(w.amount).includes(q)) ||
-    (w.alipay && (String(w.alipay.account || '').toLowerCase().includes(q) || String(w.alipay.name || '').toLowerCase().includes(q)))
-  ) : _wdAll;
-  if (!rows.length) { list.innerHTML = '<div class="empty" style="padding:18px">没有匹配的提现申请</div>'; return; }
-  list.innerHTML = rows.map(w => {
-    const t = new Date(new Date(w.createdAt).getTime() + 8 * 3600 * 1000);
-    const tstr = t.toISOString().slice(0, 16).replace('T', ' ');
-    const stTag = w.status === '待处理' ? '<b style="color:var(--amber)">' + w.status + '</b>'
-      : w.status === '已打款' ? '<b style="color:var(--green-dk)">' + w.status + '</b>'
-      : '<b style="color:var(--red)">' + w.status + (w.reason ? '（' + esc(w.reason) + '）' : '') + '</b>';
-    const btns = w.status === '待处理' ? `
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-g" style="flex:1" onclick="wdPay('${w._id}')">✅ 确认打款</button>
-        <button class="btn btn-r" style="flex:1" onclick="wdReject('${w._id}')">✖ 驳回</button>
-      </div>` : (w.status === '已打款' ? `<div style="font-size:12px;color:var(--sub);margin-top:8px">打款时间 ${w.paidAt ? new Date(new Date(w.paidAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') : '-'}${w.paidCards ? ' · 结清派单卡 ' + w.paidCards + ' 张' : ''}${w.note ? ' · 备注：' + esc(w.note) : ''}</div>` : '');
-    return `<div class="wd-card st-${w.status}">
-      <div class="hd">
-        <div class="who">${esc(w.displayName || '')}</div>
-        <div class="amt">¥${(w.amount || 0).toFixed(2)}</div>
-      </div>
-      <div class="meta">
-        <span>${w.type === 'bonus' ? '激励奖励' : '单子奖励'}</span>
-        <span>支付宝：${esc(w.alipay ? w.alipay.name + ' / ' + w.alipay.account : '未绑定')}</span>
-        <span>${tstr}</span>
-      </div>
-      <div class="st">${stTag}</div>
-      ${btns}
-    </div>`;
-  }).join('');
-}
-async function wdPay(id) {
-  if (!confirm('确认已通过支付宝向该写手打款？\n订单型提现将同时：结清对应派单卡 → 同步台账为已结算 → 解冻现金红包。')) return;
-  try {
-    const j = await authFetch('/api/admin/withdrawals/' + id + '/pay', { method: 'POST', body: JSON.stringify({ note: '' }) });
-    if (j.ok) { toast('已确认打款' + (j.paidCards ? '，结清派单卡 ' + j.paidCards + ' 张' : '') + ' ✅'); loadWithdrawals(); loadOverview().catch(() => {}); loadRecon().catch(() => {}); }
-    else toast(j.error || '操作失败');
-  } catch (e) { toast(e.message); }
-}
-async function wdReject(id) {
-  const reason = prompt('驳回原因（写手端可见）：');
-  if (reason === null) return;
-  try {
-    const j = await authFetch('/api/admin/withdrawals/' + id + '/reject', { method: 'POST', body: JSON.stringify({ reason }) });
-    if (j.ok) { toast('已驳回'); loadWithdrawals(); }
-    else toast(j.error || '操作失败');
-  } catch (e) { toast(e.message); }
-}
-
-/* ================= 🎮 游戏工作台 ================= */
-async function loadWorkbench() {
-  loadActivityStats();
-  loadGameConfig();
-  loadShanhaiStats();
-  loadRedeems();
-  loadWithdrawalsBadge();
-}
-async function loadWithdrawalsBadge() {
-  try {
-    const j = await authFetch('/api/admin/withdrawals?status=');
-    if (!j.ok) return;
-    const badge = $('wdNum');
-    if (badge) { badge.style.display = j.stats.pending > 0 ? '' : 'none'; badge.textContent = j.stats.pending; }
-  } catch (e) {}
-}
-async function loadActivityStats() {
-  loadMaintenanceStatus();
-  try {
-    const j = await authFetch('/api/admin/activity-stats');
-    if (!j.ok) return;
-    $('actPlayers').textContent = j.game.totalPlayers;
-    $('actPlaying').textContent = j.game.playingSessions;
-    $('actGames').textContent = j.game.totalGames;
-    $('actKeys').textContent = j.game.totalKeysLeft;
-    $('actBalls').textContent = j.game.totalBallsLeft;
-    $('actCheckins').textContent = j.checkin.today;
-  } catch(e) { console.error(e); }
-}
-async function loadGameConfig() {
-  try {
-    const j = await authFetch('/api/game/admin/config');
-    if (!j.ok) { $('cfgMsg').textContent = j.error || '加载失败'; return; }
-    const e = j.effective;
-    $('cfgStart').value = e.start; $('cfgEnd').value = e.end;
-    $('cfgDailyKey').value = e.dailyFreeKey; $('cfgMaxRevives').value = e.maxRevivesPerGame;
-    $('cfgFragCost').value = e.composeFragCost;
-    $('cfgBagS').value = e.bagS.join(', '); $('cfgBagM').value = e.bagM.join(', '); $('cfgBagL').value = e.bagL.join(', ');
-    $('cfgMsg').textContent = '已加载当前生效参数';
-  } catch (e) { $('cfgMsg').textContent = e.message; }
-}
-function parseBag(el) {
-  const parts = el.value.split(/[,，\s]+/).map(Number).filter(x => isFinite(x));
-  if (parts.length !== 2 || !(parts[1] > parts[0])) return null;
-  return parts;
-}
-async function saveGameConfig() {
-  const bagS = parseBag($('cfgBagS')), bagM = parseBag($('cfgBagM')), bagL = parseBag($('cfgBagL'));
-  const body = {
-    start: $('cfgStart').value, end: $('cfgEnd').value,
-    dailyFreeKey: Number($('cfgDailyKey').value), maxRevivesPerGame: Number($('cfgMaxRevives').value),
-    composeFragCost: Number($('cfgFragCost').value),
-  };
-  if (bagS) body.bagS = bagS; if (bagM) body.bagM = bagM; if (bagL) body.bagL = bagL;
-  try {
-    const j = await authFetch('/api/game/admin/config', { method: 'POST', body: JSON.stringify(body) });
-    if (j.ok) { $('cfgMsg').textContent = '✅ 已保存并生效（当前活动配置：' + new Date().toTimeString().slice(0, 5) + '）'; toast('游戏参数已保存 ✅'); }
-    else { $('cfgMsg').textContent = j.error || '保存失败'; toast(j.error || '保存失败'); }
-  } catch (e) { $('cfgMsg').textContent = e.message; }
-}
-async function loadShanhaiStats() {
-  try {
-    const j = await authFetch('/api/shanhai/admin/stats');
-    if (!j.ok) { $('shStats').innerHTML = '<div class="gm-stat"><div class="v">--</div><div class="l">' + esc(j.error || '加载失败') + '</div></div>'; return; }
-    const t = j.totals;
-    $('shStats').innerHTML = [
-      [j.players, '斩妖人数'], [t.plays || 0, '累计出战'], [t.wins || 0, '通关次数'], [t.totalKills || 0, '累计斩妖'],
-      [t.xianyu || 0, '流通仙玉'], [t.lingqi || 0, '流通灵气'],
-    ].map(([v, l]) => `<div class="gm-stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
-    $('shTop').innerHTML = (j.top || []).length ? '<div style="font-size:12px;color:var(--sub);margin-bottom:6px">通关榜 TOP10</div>' + j.top.map((p, i) =>
-      `<div class="sh-row"><span class="rk">${i + 1}</span><span class="nm">${esc(p.username || '')}</span><span class="dt">通关 ${p.wins} 次 · 最佳 ${p.bestTimeSec ? Math.floor(p.bestTimeSec / 60) + '分' + (p.bestTimeSec % 60) + '秒' : '-'} · 斩妖 ${p.bestKills || 0}</span></div>`).join('')
-      : '<div class="empty" style="padding:12px">暂无通关数据</div>';
-  } catch (e) { console.error(e); }
-}
-async function loadGameLogs() {
-  try {
-    const action = $('glAction').value, uid = $('glUser').value.trim();
-    const j = await authFetch('/api/game/admin/logs?action=' + encodeURIComponent(action) + '&userId=' + encodeURIComponent(uid) + '&limit=100');
-    if (!j.ok) { $('glList').innerHTML = '<div class="empty" style="padding:12px">' + esc(j.error || '查询失败') + '</div>'; return; }
-    if (!j.logs.length) { $('glList').innerHTML = '<div class="empty" style="padding:12px">无匹配日志</div>'; return; }
-    $('glList').innerHTML = j.logs.map(l => {
-      const t = new Date(new Date(l.createdAt).getTime() + 8 * 3600 * 1000);
-      return `<div class="gl-row"><span class="tm">${t.toISOString().slice(5, 16).replace('T', ' ')}</span><span class="ac ac-${l.action}">${l.action}</span><span class="us">${(l.userId || '').slice(-6)}</span><span class="dt">${esc(JSON.stringify(l.detail || {}).slice(0, 70))}</span></div>`;
-    }).join('');
-  } catch (e) { $('glList').innerHTML = '<div class="empty" style="padding:12px">' + esc(e.message) + '</div>'; }
-}
-async function loadRedeems() {
-  try {
-    const j = await authFetch('/api/game/admin/redeems?limit=100');
-    if (!j.ok) return;
-    $('redeemCost').textContent = j.redeems.length ? '（累计成本 ¥' + (j.totalCost || 0).toFixed(2) + '）' : '';
-    $('redeemList').innerHTML = j.redeems.length ? j.redeems.map(r => {
-      const t = new Date(new Date(r.createdAt).getTime() + 8 * 3600 * 1000);
-      return `<div class="gl-row"><span class="tm">${t.toISOString().slice(5, 16).replace('T', ' ')}</span><span class="nm2">${esc(r.name || '')}</span><span class="dt">-${r.cost}球 · ${esc(JSON.stringify(r.give || {}))}</span></div>`;
-    }).join('') : '<div class="empty" style="padding:12px">暂无兑换记录</div>';
-  } catch (e) {}
-}
-
-/* ================= 道具发放/收回 ================= */
-async function findUser() {
-  const phone = $('grantPhone').value.trim();
-  if (!phone) { alert('请输入手机号'); return; }
-  try {
-    const j = await authFetch('/api/admin/find-user/' + encodeURIComponent(phone));
-    if (j.ok) {
-      $('grantUserId').value = j.user._id;
-      // 拉取该用户游戏档案一并展示
-      try {
-        const p = await authFetch('/api/admin/game-profile/' + encodeURIComponent(j.user._id));
-        if (p.ok && p.profile) {
-          $('grantProfile').innerHTML = '<div class="flow-tip">当前背包：钥匙 ' + (p.profile.keys || 0) + ' · 魔法球 ' + (p.profile.balls || 0) + ' · 碎片 ' + (p.profile.frags || 0) + ' · 复活石 ' + (p.profile.revives || 0) + ' · 福袋 ' + (p.profile.bagS || 0) + '/' + (p.profile.bagM || 0) + '/' + (p.profile.bagL || 0) + '</div>';
-        } else $('grantProfile').innerHTML = '';
-      } catch (e) { $('grantProfile').innerHTML = ''; }
-      toast('找到用户：' + (j.user.name || '') + (j.user.uid ? '（工号 ' + j.user.uid + '）' : ''));
-    }
-  } catch(e) { alert(e.message); }
-}
-async function grantItem(isGrant) {
-  const uid = $('grantUserId').value.trim();
-  const item = $('grantItem').value;
-  const amt = Number($('grantAmount').value) || 0;
-  if (!uid) { alert('请先通过手机号查找用户'); return; }
-  if (amt <= 0) { alert('请输入数量'); return; }
-  if (!confirm((isGrant ? '发放' : '收回') + ' ' + item + ' ×' + amt + '？')) return;
-  const realAmt = isGrant ? amt : -amt;
-  try {
-    const j = await authFetch('/api/admin/game-grant', { method: 'POST', body: JSON.stringify({ userId: uid, item, amount: realAmt }) });
-    if (j.ok !== false && j.profile) {
-      const p = j.profile;
-      toast((isGrant ? '已发放 ' : '已收回 ') + amt + ' ✅');
-      $('grantProfile').innerHTML = '<div class="flow-tip">操作后背包：钥匙 ' + (p.keys || 0) + ' · 魔法球 ' + (p.balls || 0) + ' · 碎片 ' + (p.frags || 0) + ' · 复活石 ' + (p.revives || 0) + ' · 福袋 ' + (p.bagS || 0) + '/' + (p.bagM || 0) + '/' + (p.bagL || 0) + '</div>';
-    } else toast(j.error || '操作失败');
-  } catch(e) { toast(e.message); }
-}
-async function toggleMaintenance() {
-  const on = $('maintSwitch').checked;
-  try {
-    await authFetch('/api/admin/activity-maintenance', { method: 'POST', body: JSON.stringify({ maintenance: on }) });
-    $('maintLabel').textContent = on ? '已开启' : '已关闭';
-  } catch(e) { alert(e.message); }
-}
-async function loadMaintenanceStatus() {
-  try {
-    const j = await authFetch('/api/admin/activity-maintenance');
-    $('maintSwitch').checked = j.maintenance;
-    $('maintLabel').textContent = j.maintenance ? '已开启' : '已关闭';
-  } catch(e) {}
-}
-// 【2026-09-17 修复】此处原有第二个 loadActivityStats 定义，覆盖了上面的完整版且漏了
-// 剩余魔法球（actBalls）的更新，导致游戏工作台该数字永远显示 "--"，重复定义已删除
-async function cleanupGames() {
-  if (!confirm('确定清理所有进行中的游戏会话？每个玩家退还1把钥匙')) return;
-  try {
-    const j = await authFetch('/api/admin/game-cleanup', { method: 'POST' });
-    alert('已清理 ' + j.cleaned + ' 个对局');
-    loadActivityStats();
-  } catch(e) { alert(e.message); }
-}
-
 /* ================= 实时推送 + 稳定性 ================= */
 const socket = io({
   auth: { token: TOKEN },
@@ -1244,7 +723,6 @@ socket.on('connect', async () => {
   $('connBar').classList.remove('on');
   if (ME) toast('已恢复连接 ✅');
   loadChats().catch(() => {});
-  loadOverview().catch(() => {});
 });
 socket.on('disconnect', () => $('connBar').classList.add('on'));
 socket.on('connect_error', () => $('connBar').classList.add('on'));
@@ -1274,8 +752,6 @@ socket.on('card', c => {
   if (!_sockCardTimer) {
     _sockCardTimer = setTimeout(() => {
       _sockCardTimer = null;
-      if ($('vOver').classList.contains('on')) loadOverview();
-      loadRecon().catch(() => {});
       scheduleChatsReload();
     }, 500);
   }
@@ -1306,7 +782,7 @@ $('chatInput').addEventListener('keydown', e => {
 $('chatInput').addEventListener('input', autoGrow);
 $('btnFile').onclick = () => $('fileInput').click();
 $('fileInput').onchange = e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value = ''; };
-$('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; };
+$('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); if (EMBED) { parent.location.href = '/login.html'; } else location.href = '/login.html'; };
 
 // 截图粘贴直接发送
 document.addEventListener('paste', e => {
@@ -1379,9 +855,6 @@ chatRight.addEventListener('drop', async e => {
     cj.rows.forEach(c => { cardsAll[c._id] = Object.assign(cardsAll[c._id] || {}, c); });
   } catch (e) {}
   loadChats().catch(e => toast(e.message));
-  loadOverview().catch(() => {});
-  loadRecon().catch(() => {});
-  loadWithdrawalsBadge().catch(() => {});   // 【2026-09-14】提现审批角标（有待处理时提醒）
 })();
 </script>
   <script>
