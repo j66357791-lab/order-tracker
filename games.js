@@ -6,6 +6,8 @@
 //      并发请求刷不掉道具
 //   3) 每个用户同时只能有一局进行中（partial unique index 强制）
 //   4) 关键动作写 game_logs 审计流水
+// 【2026-09-17 安全修复】翻牌/抉择结算加乐观锁（条件更新），并发重复请求不再重复入账
+import { limit } from './lib/ratelimit.js';
 
 export default function mountGames(app, { auth, getDb, cnDayStr }) {
 
@@ -126,7 +128,7 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
   }
 
   const bad = (res, code, msg) => res.status(code).json({ ok: false, error: msg });
-  const wrap = (fn) => async (req, res) => { try { await fn(req, res); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } };
+  const wrap = (fn) => async (req, res) => { try { await fn(req, res); } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); } };
 
   // ==================== 配置热调 + 管理员管控（2026-09-13 新增） ====================
   // 注意：必须先于游戏路由注册（Express 按注册顺序匹配）
@@ -222,7 +224,8 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
   }));
 
   // 翻牌：服务端掷骰结算
-  app.post('/api/game/flip', auth, wrap(async (req, res) => {
+  // 【2026-09-17 安全加固】限流：正常玩家每分钟翻牌次数有限，脚本高频刷波次会被挡下
+  app.post('/api/game/flip', auth, limit({ name: 'game-flip', max: 60, windowMs: 60 * 1000, msg: '操作太频繁，请稍候再试' }), wrap(async (req, res) => {
     const db = await getDb();
     const s = await getActiveSession(db, req.user.id);
     if (!s) return bad(res, 400, '没有进行中的对局');
@@ -235,35 +238,47 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
       const pro = await getProfile(db, req.user.id);
       const canRevive = pro.revives > 0 && s.revivesUsed < ACTIVITY.maxRevivesPerGame;
       await log(db, req.user.id, 'escape', { wave: s.wave, round: s.round });
+      // 【二次复核修正】逃逸分支原本是无条件更新——并发一个请求掷中逃逸、一个掷中奖励时，
+      // 奖励分支的条件更新仍会成功，逃逸惩罚被绕过。改为同样的条件更新（乐观锁）。
+      const escClaim = await db.collection('game_sessions').updateOne(
+        { _id: s._id, status: 'playing', wave: s.wave, round: s.round },
+        { $set: canRevive ? { pendingEscape: true, updatedAt: new Date() } : { status: 'lost', endedAt: new Date(), updatedAt: new Date() } });
+      if (!escClaim.modifiedCount) return bad(res, 400, '本局状态已变化，请刷新');
       if (!canRevive) {
-        // 【2026-09-13 修复】无复活可用 → 对局立即结束，不再留"待处理"残局
-        // （旧版只标 pendingEscape 不结束，前端返回大厅刷新后又把残局拉起来，死循环）
-        await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { status: 'lost', endedAt: new Date(), updatedAt: new Date() } });
+        // 无复活可用 → 对局立即结束（不再留"待处理"残局）
         await log(db, req.user.id, 'lost', { wave: s.wave, round: s.round, lostPot: s.pot });
         return res.json({ ok: true, escaped: true, canRevive: false, revivesLeft: 0, reviveQuotaLeft: 0, lostPot: s.pot, session: null });
       }
-      await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { pendingEscape: true, updatedAt: new Date() } });
       return res.json({ ok: true, escaped: true, canRevive: true, revivesLeft: pro.revives, reviveQuotaLeft: ACTIVITY.maxRevivesPerGame - s.revivesUsed, lostPot: null });
     }
 
     // 命中奖励 → 计入暂存
+    // 【2026-09-17 安全修复】三处状态推进全部改为条件更新（乐观锁）：
+    // 只有会话仍处于"playing + 当前波 + 当前轮"时才推进，并发同时打 N 个 flip 只有第一个生效，
+    // 其余全部被拒——彻底堵住同一局奖励被重复入账 N 倍的口子
     const pot = Object.assign({}, s.pot); pot[reward.type] += reward.n;
     let waveDone = false, finished = false, settled = null;
-    let upd;
-    if (s.round >= 5) {
-      if (s.wave >= 3) {
-        // 第三波第5轮 → 自动结算（全游戏终局）
-        settled = await settlePot(db, req.user.id, pot);
-        upd = { $set: { pot, status: 'done', endedAt: new Date(), updatedAt: new Date() } };
-        finished = true;
-      } else {
-        upd = { $set: { pot, status: 'wave_done', updatedAt: new Date() } };
-        waveDone = true;
-      }
+    let claim;
+    if (s.round >= 5 && s.wave >= 3) {
+      // 第三波第5轮 → 自动结算（全游戏终局）
+      claim = await db.collection('game_sessions').updateOne(
+        { _id: s._id, status: 'playing', wave: s.wave, round: s.round },
+        { $set: { pot, status: 'done', endedAt: new Date(), updatedAt: new Date() } });
+      if (!claim.modifiedCount) return bad(res, 400, '本局已结算');
+      settled = await settlePot(db, req.user.id, pot);
+      finished = true;
+    } else if (s.round >= 5) {
+      claim = await db.collection('game_sessions').updateOne(
+        { _id: s._id, status: 'playing', wave: s.wave, round: s.round },
+        { $set: { pot, status: 'wave_done', updatedAt: new Date() } });
+      if (!claim.modifiedCount) return bad(res, 400, '本波已完成，请先选择：落袋或继续');
+      waveDone = true;
     } else {
-      upd = { $set: { pot, round: s.round + 1, updatedAt: new Date() } };
+      claim = await db.collection('game_sessions').updateOne(
+        { _id: s._id, status: 'playing', wave: s.wave, round: s.round },
+        { $set: { pot, round: s.round + 1, updatedAt: new Date() } });
+      if (!claim.modifiedCount) return bad(res, 400, '操作太快了，请稍候重试');
     }
-    await db.collection('game_sessions').updateOne({ _id: s._id }, upd);
     log(db, req.user.id, 'reward', { wave: s.wave, round: s.round, got: reward }).catch(() => {});   // 【v3】日志异步化，响应不再等 Atlas 写日志
     const nextRound = waveDone ? s.round : s.round + 1;
     res.json({
@@ -305,7 +320,11 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
     const db = await getDb();
     const s = await getActiveSession(db, req.user.id);
     if (!s) return bad(res, 400, '没有进行中的对局');
-    await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { status: 'forfeit', endedAt: new Date(), updatedAt: new Date() } });
+    // 【二次复核修正】条件更新：只有"逃跑待处理"状态的会话能被放弃
+    const claim = await db.collection('game_sessions').updateOne(
+      { _id: s._id, status: 'playing', pendingEscape: true },
+      { $set: { status: 'forfeit', endedAt: new Date(), updatedAt: new Date() } });
+    if (!claim.modifiedCount) return bad(res, 400, '当前没有可放弃的对局');
     await log(db, req.user.id, 'forfeit', { wave: s.wave, round: s.round, lost: s.pot });
     res.json({ ok: true, lostPot: s.pot });
   }));
@@ -317,13 +336,22 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
     const s = await getActiveSession(db, req.user.id);
     if (!s || s.status !== 'wave_done') return bad(res, 400, '当前没有可抉择的对局');
     if (action === 'cashout') {
+      // 【2026-09-17 安全修复】先原子占用会话（wave_done→done 只允许成功一次），
+      // 再入账背包——原来的"先入账再改状态"在并发下可重复结算
+      const claim = await db.collection('game_sessions').updateOne(
+        { _id: s._id, status: 'wave_done' },
+        { $set: { status: 'done', endedAt: new Date(), updatedAt: new Date() } });
+      if (!claim.modifiedCount) return bad(res, 400, '本局已结算过了');
       const settled = await settlePot(db, req.user.id, s.pot);
-      await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { status: 'done', endedAt: new Date(), updatedAt: new Date() } });
       await log(db, req.user.id, 'cashout', { wave: s.wave, got: s.pot });
       return res.json({ ok: true, action, settled });
     }
     if (action === 'continue') {
-      await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { status: 'playing', wave: s.wave + 1, round: 1, updatedAt: new Date() } });
+      // 同上：条件更新防并发双推进
+      const claim = await db.collection('game_sessions').updateOne(
+        { _id: s._id, status: 'wave_done' },
+        { $set: { status: 'playing', wave: s.wave + 1, round: 1, updatedAt: new Date() } });
+      if (!claim.modifiedCount) return bad(res, 400, '当前没有可抉择的对局');
       await log(db, req.user.id, 'carry', { fromWave: s.wave });
       return res.json({ ok: true, action, wave: s.wave + 1, round: 1, pot: s.pot, table: tablePublic(s.wave + 1, 1) });
     }
@@ -421,8 +449,9 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
     if (!adminGate(req, res)) return;
     const db = await getDb();
     const q = {};
-    if (req.query.userId) q.userId = req.query.userId;
-    if (req.query.action) q.action = req.query.action;
+    // 【2026-09-17 安全修复】query 用 qs 扩展解析，?userId[$ne]=x 可注入操作符对象，强转字符串
+    if (req.query.userId) q.userId = String(req.query.userId);
+    if (req.query.action) q.action = String(req.query.action);
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const logs = await db.collection('game_logs').find(q).sort({ createdAt: -1 }).limit(limit).toArray();
     res.json({ ok: true, logs });
