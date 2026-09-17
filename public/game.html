@@ -189,6 +189,8 @@ async function api(path, opt = {}) {
 
 const CN = { frag:'碎片', key:'钥匙', ball:'魔法球', bagS:'福袋(小)', bagM:'福袋(中)', bagL:'福袋(大)', frags:'碎片', keys:'钥匙', balls:'魔法球', revives:'复活石' };
 const ICO = { frag:'/assets/game/icon_frag.png', key:'/assets/game/icon_key.png', ball:'/assets/game/icon_ball.png', revive:'/assets/game/icon_revive.png', bagS:'/assets/game/bag_s.png', bagM:'/assets/game/bag_m.png', bagL:'/assets/game/bag_l.png' };
+// 【2026-09-17 加固】统一 HTML 转义：商铺条目名/描述、服务器报错等拼接进 innerHTML 前先过 esc
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const WAVES = ['第一波','第二波','第三波'];
 
 let STATE = null;   // /api/game/state 结果
@@ -227,8 +229,8 @@ function render(){
 }
 function renderShop(){
   $('shopList').innerHTML = STATE.shop.map(it => it.enabled
-    ? `<div class="shop-item"><img src="${ICO[it.icon]||'https://sfile.chatglm.cn/workspace/image/68/68bcfbdaff.png'}"><div class="s-info"><div class="s-name">${it.name}</div><div class="s-desc">${it.desc||''}</div><div class="s-cost">魔法球 ×${it.cost}</div></div><button class="btn" onclick="buy('${it.id}')">兑换</button></div>`
-    : `<div class="shop-item" style="opacity:.55;"><img src="${ICO[it.icon]||'https://sfile.chatglm.cn/workspace/image/68/68bcfbdaff.png'}"><div class="s-info"><div class="s-name">${it.name}</div><div class="s-desc">${it.desc||'新品整理中，敬请期待'}</div></div><button class="btn" disabled>即将上线</button></div>`
+    ? `<div class="shop-item"><img src="${ICO[it.icon]||'https://sfile.chatglm.cn/workspace/image/68/68bcfbdaff.png'}"><div class="s-info"><div class="s-name">${esc(it.name)}</div><div class="s-desc">${esc(it.desc||'')}</div><div class="s-cost">魔法球 ×${it.cost}</div></div><button class="btn" onclick="buy('${it.id}')">兑换</button></div>`
+    : `<div class="shop-item" style="opacity:.55;"><img src="${ICO[it.icon]||'https://sfile.chatglm.cn/workspace/image/68/68bcfbdaff.png'}"><div class="s-info"><div class="s-name">${esc(it.name)}</div><div class="s-desc">${esc(it.desc||'新品整理中，敬请期待')}</div></div><button class="btn" disabled>即将上线</button></div>`
   ).join('');
 }
 
@@ -434,7 +436,7 @@ async function buy(id){ try{ const r = await api('/api/game/shop/buy',{method:'P
 
 function logout(){ localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; }
 
-refresh().catch(e => $('modalRoot').innerHTML = `<div class="mask"><div class="modal"><h3>加载失败</h3><p>${e.message}</p><div class="m-btns"><button class="btn" onclick="location.reload()">重试</button></div></div></div>`);
+refresh().catch(e => $('modalRoot').innerHTML = `<div class="mask"><div class="modal"><h3>加载失败</h3><p>${esc(e.message)}</p><div class="m-btns"><button class="btn" onclick="location.reload()">重试</button></div></div></div>`);
 </script>
 <canvas id="fx"></canvas>
 <script>
