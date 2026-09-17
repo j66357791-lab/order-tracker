@@ -1,8 +1,9 @@
 /* PWA Service Worker - 接单后台 v2
- * 策略：HTML页面 network-first（总是最新），静态资源 cache-first
- * 每次部署改 CACHE_VERSION 即可自动清旧缓存
+ * 策略：HTML页面 network-first（总是最新），静态资源 stale-while-revalidate（先回缓存秒开，后台静默更新）
+ * 【2026-09-17 修复】图片原为"命中缓存永不回源"的永久缓存，换图后老用户永远看到旧图；
+ * 现改为后台更新式缓存，升级缓存版本号清掉历史永久缓存
  */
-const CACHE_VERSION = 'jiedan-v12-20260916';
+const CACHE_VERSION = 'jiedan-v13-20260917';
 const APP_SHELL = [
   '/portal.html',
   '/member.html',
@@ -46,19 +47,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 【2026-09-15】图片/游戏美术资源：cache-first（首次网络取回后永久本地，二次进入秒开）
+  // 【2026-09-15】图片/游戏美术资源：stale-while-revalidate（首次网络取回，之后先回缓存秒开 + 后台拉新）
   if (/\.(png|jpe?g|webp|gif|mp3|wav|mp4)$/i.test(url.pathname) ||
       url.pathname.startsWith('/assets/') || url.pathname.startsWith('/games/')) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
-        if (cached) return cached;   // 命中缓存直接回，后台静默更新
-        return fetch(event.request).then((response) => {
+        // 【2026-09-17 修复】先回缓存保证秒开，同时后台拉新替换——换图后老用户刷新即可看到新图
+        const networkFetch = fetch(event.request).then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
           }
           return response;
-        }).catch(() => cached);
+        }).catch(() => cached || Response.error());   // 网络失败且无缓存：不能把 undefined 交给 respondWith
+        return cached || networkFetch;
       })
     );
     return;
@@ -80,7 +82,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 其他静态资源：cache-first，后台更新
+  // 其他静态资源：stale-while-revalidate（先回缓存，后台更新）
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const networkFetch = fetch(event.request)
@@ -91,7 +93,7 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => cached);
+        .catch(() => cached || Response.error());
       return cached || networkFetch;
     })
   );
