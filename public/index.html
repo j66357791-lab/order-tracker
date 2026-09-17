@@ -247,7 +247,7 @@
     <div class="wrap">
       <header>
         <h1>📋 订单统计系统</h1>
-        <div class="meta">数据源：<b id="dbState">连接中…</b> · <span id="todayStr"></span> · 兼职写手接单台账 · <a href="/admin_packages.html" style="color:#07c160">用户端套餐</a> · <a href="/admin_game.html" style="color:#7c4dff">游戏管控</a> · <a href="#" onclick="localStorage.removeItem('jdy_token');localStorage.removeItem('jdy_user');location.href='/login.html';return false" style="color:var(--sub)">退出登录</a></div>
+        <div class="meta">数据源：<b id="dbState">连接中…</b> · <span id="todayStr"></span> · 兼职写手接单台账 · <a href="/admin.html" style="color:#b0642c">🏠 管理工作台</a> · <a href="/admin_packages.html" style="color:#07c160">用户端套餐</a> · <a href="/admin_game.html" style="color:#7c4dff">游戏管控</a> · <a href="#" onclick="localStorage.removeItem('jdy_token');localStorage.removeItem('jdy_user');location.href='/login.html';return false" style="color:var(--sub)">退出登录</a></div>
       </header>
 
       <!-- ===== 今日待跟进 ===== -->
@@ -680,7 +680,7 @@ function render() {
         <td class="note-cell" title="${esc(o.note || '')}">${esc(o.note || '')}</td>
         <td>
           <button class="btn-mini" onclick="openModal('${o._id}')">编辑</button>
-          <button class="btn-danger-mini" onclick="removeOrder('${o._id}','${esc(o.orderNo)}')">删除</button>
+          <button class="btn-danger-mini" onclick="removeOrder('${o._id}')">删除</button>
         </td>
       </tr>`).join('');
     const vTake = view.reduce((s, o) => s + o.amount, 0);
@@ -904,7 +904,7 @@ function renderDayModal() {
             <td class="note-cell" title="${esc(o.note || '')}">${esc(o.note || '')}</td>
             <td>
               <button class="btn-mini" onclick="openModal('${o._id}')">编辑</button>
-              <button class="btn-danger-mini" onclick="removeOrder('${o._id}','${esc(o.orderNo)}')">删除</button>
+              <button class="btn-danger-mini" onclick="removeOrder('${o._id}')">删除</button>
             </td>
           </tr>`).join('')}
       </tbody>
@@ -1042,7 +1042,10 @@ async function submitOrder() {
   }
 }
 
-async function removeOrder(id, no) {
+async function removeOrder(id) {
+  // 【2026-09-17 修复】订单编号不再拼进 onclick 字符串（编号含引号会破坏 JS 语法），按 id 反查
+  const o = orders.find(x => x._id === id);
+  const no = o ? o.orderNo : '';
   if (!confirm('确定删除订单「' + no + '」？删除后不可恢复。')) return;
   try {
     await deleteOrder(id);
