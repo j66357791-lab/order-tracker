@@ -56,7 +56,7 @@
   @keyframes ringOut { 0% { transform: scale(.75); opacity: .55; } 100% { transform: scale(1.7); opacity: 0; } }
   .anim-up { opacity: 0; animation: floatUp .8s var(--ease) forwards; }
   .a1 { animation-delay: .08s } .a2 { animation-delay: .2s } .a3 { animation-delay: .32s } .a4 { animation-delay: .44s } .a5 { animation-delay: .56s }
-  .hero-r img { opacity: 0; animation: fadeScale 1s var(--ease) .22s forwards; }
+  .hero-r img { opacity: 0; animation: fadeScale 1s var(--ease) .22s forwards; will-change: transform, opacity; }
   .hero-stat { opacity: 0; animation: popIn .7s var(--ease-back) .72s forwards; }
   /* 滚动入场 */
   .reveal { opacity: 0; transform: translateY(28px); transition: opacity .8s var(--ease), transform .8s var(--ease); }
@@ -67,7 +67,8 @@
   }
 
   /* ============ 顶栏 ============ */
-  header { position: sticky; top: 0; z-index: 50; background: rgba(250,247,241,.9); backdrop-filter: blur(10px); border-bottom: 1px solid transparent; transition: border-color .3s, box-shadow .3s, background .3s; }
+  /* 【v20.4 掉帧优化】去掉常驻 backdrop-filter（滚动时每帧重绘的最大来源），用更实的底色替代 */
+  header { position: sticky; top: 0; z-index: 50; background: rgba(250,247,241,.97); border-bottom: 1px solid transparent; transition: border-color .3s, box-shadow .3s, background .3s; }
   header.scrolled { border-bottom-color: var(--line); box-shadow: 0 6px 24px rgba(43,42,38,.06); }
   .hd { display: flex; align-items: center; gap: 18px; height: 62px; }
   .brand { display: flex; align-items: center; gap: 10px; font-size: 20px; flex-shrink: 0; }
@@ -277,10 +278,10 @@
   .ai-fab:active { transform: scale(.96); }
   .ai-fab.dragging { cursor: grabbing; transform: scale(1.06) rotate(-3deg); box-shadow: 0 16px 32px rgba(31,77,58,.32); }
   .ai-fab .ring { position: absolute; inset: -5px; border-radius: 20px; border: 1px solid rgba(31,77,58,.28);
-                  animation: hintPulse 3s ease-in-out infinite; pointer-events: none; }
+                  animation: hintPulse 3s ease-in-out infinite; pointer-events: none; will-change: opacity; }
   @keyframes hintPulse { 0%, 100% { opacity: .5; } 50% { opacity: 0; } }
   .ai-fab .dot { position: absolute; top: -3px; right: -3px; width: 13px; height: 13px; border-radius: 50%; background: var(--red);
-                 border: 2px solid var(--paper); animation: breathe 1.9s ease-in-out infinite; }
+                 border: 2px solid var(--paper); animation: breathe 1.9s ease-in-out infinite; will-change: transform; }
   .ai-fab.opened { background: var(--ink); }
   .ai-fab.opened svg { transform: rotate(45deg); }
   .ai-fab.opened .ring, .ai-fab.opened .dot { display: none; }
@@ -321,7 +322,7 @@
   .toast { position: fixed; left: 50%; top: 76px; transform: translateX(-50%) translateY(-8px); background: var(--ink); color: #fff; padding: 10px 22px; border-radius: 99px; font-size: 13px; z-index: 200; opacity: 0; visibility: hidden; transition: all .3s var(--ease); max-width: 88vw; text-align: center; }
   .toast.on { opacity: 1; visibility: visible; transform: translateX(-50%); }
 
-  .m-bar { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: rgba(250,247,241,.97); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); gap: 10px; backdrop-filter: blur(8px); }
+  .m-bar { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: rgba(250,247,241,.97); border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); gap: 10px; }
   .m-bar button { flex: 1; }
   .m-bar .btn-main, .m-bar .btn-ghost { padding: 12px 0; font-size: 15px; }
 
