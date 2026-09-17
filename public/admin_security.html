@@ -164,13 +164,15 @@ async function api(p, opt) {
 }
 
 // ---------- 用户列表 ----------
+let _USERS = [];
 async function loadUsers() {
   try {
     const j = await api('/api/admin/users');
     if (!j.ok) { $('userTable').innerHTML = '<div class="empty">' + esc(j.error || '加载失败') + '</div>'; return; }
     if (!j.users.length) { $('userTable').innerHTML = '<div class="empty">暂无账号</div>'; return; }
+    _USERS = j.users;
     $('userTable').innerHTML = `<table>
-      <tr><th>用户名</th><th>昵称</th><th>角色</th><th>工号</th><th>实名</th><th>注册时间</th><th>用户ID</th></tr>
+      <tr><th>用户名</th><th>昵称</th><th>角色</th><th>工号</th><th>实名</th><th>注册时间</th><th>密码状态</th><th>用户ID</th><th>操作</th></tr>
       ${j.users.map(u => `<tr>
         <td class="num">${esc(u.username)}</td>
         <td>${esc(u.displayName || '-')}</td>
@@ -178,11 +180,30 @@ async function loadUsers() {
         <td class="num">${esc(u.uid || '—')}</td>
         <td>${u.realname && u.realname.idMask ? esc(u.realname.name) + ' ' + esc(u.realname.idMask) : '<span style="color:var(--ink2)">未实名</span>'}</td>
         <td class="num">${u.createdAt ? cnTime(u.createdAt) : '-'}</td>
+        <td style="font-size:11.5px">${u.passwordResetAt ? '<span style="color:var(--ochre)">已重置 ' + cnTime(u.passwordResetAt) + '</span>' : '<span style="color:var(--ink2)">原始密码</span>'}</td>
         <td><span class="num" style="font-size:11px;color:var(--ink2);cursor:pointer" title="点击复制" onclick="copyUid('${u._id}')">${esc(String(u._id).slice(0, 8))}…</span></td>
+        <td><button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="resetPw('${u._id}')">重置密码</button></td>
       </tr>`).join('')}
-    </table>`;
+    </table>
+    <div style="font-size:12px;color:var(--ink2);margin-top:10px">密码为加密存储，任何人都无法查看原文；用户忘记密码时用「重置密码」发一个临时密码给ta即可。</div>`;
   } catch (e) { $('userTable').innerHTML = '<div class="empty">加载失败，刷新重试</div>'; }
 }
+// 【2026-09-18 v20.1】管理员重置用户密码（找回密码）
+window.resetPw = async (id) => {
+  const u = _USERS.find(x => String(x._id) === String(id));
+  const name = u ? (u.displayName || u.username || '该用户') : '该用户';
+  const pw = prompt('为「' + name + '」设置新密码（至少 8 位）。\n留空并点确定 = 自动生成 8 位临时密码：', '');
+  if (pw === null) return;
+  if (pw && pw.length < 8) { toast('密码至少 8 位'); return; }
+  if (pw && !confirm('确认将「' + name + '」的密码重置为你输入的密码？')) return;
+  if (!pw && !confirm('确认重置「' + name + '」的密码？原密码将立即失效。')) return;
+  try {
+    const j = await api('/api/admin/users/' + id + '/reset-password', { method: 'POST', body: JSON.stringify({ newPassword: pw || '' }) });
+    if (!j.ok) { toast(j.error || '重置失败'); return; }
+    prompt('✅ 已重置！把下面的临时密码转告用户「' + (j.username || name) + '」，用户即可登录：\n（选中后 Ctrl+C 复制，重置记录已写入审计日志）', j.tempPassword);
+    loadUsers();
+  } catch (e) { toast('网络异常，稍后再试'); }
+};
 window.copyUid = (id) => {
   try { navigator.clipboard.writeText(id); toast('用户ID已复制：' + id); }
   catch (e) { toast(id); }
