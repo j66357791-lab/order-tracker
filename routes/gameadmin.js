@@ -21,7 +21,7 @@ app.get('/api/admin/activity-stats', auth, adminOnly, async (req, res) => {
       game: { totalPlayers, playingSessions, totalGames: agg[0]?.total || 0, totalKeysLeft: agg[0]?.totalKeys || 0, totalBallsLeft: agg[0]?.totalBalls || 0 },
       checkin: { today: todayCheckins },
     });
-  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 
@@ -35,7 +35,7 @@ app.get('/api/admin/activity-maintenance', auth, adminOnly, async (req, res) => 
     const db = await getDb();
     const cfg = await db.collection('config').findOne({ key: 'game_maintenance' });
     res.json({ ok: true, maintenance: cfg ? cfg.value : false });
-  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 app.post('/api/admin/activity-maintenance', auth, adminOnly, async (req, res) => {
@@ -44,7 +44,7 @@ app.post('/api/admin/activity-maintenance', auth, adminOnly, async (req, res) =>
     const { maintenance } = req.body;
     await db.collection('config').updateOne({ key: 'game_maintenance' }, { $set: { value: !!maintenance, updatedAt: new Date() } }, { upsert: true });
     res.json({ ok: true, maintenance: !!maintenance });
-  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // 【2026-09-12】管理员：清空所有用户的钥匙
@@ -53,16 +53,21 @@ app.post('/api/admin/reset-all-keys', auth, adminOnly, async (req, res) => {
     const db = await getDb();
     const r = await db.collection('game_profiles').updateMany({}, { $set: { keys: 0 } });
     res.json({ ok: true, modified: r.modifiedCount });
-  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // 【2026-09-12】管理员：列出所有用户
 app.get('/api/admin/users', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
-    const users = await db.collection('users').find({}, { projection: { password: 0 } }).limit(50).toArray();
+    // 【2026-09-17 安全修复】原投影写的是 password:0，但字段名是 passwordHash，等于没排除——
+    // 接口曾把全部用户的 bcrypt 哈希、身份证哈希、支付宝账号一次性返回
+    // 【终审修正】补排序：自然序在文档频繁 update 后不可靠，按注册时间倒序才是"最近注册的 50 个"
+    const users = await db.collection('users').find({}, { projection: {
+      passwordHash: 0, alipay: 0, 'realname.idHash': 0,
+    } }).sort({ createdAt: -1 }).limit(50).toArray();
     res.json({ ok: true, users });
-  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // 【2026-09-12】管理员：根据手机号查用户ID
@@ -77,7 +82,7 @@ app.get('/api/admin/find-user/:phone', auth, adminOnly, async (req, res) => {
       (/^\d{7}$/.test(key) ? await db.collection('users').findOne({ uid: key }) : null);
     if (!u) return res.status(404).json({ ok: false, error: '未找到该手机号/工号对应的用户' });
     res.json({ ok: true, user: { _id: u._id.toString(), phone: u.username, name: u.displayName || '', uid: u.uid || '' } });
-  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // 【2026-09-12】管理员：游戏道具发放/收回/查询
@@ -85,19 +90,24 @@ app.post('/api/admin/game-grant', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
     const { userId, item, amount } = req.body;
-    if (!userId || !item || !amount) return res.status(400).json({ ok: false, error: '缺少参数' });
+    if (!userId || !item) return res.status(400).json({ ok: false, error: '缺少参数' });
     const validItems = ['keys','balls','frags','revives','bagS','bagM','bagL'];
     if (!validItems.includes(item)) return res.status(400).json({ ok: false, error: '无效道具类型' });
-    const update = { $inc: { [item]: Number(amount) }, $set: { updatedAt: new Date() } };
+    // 【2026-09-17 安全修复】校验数量为有限数值并限制单次幅度，防止 NaN 报错或一次刷出巨额道具
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt === 0 || Math.abs(amt) > 100000) {
+      return res.status(400).json({ ok: false, error: '数量需为有限数字（单次±10万以内）' });
+    }
+    const update = { $inc: { [item]: amt }, $set: { updatedAt: new Date() } };
     const p = await db.collection('game_profiles').findOneAndUpdate(
-      { userId }, update, { returnDocument: 'after', upsert: true }
+      { userId: String(userId) }, update, { returnDocument: 'after', upsert: true }
     );
     const profile = p.value || p;
     await db.collection('game_logs').insertOne({
-      userId, action: 'admin_grant', detail: { item, amount, by: req.user.phone || req.user._id }, createdAt: new Date()
+      userId: String(userId), action: 'admin_grant', detail: { item, amount: amt, by: req.user.username || String(req.user._id) }, createdAt: new Date()
     });
     res.json({ ok: true, profile: profile });
-  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // 【2026-09-12】管理员：查询某用户游戏道具
@@ -106,7 +116,7 @@ app.get('/api/admin/game-profile/:userId', auth, adminOnly, async (req, res) => 
     const db = await getDb();
     const p = await db.collection('game_profiles').findOne({ userId: req.params.userId });
     res.json({ ok: true, profile: p || null });
-  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // 【2026-09-12】管理员：清理所有进行中的游戏会话（退还钥匙）
@@ -119,7 +129,7 @@ app.post('/api/admin/game-cleanup', auth, adminOnly, async (req, res) => {
       await db.collection('game_profiles').updateOne({ userId: s.userId }, { $inc: { keys: 1 } });
     }
     res.json({ ok: true, cleaned: sessions.length });
-  } catch(e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // 【2026-09-12】挂载魔法翻翻乐游戏模块
