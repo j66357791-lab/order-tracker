@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 550" width="800" height="550">
+<defs>
+  <filter id="sh" x="-45%" y="-45%" width="190%" height="190%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#2b2a26" flood-opacity="0.16"/></filter>
+</defs>
+<rect width="800" height="550" fill="#f3eee3"/>
+<rect x="40" y="40" width="130" height="28" rx="14" fill="#1f4d3a"/>
+<text x="105" y="59" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#f3eee3" text-anchor="middle" letter-spacing="2">数据整理</text>
+<text x="186" y="60" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12.5" fill="#6b675e">订单原始表 · 数据清洗前后对比</text>
+<text x="760" y="59" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11.5" fill="#a49c8e" text-anchor="end">2,347 行 · 8 条清洗规则</text>
+
+<rect x="40" y="88" width="330" height="368" rx="12" fill="#ffffff" filter="url(#sh)" stroke="#e8dfcd"/>
+<rect x="64" y="106" width="92" height="24" rx="12" fill="#f7e8e3"/>
+<text x="110" y="122" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#b5432f" text-anchor="middle" font-weight="600">清洗前 · 原始表</text>
+<text x="332" y="122" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#a49c8e" text-anchor="end">问题 23 处</text>
+
+<rect x="64" y="146" width="282" height="240" rx="8" fill="#fbf9f4" stroke="#f0e8d8"/>
+<rect x="64" y="146" width="282" height="26" rx="8" fill="#efe8da"/>
+<text x="78" y="163" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#6b675e" font-weight="600">客户名称</text>
+<text x="168" y="163" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#6b675e" font-weight="600">下单日期</text>
+<text x="252" y="163" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#6b675e" font-weight="600">金额</text>
+<text x="78" y="188" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">李婷（重复）</text>
+<text x="168" y="188" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">2026.1.5</text>
+<text x="252" y="188" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">1,280元</text>
+<text x="78" y="210" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">王强</text>
+<text x="168" y="210" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">1月5号</text>
+<text x="252" y="210" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">¥899</text>
+<rect x="64" y="218" width="282" height="20" fill="#f7e8e3"/>
+<text x="78" y="232" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">（空行 × 3）</text>
+<text x="78" y="254" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">李婷</text>
+<text x="168" y="254" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">2026/1/6</text>
+<text x="252" y="254" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">660</text>
+<text x="78" y="276" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">赵敏敏（多空格）</text>
+<text x="168" y="276" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">一月七日</text>
+<text x="252" y="276" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">998.00 元整</text>
+<text x="78" y="298" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">钱进</text>
+<text x="168" y="298" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">2026.1.8</text>
+<text x="252" y="298" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">-45（负数含义？）</text>
+<text x="64" y="330" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#a49c8e">↑ 合并单元格 · 日期四种写法 · 单位混写</text>
+<text x="64" y="348" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#a49c8e">　 空行夹杂数据 · 重复记录 · 负数无备注</text>
+
+<rect x="64" y="374" width="282" height="62" rx="8" fill="#fdf4ee"/>
+<text x="80" y="396" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#b0642c" font-weight="600">后果：透视表对不上 · 筛选漏行</text>
+<text x="80" y="416" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#6b675e">月度对账多算了 ¥1,344，查了一下午</text>
+
+<path d="M384 272 L416 272 M408 264 L418 272 L408 280" stroke="#b0642c" stroke-width="3" fill="none" stroke-linecap="round"/>
+
+<rect x="430" y="88" width="330" height="368" rx="12" fill="#ffffff" filter="url(#sh)" stroke="#e8dfcd"/>
+<rect x="454" y="106" width="92" height="24" rx="12" fill="#e9f2ec"/>
+<text x="500" y="122" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#2e6b52" text-anchor="middle" font-weight="600">清洗后 · 交付表</text>
+<text x="722" y="122" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#a49c8e" text-anchor="end">可筛选 · 可透视</text>
+
+<rect x="454" y="146" width="282" height="240" rx="8" fill="#fbf9f4" stroke="#e2e8e0"/>
+<rect x="454" y="146" width="282" height="26" rx="8" fill="#e2ece4"/>
+<text x="468" y="163" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#1f4d3a" font-weight="600">客户名称</text>
+<text x="558" y="163" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#1f4d3a" font-weight="600">下单日期</text>
+<text x="642" y="163" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#1f4d3a" font-weight="600">金额(元)</text>
+<text x="704" y="163" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#1f4d3a" font-weight="600">状态</text>
+<text x="468" y="188" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">李婷</text>
+<text x="558" y="188" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">2026-01-05</text>
+<text x="642" y="188" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">1,280.00</text>
+<text x="704" y="188" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2e6b52">有效</text>
+<text x="468" y="210" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">王强</text>
+<text x="558" y="210" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">2026-01-05</text>
+<text x="642" y="210" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">899.00</text>
+<text x="704" y="210" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2e6b52">有效</text>
+<text x="468" y="232" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">李婷</text>
+<text x="558" y="232" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">2026-01-06</text>
+<text x="642" y="232" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">660.00</text>
+<text x="704" y="232" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2e6b52">有效</text>
+<text x="468" y="254" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">赵敏敏</text>
+<text x="558" y="254" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">2026-01-07</text>
+<text x="642" y="254" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">998.00</text>
+<text x="704" y="254" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2e6b52">有效</text>
+<rect x="454" y="260" width="282" height="20" fill="#f7e8e3"/>
+<text x="468" y="274" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">钱进</text>
+<text x="558" y="274" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">2026-01-08</text>
+<text x="642" y="274" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f">-45.00</text>
+<text x="704" y="274" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#b5432f" font-weight="600">待核实</text>
+<text x="468" y="298" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">周舟</text>
+<text x="558" y="298" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">2026-01-08</text>
+<text x="642" y="298" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2b2a26">1,450.00</text>
+<text x="704" y="298" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#2e6b52">有效</text>
+<text x="454" y="330" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#a49c8e">↑ 日期统一 YYYY-MM-DD · 金额独立数值列</text>
+<text x="454" y="348" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#a49c8e">　 去重 2 行 · 异常负数条件格式自动标红</text>
+
+<rect x="454" y="374" width="282" height="62" rx="8" fill="#f0f6f0"/>
+<text x="470" y="396" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#2e6b52" font-weight="600">用时 40 分钟 · 交付带规则说明</text>
+<text x="470" y="416" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10.5" fill="#6b675e">透视表一键刷新，下月新数据直接贴入可用</text>
+
+<rect x="40" y="476" width="4" height="22" rx="2" fill="#b0642c"/>
+<text x="56" y="486" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12.5" fill="#1f4d3a" font-weight="600">数据清洗 · 前后对比</text>
+<text x="56" y="504" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11.5" fill="#6b675e">洗的是数据，交的是以后每月都能直接用的模板，规则写在说明页里</text>
+</svg>
