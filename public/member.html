@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>我的工作台 · 小沐文案</title>
+<title>文案馆 · 小沐文案</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#faf7f1">
 <link rel="manifest" href="/manifest.json">
@@ -26,6 +26,8 @@
   .hd { display: flex; align-items: center; gap: 14px; height: 62px; }
   .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; }
   .brand .seal { width: 32px; height: 32px; background: var(--red); color: #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; }
+  .hd .hello-word { font-size: 14px; color: var(--ink2); }
+  .hd .hello-word b { color: var(--green); font-weight: 600; }
   .hd .who { margin-left: auto; display: flex; align-items: center; gap: 10px; }
   .hd .who b { font-weight: 500; }
   .btn-s { border: 1px solid var(--line); background: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; color: var(--ink2); }
@@ -36,6 +38,7 @@
   .side button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: none; border-radius: 10px; padding: 12px 14px; font-size: 14.5px; color: var(--ink2); cursor: pointer; }
   .side button:hover { background: var(--paper2); }
   .side button.on { background: var(--green); color: #fff; }
+  .side button b { font-size: 16px; font-weight: 400; }
   .side .side-tip { font-size: 12px; color: var(--ink2); padding: 12px 14px 4px; line-height: 1.7; border-top: 1px dashed var(--line); margin-top: 8px; }
 
   .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 24px; margin-bottom: 18px; }
@@ -44,20 +47,29 @@
   .pane { display: none; }
   .pane.on { display: block; }
 
-  .hello { display: flex; align-items: center; gap: 18px; }
-  .ava { width: 62px; height: 62px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
-  .hello h2 { font-size: 21px; }
+  /* ===== AI 首页 ===== */
+  .ai-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .ai-hero .bot { width: 56px; height: 56px; border-radius: 16px; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+  .ai-hero h2 { font-size: 21px; }
+  .ai-hero .sub2 { font-size: 13px; color: var(--ink2); margin-top: 2px; }
+  .ai-box { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: #fff; box-shadow: 0 12px 32px rgba(43,42,38,.06); }
+  .ai-logs { height: 460px; overflow-y: auto; padding: 20px; background: var(--paper); }
+  .msg { max-width: 78%; padding: 10px 14px; border-radius: 12px; font-size: 13.5px; margin-bottom: 10px; line-height: 1.7; word-break: break-word; white-space: pre-wrap; }
+  .msg.u { background: var(--green); color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+  .msg.a { background: #fff; border: 1px solid var(--line); margin-right: auto; border-bottom-left-radius: 4px; }
+  .ai-chips { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px 0; background: #fff; }
+  .ai-chips button { background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); border-radius: 99px; padding: 6px 14px; font-size: 12.5px; cursor: pointer; }
+  .ai-chips button:hover { border-color: var(--green2); color: var(--green2); }
+  .ai-input { display: flex; gap: 10px; padding: 12px 14px 14px; border-top: 1px solid var(--line); background: #fff; }
+  .ai-input input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 14px; outline: none; background: var(--paper); min-width: 0; }
+  .ai-input button { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 0 24px; font-size: 14px; cursor: pointer; }
 
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .stat { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
-  .stat b { display: block; font-size: 26px; color: var(--green); }
-  .stat span { font-size: 12.5px; color: var(--ink2); }
-
-  .quick { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-  .quick button { text-align: left; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; cursor: pointer; font-size: 14.5px; color: var(--ink); }
-  .quick button:hover { background: #fff; box-shadow: 0 8px 22px rgba(43,42,38,.07); }
-  .quick button em { display: block; font-style: normal; font-size: 12.5px; color: var(--ink2); margin-top: 4px; }
-
+  /* ===== 商城 ===== */
+  .deal-bar { display: flex; align-items: center; gap: 12px; background: #fdf7ec; border: 1px solid #f0e2c6; border-radius: 12px; padding: 12px 18px; margin-bottom: 18px; font-size: 13px; color: #7a5a22; }
+  .deal-bar .ico { font-size: 18px; }
+  .deal-bar b { color: var(--ochre); }
+  .deal-bar.hot { background: #fdeef3; border-color: #f3d3de; color: #a03a55; }
+  .deal-bar.hot b { color: #c9453a; }
   .p-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 22px 20px; position: relative; display: flex; flex-direction: column; }
   .p-card.hot { border-color: var(--gold); box-shadow: 0 12px 32px rgba(201,165,92,.16); }
   .p-badge { position: absolute; top: -11px; left: 20px; background: var(--gold); color: #fff; font-size: 11.5px; border-radius: 99px; padding: 3px 12px; }
@@ -65,17 +77,26 @@
   .p-card .p-tag { font-size: 12.5px; color: var(--ink2); margin: 3px 0 12px; }
   .p-card .p-price b { font-size: 28px; color: var(--green); }
   .p-card .p-price s { color: var(--ink2); font-size: 13px; margin-left: 6px; }
+  .p-card .p-save { display: inline-block; font-size: 11.5px; color: #c9453a; background: #fdeef3; border-radius: 99px; padding: 1px 10px; margin-left: 8px; vertical-align: 3px; }
   .p-card ul { list-style: none; margin: 14px 0 18px; flex: 1; }
   .p-card li { font-size: 13px; padding: 5px 0 5px 22px; position: relative; color: var(--ink); }
   .p-card li::before { content: "✓"; position: absolute; left: 0; color: var(--green2); font-weight: 700; }
   .p-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .mall-foot { text-align: center; margin-top: 18px; }
+  .mall-foot .sub { font-size: 13px; color: var(--ink2); margin-bottom: 12px; }
   .btn-main { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 11px 20px; font-size: 14px; cursor: pointer; }
   .btn-main:hover { filter: brightness(1.06); }
   .btn-ghost { background: none; border: 1.5px solid var(--green); color: var(--green); border-radius: 10px; padding: 10px 18px; font-size: 14px; cursor: pointer; }
   .btn-main[disabled] { opacity: .6; cursor: default; }
 
-  .notice { background: #fdf7ec; border: 1px solid #f0e2c6; border-radius: 12px; padding: 14px 18px; font-size: 13px; color: #7a5a22; line-height: 1.8; }
-  .notice b { color: var(--ochre); }
+  /* ===== 我的 ===== */
+  .hello { display: flex; align-items: center; gap: 18px; }
+  .ava { width: 62px; height: 62px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
+  .hello h2 { font-size: 21px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 6px; }
+  .stat { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .stat b { display: block; font-size: 26px; color: var(--green); }
+  .stat span { font-size: 12.5px; color: var(--ink2); }
 
   .lead { padding: 15px 0; border-bottom: 1px dashed var(--line); }
   .lead:last-child { border-bottom: none; }
@@ -92,16 +113,8 @@
   .f-row input, .f-row textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; font-size: 14px; outline: none; background: var(--paper); font-family: inherit; }
   .f-row input:disabled { color: var(--ink2); background: var(--paper2); }
 
-  .ai-box { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #fff; }
-  .ai-logs { height: 340px; overflow-y: auto; padding: 18px; background: var(--paper); }
-  .msg { max-width: 78%; padding: 10px 14px; border-radius: 12px; font-size: 13.5px; margin-bottom: 10px; line-height: 1.7; word-break: break-word; }
-  .msg.u { background: var(--green); color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
-  .msg.a { background: #fff; border: 1px solid var(--line); margin-right: auto; border-bottom-left-radius: 4px; }
-  .ai-chips { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px 0; background: #fff; }
-  .ai-chips button { background: var(--paper2); border: 1px solid var(--line); color: var(--ink2); border-radius: 99px; padding: 5px 13px; font-size: 12.5px; cursor: pointer; }
-  .ai-input { display: flex; gap: 10px; padding: 12px 14px 14px; border-top: 1px solid var(--line); background: #fff; }
-  .ai-input input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; font-size: 14px; outline: none; background: var(--paper); min-width: 0; }
-  .ai-input button { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 0 22px; font-size: 14px; cursor: pointer; }
+  .notice { background: #fdf7ec; border: 1px solid #f0e2c6; border-radius: 12px; padding: 14px 18px; font-size: 13px; color: #7a5a22; line-height: 1.8; }
+  .notice b { color: var(--ochre); }
 
   .mask { position: fixed; inset: 0; background: rgba(43,42,38,.5); z-index: 100; display: none; align-items: center; justify-content: center; padding: 20px; }
   .mask.on { display: flex; }
@@ -121,13 +134,14 @@
     .shell { grid-template-columns: 1fr; gap: 16px; padding: 16px 0 90px; }
     .side { display: none; }
     .mtab { display: flex; }
+    .hd .hello-word { display: none; }
     .stats { grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .stat { padding: 12px 12px; }
     .stat b { font-size: 21px; }
     .p-grid { grid-template-columns: 1fr; }
-    .quick { grid-template-columns: 1fr; }
     .card { padding: 18px; border-radius: 14px; }
-    .ai-logs { height: 300px; }
+    .ai-logs { height: 420px; }
+    .ai-hero h2 { font-size: 19px; }
     .hello h2 { font-size: 19px; }
   }
 </style>
@@ -136,6 +150,7 @@
 <header>
   <div class="wrap hd">
     <a class="brand serif" href="/portal.html"><span class="seal">沐</span>小沐文案</a>
+    <div class="hello-word">欢迎来到<b>文案馆</b>，想写的这里都有</div>
     <div class="who">
       <a class="btn-s" href="/portal.html">回首页</a>
       <b id="hdName" class="serif">…</b>
@@ -145,87 +160,68 @@
 
 <div class="wrap shell">
   <aside class="side" id="side">
-    <button class="on" data-pane="home"><span>概览</span></button>
-    <button data-pane="leads"><span>我的咨询</span></button>
-    <button data-pane="ai"><span>小沐AI</span></button>
-    <button data-pane="me"><span>我的资料</span></button>
+    <button class="on" data-pane="ai"><b>✳</b><span>AI 助手</span></button>
+    <button data-pane="mall"><b>▦</b><span>商城</span></button>
+    <button data-pane="me"><b>○</b><span>我的</span></button>
     <div class="side-tip" id="sideTip">会员权益（专属折扣、优先排期、每月配额）正在开发中。</div>
   </aside>
 
   <main>
-    <!-- 概览 -->
-    <section class="pane on" id="pane-home">
+    <!-- ① AI 助手（默认首页：进来就见小沐） -->
+    <section class="pane on" id="pane-ai">
+      <div class="ai-hero">
+        <div class="bot">✳</div>
+        <div>
+          <h2 class="serif">小沐在的，直接问</h2>
+          <div class="sub2">查套餐、问优惠、估交付时间——先问我，复杂需求帮你转真人</div>
+        </div>
+      </div>
+      <div class="ai-box">
+        <div class="ai-logs" id="aiLogs"></div>
+        <div class="ai-chips" id="aiChips">
+          <button data-q="有没有优惠可以领？">🎁 有没有优惠可以领？</button>
+          <button data-q="套餐多少钱？">看看套餐价格</button>
+          <button data-q="你们能做什么？">你们能做什么？</button>
+          <button data-q="多久能交付？">多久能交付？</button>
+        </div>
+        <div class="ai-input"><input id="aiInput" placeholder="比如：公众号一篇多少钱？有没有优惠？"><button id="aiSend">发送</button></div>
+      </div>
+    </section>
+
+    <!-- ② 商城 -->
+    <section class="pane" id="pane-mall">
+      <div class="deal-bar" id="dealBar"><span class="ico">🎁</span><span id="dealText">优惠信息加载中…</span></div>
+      <div class="p-grid" id="pkgGrid"><div class="empty">套餐加载中…</div></div>
+      <div class="mall-foot">
+        <div class="sub">没有合适的档位？说清用途、字数和交付时间，我们按需报价</div>
+        <button class="btn-ghost" onclick="openLead('')">提交定制需求</button>
+      </div>
+    </section>
+
+    <!-- ③ 我的 -->
+    <section class="pane" id="pane-me">
       <div class="card">
         <div class="hello">
           <div class="ava" id="ava">客</div>
           <div>
             <h2 class="serif" id="helloName">你好</h2>
-            <div class="sub" style="margin:0" id="helloSay">这里是你的专属工作台，需求和进度都在这里。</div>
+            <div class="sub" style="margin:0" id="helloSay">欢迎来到文案馆。</div>
           </div>
         </div>
       </div>
 
       <div class="card">
-        <h2 class="serif">我的进度</h2>
-        <div class="sub">咨询提交后，管理员会在 48 小时内联系你</div>
+        <h2 class="serif">我的咨询</h2>
+        <div class="sub">提交后管理员 48 小时内联系你，状态在这里更新</div>
         <div class="stats">
           <div class="stat"><b id="stAll">0</b><span>累计咨询</span></div>
           <div class="stat"><b id="stWait">0</b><span>待跟进</span></div>
           <div class="stat"><b id="stDone">0</b><span>已跟进</span></div>
         </div>
-      </div>
-
-      <div class="card">
-        <h2 class="serif">继续下单</h2>
-        <div class="sub">选一档直接提交需求，我们先给方案和报价</div>
-        <div class="p-grid" id="pkgGrid"><div class="empty">套餐加载中…</div></div>
-      </div>
-
-      <div class="card">
-        <h2 class="serif">快捷入口</h2>
-        <div class="sub">常用功能一步到</div>
-        <div class="quick">
-          <button onclick="openLead('')">提交新需求<em>用途 / 字数 / 交付时间，写清就行</em></button>
-          <button onclick="go('ai')">问问小沐<em>价格、交付、能做什么，直接问</em></button>
-          <button onclick="location.href='/portal.html#secGallery'">逛逛文案馆<em>看看我们交付过的稿子</em></button>
-          <button onclick="location.href='/portal.html#secFaq'">常见问题<em>改稿、保密、付款方式</em></button>
-        </div>
-      </div>
-
-      <div class="notice">
-        <b>会员权益即将上线</b> —— 专属折扣、优先排期、每月内容配额正在开发。上线后这里会显示你的会员卡和剩余配额，不用另外申请。
-      </div>
-    </section>
-
-    <!-- 我的咨询 -->
-    <section class="pane" id="pane-leads">
-      <div class="card">
-        <h2 class="serif">我的咨询</h2>
-        <div class="sub">共 <span id="leadCount">0</span> 条 · 状态由管理员更新</div>
         <button class="btn-main" onclick="openLead('')">+ 提交新需求</button>
         <div id="leadList" style="margin-top:12px"><div class="empty">加载中…</div></div>
       </div>
-    </section>
 
-    <!-- 小沐AI -->
-    <section class="pane" id="pane-ai">
-      <div class="card">
-        <h2 class="serif">小沐AI</h2>
-        <div class="sub">价格、交付时间、能做什么——直接问。复杂需求帮你转真人</div>
-        <div class="ai-box">
-          <div class="ai-logs" id="aiLogs"><div class="msg a">在的～有什么想了解的？问价格、问交付时间都可以。</div></div>
-          <div class="ai-chips" id="aiChips">
-            <button data-q="你们能做什么？">你们能做什么？</button>
-            <button data-q="套餐多少钱？">套餐多少钱？</button>
-            <button data-q="多久能交付？">多久能交付？</button>
-          </div>
-          <div class="ai-input"><input id="aiInput" placeholder="比如：公众号一篇多少钱？"><button id="aiSend">发送</button></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 我的资料 -->
-    <section class="pane" id="pane-me">
       <div class="card">
         <h2 class="serif">我的资料</h2>
         <div class="sub">手机号即登录账号，暂不支持修改；昵称可以随时改</div>
@@ -235,6 +231,11 @@
         <div class="err" id="meErr"></div>
         <button class="btn-main" id="saveMe">保存昵称</button>
       </div>
+
+      <div class="notice">
+        <b>会员权益即将上线</b> —— 专属折扣、优先排期、每月内容配额正在开发。上线后这里会显示你的会员卡和剩余配额，不用另外申请。
+      </div>
+
       <div class="card">
         <h2 class="serif">账号</h2>
         <div class="sub">退出后需要重新登录才能提交需求和查看进度</div>
@@ -246,9 +247,8 @@
 
 <!-- 移动端底部 Tab -->
 <nav class="mtab" id="mtab">
-  <button class="on" data-pane="home"><b>◉</b>概览</button>
-  <button data-pane="leads"><b>≡</b>咨询</button>
-  <button data-pane="ai"><b>✳</b>小沐AI</button>
+  <button class="on" data-pane="ai"><b>✳</b>小沐AI</button>
+  <button data-pane="mall"><b>▦</b>商城</button>
   <button data-pane="me"><b>○</b>我的</button>
 </nav>
 
@@ -277,9 +277,9 @@ function toast(t) { const el = $('toast'); el.textContent = t; el.style.display 
 // 未登录 / 非用户端角色：一律送回该去的地方
 if (!TOKEN || !ME) location.replace('/portal.html#login');
 else if (ME.role === 'writer') location.replace('/writer.html');
-else if (ME.role === 'admin') location.replace('/dispatch.html');
+else if (ME.role === 'admin') location.replace('/admin.html');
 
-// ——— Tab 切换 ———
+// ——— Tab 切换（AI 助手 / 商城 / 我的） ———
 function go(pane) {
   document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + pane));
   document.querySelectorAll('[data-pane]').forEach(b => b.classList.toggle('on', b.dataset.pane === pane));
@@ -288,7 +288,7 @@ function go(pane) {
 }
 document.querySelectorAll('[data-pane]').forEach(b => b.onclick = () => go(b.dataset.pane));
 
-// ——— 资料 & 概览 ———
+// ——— 资料 & 我的咨询 ———
 let LEADS = [];
 async function loadMe() {
   try {
@@ -301,7 +301,7 @@ async function loadMe() {
     const name = me.displayName || '用户';
     $('hdName').textContent = name;
     $('ava').textContent = name.slice(0, 1);
-    $('helloName').textContent = name + '，你好';
+    $('helloName').textContent = name + '，欢迎回来';
     $('helloSay').textContent = '注册于 ' + cnDate(me.createdAt) + ' · 需求和进度都在这里。';
     $('fName').value = name;
     $('fPhone').value = me.phone || '-';
@@ -309,13 +309,12 @@ async function loadMe() {
     $('stAll').textContent = LEADS.length;
     $('stWait').textContent = LEADS.filter(l => l.status !== '已跟进').length;
     $('stDone').textContent = LEADS.filter(l => l.status === '已跟进').length;
-    $('leadCount').textContent = LEADS.length;
     renderLeads();
   } catch (e) { toast('资料加载失败，稍后刷新试试'); }
 }
 function renderLeads() {
   if (!LEADS.length) {
-    $('leadList').innerHTML = '<div class="empty">还没有提交过需求。<br>选一档套餐，或直接点上面的蓝色按钮写需求。</div>';
+    $('leadList').innerHTML = '<div class="empty">还没有提交过需求。<br>去「商城」选一档套餐，或直接提交定制需求。</div>';
     return;
   }
   $('leadList').innerHTML = LEADS.map(l => `<div class="lead">
@@ -335,7 +334,7 @@ $('saveMe').onclick = async () => {
     if (!j.ok) { $('meErr').textContent = j.error || '保存失败'; }
     else {
       ME.displayName = name; localStorage.setItem('jdy_user', JSON.stringify(ME));
-      $('hdName').textContent = name; $('ava').textContent = name.slice(0, 1); $('helloName').textContent = name + '，你好';
+      $('hdName').textContent = name; $('ava').textContent = name.slice(0, 1); $('helloName').textContent = name + '，欢迎回来';
       toast('昵称已更新 ✓');
     }
   } catch (e) { $('meErr').textContent = '网络异常，稍后再试'; }
@@ -346,26 +345,47 @@ $('logoutBtn').onclick = () => {
   location.href = '/portal.html';
 };
 
-// ——— 套餐（购买驱动） ———
+// ——— 商城（套餐 + 优惠提示条） ———
+function paintDealBar(pkgs) {
+  const deals = pkgs.filter(p => Number(p.originalPrice) > Number(p.price));
+  const bar = $('dealBar');
+  if (deals.length) {
+    const maxSave = Math.max(...deals.map(p => Math.round((Number(p.originalPrice) - Number(p.price)) * 100) / 100));
+    bar.classList.add('hot');
+    $('dealText').innerHTML = '限时立减进行中——最高直降 <b>¥' + maxSave + '</b>，下单自动生效，无需领券。会员券包即将上线～';
+  } else {
+    bar.classList.remove('hot');
+    $('dealText').innerHTML = '当前为直购价，<b>会员券包</b>（专属折扣 / 优先排期 / 每月配额）正在开发中，上线后第一时间通知你。';
+  }
+}
 async function loadPkgs() {
   try {
     const j = await (await fetch('/api/portal/packages')).json();
-    if (!j.ok || !j.packages.length) { $('pkgGrid').innerHTML = '<div class="empty">套餐配置中，可直接提交需求让我们报价</div>'; return; }
-    $('pkgGrid').innerHTML = j.packages.map(p => `
+    if (!j.ok || !j.packages.length) {
+      $('pkgGrid').innerHTML = '<div class="empty">套餐配置中，可直接提交需求让我们报价</div>';
+      $('dealText').innerHTML = '优惠活动筹备中，先提交需求，客服会给你当下最优方案。';
+      return;
+    }
+    const pkgs = j.packages;
+    paintDealBar(pkgs);
+    $('pkgGrid').innerHTML = pkgs.map(p => {
+      const save = Number(p.originalPrice) > Number(p.price) ? Math.round((Number(p.originalPrice) - Number(p.price)) * 100) / 100 : 0;
+      return `
       <div class="p-card ${p.badge ? 'hot' : ''}">
         ${p.badge ? `<span class="p-badge">${esc(p.badge)}</span>` : ''}
         <h3 class="serif">${esc(p.name)}</h3><div class="p-tag">${esc(p.tagline || '')}</div>
-        <div class="p-price"><b>¥${esc(p.price)}</b>${p.originalPrice ? `<s>¥${esc(p.originalPrice)}</s>` : ''}</div>
+        <div class="p-price"><b>¥${esc(p.price)}</b>${p.originalPrice ? `<s>¥${esc(p.originalPrice)}</s>` : ''}${save ? `<span class="p-save">立省 ¥${save}</span>` : ''}</div>
         <ul>${(p.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul>
         <button class="btn-main" data-pkg="${esc(p.name || '')}">我要这个</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     $('pkgGrid').querySelectorAll('button[data-pkg]').forEach(b => b.onclick = () => openLead(b.dataset.pkg));
   } catch (e) { $('pkgGrid').innerHTML = '<div class="empty">套餐加载失败</div>'; }
 }
 
 // ——— 提交需求 ———
 function openLead(pkg) {
-  $('ldTitle').textContent = pkg ? '下单需求 · ' + pkg : '提交需求';
+  $('ldTitle').textContent = pkg ? '下单需求 · ' + pkg : '提交定制需求';
   $('ldNote').dataset.pkg = pkg || '';
   $('ldNote').value = '';
   $('ldPhone').value = $('fPhone').value === '-' ? '' : $('fPhone').value;
@@ -380,13 +400,17 @@ $('ldGo').onclick = async () => {
     const r = await fetch('/api/portal/lead', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ packageName: $('ldNote').dataset.pkg || '一般咨询', note: $('ldNote').value, contact: phone }) });
     const j = await r.json();
     if (!j.ok) { $('ldErr').textContent = j.error || '提交失败'; }
-    else { $('leadMask').classList.remove('on'); toast('已提交，我们尽快联系你 ✓'); go('leads'); loadMe(); }
+    else { $('leadMask').classList.remove('on'); toast('已提交，我们尽快联系你 ✓'); go('me'); loadMe(); }
   } catch (e) { $('ldErr').textContent = '网络异常，稍后再试'; }
   $('ldGo').disabled = false; $('ldGo').textContent = '提交';
 };
 $('leadMask').addEventListener('click', e => { if (e.target.id === 'leadMask') $('leadMask').classList.remove('on'); });
 
-// ——— 小沐AI ———
+// ——— 小沐AI（首页主界面） ———
+function aiHello() {
+  const name = (ME && ME.displayName) || '';
+  $('aiLogs').innerHTML = `<div class="msg a">你好${name ? '，' + esc(name) : ''}～我是小沐。查套餐、问优惠、估交付时间都可以直接问；想下单就去「商城」挑一档，复杂需求我会帮你转真人。</div>`;
+}
 async function aiSend(preset) {
   const q = (preset || $('aiInput').value).trim(); if (!q) return;
   $('aiInput').value = '';
@@ -404,7 +428,7 @@ $('aiSend').onclick = () => aiSend();
 $('aiInput').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
 $('aiChips').addEventListener('click', e => { if (e.target.dataset && e.target.dataset.q) aiSend(e.target.dataset.q); });
 
-if (TOKEN && ME && ME.role === 'client') { loadMe(); loadPkgs(); }
+if (TOKEN && ME && ME.role === 'client') { aiHello(); loadMe(); loadPkgs(); }
 </script>
 <script>
 // PWA：加到手机桌面可离线打开
