@@ -70,6 +70,40 @@ app.get('/api/admin/users', auth, adminOnly, async (req, res) => {
   } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
+// 【2026-09-18 新增 v20.1】管理员重置用户密码（找回密码场景）
+// 说明：密码为 bcrypt 单向哈希存储，明文任何人都不可查看（安全底线）；
+// 管理员设置的新密码按主体系哈希（bcrypt(前端SHA-256(新密码))），用户用新密码直接登录
+app.post('/api/admin/users/:id/reset-password', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const id = String(req.params.id || '');
+    if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: '参数无效' });
+    let newPassword = String(req.body?.newPassword || '').trim();
+    // 不传则自动生成 8 位临时密码（大写字母 + 数字，易读无歧义字符）
+    if (!newPassword) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      newPassword = 'Xy' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    }
+    if (newPassword.length < 8 || newPassword.length > 64) {
+      return res.status(400).json({ ok: false, error: '新密码需为 8-64 位' });
+    }
+    const u = await db.collection('users').findOne({ _id: new ObjectId(id) }, { projection: { username: 1, role: 1 } });
+    if (!u) return res.status(404).json({ ok: false, error: '用户不存在' });
+    // 与登录体系对齐：登录时前端传 SHA-256(用户输入)，后端 bcrypt 比对——重置时同样存 bcrypt(SHA-256(新密码))
+    const passwordHash = await bcrypt.hash(sha256hex(newPassword), 8);
+    await db.collection('users').updateOne(
+      { _id: u._id },
+      { $set: { passwordHash, passwordResetAt: new Date(), passwordResetBy: req.user.username || String(req.user._id) } });
+    // 审计流水（谁在什么时候重置了谁的密码）
+    await db.collection('game_logs').insertOne({
+      userId: id, action: 'admin_reset_password',
+      detail: { target: u.username, targetRole: u.role, by: req.user.username || String(req.user._id) },
+      createdAt: new Date(),
+    });
+    res.json({ ok: true, tempPassword: newPassword, username: u.username });
+  } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+});
+
 // 【2026-09-12】管理员：根据手机号查用户ID
 app.get('/api/admin/find-user/:phone', auth, adminOnly, async (req, res) => {
   try {
