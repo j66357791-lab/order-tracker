@@ -18,7 +18,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/icon-192.png">
-<link rel="preload" as="image" href="/assets/portal/gallery2.jpg?v=1" fetchpriority="high">
+<link rel="preload" as="image" href="/assets/portal/gallery2.jpg?v=2" fetchpriority="high">
 <script>
 // 分享/搜索需要绝对地址：部署到任何域名时自动把相对路径补全（og:image / canonical）
 (function () {
@@ -149,9 +149,11 @@
 
   /* 右：主视觉 + 缩略图 */
   .work-view { min-width: 0; display: flex; flex-direction: column; }
-  .wv-main { position: relative; margin: 0; border-radius: 18px; overflow: hidden; background: #e8e2d6;
+  .wv-main { position: relative; margin: 0; border-radius: 18px; overflow: hidden; background: #ece6da;
              aspect-ratio: 16 / 11; box-shadow: 0 18px 44px rgba(43,42,38,.15); }
-  .wv-main img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; transition: transform .7s var(--ease); }
+  /* 【2026-09-17】案例样张是带完整文案的竖版设计稿，cover 会裁掉标题和交付说明——
+     改为 contain 完整展示，底色与样张纸色接近，留白处不突兀 */
+  .wv-main img { width: 100%; height: 100%; object-fit: contain; cursor: zoom-in; transition: transform .7s var(--ease); }
   .wv-main:hover img { transform: scale(1.035); }
   .wv-main img.swap { animation: wvIn .6s var(--ease); }
   @keyframes wvIn { from { opacity: 0; transform: scale(1.04); } to { opacity: 1; transform: none; } }
@@ -403,7 +405,7 @@
     </div>
   </div>
   <div class="hero-r">
-    <img src="/assets/portal/gallery2.jpg?v=1" alt="小沐文案交付过的文案作品" width="750" height="1000" decoding="async" fetchpriority="high">
+    <img src="/assets/portal/gallery2.jpg?v=2" alt="小沐文案交付过的文案作品" width="750" height="1000" decoding="async" fetchpriority="high">
     <div class="hero-stat"><b>1,200+</b>篇已交付文案</div>
   </div>
 </div>
@@ -443,10 +445,10 @@
   <div class="wrap">
     <div class="sec-head reveal"><h2 class="serif">怎么合作</h2><span class="en">PROCESS</span><span class="more">四步走完，不需要你盯</span></div>
     <div class="steps">
-      <div class="step reveal"><div class="no">1</div><h3 class="serif">说清楚需求</h3><p>注册后在工作台提交需求，写下用途、字数、交付时间和参考风格。</p></div>
+      <div class="step reveal"><div class="no">1</div><h3 class="serif">说清楚需求</h3><p>注册后在文案馆提交需求，写下用途、字数、交付时间和参考风格。</p></div>
       <div class="step reveal"><div class="no">2</div><h3 class="serif">确认方案与报价</h3><p>我们回你一篇思路或样张，确认方向和价格，不满意可以直接改需求。</p></div>
       <div class="step reveal"><div class="no">3</div><h3 class="serif">开始写作</h3><p>分配写手，常规 48 小时内出初稿；加急可以插队，会提前跟你确认。</p></div>
-      <div class="step reveal"><div class="no">4</div><h3 class="serif">交付与改稿</h3><p>源文件一并给你，改稿直接在工作台留言，改到能用为止。</p></div>
+      <div class="step reveal"><div class="no">4</div><h3 class="serif">交付与改稿</h3><p>源文件一并给你，改稿直接在文案馆留言，改到能用为止。</p></div>
     </div>
   </div>
 </section>
@@ -465,7 +467,7 @@
     <div class="sec-head reveal"><h2 class="serif">常见问题</h2><span class="en">FAQ</span></div>
     <div class="faq">
       <details class="reveal"><summary>多久能交付？</summary><div class="fa">常规文案 48 小时内出初稿；PPT、视频脚本按页数/分钟数排期。加急可以插队，下单前会先跟你确认时间。</div></details>
-      <details class="reveal"><summary>可以改稿吗？</summary><div class="fa">可以。按套餐不同有对应的免费改稿次数，改稿直接在工作台留言说明，我们按你的意见调整；超出次数的少量修改不额外收费。</div></details>
+      <details class="reveal"><summary>可以改稿吗？</summary><div class="fa">可以。按套餐不同有对应的免费改稿次数，改稿直接在文案馆留言说明，我们按你的意见调整；超出次数的少量修改不额外收费。</div></details>
       <details class="reveal"><summary>稿件是原创的吗？</summary><div class="fa">全部真人原创，不套模板、不用拼接稿。写之前会跟你确认资料和口径，避免出现不实信息。</div></details>
       <details class="reveal"><summary>怎么付款？</summary><div class="fa">确认需求和报价后付款，支持微信/支付宝。可以要求先看样张或提纲，确认没问题再开工。</div></details>
       <details class="reveal"><summary>我的内容会保密吗？</summary><div class="fa">一对一对接，资料只用于本次写作，不外传。作品要上「作品」展示前会先脱敏，并征得你同意。</div></details>
@@ -551,7 +553,7 @@
   </div>
   <div class="err" id="rgErr"></div>
   <button class="btn-main" id="rgGo">创建账号</button>
-  <p class="m-tip">已有账号？<a onclick="openLogin()">去登录</a><br>注册后进入你的专属工作台</p>
+  <p class="m-tip">已有账号？<a onclick="openLogin()">去登录</a><br>注册后进入你的专属文案馆</p>
 </div></div>
 
 <!-- 咨询弹窗 -->
@@ -560,7 +562,7 @@
   <div class="f-row"><label>想了解的细节（选填）</label><textarea id="ldNote" rows="3" placeholder="比如：每个月大概 4 篇小红书，能做吗？"></textarea></div>
   <div class="f-row"><label>联系手机（默认账号手机）</label><input id="ldPhone" placeholder="方便联系你的号码" maxlength="11"></div>
   <button class="btn-main" id="ldGo">提交咨询</button>
-  <p class="m-tip">提交后可在工作台查看进度，管理员 48 小时内联系你</p>
+  <p class="m-tip">提交后可在文案馆查看进度，管理员 48 小时内联系你</p>
 </div></div>
 
 <!-- 大图 -->
@@ -653,7 +655,7 @@ function saveAuth(token, user) {
 function renderAuth() {
   const box = $('hdAuth');
   if (isClient()) {
-    box.innerHTML = `<button class="hd-cta" id="goMember">我的工作台</button>`;
+    box.innerHTML = `<button class="hd-cta" id="goMember">欢迎进入文案馆</button>`;
     $('goMember').onclick = () => location.href = '/member.html';
   } else {
     box.innerHTML = `<button class="hd-cta ghost" id="btnLogin">登录</button><button class="hd-cta" id="btnReg">免费咨询</button>`;
@@ -661,9 +663,9 @@ function renderAuth() {
     $('btnReg').onclick = e => openReg(e.currentTarget);
   }
   const hero = $('heroCta'), band = $('bandCta'), bar = $('mBarCta');
-  if (hero) { hero.textContent = isClient() ? '进入我的工作台' : '免费咨询需求'; hero.onclick = mainCta; }
-  if (band) { band.textContent = isClient() ? '进入我的工作台' : '免费咨询'; band.onclick = mainCta; }
-  if (bar) { bar.textContent = isClient() ? '我的工作台' : '免费咨询'; bar.onclick = mainCta; }
+  if (hero) { hero.textContent = isClient() ? '进入我的文案馆' : '免费咨询需求'; hero.onclick = mainCta; }
+  if (band) { band.textContent = isClient() ? '进入我的文案馆' : '免费咨询'; band.onclick = mainCta; }
+  if (bar) { bar.textContent = isClient() ? '欢迎进入文案馆' : '免费咨询'; bar.onclick = mainCta; }
 }
 function mainCta(e) { isClient() ? location.href = '/member.html' : openReg(e && e.currentTarget); }
 function needAuth(trigger) { openReg(trigger); toast('先注册一个账号，10 秒就好'); }
@@ -691,7 +693,7 @@ $('rgGo').onclick = async () => {
     }
     saveAuth(j.token, j.user);
     if (j.user.role !== 'client') { toast('注册成功 · 正在进入写手端…'); setTimeout(() => location.href = j.redirect || '/writer.html', 700); return; }
-    closeMask(); toast('欢迎加入小沐，正在进入工作台…');
+    closeMask(); toast('欢迎加入小沐，正在进入文案馆…');
     setTimeout(() => location.href = '/member.html', 700);
   } catch (e) { err.textContent = '网络异常，稍后再试'; }
   $('rgGo').disabled = false; $('rgGo').textContent = '创建账号';
@@ -707,7 +709,7 @@ $('lgGo').onclick = async () => {
     if (!j.ok) { err.textContent = j.error || '登录失败'; $('lgGo').disabled = false; $('lgGo').textContent = '登录'; return; }
     saveAuth(j.token, j.user);
     if (j.user.role !== 'client') { location.href = j.redirect || '/writer.html'; return; }
-    closeMask(); toast('欢迎回来，正在进入工作台…');
+    closeMask(); toast('欢迎回来，正在进入文案馆…');
     setTimeout(() => location.href = '/member.html', 600);
   } catch (e) { err.textContent = '网络异常，稍后再试'; $('lgGo').disabled = false; $('lgGo').textContent = '登录'; }
 };
@@ -744,14 +746,18 @@ const DEMO_CASES = {
   '演示': [
     { title: '成套演示设计', sub: '封面 · 数据页 · 图表页', tag: '作品示例', img: '/assets/portal/show-ppt-1.svg' },
     { title: '版式规范与母版', sub: '栅格 · 字号层级 · 配色', tag: '作品示例', img: '/assets/portal/show-ppt-2.svg' },
+    { title: '路演 BP 页', sub: '市场规模 + 单店模型测算', tag: '作品示例', img: '/assets/portal/show-ppt-3.svg' },
+    { title: '年终述职页', sub: '深色大数字 KPI + 季度时间线', tag: '作品示例', img: '/assets/portal/show-ppt-4.svg' },
   ],
   '数据': [
     { title: '经营数据看板', sub: 'KPI · 趋势 · 门店排行', tag: '作品示例', img: '/assets/portal/show-data-1.svg' },
     { title: '台账与条件格式', sub: '异常自动标色 · 公式可编辑', tag: '作品示例', img: '/assets/portal/show-data-2.svg' },
+    { title: '数据清洗前后对比', sub: '原始乱表 → 规范交付表', tag: '作品示例', img: '/assets/portal/show-data-3.svg' },
+    { title: '多表汇总透视', sub: '进销存三表联动 · 周转预警', tag: '作品示例', img: '/assets/portal/show-data-4.svg' },
   ],
   '视频': [
-    { title: '短视频分镜脚本', sub: '镜号 · 画面 · 台词 · 时长', tag: '作品示例', img: '/assets/portal/show-video-1.svg' },
-    { title: '口播脚本', sub: '节奏标注 · 停顿 · 重音', tag: '作品示例', img: '/assets/portal/show-video-2.svg' },
+    { title: '短视频分镜脚本', sub: '镜号 · 运镜 · 台词 · 时长 · BGM 卡点', tag: '作品示例', img: '/assets/portal/show-video-1.svg' },
+    { title: '口播脚本', sub: '时间轴 · 停顿 · 重音 · 完播结构', tag: '作品示例', img: '/assets/portal/show-video-2.svg' },
   ],
 };
 let GALLERY = [];
@@ -885,7 +891,7 @@ $('ldGo').onclick = async () => {
     const j = await r.json();
     if (!j.ok) return toast(j.error);
     closeMask();
-    toast('已提交，可在工作台查看进度');
+    toast('已提交，可在文案馆查看进度');
   } catch (e) { toast('网络异常'); }
 };
 
@@ -1028,7 +1034,7 @@ async function aiSend(preset) {
   logs.insertAdjacentHTML('beforeend', `<div class="msg u">${esc(q)}</div>`);
   logs.scrollTop = logs.scrollHeight;
   if (!isClient()) {
-    logs.insertAdjacentHTML('beforeend', `<div class="msg a">先注册一个账号，我就能正式回答你了～（10 秒，注册完可在工作台继续聊）</div>`);
+    logs.insertAdjacentHTML('beforeend', `<div class="msg a">先注册一个账号，我就能正式回答你了～（10 秒，注册完可在文案馆继续聊）</div>`);
     logs.scrollTop = logs.scrollHeight;
     needAuth(aiFab); return;
   }
