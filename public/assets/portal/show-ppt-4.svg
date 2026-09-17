@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 550" width="800" height="550">
+<defs>
+  <filter id="sh" x="-45%" y="-45%" width="190%" height="190%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#2b2a26" flood-opacity="0.16"/></filter>
+  <linearGradient id="gd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22303f"/><stop offset="1" stop-color="#101820"/></linearGradient>
+</defs>
+<rect width="800" height="550" fill="#f3eee3"/>
+<rect x="40" y="40" width="130" height="28" rx="14" fill="#1f4d3a"/>
+<text x="105" y="59" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#f3eee3" text-anchor="middle" letter-spacing="2">演示定制</text>
+<text x="186" y="60" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12.5" fill="#6b675e">2025 年度述职 · 市场部（深色版式）</text>
+<text x="760" y="59" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11.5" fill="#a49c8e" text-anchor="end">16:9 · 18 页之 P2</text>
+
+<rect x="40" y="88" width="710" height="368" rx="12" fill="url(#gd)" filter="url(#sh)"/>
+<text x="72" y="132" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="13" fill="#8fb3a5">全年成绩单</text>
+<text x="72" y="166" font-family="Songti SC, Noto Serif SC, STSong, SimSun, serif" font-size="26" fill="#f5f2ea" font-weight="700">三条主线，全部兑现</text>
+
+<rect x="72" y="196" width="210" height="104" rx="10" fill="#ffffff" opacity="0.07"/>
+<text x="90" y="226" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#8fb3a5">新增客户</text>
+<text x="90" y="264" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="30" fill="#7fd0a8" font-weight="700">3,842</text>
+<text x="188" y="264" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#7fd0a8">+41%</text>
+<text x="90" y="288" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#6d7f76" opacity="0.9">目标 3,000 · 达成 128%</text>
+
+<rect x="295" y="196" width="210" height="104" rx="10" fill="#ffffff" opacity="0.07"/>
+<text x="313" y="226" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#8fb3a5">渠道 GMV</text>
+<text x="313" y="264" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="30" fill="#f5f2ea" font-weight="700">2,860<tspan font-size="13">万</tspan></text>
+<text x="413" y="264" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#7fd0a8">+33%</text>
+<text x="313" y="288" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#6d7f76" opacity="0.9">客单价 742 元 · 环比连涨 4 季</text>
+
+<rect x="518" y="196" width="210" height="104" rx="10" fill="#ffffff" opacity="0.07"/>
+<text x="536" y="226" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11" fill="#8fb3a5">老客复购率</text>
+<text x="536" y="264" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="30" fill="#f0c26a" font-weight="700">36%</text>
+<text x="596" y="264" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#f0c26a">+9pt</text>
+<text x="536" y="288" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#6d7f76" opacity="0.9">会员体系上线后首个整年</text>
+
+<text x="72" y="342" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12" fill="#8fb3a5">四个季度，四条动作线</text>
+<line x1="72" y1="382" x2="728" y2="382" stroke="#3a4a58" stroke-width="2"/>
+<circle cx="110" cy="382" r="6" fill="#7fd0a8"/><circle cx="310" cy="382" r="6" fill="#7fd0a8"/>
+<circle cx="510" cy="382" r="6" fill="#f0c26a"/><circle cx="700" cy="382" r="6" fill="#f0c26a"/>
+<text x="110" y="408" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11.5" fill="#f5f2ea" text-anchor="middle" font-weight="600">Q1 打基础</text>
+<text x="110" y="426" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#8fa0ab" text-anchor="middle">线索分层 · 话术库 1.0</text>
+<text x="310" y="408" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11.5" fill="#f5f2ea" text-anchor="middle" font-weight="600">Q2 搭渠道</text>
+<text x="310" y="426" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#8fa0ab" text-anchor="middle">直播 + 异业合作双通路</text>
+<text x="510" y="408" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11.5" fill="#f5f2ea" text-anchor="middle" font-weight="600">Q3 做放量</text>
+<text x="510" y="426" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#8fa0ab" text-anchor="middle">大促两场 · ROI 1:4.2</text>
+<text x="700" y="408" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11.5" fill="#f5f2ea" text-anchor="middle" font-weight="600">Q4 冲目标</text>
+<text x="700" y="426" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="10" fill="#8fa0ab" text-anchor="middle">超额 28% 收官</text>
+
+<rect x="40" y="476" width="4" height="22" rx="2" fill="#b0642c"/>
+<text x="56" y="486" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="12.5" fill="#1f4d3a" font-weight="600">年终述职 · 深色大数字版式</text>
+<text x="56" y="504" font-family="PingFang SC, Microsoft YaHei, Arial, sans-serif" font-size="11.5" fill="#6b675e">结论前置 + KPI 卡片 + 季度时间线，投影暗场也看得清，附讲稿备注页</text>
+</svg>
