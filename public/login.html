@@ -137,7 +137,7 @@ loadCaptcha();
   if (localStorage.getItem('jdy_token')) {
     try {
       const me = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('jdy_token') } }).then(x => x.json());
-      if (me.ok) location.href = me.user.role === 'admin' ? '/dispatch.html' : (me.user.role === 'client' ? '/portal.html' : '/writer.html');
+      if (me.ok) location.href = me.user.role === 'admin' ? '/admin.html' : (me.user.role === 'client' ? '/portal.html' : '/writer.html');
     } catch (e) {}
   }
 })();
@@ -161,7 +161,7 @@ $('ctClose').onclick = () => { $('ctMask').style.display = 'none'; $('rAgree').c
 function enter(role, token, user) {
   localStorage.setItem('jdy_token', token);
   localStorage.setItem('jdy_user', JSON.stringify(user));
-  location.href = role === 'admin' ? '/dispatch.html' : (role === 'client' ? '/portal.html' : '/writer.html');
+  location.href = role === 'admin' ? '/admin.html' : (role === 'client' ? '/portal.html' : '/writer.html');
 }
 $('btnSetup').onclick = async () => {
   $('setupErr').textContent = '';
