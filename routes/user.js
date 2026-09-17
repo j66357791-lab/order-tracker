@@ -17,7 +17,7 @@ app.put('/api/me/alipay', auth, async (req, res) => {
     }
     await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { alipay: { name, account, updatedAt: new Date() } } });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 修改显示名
 app.put('/api/me/name', auth, async (req, res) => {
@@ -27,7 +27,7 @@ app.put('/api/me/name', auth, async (req, res) => {
     if (!displayName) return res.status(400).json({ ok: false, error: '名字不能为空' });
     await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { displayName, updatedAt: new Date() } });
     res.json({ ok: true, displayName });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---------- 等级 / 钱包 / 权益 ----------
@@ -56,17 +56,34 @@ async function ensureBonus(db, user, level) {
   if (level < 1) return { balance: 0, grants: [], grantedLast: 0 };
   const prev = (() => { const [y, m] = ymOf(cnNow()).split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; })();
   const log = db.collection('wallet_log');
-  const exists = await log.findOne({ userId: user.id, month: prev });
+  // 【终审修正】exists 原来按 userId+month 全量匹配——但 wallet_log 还承载签到/红包/福袋等
+  // 各类流水（都带 month 字段），活跃写手上月只要有一条签到，本月 1.5% 激励就被误判
+  // "已发过"而停发。收窄为：带 kind 标记的新记录，或历史 lv1 正向记录特征（有 base、无 note）
+  const exists = await log.findOne({ userId: user.id, month: prev, $or: [
+    { kind: 'lv1_bonus' },
+    { kind: { $exists: false }, base: { $exists: true }, note: { $exists: false } },
+  ] });
   if (exists) return null;
   const cards = await db.collection('cards').find({ to: user.id, status: '已完成' }).toArray();
   const paidPrev = cards.filter(c => c.paidAt && ymOf(new Date(new Date(c.paidAt).getTime() + 8 * 3600 * 1000)) === prev)
     .reduce((s, c) => s + (c.reward || 0), 0);
   const amount = Math.round(paidPrev * BONUS_RATE * 100) / 100;
   if (amount <= 0) {
-    await log.insertOne({ userId: user.id, month: prev, amount: 0, note: '上月无到账，未产生奖励', createdAt: new Date() });
+    // 【二次复核补充】零额占位同样要防并发 11000（LV1 用户并发打开钱包页）
+    try {
+      await log.insertOne({ userId: user.id, month: prev, kind: 'lv1_bonus', amount: 0, note: '上月无到账，未产生奖励', createdAt: new Date() });
+    } catch (e) {
+      if (e.code === 11000) return null;
+      throw e;
+    }
     return null;
   }
-  await log.insertOne({ userId: user.id, month: prev, amount, base: paidPrev, rate: BONUS_RATE, createdAt: new Date() });
+  try {
+    await log.insertOne({ userId: user.id, month: prev, kind: 'lv1_bonus', amount, base: paidPrev, rate: BONUS_RATE, createdAt: new Date() });
+  } catch (e) {
+    if (e.code === 11000) return null;   // 并发请求已发过，跳过
+    throw e;
+  }
   return { grantedLast: amount, month: prev };
 }
 app.get('/api/wallet', auth, async (req, res) => {
@@ -94,7 +111,7 @@ app.get('/api/wallet', auth, async (req, res) => {
       bonusRate: BONUS_RATE, lv1Paid: LV1_PAID, lv1RejectMax: LV1_REJECT_MAX,
       grants,
     });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---------- 班次池（管理员发班，写手抢班） ----------
@@ -114,7 +131,7 @@ app.get('/api/shifts', auth, async (req, res) => {
         claimedByMe: (r.claims || []).includes(req.user.id),
       })),
     });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.post('/api/shifts', auth, adminOnly, async (req, res) => {
   try {
@@ -128,14 +145,14 @@ app.post('/api/shifts', auth, adminOnly, async (req, res) => {
     if (dup) return res.status(400).json({ ok: false, error: '该日期已有相同时间段的班次' });
     const r = await db.collection('shifts').insertOne({ date, start, end, claims: [], createdBy: req.user.id, createdAt: new Date() });
     res.json({ ok: true, _id: r.insertedId.toString() });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.delete('/api/shifts/:id', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
     await db.collection('shifts').deleteOne({ _id: new ObjectId(req.params.id) });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 写手抢班：抢占后自动写入单日排班
 app.post('/api/shifts/:id/claim', auth, async (req, res) => {
@@ -151,7 +168,7 @@ app.post('/api/shifts/:id/claim', auth, async (req, res) => {
       { $set: { userId: req.user.id, date: sh.date, start: sh.start, end: sh.end, fromShift: sh._id.toString(), updatedAt: new Date() } },
       { upsert: true });
     res.json({ ok: true, date: sh.date, start: sh.start, end: sh.end });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 放弃班次（未开始可退）
 app.post('/api/shifts/:id/unclaim', auth, async (req, res) => {
@@ -164,7 +181,7 @@ app.post('/api/shifts/:id/unclaim', auth, async (req, res) => {
     const att = await db.collection('attendance').findOne({ userId: req.user.id, date: sh.date });
     if (!att) await db.collection('schedule_days').deleteOne({ userId: req.user.id, date: sh.date, fromShift: sh._id.toString() });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // ---------- 好友（加同事） ----------
 app.get('/api/friends', auth, async (req, res) => {
@@ -173,10 +190,13 @@ app.get('/api/friends', auth, async (req, res) => {
     const me = await db.collection('users').findOne({ _id: new ObjectId(req.user.id) });
     const ids = (me.friends || []).filter(x => ObjectId.isValid(x)).map(x => new ObjectId(x));
     const rows = ids.length ? await db.collection('users').find({ _id: { $in: ids } })
-      .project({ displayName: 1, username: 1, uid: 1, role: 1, shift: 1, sockOnline: 1, level: 1 })
+      // 投影带出 realname.idHash 仅供服务端算 hasRealname，返回给前端的只有布尔
+      .project({ displayName: 1, username: 1, uid: 1, role: 1, shift: 1, sockOnline: 1, level: 1, 'realname.idHash': 1 })
       .sort({ displayName: 1 }).toArray() : [];
-    res.json({ ok: true, friends: rows.map(u => ({ ...publicUser(u), online: !!u.sockOnline })) });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    // 【二次复核补充】补 hasRealname 布尔（不含敏感字段）：writer.html 的实名徽标靠它点亮，
+    // 原来前端读 u.realname 但本接口从未返回过该字段，徽标永远不亮；也不能把 idHash 直接给同事
+    res.json({ ok: true, friends: rows.map(u => ({ ...publicUser(u), online: !!u.sockOnline, hasRealname: !!(u.realname && u.realname.idHash) })) });
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 添加好友：发送申请，对方确认后互为好友
 app.post('/api/friends', auth, async (req, res) => {
@@ -196,7 +216,7 @@ app.post('/api/friends', auth, async (req, res) => {
     await db.collection('friend_requests').insertOne({ from: req.user.id, to: tid, status: '待确认', createdAt: new Date() });
     notify(tid, 'friend_request', { from: req.user.id, fromName: req.user.displayName });
     res.json({ ok: true, message: '申请已发送，等待对方确认' });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.delete('/api/friends/:id', auth, async (req, res) => {
   try {
@@ -205,7 +225,7 @@ app.delete('/api/friends/:id', auth, async (req, res) => {
     await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $pull: { friends: req.params.id } });
     await db.collection('users').updateOne({ _id: new ObjectId(req.params.id) }, { $pull: { friends: req.user.id } });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---------- 提现申请（线下打款登记） ----------
@@ -235,16 +255,23 @@ app.post('/api/withdraw', auth, async (req, res) => {
       // 【2026-09-14】快照本次提现对应的派单卡（审批时按快照打款，避免申请后新增单子被误裹挟）
       doc.cardIds = cards.map(c => c._id.toString());
     }
-    const r = await db.collection('withdrawals').insertOne(doc);
+    const r = await db.collection('withdrawals').insertOne(doc).catch(err => {
+      if (err && err.code === 11000) {
+        // 【2026-09-17 修复】唯一索引兜底并发双击：一个用户同时只允许一笔"待处理"申请，
+        // 否则两笔都按当时的全额计算，管理员各批一次就双重打款
+        throw Object.assign(new Error('您已有一笔待处理的提现申请，请等管理员处理后再试'), { userFacing: true });
+      }
+      throw err;
+    });
     res.json({ ok: true, _id: r.insertedId.toString(), amount: doc.amount, type });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.get('/api/withdraw', auth, async (req, res) => {
   try {
     const db = await getDb();
     const rows = await db.collection('withdrawals').find({ userId: req.user.id }).sort({ createdAt: -1 }).limit(30).toArray();
     res.json({ ok: true, rows: rows.map(w => ({ _id: w._id.toString(), type: w.type, amount: w.amount, status: w.status, reason: w.reason || null, createdAt: w.createdAt })) });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
 // ---------- 【2026-09-14 新增】提现审批（管理端） ----------
@@ -269,7 +296,7 @@ app.get('/api/admin/withdrawals', auth, adminOnly, async (req, res) => {
       db.collection('withdrawals').countDocuments({ status: '已驳回' }),
     ]);
     res.json({ ok: true, withdrawals: list, stats: { pending, paid, rejected } });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 审批打款：标记已打款；订单型提现同时把这批派单卡结清（台账同步 + 红包解冻）
 app.post('/api/admin/withdrawals/:id/pay', auth, adminOnly, async (req, res) => {
@@ -289,9 +316,14 @@ app.post('/api/admin/withdrawals/:id/pay', auth, adminOnly, async (req, res) => 
           { _id: c._id, status: '待打款' },
           { $set: { status: '已完成', paidAt: new Date(), paidVia: 'withdrawal:' + w._id.toString() } });
         if (c.orderId && ObjectId.isValid(c.orderId)) {
-          await db.collection(CONFIG.collection).updateOne(
-            { _id: new ObjectId(c.orderId) },
-            { $set: { status: '已结算', updatedAt: new Date() } });
+          // 【2026-09-17 修复】原代码第一张卡打款就把整单标"已结算"，
+          // 一个订单绑多张派单卡时其余卡状态错位——改为该订单下已无待打款卡时才结单
+          const remain = await db.collection('cards').countDocuments({ orderId: c.orderId, status: '待打款' });
+          if (remain === 0) {
+            await db.collection(CONFIG.collection).updateOne(
+              { _id: new ObjectId(c.orderId) },
+              { $set: { status: '已结算', updatedAt: new Date() } });
+          }
         }
         notify(c.to, 'card', { ...c, status: '已完成' });
         paidCards++;
@@ -304,8 +336,10 @@ app.post('/api/admin/withdrawals/:id/pay', auth, adminOnly, async (req, res) => 
       { _id: w._id, status: '待处理' },
       { $set: { status: '已打款', paidAt: new Date(), note, paidCards } },
       { returnDocument: 'after' });
+    // 【二次复核补充】并发双击时条件更新落空要明确报错，不能返回 ok:true + withdrawal:null
+    if (!r) return res.status(409).json({ ok: false, error: '该申请已被处理，请刷新列表' });
     res.json({ ok: true, withdrawal: r, paidCards });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 驳回：写明原因（写手端可见），激励型余额随之释放可再次发起
 app.post('/api/admin/withdrawals/:id/reject', auth, adminOnly, async (req, res) => {
@@ -318,6 +352,6 @@ app.post('/api/admin/withdrawals/:id/reject', auth, adminOnly, async (req, res) 
       { returnDocument: 'after' });
     if (!r) return res.status(400).json({ ok: false, error: '该申请不存在或已处理' });
     res.json({ ok: true, withdrawal: r });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 }
