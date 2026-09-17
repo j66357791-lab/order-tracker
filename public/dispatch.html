@@ -287,10 +287,10 @@
 
 <div class="subtabs">
   <div class="stab" onclick="location.href='/admin.html'" style="color:var(--green2)">🏠 工作台</div>
+      <div class="stab" onclick="location.href='/admin.html#game'" style="color:#7c4dff">🎮 游戏控制器</div>
       <div class="stab on" data-v="vChat">💬 聊天/派单<span class="reddot" id="tabUnread" style="display:none">0</span></div>
   <div class="stab" data-v="vOver">📋 派单总览</div>
   <div class="stab" data-v="vWd">💳 提现审批<span class="warnnum" id="wdNum" style="display:none">0</span></div>
-  <div class="stab" data-v="vAct">🎮 游戏工作台</div>
   <div class="stab" data-v="vRecon">💰 财务对账<span class="warnnum" id="reconNum" style="display:none">0</span></div>
   <div class="stab" data-v="vAd">📝 广告管理</div>
   <div class="stab" onclick="location.href='/admin_packages.html'">📦 用户端套餐</div>
@@ -994,7 +994,6 @@ document.querySelectorAll('.stab[data-v]').forEach(t => t.onclick = () => {
   if (t.dataset.v === 'vRecon' && !_reconLoaded) { _reconLoaded = true; loadRecon(); }
     if (t.dataset.v === 'vAd') loadAdAdmin();
   if (t.dataset.v === 'vWd') loadWithdrawals();
-  if (t.dataset.v === 'vAct') loadWorkbench();
 });
 
 /* ================= 💳 提现审批 ================= */
