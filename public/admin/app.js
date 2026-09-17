@@ -1,0 +1,85 @@
+// admin/app.js — 管理后台公共层（方案二重构 · 统一壳）
+// 职责：登录守卫 / 接口封装 / 通用组件（toast、确认）/ 时间工具 / 导航渲染
+// 各功能模块（台账/派单/游戏/用户端/安全）逐步迁入后共用本层，不再各自复制
+
+export const TOKEN = localStorage.getItem('jdy_token') || '';
+export let ME = null;
+try { ME = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) {}
+
+// —— 登录守卫：仅管理员可用；非管理员送回各自的页面 ——
+export function guardAdmin() {
+  if (!TOKEN || !ME) { location.replace('/login.html'); return false; }
+  if (ME.role === 'writer') { location.replace('/writer.html'); return false; }
+  if (ME.role === 'client') { location.replace('/portal.html'); return false; }
+  return true;
+}
+
+// —— 接口封装：自动带 token；401 统一踢回登录 ——
+export async function api(path, opt = {}) {
+  const r = await fetch(path, { ...opt, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN, ...(opt.headers || {}) } });
+  if (r.status === 401) {
+    localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user');
+    location.href = '/login.html';
+    throw new Error('未登录');
+  }
+  return r.json();
+}
+
+// —— 轻提示 ——
+let _toastTimer = null;
+export function toast(msg) {
+  let el = document.getElementById('adminToast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'adminToast';
+    el.style.cssText = 'position:fixed;left:50%;top:76px;transform:translateX(-50%);background:#2b2a26;color:#fff;padding:10px 22px;border-radius:99px;font-size:13px;z-index:200;display:none;max-width:88vw;text-align:center';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.style.display = 'none'; }, 2600);
+}
+
+// —— HTML 转义 ——
+export const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// —— 北京时间工具 ——
+export const cnTime = (d) => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ');
+export const cnDate = (d) => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+
+// —— 复制到剪贴板 ——
+export async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('已复制：' + text); }
+  catch (e) { toast(text); }
+}
+
+// —— 导航定义（方案二：六项；panel=已迁入本壳的面板，link=仍在外部页面） ——
+// 迁移进度：工作台=panel；其余 5 项暂时 link，后续每步迁一个改为 panel
+export const NAV_ITEMS = [
+  { key: 'home',  icon: '🏠', title: '工作台',     type: 'panel' },
+  { key: 'orders',   icon: '📒', title: '台账',           type: 'link', href: '/index.html', desc: '接单台账与利润统计' },
+  { key: 'dispatch', icon: '🎧', title: '派单工作台', type: 'link', href: '/dispatch.html', desc: '聊天派单 / 审核 / 提现 / 对账' },
+  { key: 'game',     icon: '🎮', title: '游戏控制器', type: 'panel', desc: '翻翻乐配置 / 山海数据 / 道具 / 审计' },
+  { key: 'mall',     icon: '🛍', title: '用户端配置', type: 'panel', desc: '套餐 / 文案馆作品 / 咨询' },
+  { key: 'security', icon: '🛡', title: '安全与用户', type: 'panel', desc: '账号 / 密码重置 / 站内信 / 危险操作' },
+];
+
+// —— 渲染左侧导航（currentKey 高亮当前面板；badge：角标数值/函数） ——
+export function renderNav(currentKey, badges = {}) {
+  const host = document.getElementById('navItems');
+  if (!host) return;
+  host.innerHTML = NAV_ITEMS.map(item => {
+    const b = badges[item.key];
+    const badge = b ? `<span class="badge">${b}</span>` : '';
+    if (item.type === 'panel') {
+      return `<button class="nav-item ${item.key === currentKey ? 'on' : ''}" data-nav="${item.key}"><span class="ico">${item.icon}</span><span>${item.title}</span>${badge}</button>`;
+    }
+    return `<a class="nav-item external" href="${item.href}" title="${esc(item.desc || '')}"><span class="ico">${item.icon}</span><span>${item.title}</span>${badge}</a>`;
+  }).join('');
+  host.querySelectorAll('[data-nav]').forEach(btn => {
+    btn.onclick = () => {
+      if (typeof window.navigate === 'function') window.navigate(btn.dataset.nav);
+    };
+  });
+}
