@@ -33,23 +33,30 @@
         <a class="btn-ghost" href="/portal.html">回首页</a>
       </div>
 
+      <div class="card" style="padding:16px 20px;margin-bottom:18px">
+        <div class="inline" style="flex-wrap:nowrap">
+          <input id="gSearch" placeholder="🔍 全局搜索：手机号 / 工号 / 订单号 / 订单备注" style="flex:1">
+        </div>
+        <div id="gSearchResult" style="margin-top:10px"></div>
+      </div>
+
       <div class="grid4 stats-grid" style="margin-bottom:20px">
-        <a class="stat warn" href="/dispatch.html"><b id="stWd">--</b><span>待审批提现</span></a>
+        <a class="stat warn" href="#" onclick="return navGo('dispatch')"><b id="stWd">--</b><span>待审批提现</span></a>
         <a class="stat" href="#" onclick="return navGo('game')"><b id="stPlaying">--</b><span>进行中对局</span></a>
         <a class="stat" href="#" onclick="return navGo('game')"><b id="stPlayers">--</b><span>游戏玩家</span></a>
         <a class="stat" href="#" onclick="return navGo('security')"><b id="stUsers">--</b><span>平台账号</span></a>
       </div>
 
       <div class="grid2">
-        <a class="card" href="/index.html" style="display:block">
+        <a class="card" href="#" onclick="return navGo('orders')" style="display:block">
           <h2 class="serif">📒 台账</h2>
           <div class="sub">接单台账与利润统计：订单录入、分单、收支口径、导出台账报表</div>
-          <span style="font-size:12px;color:var(--gold)">旧页面 · 待迁入</span>
+          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
         </a>
-        <a class="card" href="/dispatch.html" style="display:block">
+        <a class="card" href="#" onclick="return navGo('dispatch')" style="display:block">
           <h2 class="serif">🎧 派单工作台</h2>
           <div class="sub">与写手聊天派单、审核交稿、提现审批、财务对账、公告管理</div>
-          <span style="font-size:12px;color:var(--gold)">旧页面 · 待迁入</span>
+          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
         </a>
         <a class="card" href="#" onclick="return navGo('game')" style="display:block">
           <h2 class="serif">🎮 游戏控制器</h2>
@@ -72,6 +79,14 @@
         <b>重构进行中</b> —— 管理后台正在逐步整合为单页应用：左侧导航固定不动，板块逐个迁入。
         迁移期间新旧并存、互不影响，全部迁入后这个页面就是唯一的管理入口。
       </div>
+    </div>
+
+    <!-- 台账 / 派单：嵌入模式面板（首次点击加载 iframe） -->
+    <div id="panel-orders" style="display:none">
+      <iframe id="frameOrders" style="width:100%;height:calc(100vh - 24px);border:0;display:block;background:var(--paper)" title="台账"></iframe>
+    </div>
+    <div id="panel-dispatch" style="display:none">
+      <iframe id="frameDispatch" style="width:100%;height:calc(100vh - 24px);border:0;display:block;background:#141024" title="派单工作台"></iframe>
     </div>
 
     <!-- 模块面板容器（挂载后显示） -->
@@ -100,6 +115,7 @@ if (guardAdmin()) {
     mall: { el: document.getElementById('panel-mall'), mount: mountMall },
     security: { el: document.getElementById('panel-security'), mount: mountSecurity },
   };
+  const FRAMES = { orders: '/index.html?embed=1', dispatch: '/dispatch.html?embed=1' };
   const mounted = {};
   let current = 'home';
 
@@ -107,16 +123,65 @@ if (guardAdmin()) {
     current = key;
     document.getElementById('panel-home').style.display = key === 'home' ? '' : 'none';
     for (const k of Object.keys(PANELS)) PANELS[k].el.style.display = k === key ? '' : 'none';
+    for (const k of Object.keys(FRAMES)) document.getElementById('panel-' + k).style.display = k === key ? '' : 'none';
     renderNav(key, badges);
     window.scrollTo({ top: 0 });
     history.replaceState(null, '', key === 'home' ? '/admin.html' : '/admin.html#' + key);
   }
 
   window.navigate = (key) => {
-    if (key !== 'home' && !PANELS[key]) return;
-    if (key !== 'home' && !mounted[key]) { mounted[key] = true; PANELS[key].mount(PANELS[key].el); }
+    if (key !== 'home' && !PANELS[key] && !FRAMES[key]) return;
+    if (key !== 'home' && FRAMES[key] && !mounted[key]) {
+      mounted[key] = true;
+      document.getElementById('frame' + key[0].toUpperCase() + key.slice(1)).src = FRAMES[key];
+    }
+    if (key !== 'home' && PANELS[key] && !mounted[key]) { mounted[key] = true; PANELS[key].mount(PANELS[key].el); }
     show(key);
   };
+
+  // —— 全局搜索：手机号/工号精确查用户 + 订单号/备注模糊查订单 ——
+  let _searchTimer = null;
+  document.getElementById('gSearch').addEventListener('input', (e) => {
+    clearTimeout(_searchTimer);
+    const kw = e.target.value.trim();
+    _searchTimer = setTimeout(() => runSearch(kw), 350);
+  });
+  async function runSearch(kw) {
+    const box = document.getElementById('gSearchResult');
+    if (kw.length < 2) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div style="font-size:12.5px;color:var(--ink2)">搜索中…</div>';
+    const users = [], ordersHit = [];
+    await Promise.all([
+      api('/api/admin/find-user/' + encodeURIComponent(kw)).then(j => { if (j.ok && j.user) users.push(j.user); }).catch(() => {}),
+      api('/api/admin/users').then(j => {
+        if (j.ok) for (const u of j.users) {
+          if ((u.username || '').includes(kw) || (u.displayName || '').includes(kw) || (u.uid || '') === kw) {
+            if (!users.some(x => x._id === u._id)) users.push(u);
+          }
+        }
+      }).catch(() => {}),
+      api('/api/orders?_=' + Date.now()).then(j => {
+        if (j.ok) for (const o of (j.orders || [])) {
+          if ((o.orderNo || '').toLowerCase().includes(kw.toLowerCase()) || (o.note || '').toLowerCase().includes(kw.toLowerCase())) {
+            ordersHit.push(o); if (ordersHit.length >= 8) break;
+          }
+        }
+      }).catch(() => {}),
+    ]);
+    const uHtml = users.length ? '<div style="font-size:12px;color:var(--ochre);font-weight:600;margin-bottom:6px">👤 用户</div>' + users.map(u =>
+      '<div class="inline" style="padding:5px 0;border-bottom:1px dashed var(--line)">' +
+      '<b>' + esc(u.name || u.displayName || u.username || '') + '</b>' +
+      '<span style="color:var(--ink2);font-size:12.5px">' + esc(u.phone || u.username || '') + (u.uid ? ' · 工号 ' + esc(u.uid) : '') + '</span>' +
+      '<span style="flex:1"></span>' +
+      '<button class="btn-ghost" style="padding:2px 10px;font-size:11.5px" onclick="navGo(\'security\')">去管理</button></div>').join('') : '';
+    const oHtml = ordersHit.length ? '<div style="font-size:12px;color:var(--green2);font-weight:600;margin:8px 0 6px">📒 订单</div>' + ordersHit.map(o =>
+      '<div class="inline" style="padding:5px 0;border-bottom:1px dashed var(--line)">' +
+      '<b class="num">' + esc(o.orderNo) + '</b>' +
+      '<span style="color:var(--ink2);font-size:12.5px">¥' + esc(o.amount) + ' · ' + esc(o.status) + (o.note ? ' · ' + esc(o.note.slice(0, 16)) : '') + '</span>' +
+      '<span style="flex:1"></span>' +
+      '<button class="btn-ghost" style="padding:2px 10px;font-size:11.5px" onclick="navGo(\'orders\')">去台账</button></div>').join('') : '';
+    box.innerHTML = (uHtml + oHtml) || '<div style="font-size:12.5px;color:var(--ink2)">没有匹配的用户或订单（手机号/工号精确匹配用户，订单号/备注模糊匹配订单）</div>';
+  }
 
   // 摘要数据 + 派单导航角标
   fetch('/api/admin/withdrawals?status=', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
@@ -130,6 +195,16 @@ if (guardAdmin()) {
     .then(r => r.json()).then(j => { if (j.ok && j.game) document.getElementById('stPlaying').textContent = j.game.playingSessions; }).catch(() => {});
   fetch('/api/shanhai/admin/stats', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
     .then(r => r.json()).then(j => { if (j.ok) document.getElementById('stPlayers').textContent = j.players; }).catch(() => {});
+  fetch('/api/admin/leads', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
+    .then(r => r.json()).then(j => {
+      if (j.ok) {
+        const wait = (j.leads || []).filter(l => l.status !== '已跟进').length;
+        if (wait > 0) { badges.mall = wait; renderNav(current, badges); }
+      }
+    }).catch(() => {});
+  fetch('/api/admin/activity-stats', { headers: { 'Authorization': 'Bearer ' + TOKEN } }).then(r => r.json()).then(j => {
+    if (j.ok && j.game && j.game.playingSessions > 0) { badges.game = j.game.playingSessions; renderNav(current, badges); }
+  }).catch(() => {});
   fetch('/api/admin/users', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
     .then(r => r.json()).then(j => { if (j.ok && Array.isArray(j.users)) document.getElementById('stUsers').textContent = j.users.length + '+'; }).catch(() => {});
 
@@ -140,7 +215,7 @@ if (guardAdmin()) {
 
   // 初始面板：支持 #game / #mall / #security 直达
   const init = (location.hash || '').replace('#', '');
-  navigate(['game', 'mall', 'security'].includes(init) ? init : 'home');
+  navigate(['game', 'mall', 'security', 'orders', 'dispatch'].includes(init) ? init : 'home');
 }
 </script>
 <script>
