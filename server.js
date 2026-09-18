@@ -84,6 +84,7 @@ const DEPLOY_CHECK_FILES = [
   // 【v20.6】iframe → 原生面板迁移：每迁一个就补一个 mod-*.js 进核验清单
   'public/admin/mod-ads.js',
   'public/admin/mod-withdraw.js',
+  'public/admin/mod-cards.js',
   'public/admin_packages.html', 'public/admin_game.html', 'public/admin_security.html',
   'public/robots.txt', 'public/service-worker.js', 'public/manifest.json',
   'public/games/shanhai/index.html', 'public/games/shanhai/css/style.css',
