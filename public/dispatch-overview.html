@@ -2,248 +2,54 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>派单总览 · 管理后台</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>派单总览 · 财务对账 · 管理后台</title>
 <meta name="robots" content="noindex">
+<meta name="theme-color" content="#faf7f1">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="stylesheet" href="/admin/app.css">
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  :root { --paper:#faf7f1; --paper2:#f3eee3; --ink:#2b2a26; --ink2:#6b675e; --green:#1f4d3a; --green-dk:#175239; --green2:#2e6b52; --ochre:#b0642c; --amber:#d97706; --line:#e5ddcc; --red:#b5432f; --sub:#6b675e; --cyan:#0e7490; --purple:#7c3aed; --blue:#3f7fbf; }
-  body { font:15px/1.75 'PingFang SC','Microsoft YaHei',sans-serif; background:var(--paper); color:var(--ink); }
-  .wrap { max-width:860px; margin:0 auto; padding:20px 16px 50px; }
-  .crumb { font-size:12.5px; color:var(--ink2); margin-bottom:6px; }
-  .crumb a { color:var(--green2); cursor:pointer; }
-  h1 { font-size:21px; font-family:'Songti SC',serif; margin-bottom:14px; }
-  .tabs { display:flex; gap:8px; margin-bottom:16px; }
-  .tabs button { font-size:14px; padding:8px 18px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--ink2); cursor:pointer; }
-  .tabs button.on { background:var(--green); color:#fff; border-color:var(--green); }
-  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:16px; }
-  h3 { font-size:16px; margin-bottom:6px; }
-  .flow-tip { font-size:12.5px; color:var(--ink2); line-height:1.8; margin-bottom:10px; }
-  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:10px 0; }
-  .stat { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:12px 14px; text-align:center; }
-  .stat .v { font-size:20px; font-weight:700; }
-  .stat .l { font-size:12px; color:var(--ink2); }
-  .v-green .v { color:var(--green2); } .v-amber .v { color:var(--amber); } .v-cyan .v { color:var(--cyan); }
-  select, input { font-size:14px; padding:8px 10px; border-radius:10px; border:1px solid var(--line); background:#fff; outline:none; }
-  .filter-bar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
-  .filter-bar input { flex:1; min-width:160px; }
-  .empty { text-align:center; color:var(--ink2); font-size:13.5px; padding:20px 0; }
-  .btn { font-size:13px; border:none; border-radius:10px; padding:7px 14px; cursor:pointer; }
-  .btn-g { background:var(--green); color:#fff; } .btn-r { background:var(--red); color:#fff; }
-  .btn-cy { background:var(--cyan); color:#fff; } .btn-gh { background:none; border:1px solid var(--line); color:var(--ink2); }
-  .btn-sm { padding:5px 12px; font-size:12.5px; }
-  .ov-card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
-  .ov-card .hd { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  .ov-card .t { font-weight:600; font-size:15px; }
-  .ov-card .meta { display:flex; gap:14px; flex-wrap:wrap; font-size:12.5px; color:var(--ink2); margin:5px 0; }
-  .ov-card .money b { color:var(--ochre); }
-  .ov-card .ops { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
-  .note { border-radius:10px; padding:8px 12px; font-size:12.5px; margin-top:8px; }
-  .note.warn { background:#fdf2ee; color:#8a3d2c; }
-  .note.info { background:#eef3f8; color:#2c5a8a; }
-  .pill { font-size:11px; border-radius:99px; padding:2px 10px; white-space:nowrap; }
-  .pill.待接单 { background:#eef3f8; color:#3f6f9f; } .pill.已接单 { background:#fdf3e7; color:var(--ochre); }
-  .pill.待审核 { background:#f3e8ff; color:var(--purple); } .pill.待打款 { background:#fdf7ec; color:var(--amber); }
-  .pill.已完成 { background:#e9f4ec; color:var(--green2); } .pill.已驳回 { background:#fde8e8; color:var(--red); }
-  .pill.已拒绝 { background:#f1f1f1; color:var(--ink2); }
-  .pill.待结算 { background:#fdf7ec; color:var(--amber); } .pill.已结算 { background:#e9f4ec; color:var(--green2); }
-  .recon-item { background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px 16px; margin-bottom:10px; }
-  .recon-item .rt { font-weight:600; font-size:13.5px; margin-bottom:4px; }
-  .t-needReview .rt { color:var(--purple); } .t-needPay .rt { color:var(--ochre); } .t-unsynced .rt { color:var(--red); }
-  .recon-item .rd { display:flex; gap:14px; flex-wrap:wrap; font-size:12.5px; color:var(--ink2); }
-  .recon-item .rd b { color:var(--ink); }
-  /* 【v20.4 修复】嵌入管理工作台时铺满可用宽度，避免 860px 居中留白 */
-  body.embed .wrap { max-width:none; padding:16px 22px 30px; }
+  /* 【v20.8】本页已改为薄壳：渲染逻辑与后台「派单总览 / 财务对账」两个面板共用 /admin/mod-cards.js。
+     这里只负责"独立打开时"的外层留白、面包屑与两个 tab 的切换，不再复制业务代码。
+     老链接 /dispatch-overview.html?tab=recon 仍然直达财务对账。 */
+  body { padding: 24px 18px 64px; }
+  .page { max-width: 960px; margin: 0 auto; }
+  .crumb { font-size: 12.5px; color: var(--ink2); margin-bottom: 12px; }
+  .crumb a { color: var(--green2); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+  .tabs button { font-size: 14px; padding: 8px 18px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink2); cursor: pointer; }
+  .tabs button.on { background: var(--green); color: #fff; border-color: var(--green); }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="crumb"><a onclick="goHome()">🏠 工作台</a> / 派单总览与财务对账</div>
-  <h1>📋 派单总览 · 财务对账</h1>
+<div class="page">
+  <div class="crumb"><a href="/admin.html">🏠 工作台</a> / 派单总览与财务对账</div>
   <div class="tabs">
     <button class="on" id="tabOv">派单总览</button>
     <button id="tabRecon">财务对账</button>
   </div>
-
-  <div id="boxOv">
-    <div class="flow-tip">🔄 流程：<b>派单</b> → 写手<b>接单</b> → 做单 → 写手<b>提交审核</b> → 我<b>审核</b>（通过→<b>待打款</b>，联动台账单变<b style="color:var(--amber)">待结算</b>；不通过→<b style="color:var(--red)">驳回</b>）→ <b>确认打款</b>（台账单变<b>已结算</b>）</div>
-    <div class="stats">
-      <div class="stat v-green"><div class="v" id="ovProfit">0</div><div class="l">已联动预估利润 ¥</div></div>
-      <div class="stat v-amber"><div class="v" id="ovReward">0</div><div class="l">派单报酬合计 ¥</div></div>
-      <div class="stat v-cyan"><div class="v" id="ovShare">0</div><div class="l">关联单分成合计 ¥</div></div>
-    </div>
-    <div class="filter-bar">
-      <input id="ovQ" placeholder="🔍 搜标题 / 写手 / 台账单号…">
-      <select id="ovSt">
-        <option value="">全部状态</option>
-        <option>待接单</option><option>已接单</option><option>待审核</option>
-        <option>待打款</option><option>已完成</option><option>已驳回</option><option>已拒绝</option>
-      </select>
-    </div>
-    <div id="ovList"><div class="empty">加载中…</div></div>
-  </div>
-
-  <div id="boxRecon" style="display:none">
-    <div class="flow-tip">💡 交叉核对<b>台账到账状态</b> × <b>派单卡打款状态</b>：客户的钱到账了（台账=已结算），就该给写手打款了；给写手打完款（卡=已完成），台账也得标已结算。</div>
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button class="btn btn-gh btn-sm" id="btnReconRefresh">🔄 刷新核对</button>
-    </div>
-    <div id="reconList"><div class="empty">加载中…</div></div>
-  </div>
+  <div id="boxOv"><div id="ovRoot"><div class="skeleton"><i></i><i></i><i></i><i></i></div></div></div>
+  <div id="boxRecon" style="display:none"><div id="reconRoot"><div class="skeleton"><i></i><i></i><i></i><i></i></div></div></div>
 </div>
-<div class="toast" id="toast" style="position:fixed;left:50%;top:20px;transform:translateX(-50%);background:#2b2a26;color:#fff;padding:9px 20px;border-radius:99px;font-size:13px;display:none;z-index:99"></div>
-<script>
-const $ = id => document.getElementById(id);
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const TOKEN = localStorage.getItem('jdy_token');
-const USER = JSON.parse(localStorage.getItem('jdy_user') || 'null');
-const EMBED = location.search.includes('embed=1');
-if (EMBED) document.body.classList.add('embed');
-function toast(t) { const e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(e._t); e._t = setTimeout(() => e.style.display = 'none', 2400); }
-function goHome() { if (EMBED && window.parent !== window) { try { window.parent.navGo('home'); return; } catch (e) {} } location.href = '/admin.html'; }
-function goLogin() { if (EMBED && window.parent !== window) { try { window.parent.location.href = '/login.html'; return; } catch (e) {} } location.href = '/login.html'; }
-if (!TOKEN || !USER || USER.role !== 'admin') goLogin();
-async function authFetch(url, opt) {
-  opt = opt || {};
-  opt.headers = Object.assign({}, opt.headers, { 'Authorization': 'Bearer ' + TOKEN });
-  if (opt.body && typeof opt.body !== 'string') { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(opt.body); }
-  const r = await fetch(url, opt);
-  if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); goLogin(); throw new Error('未登录'); }
-  const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
-  if (!j.ok) throw new Error(j.error || '请求失败');
-  return j;
-}
-const fmtT = t => t ? new Date(new Date(t).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ') : '';
-const stPill = s => `<span class="pill ${s}">${s}</span>`;
+<script type="module">
+  import { guardAdmin } from '/admin/app.js';
+  import { mountOverview, mountRecon } from '/admin/mod-cards.js';
 
-// —— 写手收款信息（/api/team，管理员可见；原聊天页 alipayOf 的替代） ——
-let ALIPAY_MAP = {};
-async function loadWriters() {
-  try {
-    const j = await authFetch('/api/team');
-    (j.users || []).forEach(u => { if (u.alipay && u.alipay.account) ALIPAY_MAP[u.id] = u.alipay; });
-  } catch (e) {}
-}
-const alipayOf = uid => ALIPAY_MAP[uid] || null;
+  const $ = id => document.getElementById(id);
+  let ov = null, rec = null;
 
-// —— 页签 ——
-function showTab(t) {
-  $('tabOv').className = t === 'ov' ? 'on' : '';
-  $('tabRecon').className = t === 'recon' ? 'on' : '';
-  $('boxOv').style.display = t === 'ov' ? '' : 'none';
-  $('boxRecon').style.display = t === 'recon' ? '' : 'none';
-  if (t === 'ov') loadOverview();
-  if (t === 'recon') loadRecon();
-}
-$('tabOv').onclick = () => showTab('ov');
-$('tabRecon').onclick = () => showTab('recon');
+  function showTab(t) {
+    $('tabOv').className = t === 'ov' ? 'on' : '';
+    $('tabRecon').className = t === 'recon' ? 'on' : '';
+    $('boxOv').style.display = t === 'ov' ? '' : 'none';
+    $('boxRecon').style.display = t === 'recon' ? '' : 'none';
+    if (t === 'ov') { if (!ov) ov = mountOverview($('ovRoot')); else ov.refresh(); }
+    if (t === 'recon') { if (!rec) rec = mountRecon($('reconRoot')); else rec.refresh(); }
+  }
+  $('tabOv').onclick = () => showTab('ov');
+  $('tabRecon').onclick = () => showTab('recon');
 
-// —— 审核 / 打款 / 同步（卡片操作；聊天页有独立副本） ——
-async function cardAct(id, path, body, okMsg) {
-  try {
-    const j = await authFetch('/api/cards/' + id + '/' + path, { method: 'POST', body: body ? JSON.stringify(body) : '{}' });
-    toast(okMsg);
-    loadOverview(); loadRecon();
-    if (j.syncedOrder) toast(okMsg + '（台账单已同步为「' + j.syncedOrder.status + '」）');
-  } catch (e) { toast(e.message); }
-}
-window.actApprove = id => { if (confirm('审核通过？通过后该单进入「待打款」，台账订单自动变为「待结算」')) cardAct(id, 'approve', null, '审核通过 ✅'); };
-window.actReject = id => {
-  const reason = prompt('驳回原因（将展示给写手）：');
-  if (reason === null) return;
-  cardAct(id, 'reject', { reason }, '已驳回，写手可重新做单');
-};
-window.actPay = id => {
-  const row = (window._ovRows || []).find(r => r._id === id)
-    || ((window._reconItems || []).find(i => i.card._id === id) || {}).card || {};
-  const ali = alipayOf(row.to);
-  let msg = '确认已打款 ¥' + row.reward + ' 给 ' + row.toName + '？\n台账订单将自动变为「已结算」';
-  if (ali) msg = '💸 打款前请核对收款方式：\n\n收款人：' + ali.name + '\n支付宝账号：' + ali.account + '\n\n' + msg;
-  else msg = '⚠️ 该写手未绑定收款方式，请线下与其确认。\n\n' + msg;
-  if (confirm(msg)) cardAct(id, 'pay', null, '打款完成 💸');
-};
-window.actSync = id => { if (confirm('将该卡关联的台账订单标记为「已结算」？')) cardAct(id, 'syncorder', null, '台账已同步 ✅'); };
-
-// —— 派单总览 ——
-async function loadOverview() {
-  try {
-    const j = await authFetch('/api/dispatch/overview');
-    window._ovRows = j.rows;
-    $('ovProfit').textContent = j.totals.totProfit; $('ovReward').textContent = j.totals.totReward; $('ovShare').textContent = j.totals.totShare;
-    const cnt = {};
-    j.rows.forEach(r => cnt[r.status] = (cnt[r.status] || 0) + 1);
-    [...$('ovSt').options].forEach(op => {
-      if (op.value) op.textContent = op.value + (cnt[op.value] ? '（' + cnt[op.value] + '）' : '');
-    });
-    paintOverview();
-  } catch (e) { toast(e.message); }
-}
-function paintOverview() {
-  const q = $('ovQ').value.trim().toLowerCase();
-  const st = $('ovSt').value;
-  const rows = (window._ovRows || []).filter(r => {
-    if (st && r.status !== st) return false;
-    if (q && ![r.title, r.toName, r.orderNo].some(x => String(x || '').toLowerCase().includes(q))) return false;
-    return true;
-  });
-  $('ovList').innerHTML = rows.length ? rows.map(r => {
-    let note = '';
-    if (r.status === '已驳回' && r.rejectReason) note = '<div class="note warn">❌ 已驳回：' + esc(r.rejectReason) + '</div>';
-    if (r.status === '待审核' && r.submitNote) note = '<div class="note info">📝 写手提交说明：' + esc(r.submitNote) + '</div>';
-    let ops = '';
-    if (r.status === '待审核') ops = `<button class="btn btn-g btn-sm" onclick="actApprove('${r._id}')">✔ 审核通过</button><button class="btn btn-r btn-sm" onclick="actReject('${r._id}')">✖ 驳回</button>`;
-    else if (r.status === '待打款' || r.status === '已交付') ops = `<button class="btn btn-cy btn-sm" onclick="actPay('${r._id}')">💸 确认打款 ¥${r.reward}</button>`;
-    return `<div class="ov-card">
-      <div class="hd"><span class="t">${esc(r.title)}</span>${stPill(r.status)}</div>
-      <div class="meta">
-        <span>✍️ ${esc(r.toName)}</span><span class="money">报酬 <b>¥${r.reward}</b></span>
-        ${r.orderNo ? `<span>🔗 ${esc(r.orderNo)}</span><span>原单 ¥${r.orderAmount} → 分成 ¥${r.orderShare} → <b>利润 ¥${r.profit}</b></span>` : '<span style="color:var(--red)">未关联台账单</span>'}
-        <span>${fmtT(r.createdAt)}</span>
-      </div>
-      ${note}
-      <div class="ops">${ops}</div>
-    </div>`;
-  }).join('') : '<div class="empty">没有符合条件的派单卡</div>';
-}
-$('ovQ').oninput = paintOverview;
-$('ovSt').onchange = paintOverview;
-
-// —— 财务对账 ——
-async function loadRecon() {
-  try {
-    const j = await authFetch('/api/dispatch/reconcile');
-    const items = j.items || [];
-    window._reconItems = items;
-    paintRecon(items);
-  } catch (e) { toast(e.message); }
-}
-function paintRecon(items) {
-  const MAP = {
-    needReview: { t: '🔔 台账已到账，但这单还在「待审核」', c: 't-needReview', ops: id => `<button class="btn btn-g btn-sm" onclick="actApprove('${id}')">✔ 审核通过</button><button class="btn btn-r btn-sm" onclick="actReject('${id}')">✖ 驳回</button>` },
-    needPay: { t: '💰 客户已到账，可以给写手打款了', c: 't-needPay', ops: id => `<button class="btn btn-cy btn-sm" onclick="actPay('${id}')">💸 确认打款</button>` },
-    unsynced: { t: '⚠️ 已给写手打款，但台账还没标已结算', c: 't-unsynced', ops: id => `<button class="btn btn-gh btn-sm" onclick="actSync('${id}')">🔄 补台账同步</button>` },
-  };
-  $('reconList').innerHTML = items.length ? items.map(it => {
-    const m = MAP[it.type];
-    const ali = alipayOf(it.card.to);
-    return `<div class="recon-item ${m.c}">
-      <div class="rt">${m.t}</div>
-      <div class="rd">
-        <span>🃏 <b>${esc(it.card.title)}</b></span>
-        <span>写手 ${esc(it.card.toName)}</span>
-        <span>报酬 <b>¥${it.card.reward}</b></span>
-        <span>台账单 ${esc(it.order.orderNo)}（¥${it.order.amount} · ${stPill(it.order.status)}）</span>
-        ${ali ? '<span>收款：' + esc(ali.name) + '（' + esc(ali.account) + '）</span>' : '<span style="color:var(--red)">写手未绑定收款方式</span>'}
-      </div>
-      <div class="ops" style="display:flex;gap:8px;justify-content:flex-end">${m.ops(it.card._id)}</div>
-    </div>`;
-  }).join('') : '<div class="empty">✅ 台账与派单卡状态全部一致，没有待处理的差异</div>';
-}
-$('btnReconRefresh').onclick = loadRecon;
-
-// 初始：按 URL 参数决定显示哪个 tab（嵌入时两个导航项共用本页）
-showTab(location.search.includes('tab=recon') ? 'recon' : 'ov');
-loadWriters();
+  if (guardAdmin()) showTab(location.search.includes('tab=recon') ? 'recon' : 'ov');
 </script>
 </body>
 </html>
