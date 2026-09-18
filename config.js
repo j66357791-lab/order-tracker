@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '21.0',
+  appVersion: '21.1',
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '21.1', date: '2026-09-18', notes: ['【修复】派单聊天面板变成"全屏"、把左侧导航盖住了：原因是从老页面带过来的两条 CSS（html,body{position:fixed;inset:0} 与 height:100vh）在迁成 ·面板后仍生效——前者把面板整个钉在视口上、后者撑满一整屏；现改为高度由外层容器决定（刚好一屏，外壳不多出滚动条），左侧导航照常可见可点，切页与其他面板一样即点即到', '聊天面板加了和别的面板一致的圆角描边，视觉上不再像"另一个页面"'] },
+  { ver: '21.0', date: '2026-09-18', notes: ['iframe → 原生面板迁移收官（第五批 / 最后一批）：派单聊天不再用 iframe 装，改为 /admin/mod-chat.js 直接渲染。至此后台十个入口**全部是原生面板，一个 iframe 都不剩**——不再有嵌套滚动条、不再需要 ?embed=1、不再有重复导航栏', '派单聊天的实时推送（socket.io）保留：改成按需加载（进面板时才加载 socket 脚本），并且面板被切走时不再重绘界面——消息照收、切回来立刻补渲染，不会在你干别的时白耗性能', '聊天页样式同样走 Shadow DOM 隔离（/admin/chat.css）；引用回复、图片/文件预览、派单卡发送、审核/驳回/打款、在线状态、本地消息缓存全部保留；/dispatch.html 原地址保留可用，改为薄壳', '部署核验清单扩到 56 项'] },
   { ver: '21.0', date: '2026-09-18', notes: ['iframe → 原生面板迁移收官（第五批 / 最后一批）：派单聊天不再用 iframe 装，改为 /admin/mod-chat.js 直接渲染。至此后台十个入口**全部是原生面板，一个 iframe 都不剩**——不再有嵌套滚动条、不再需要 ?embed=1、不再有重复导航栏', '派单聊天的实时推送（socket.io）保留：改成按需加载（进面板时才加载 socket 脚本），并且面板被切走时不再重绘界面——消息照收、切回来立刻补渲染，不会在你干别的时白耗性能', '聊天页样式同样走 Shadow DOM 隔离（/admin/chat.css）；引用回复、图片/文件预览、派单卡发送、审核/驳回/打款、在线状态、本地消息缓存全部保留；/dispatch.html 原地址保留可用，改为薄壳', '部署核验清单扩到 56 项'] },
   { ver: '20.9', date: '2026-09-18', notes: ['iframe → 原生面板迁移第四批（最大的一块）：台账不再用 iframe 装，改为 /admin/mod-orders.js 直接渲染进后台。整页逻辑一行没改：数据层（含连不上服务器自动降级本地存储）、汇总口径、五个 KPI、双栏图表、日历看板、日月季年筛选、分页、三个弹窗全部保留；/index.html 原地址保留可用，改为薄壳', '台账样式改走 Shadow DOM 隔离（/admin/ledger.css）：这一页自带 200 行 CSS，里面的 table / .empty / .mask / .modal 和 --ink 等变量跟后台公共样式直接冲突，隔离后不会再影响别的面板', '📅月份切换 / 🔍快捷查询 / ⚡快捷录入 三张卡完整保留，仍挂在右下角 ⚡ 悬浮抽屉里（点开即用，点空白或 Esc 收起）', '后台里只剩 1 个 iframe（派单聊天）；台账切进来不再有嵌套滚动条、不再需要 ?embed=1'] },
   { ver: '20.9', date: '2026-09-18', notes: ['iframe → 原生面板迁移第四批（最大的一块）：台账不再用 iframe 装，改为 /admin/mod-orders.js 直接渲染进后台。整页逻辑一行没改：数据层（含连不上服务器自动降级本地存储）、汇总口径、五个 KPI、双栏图表、日历看板、日月季年筛选、分页、三个弹窗全部保留；/index.html 原地址保留可用，改为薄壳', '台账样式改走 Shadow DOM 隔离（/admin/ledger.css）：这一页自带 200 行 CSS，里面的 table / .empty / .mask / .modal 和 --ink 等变量跟后台公共样式直接冲突，隔离后不会再影响别的面板', '📅月份切换 / 🔍快捷查询 / ⚡快捷录入 三张卡完整保留，仍挂在右下角 ⚡ 悬浮抽屉里（点开即用，点空白或 Esc 收起）', '后台里只剩 1 个 iframe（派单聊天）；台账切进来不再有嵌套滚动条、不再需要 ?embed=1'] },
