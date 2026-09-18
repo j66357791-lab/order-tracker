@@ -93,6 +93,9 @@ export function mount(root) {
   async function loadPkgs() {
     const j = await api('/api/admin/packages').catch(() => null);
     if (!j || !j.ok) { $('mlPkgList').innerHTML = '<div class="empty">' + esc((j && j.error) || '加载失败') + '</div>'; return; }
+    // 【v21.1】接口返回 ok:true 但字段缺失时不要直接 .length 崩掉（外壳现在切回面板会自动重取，
+    // 这条路径比之前跑得频繁，加上兜底避免一条脏响应把整个面板打空）
+    j.packages = j.packages || [];
     if (!j.packages.length) { $('mlPkgList').innerHTML = '<div class="empty">还没有套餐，点上方新增（用户端会自动内置3个种子套餐）</div>'; return; }
     $('mlPkgList').innerHTML = j.packages.map(p => `<div class="card">
       <div class="inline" style="justify-content:flex-start"><b class="serif" style="font-size:16px">${esc(p.name)}</b>
@@ -139,6 +142,7 @@ export function mount(root) {
   async function loadGal() {
     const j = await api('/api/admin/gallery').catch(() => null);
     if (!j || !j.ok) { $('mlGalList').innerHTML = '<div class="empty">' + esc((j && j.error) || '加载失败') + '</div>'; return; }
+    j.gallery = j.gallery || [];
     if (!j.gallery.length) { $('mlGalList').innerHTML = '<div class="empty">还没有作品，点上方新增</div>'; return; }
     $('mlGalList').innerHTML = j.gallery.map(g => `<div class="card">
       <div class="inline" style="justify-content:flex-start;align-items:flex-start">
@@ -199,6 +203,7 @@ export function mount(root) {
   async function loadLeads() {
     const j = await api('/api/admin/leads').catch(() => null);
     if (!j || !j.ok) { $('mlLeadList').innerHTML = '<div class="empty">加载失败</div>'; return; }
+    j.leads = j.leads || [];
     $('mlLeadList').innerHTML = j.leads.length ? j.leads.map(l => `<div class="lead" style="padding:14px 0;border-bottom:1px dashed var(--line)">
       <b>${esc(l.displayName)}</b> · ${esc(l.phone || '无电话')} · 咨询「${esc(l.packageName || '-')}」
       ${l.status === '待跟进' ? `<button class="btn-main" style="margin-left:8px;padding:4px 14px;font-size:12px" onclick="mlMarkLead('${l._id}')">标记已跟进</button>` : '<span class="tag t1" style="margin-left:8px">已跟进</span>'}
