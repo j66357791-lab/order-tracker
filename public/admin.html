@@ -41,75 +41,38 @@
       </div>
 
       <div class="grid4 stats-grid" style="margin-bottom:20px">
-        <a class="stat warn" href="#" onclick="return navGo('dispatch')"><b id="stWd">--</b><span>待审批提现</span></a>
+        <a class="stat warn" href="#" onclick="return navGo('withdraw')"><b id="stWd">--</b><span>待审批提现</span></a>
         <a class="stat" href="#" onclick="return navGo('game')"><b id="stPlaying">--</b><span>进行中对局</span></a>
         <a class="stat" href="#" onclick="return navGo('game')"><b id="stPlayers">--</b><span>游戏玩家</span></a>
         <a class="stat" href="#" onclick="return navGo('security')"><b id="stUsers">--</b><span>平台账号</span></a>
       </div>
 
-      <div class="grid2">
-        <a class="card" href="#" onclick="return navGo('orders')" style="display:block">
-          <h2 class="serif">📒 台账</h2>
-          <div class="sub">接单台账与利润统计：订单录入、分单、收支口径、导出台账报表</div>
-          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
-        </a>
-        <a class="card" href="#" onclick="return navGo('dispatch')" style="display:block">
-          <h2 class="serif">🎧 派单聊天</h2>
-          <div class="sub">与写手沟通、发派单卡、传附件——聊天里直接审核和打款</div>
-          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
-        </a>
-        <a class="card" href="#" onclick="return navGo('overview')" style="display:block">
-          <h2 class="serif">📋 派单总览</h2>
-          <div class="sub">全部派单卡进度：接单 / 审核 / 打款 / 驳回，按状态筛选</div>
-          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
-        </a>
-        <a class="card" href="#" onclick="return navGo('withdraw')" style="display:block">
-          <h2 class="serif">💳 提现审批</h2>
-          <div class="sub">写手提现申请处理：打款 / 驳回，订单型自动结清台账</div>
-          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
-        </a>
-        <a class="card" href="#" onclick="return navGo('recon')" style="display:block">
-          <h2 class="serif">💰 财务对账</h2>
-          <div class="sub">台账到账 × 派单卡打款交叉核对，差异一目了然</div>
-          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
-        </a>
-        <a class="card" href="#" onclick="return navGo('ads')" style="display:block">
-          <h2 class="serif">📝 广告管理</h2>
-          <div class="sub">写手端活动中心公告：标题 + 内容（支持 HTML），即时生效</div>
-          <span style="font-size:12px;color:var(--green2)">✓ 已接入 · 点击进入</span>
-        </a>
-        <a class="card" href="#" onclick="return navGo('game')" style="display:block">
-          <h2 class="serif">🎮 游戏控制器</h2>
-          <div class="sub">翻翻乐配置热调与维护开关、山海数据、玩家查询、道具发放、清场与审计日志</div>
-          <span style="font-size:12px;color:var(--green2)">✓ 已迁入 · 点击进入</span>
-        </a>
-        <a class="card" href="#" onclick="return navGo('mall')" style="display:block">
-          <h2 class="serif">🛍 用户端配置</h2>
-          <div class="sub">用户端商城的套餐上架、文案馆作品管理、用户咨询跟进</div>
-          <span style="font-size:12px;color:var(--green2)">✓ 已迁入 · 点击进入</span>
-        </a>
-        <a class="card" href="#" onclick="return navGo('security')" style="display:block">
-          <h2 class="serif">🛡 网站安全与用户管理</h2>
-          <div class="sub">平台账号列表、密码重置、站内信群发、部署文件核验、清空聊天</div>
-          <span style="font-size:12px;color:var(--green2)">✓ 已迁入 · 点击进入</span>
-        </a>
-      </div>
-
-      <div class="notice" style="margin-top:6px">
-        <b>重构进行中</b> —— 管理后台正在逐步整合为单页应用：左侧导航固定不动，板块逐个迁入。
-        迁移期间新旧并存、互不影响，全部迁入后这个页面就是唯一的管理入口。
+      <div class="notice">
+        <b>已全部迁入</b> —— 左侧导航固定不动，十个入口即点即达；台账 / 派单聊天 / 派单总览 / 提现审批 / 财务对账 / 广告管理为原页面内嵌运行，功能与原来完全一致。
       </div>
     </div>
 
-    <!-- 台账 / 派单：嵌入模式面板（首次点击加载 iframe） -->
+    <!-- ② 内嵌页面面板（首次点击加载 iframe） -->
     <div id="panel-orders" style="display:none">
-      <iframe id="frameOrders" style="width:100%;height:calc(100vh - 24px);border:0;display:block;background:var(--paper)" title="台账"></iframe>
+      <iframe id="frameOrders" class="embed-frame" title="台账"></iframe>
     </div>
     <div id="panel-dispatch" style="display:none">
-      <iframe id="frameDispatch" style="width:100%;height:calc(100vh - 24px);border:0;display:block;background:#141024" title="派单工作台"></iframe>
+      <iframe id="frameDispatch" class="embed-frame" style="background:#141024" title="派单工作台"></iframe>
+    </div>
+    <div id="panel-overview" style="display:none">
+      <iframe id="frameOverview" class="embed-frame" title="派单总览"></iframe>
+    </div>
+    <div id="panel-withdraw" style="display:none">
+      <iframe id="frameWithdraw" class="embed-frame" title="提现审批"></iframe>
+    </div>
+    <div id="panel-recon" style="display:none">
+      <iframe id="frameRecon" class="embed-frame" title="财务对账"></iframe>
+    </div>
+    <div id="panel-ads" style="display:none">
+      <iframe id="frameAds" class="embed-frame" title="广告管理"></iframe>
     </div>
 
-    <!-- 模块面板容器（挂载后显示） -->
+    <!-- ③ 模块面板容器（挂载后显示） -->
     <div id="panel-game" style="display:none"></div>
     <div id="panel-mall" style="display:none"></div>
     <div id="panel-security" style="display:none"></div>
@@ -117,7 +80,7 @@
 </div>
 
 <script type="module">
-import { TOKEN, ME, guardAdmin, api, renderNav } from '/admin/app.js';
+import { TOKEN, ME, guardAdmin, api, renderNav, esc } from '/admin/app.js';
 import { mount as mountGame } from '/admin/mod-game.js';
 import { mount as mountMall } from '/admin/mod-mall.js';
 import { mount as mountSecurity } from '/admin/mod-security.js';
@@ -135,15 +98,33 @@ if (guardAdmin()) {
     mall: { el: document.getElementById('panel-mall'), mount: mountMall },
     security: { el: document.getElementById('panel-security'), mount: mountSecurity },
   };
-  const FRAMES = { orders: '/index.html?embed=1', dispatch: '/dispatch.html?embed=1', overview: '/dispatch-overview.html?embed=1', withdraw: '/withdraw.html?embed=1', recon: '/dispatch-overview.html?embed=1&tab=recon', ads: '/ads.html?embed=1' };
+  const FRAMES = {
+    orders: '/index.html?embed=1',
+    dispatch: '/dispatch.html?embed=1',
+    overview: '/dispatch-overview.html?embed=1',
+    withdraw: '/withdraw.html?embed=1',
+    recon: '/dispatch-overview.html?embed=1&tab=recon',
+    ads: '/ads.html?embed=1',
+  };
   const mounted = {};
   let current = 'home';
 
+  // 【修复】面板/iframe 一律按需取，取不到就跳过；任何一项缺失都不再中断后面全部逻辑
+  const el = id => document.getElementById(id);
+  const isFrameKey = k => Object.prototype.hasOwnProperty.call(FRAMES, k);
+
   function show(key) {
     current = key;
-    document.getElementById('panel-home').style.display = key === 'home' ? '' : 'none';
-    for (const k of Object.keys(PANELS)) PANELS[k].el.style.display = k === key ? '' : 'none';
-    for (const k of Object.keys(FRAMES)) document.getElementById('panel-' + k).style.display = k === key ? '' : 'none';
+    const home = el('panel-home');
+    if (home) home.style.display = key === 'home' ? '' : 'none';
+    for (const k of Object.keys(PANELS)) {
+      const p = PANELS[k].el || el('panel-' + k);
+      if (p) p.style.display = k === key ? '' : 'none';
+    }
+    for (const k of Object.keys(FRAMES)) {
+      const p = el('panel-' + k);
+      if (p) p.style.display = k === key ? '' : 'none';
+    }
     renderNav(key, badges);
     window.scrollTo({ top: 0 });
     history.replaceState(null, '', key === 'home' ? '/admin.html' : '/admin.html#' + key);
@@ -151,9 +132,11 @@ if (guardAdmin()) {
 
   window.navigate = (key) => {
     if (key !== 'home' && !PANELS[key] && !FRAMES[key]) return;
-    if (key !== 'home' && FRAMES[key] && !mounted[key]) {
+    if (key !== 'home' && isFrameKey(key) && !mounted[key]) {
+      const f = el('frame' + key[0].toUpperCase() + key.slice(1));
+      if (!f) { show(key); return; }   // 容器缺失时至少保证导航高亮与面板切换
       mounted[key] = true;
-      document.getElementById('frame' + key[0].toUpperCase() + key.slice(1)).src = FRAMES[key];
+      f.src = FRAMES[key];
     }
     if (key !== 'home' && PANELS[key] && !mounted[key]) { mounted[key] = true; PANELS[key].mount(PANELS[key].el); }
     show(key);
@@ -171,23 +154,25 @@ if (guardAdmin()) {
     if (kw.length < 2) { box.innerHTML = ''; return; }
     box.innerHTML = '<div style="font-size:12.5px;color:var(--ink2)">搜索中…</div>';
     const users = [], ordersHit = [];
-    await Promise.all([
-      api('/api/admin/find-user/' + encodeURIComponent(kw)).then(j => { if (j.ok && j.user) users.push(j.user); }).catch(() => {}),
-      api('/api/admin/users').then(j => {
-        if (j.ok) for (const u of j.users) {
-          if ((u.username || '').includes(kw) || (u.displayName || '').includes(kw) || (u.uid || '') === kw) {
-            if (!users.some(x => x._id === u._id)) users.push(u);
+    try {
+      await Promise.all([
+        api('/api/admin/find-user/' + encodeURIComponent(kw)).then(j => { if (j.ok && j.user) users.push(j.user); }).catch(() => {}),
+        api('/api/admin/users').then(j => {
+          if (j.ok) for (const u of j.users) {
+            if ((u.username || '').includes(kw) || (u.displayName || '').includes(kw) || (u.uid || '') === kw) {
+              if (!users.some(x => x._id === u._id)) users.push(u);
+            }
           }
-        }
-      }).catch(() => {}),
-      api('/api/orders?_=' + Date.now()).then(j => {
-        if (j.ok) for (const o of (j.orders || [])) {
-          if ((o.orderNo || '').toLowerCase().includes(kw.toLowerCase()) || (o.note || '').toLowerCase().includes(kw.toLowerCase())) {
-            ordersHit.push(o); if (ordersHit.length >= 8) break;
+        }).catch(() => {}),
+        api('/api/orders?_=' + Date.now()).then(j => {
+          if (j.ok) for (const o of (j.orders || [])) {
+            if ((o.orderNo || '').toLowerCase().includes(kw.toLowerCase()) || (o.note || '').toLowerCase().includes(kw.toLowerCase())) {
+              ordersHit.push(o); if (ordersHit.length >= 8) break;
+            }
           }
-        }
-      }).catch(() => {}),
-    ]);
+        }).catch(() => {}),
+      ]);
+    } catch (e) { /* 单个接口失败不影响其余结果 */ }
     const uHtml = users.length ? '<div style="font-size:12px;color:var(--ochre);font-weight:600;margin-bottom:6px">👤 用户</div>' + users.map(u =>
       '<div class="inline" style="padding:5px 0;border-bottom:1px dashed var(--line)">' +
       '<b>' + esc(u.name || u.displayName || u.username || '') + '</b>' +
@@ -203,29 +188,31 @@ if (guardAdmin()) {
     box.innerHTML = (uHtml + oHtml) || '<div style="font-size:12.5px;color:var(--ink2)">没有匹配的用户或订单（手机号/工号精确匹配用户，订单号/备注模糊匹配订单）</div>';
   }
 
-  // 摘要数据 + 派单导航角标
-  fetch('/api/admin/withdrawals?status=', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
+  // 摘要数据 + 导航角标（activity-stats 只请求一次，两个用途共用）
+  const H = { headers: { 'Authorization': 'Bearer ' + TOKEN } };
+  fetch('/api/admin/withdrawals?status=', H)
     .then(r => r.json()).then(j => {
       if (j.ok && j.stats) {
         document.getElementById('stWd').textContent = j.stats.pending;
-        if (j.stats.pending > 0) { badges.dispatch = j.stats.pending; renderNav(current, badges); }
+        if (j.stats.pending > 0) { badges.withdraw = j.stats.pending; renderNav(current, badges); }
       }
     }).catch(() => {});
-  fetch('/api/admin/activity-stats', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
-    .then(r => r.json()).then(j => { if (j.ok && j.game) document.getElementById('stPlaying').textContent = j.game.playingSessions; }).catch(() => {});
-  fetch('/api/shanhai/admin/stats', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
+  fetch('/api/admin/activity-stats', H)
+    .then(r => r.json()).then(j => {
+      if (!j.ok || !j.game) return;
+      document.getElementById('stPlaying').textContent = j.game.playingSessions;
+      if (j.game.playingSessions > 0) { badges.game = j.game.playingSessions; renderNav(current, badges); }
+    }).catch(() => {});
+  fetch('/api/shanhai/admin/stats', H)
     .then(r => r.json()).then(j => { if (j.ok) document.getElementById('stPlayers').textContent = j.players; }).catch(() => {});
-  fetch('/api/admin/leads', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
+  fetch('/api/admin/leads', H)
     .then(r => r.json()).then(j => {
       if (j.ok) {
         const wait = (j.leads || []).filter(l => l.status !== '已跟进').length;
         if (wait > 0) { badges.mall = wait; renderNav(current, badges); }
       }
     }).catch(() => {});
-  fetch('/api/admin/activity-stats', { headers: { 'Authorization': 'Bearer ' + TOKEN } }).then(r => r.json()).then(j => {
-    if (j.ok && j.game && j.game.playingSessions > 0) { badges.game = j.game.playingSessions; renderNav(current, badges); }
-  }).catch(() => {});
-  fetch('/api/admin/users', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
+  fetch('/api/admin/users', H)
     .then(r => r.json()).then(j => { if (j.ok && Array.isArray(j.users)) document.getElementById('stUsers').textContent = j.users.length + '+'; }).catch(() => {});
 
   document.getElementById('logoutBtn').onclick = () => {
@@ -233,9 +220,14 @@ if (guardAdmin()) {
     location.href = '/login.html';
   };
 
-  // 初始面板：支持 #game / #mall / #security 直达
+  // 初始面板：支持 #game / #mall / #security 等直达
   const init = (location.hash || '').replace('#', '');
+  renderNav('home', badges);   // 【修复】先渲染一次导航，任何后续异步/异常都不再影响左侧入口
   navigate(['game', 'mall', 'security', 'orders', 'dispatch', 'overview', 'withdraw', 'recon', 'ads'].includes(init) ? init : 'home');
+  window.addEventListener('hashchange', () => {
+    const k = (location.hash || '').replace('#', '');
+    if (k && k !== current) navigate(k);
+  });
 }
 </script>
 <script>
