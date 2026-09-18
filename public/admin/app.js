@@ -54,8 +54,8 @@ export async function copyText(text) {
   catch (e) { toast(text); }
 }
 
-// —— 导航定义（方案二：六项；panel=已迁入本壳的面板，link=仍在外部页面） ——
-// 迁移进度：工作台=panel；其余 5 项暂时 link，后续每步迁一个改为 panel
+// —— 导航定义（方案二：十项；panel=已迁入本壳的面板，frame=仍在外部页面用 iframe 装） ——
+// 迁移进度：剩余 5 项为 frame，按「由易到难」逐个迁成 panel（每迁一个删一个 FRAMES 条目）
 export const NAV_ITEMS = [
   { key: 'home',     icon: '🏠', title: '工作台',     type: 'panel' },
   { key: 'orders',   icon: '📒', title: '台账',           type: 'frame', href: '/index.html?embed=1', desc: '接单台账与利润统计' },
@@ -65,21 +65,25 @@ export const NAV_ITEMS = [
   { key: 'recon',    icon: '💰', title: '财务对账',   type: 'frame', href: '/dispatch-overview.html?embed=1&tab=recon', desc: '台账 × 派单卡交叉核对' },
   { key: 'game',     icon: '🎮', title: '游戏控制器', type: 'panel', desc: '翻翻乐配置 / 山海数据 / 道具 / 审计' },
   { key: 'mall',     icon: '🛍', title: '用户端配置', type: 'panel', desc: '套餐 / 文案馆作品 / 咨询' },
-  { key: 'ads',      icon: '📝', title: '广告管理',   type: 'frame', href: '/ads.html?embed=1', desc: '写手端活动中心公告' },
+  { key: 'ads',      icon: '📝', title: '广告管理',   type: 'panel', desc: '写手端活动中心公告' },
   { key: 'security', icon: '🛡', title: '安全与用户', type: 'panel', desc: '账号 / 密码重置 / 站内信 / 危险操作' },
 ];
 
 // —— 渲染左侧导航（currentKey 高亮当前面板；badge：角标数值/函数） ——
+// 【v20.6】文字包一层 .lbl：导航收起（.nav.mini）时只隐藏 .lbl，图标与角标保留；
+//         同时给每个入口加 title，收起后鼠标划过仍能看到名字。
 export function renderNav(currentKey, badges = {}) {
   const host = document.getElementById('navItems');
   if (!host) return;
   host.innerHTML = NAV_ITEMS.map(item => {
     const b = badges[item.key];
     const badge = b ? `<span class="badge">${b}</span>` : '';
+    const label = `<span class="lbl">${item.title}</span>`;
     if (item.type === 'panel' || item.type === 'frame') {
-      return `<button class="nav-item ${item.key === currentKey ? 'on' : ''}" data-nav="${item.key}"><span class="ico">${item.icon}</span><span>${item.title}</span>${badge}</button>`;
+      const tip = item.desc ? item.title + ' · ' + item.desc : item.title;
+      return `<button class="nav-item ${item.key === currentKey ? 'on' : ''}" data-nav="${item.key}" title="${esc(tip)}"><span class="ico">${item.icon}</span>${label}${badge}</button>`;
     }
-    return `<a class="nav-item external" href="${item.href}" title="${esc(item.desc || '')}"><span class="ico">${item.icon}</span><span>${item.title}</span>${badge}</a>`;
+    return `<a class="nav-item external" href="${item.href}" title="${esc(item.title + (item.desc ? ' · ' + item.desc : ''))}"><span class="ico">${item.icon}</span>${label}${badge}</a>`;
   }).join('');
   host.querySelectorAll('[data-nav]').forEach(btn => {
     btn.onclick = () => {
