@@ -4,6 +4,10 @@
  * 现改为后台更新式缓存，升级缓存版本号清掉历史永久缓存
  */
 const CACHE_VERSION = 'jiedan-v14-20260918';
+// 【v22.0】游戏美术资源专用缓存：由游戏页的"资源包下载"显式写入，SW 对这类请求 cache-first。
+// 注意：activate 的清理逻辑必须把这个缓存列入白名单，否则每次 SW 激活都会把已下载的资源包清空。
+const GAME_CACHE = 'fanfanle-assets-v2';
+const KEEP_CACHES = [CACHE_VERSION, GAME_CACHE];
 const APP_SHELL = [
   '/portal.html',
   '/member.html',
@@ -26,11 +30,11 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// 激活：清理所有旧版本缓存
+// 激活：清理所有旧版本缓存（保留白名单：主缓存 + 游戏资源包缓存）
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => !KEEP_CACHES.includes(k)).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
@@ -44,6 +48,25 @@ self.addEventListener('fetch', (event) => {
   // API 和 socket.io：绝不缓存
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // 【v22.0】翻翻乐游戏美术资源：cache-first。
+  // 这些资源由游戏页"资源包下载"显式写入 GAME_CACHE；命中即秒开（离线也能玩），
+  // 未命中走网络并顺手写入。之前这条走 stale-while-revalidate 且只查主缓存，
+  // 而预载只写了 HTTP 缓存——两者不通，导致"显示已下载、进游戏还要重新加载"。
+  if (url.pathname.startsWith('/assets/game/')) {
+    event.respondWith(
+      caches.open(GAME_CACHE).then((cache) =>
+        cache.match(event.request).then((cached) => {
+          if (cached) return cached;
+          return fetch(event.request).then((response) => {
+            if (response && response.status === 200) cache.put(event.request, response.clone());
+            return response;
+          }).catch(() => Response.error());
+        })
+      )
+    );
     return;
   }
 
