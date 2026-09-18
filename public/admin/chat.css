@@ -19,8 +19,10 @@
   #connBar.on{display:block}
 
   .topbar{background:linear-gradient(135deg,#1f2937,#111827);color:#fff;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.15)}   .topbar{display:none}
-  /* 【v20.4 修复】嵌入管理工作台时隐藏本页自带的二级导航行（与左侧导航重复） */
-  .subtabs{display:none}
+  /* 【v20.4 修复】嵌入管理工作台时隐藏本页自带的二级导航行（与左侧导航重复）。
+     【v21.1】这条原来写在 .subtabs{display:flex} 之前，被后面的规则盖掉了 ——
+     实际表现为聊天面板顶上多出一行「工作台 / 游戏控制器 / …」，和左侧导航重复。
+     真正的隐藏规则挪到文件末尾（见最后一行）。 */
   .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#60a5fa,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
   .topbar h1{font-size:15px;font-weight:600}
   .topbar .sub{font-size:11px;opacity:.65;margin-top:1px}
@@ -268,3 +270,6 @@
     .btn{min-height:38px}
   }
 
+
+/* 【v21.1 末位】隐藏本页自带的二级导航行（与左侧导航重复）。必须放在最后，押过上面的 .subtabs{display:flex} */
+.subtabs{display:none}
