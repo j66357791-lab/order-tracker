@@ -3,7 +3,7 @@
  * 【2026-09-17 修复】图片原为"命中缓存永不回源"的永久缓存，换图后老用户永远看到旧图；
  * 现改为后台更新式缓存，升级缓存版本号清掉历史永久缓存
  */
-const CACHE_VERSION = 'jiedan-v13-20260917';
+const CACHE_VERSION = 'jiedan-v14-20260918';
 const APP_SHELL = [
   '/portal.html',
   '/member.html',
@@ -78,6 +78,24 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch(() => caches.match(event.request).then((cached) => cached || caches.match(url.pathname.indexOf('member') >= 0 ? '/portal.html' : '/index.html')))
+    );
+    return;
+  }
+
+  // 【v20.4 修复】/admin/ 下的壳文件（app.js / app.css / mod-*.js）必须 network-first：
+  // 原来走下面的"先回缓存、后台更新"，部署新版本后第一次打开管理后台会拿到上一版
+  // 的 app.js（导航项、样式都是旧的），刷新一次才对——表现为"页面布局突然不对"。
+  if (url.pathname.startsWith('/admin/')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((cached) => cached || Response.error()))
     );
     return;
   }
