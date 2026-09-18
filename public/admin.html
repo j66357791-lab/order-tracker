@@ -18,6 +18,16 @@
 .nav-items { flex: 1; padding: 10px; }
 .content { flex: 1; min-width: 0; padding: 26px 30px 60px; }
 .embed-frame { width: 100%; height: calc(100vh - 86px); border: 0; display: block; background: #faf7f1; }
+/* 【v20.8】iframe 骨架 + 面板加载占位（同样内联一份防旧 app.css） */
+.embed-panel { position: relative; }
+.sk-overlay { position: absolute; inset: 0; background: var(--paper); z-index: 2; padding: 2px; }
+.skeleton { padding: 6px 0; }
+.skeleton i { display: block; height: 14px; border-radius: 7px; background: #f3eee3; margin-bottom: 12px; animation: sk 1.2s ease-in-out infinite; }
+.skeleton i:nth-child(1) { width: 34%; height: 20px; }
+.skeleton i:nth-child(2) { width: 100%; height: 76px; }
+.skeleton i:nth-child(3) { width: 92%; height: 76px; }
+.skeleton i:nth-child(4) { width: 96%; height: 76px; }
+@keyframes sk { 0%, 100% { opacity: 1 } 50% { opacity: .5 } }
 /* 导航收起态的骨架样式也内联一份（同上：防旧 app.css） */
 .nav-collapse { margin-left: auto; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink2); font-size: 13px; line-height: 1; cursor: pointer; }
 @media (min-width: 861px) {
@@ -84,28 +94,28 @@
 
       <div class="notice">
         <b>十个入口已全部就位</b>，左侧导航可点顶部 ‹ 收起成图标条，鼠标划过看名字。<br>
-        <b>原生面板</b>（无嵌套滚动、打开即用）：工作台 / 游戏控制器 / 用户端配置 / 安全与用户 / <b>广告管理</b> / <b>提现审批</b>；
-        其余 4 项（台账 / 派单聊天 / 派单总览 / 财务对账）仍为原页面内嵌运行，正在按「由易到难」逐个迁成原生面板。
+        <b>原生面板</b>（无嵌套滚动、打开即用）：工作台 / 游戏控制器 / 用户端配置 / 安全与用户 /
+        <b>广告管理</b> / <b>提现审批</b> / <b>派单总览</b> / <b>财务对账</b>；
+        仅剩 2 项（台账 / 派单聊天）仍为原页面内嵌运行，正在继续迁移。<br>
+        <span style="color:var(--green2)">切回已打开过的入口会自动取最新数据，不用再按 F5；角标也会自己更新。</span>
       </div>
     </div>
 
-    <!-- ② 内嵌页面面板（首次点击加载 iframe） -->
-    <div id="panel-orders" style="display:none">
+    <!-- ② 内嵌页面面板（首次点击加载 iframe）——骨架盖在上方，onload 后移除 -->
+    <div id="panel-orders" class="embed-panel" style="display:none">
+      <div class="sk-overlay" id="skOrders"><div class="skeleton"><i></i><i></i><i></i><i></i></div></div>
       <iframe id="frameOrders" class="embed-frame" title="台账"></iframe>
     </div>
-    <div id="panel-dispatch" style="display:none">
+    <div id="panel-dispatch" class="embed-panel" style="display:none">
+      <div class="sk-overlay" id="skDispatch"><div class="skeleton"><i></i><i></i><i></i><i></i></div></div>
       <iframe id="frameDispatch" class="embed-frame" style="background:#141024" title="派单工作台"></iframe>
-    </div>
-    <div id="panel-overview" style="display:none">
-      <iframe id="frameOverview" class="embed-frame" title="派单总览"></iframe>
-    </div>
-    <div id="panel-recon" style="display:none">
-      <iframe id="frameRecon" class="embed-frame" title="财务对账"></iframe>
     </div>
 
     <!-- ③ 模块面板容器（挂载后显示） -->
     <div id="panel-ads" style="display:none"></div>
     <div id="panel-withdraw" style="display:none"></div>
+    <div id="panel-overview" style="display:none"></div>
+    <div id="panel-recon" style="display:none"></div>
     <div id="panel-game" style="display:none"></div>
     <div id="panel-mall" style="display:none"></div>
     <div id="panel-security" style="display:none"></div>
@@ -113,71 +123,135 @@
 </div>
 
 <script type="module">
-import { TOKEN, ME, guardAdmin, api, renderNav, esc } from '/admin/app.js';
-import { mount as mountGame } from '/admin/mod-game.js';
-import { mount as mountMall } from '/admin/mod-mall.js';
-import { mount as mountSecurity } from '/admin/mod-security.js';
-import { mount as mountAds } from '/admin/mod-ads.js';
-import { mount as mountWithdraw } from '/admin/mod-withdraw.js';
+import { TOKEN, ME, guardAdmin, api, renderNav, updateNav, esc } from '/admin/app.js';
 
-window.navGo = (key) => { navigate(key); return false; };
+// 【v20.8】面板模块按需加载：原来是 5 个 mod-* 静态 import，首屏就把本次根本不点的也一起下载了。
+// 现在点哪个下哪个；导航悬停/聚焦时提前下载（用户从移动到点下通常有 300~800ms，够下完）。
+const LAZY = {
+  overview: () => import('/admin/mod-cards.js').then(m => ({ mount: m.mountOverview })),
+  recon:    () => import('/admin/mod-cards.js').then(m => ({ mount: m.mountRecon })),
+  ads:      () => import('/admin/mod-ads.js'),
+  withdraw: () => import('/admin/mod-withdraw.js'),
+  game:     () => import('/admin/mod-game.js'),
+  mall:     () => import('/admin/mod-mall.js'),
+  security: () => import('/admin/mod-security.js'),
+};
+// 仍在用 iframe 的两个（台账 / 派单聊天），迁移完这两条就空了
+const FRAMES = {
+  orders:   '/index.html?embed=1',
+  dispatch: '/dispatch.html?embed=1',
+};
 
 if (guardAdmin()) {
   const name = ME.displayName || '管理员';
   document.getElementById('whoName').textContent = '👤 ' + name;
   document.getElementById('helloName').textContent = name + '，欢迎回来';
 
+  const el = id => document.getElementById(id);
+  const cap = k => k[0].toUpperCase() + k.slice(1);
+  const hostEl = k => el('panel-' + k);
+  const frameEl = k => el('frame' + cap(k));
+  const skEl = k => el('sk' + cap(k));
+  const isFrameKey = k => Object.prototype.hasOwnProperty.call(FRAMES, k);
+  const ALL_KEYS = Object.keys(LAZY).concat(Object.keys(FRAMES));
+
   const badges = {};
-  const PANELS = {
-    ads: { el: document.getElementById('panel-ads'), mount: mountAds },
-    withdraw: { el: document.getElementById('panel-withdraw'), mount: mountWithdraw },
-    game: { el: document.getElementById('panel-game'), mount: mountGame },
-    mall: { el: document.getElementById('panel-mall'), mount: mountMall },
-    security: { el: document.getElementById('panel-security'), mount: mountSecurity },
-  };
-  const FRAMES = {
-    orders: '/index.html?embed=1',
-    dispatch: '/dispatch.html?embed=1',
-    overview: '/dispatch-overview.html?embed=1',
-    recon: '/dispatch-overview.html?embed=1&tab=recon',
-    // 【v20.6】ads 已迁为面板（mod-ads.js）
-    // 【v20.7】withdraw 已迁为面板（mod-withdraw.js）
-  };
-  const mounted = {};
+  const mounted = {};     // key -> { mode:'panel'|'frame', refresh? }
+  const prefetched = {};
   let current = 'home';
 
-  // 【修复】面板/iframe 一律按需取，取不到就跳过；任何一项缺失都不再中断后面全部逻辑
-  const el = id => document.getElementById(id);
-  const isFrameKey = k => Object.prototype.hasOwnProperty.call(FRAMES, k);
+  const SKELETON = '<div class="skeleton"><i></i><i></i><i></i><i></i></div>';
+
+  function hideSk(key) { const s = skEl(key); if (s) s.style.display = 'none'; }
 
   function show(key) {
     current = key;
     const home = el('panel-home');
     if (home) home.style.display = key === 'home' ? '' : 'none';
-    for (const k of Object.keys(PANELS)) {
-      const p = PANELS[k].el || el('panel-' + k);
-      if (p) p.style.display = k === key ? '' : 'none';
-    }
-    for (const k of Object.keys(FRAMES)) {
-      const p = el('panel-' + k);
-      if (p) p.style.display = k === key ? '' : 'none';
-    }
-    renderNav(key, badges);
-    window.scrollTo({ top: 0 });
+    ALL_KEYS.forEach(k => { const p = hostEl(k); if (p) p.style.display = k === key ? '' : 'none'; });
+    updateNav(key, badges);   // 【v20.8】只切高亮与角标，不再重建整块导航 DOM
+    // 【v20.8】去掉了原来每次切换都执行的 window.scrollTo({top:0})：内容在面板里滚动，外壳本来就没滚动过
     history.replaceState(null, '', key === 'home' ? '/admin.html' : '/admin.html#' + key);
   }
 
-  window.navigate = (key) => {
-    if (key !== 'home' && !PANELS[key] && !FRAMES[key]) return;
-    if (key !== 'home' && isFrameKey(key) && !mounted[key]) {
-      const f = el('frame' + key[0].toUpperCase() + key.slice(1));
-      if (!f) { show(key); return; }   // 容器缺失时至少保证导航高亮与面板切换
-      mounted[key] = true;
-      f.src = FRAMES[key];
+  // 【v20.8】切回已挂载的面板就重新取数 —— 这是"必须按 F5 才更新"的正解。
+  // 每个 mount() 一直都有 return { refresh }，只是此前没有任何地方调用过它。
+  function refreshKey(key) {
+    const m = mounted[key];
+    if (!m || key === 'home') return;
+    if (m.mode === 'panel' && typeof m.refresh === 'function') {
+      try { m.refresh(); } catch (e) {}
     }
-    if (key !== 'home' && PANELS[key] && !mounted[key]) { mounted[key] = true; PANELS[key].mount(PANELS[key].el); }
+  }
+
+  function ensureFrame(key) {
+    const f = frameEl(key);
+    if (!f) return null;
+    if (!f.dataset.wired) {
+      f.dataset.wired = '1';
+      f.addEventListener('load', () => { f.dataset.loaded = '1'; hideSk(key); });
+    }
+    if (!f.getAttribute('src')) f.src = FRAMES[key];
+    return f;
+  }
+
+  async function navigate(key) {
+    if (key !== 'home' && !LAZY[key] && !FRAMES[key]) return;
+
+    if (key === 'home') { show('home'); return; }
+
+    // 已挂载：切过去 + 取新数据
+    if (mounted[key]) { show(key); refreshKey(key); return; }
+
+    if (LAZY[key]) {
+      const host = hostEl(key);
+      if (!host) { show(key); return; }
+      mounted[key] = { mode: 'panel', refresh: null };   // 先占位，连点不会重复 mount
+      show(key);
+      if (!host.innerHTML.trim()) host.innerHTML = SKELETON;   // 骨架先顶上，避免切过去一片空白
+      try {
+        const mod = await LAZY[key]();
+        const r = mod.mount(host);
+        if (r && typeof r.refresh === 'function') mounted[key].refresh = r.refresh;
+      } catch (e) {
+        host.innerHTML = '<div class="empty">模块加载失败（' + esc(String((e && e.message) || e)) + '）</div>';
+      }
+      return;
+    }
+
+    // iframe：先切过去（容器里已有骨架盖在上面），再给 src
+    const f = ensureFrame(key);
+    mounted[key] = { mode: 'frame' };
     show(key);
-  };
+    if (f && f.dataset.loaded) hideSk(key);
+  }
+
+  window.navigate = (key) => { navigate(key); };
+  window.navGo = (key) => { navigate(key); return false; };
+
+  // —— 【v20.8】预取：悬停 / 聚焦 / 触摸按下时提前加载，点下去往往已经好了 ——
+  function prefetch(key) {
+    if (!key || key === 'home' || prefetched[key] || mounted[key]) return;
+    prefetched[key] = true;
+    if (LAZY[key]) { LAZY[key]().catch(() => { prefetched[key] = false; }); return; }
+    if (isFrameKey(key)) ensureFrame(key);
+  }
+  const navHost = el('navItems');
+  if (navHost) {
+    const onHover = e => { const it = e.target.closest('.nav-item'); if (it && it.dataset.key) prefetch(it.dataset.key); };
+    navHost.addEventListener('mouseover', onHover);
+    navHost.addEventListener('focusin', onHover);
+    navHost.addEventListener('touchstart', onHover, { passive: true });
+  }
+  // 空闲时预取最常用的一个（桌面 + 非省流量模式才做，避免手机白花流量）
+  function idlePreload() {
+    const c = navigator.connection || {};
+    if (c.saveData || /(^|-)2g/.test(c.effectiveType || '')) return;
+    if (window.innerWidth < 1024) return;
+    prefetch('orders');
+  }
+  if ('requestIdleCallback' in window) requestIdleCallback(idlePreload, { timeout: 3000 });
+  else setTimeout(idlePreload, 2000);
 
   // —— 全局搜索：手机号/工号精确查用户 + 订单号/备注模糊查订单 ——
   let _searchTimer = null;
@@ -201,11 +275,9 @@ if (guardAdmin()) {
             }
           }
         }).catch(() => {}),
-        api('/api/orders?_=' + Date.now()).then(j => {
+        api('/api/orders?q=' + encodeURIComponent(kw)).then(j => {
           if (j.ok) for (const o of (j.orders || [])) {
-            if ((o.orderNo || '').toLowerCase().includes(kw.toLowerCase()) || (o.note || '').toLowerCase().includes(kw.toLowerCase())) {
-              ordersHit.push(o); if (ordersHit.length >= 8) break;
-            }
+            if (ordersHit.length < 8) ordersHit.push(o);
           }
         }).catch(() => {}),
       ]);
@@ -225,32 +297,42 @@ if (guardAdmin()) {
     box.innerHTML = (uHtml + oHtml) || '<div style="font-size:12.5px;color:var(--ink2)">没有匹配的用户或订单（手机号/工号精确匹配用户，订单号/备注模糊匹配订单）</div>';
   }
 
-  // 摘要数据 + 导航角标（activity-stats 只请求一次，两个用途共用）
+  // —— 摘要数据 + 导航角标 ——
   const H = { headers: { 'Authorization': 'Bearer ' + TOKEN } };
-  fetch('/api/admin/withdrawals?status=', H)
-    .then(r => r.json()).then(j => {
-      if (j.ok && j.stats) {
-        document.getElementById('stWd').textContent = j.stats.pending;
-        if (j.stats.pending > 0) { badges.withdraw = j.stats.pending; renderNav(current, badges); }
-      }
-    }).catch(() => {});
-  fetch('/api/admin/activity-stats', H)
-    .then(r => r.json()).then(j => {
-      if (!j.ok || !j.game) return;
-      document.getElementById('stPlaying').textContent = j.game.playingSessions;
-      if (j.game.playingSessions > 0) { badges.game = j.game.playingSessions; renderNav(current, badges); }
-    }).catch(() => {});
-  fetch('/api/shanhai/admin/stats', H)
-    .then(r => r.json()).then(j => { if (j.ok) document.getElementById('stPlayers').textContent = j.players; }).catch(() => {});
-  fetch('/api/admin/leads', H)
-    .then(r => r.json()).then(j => {
-      if (j.ok) {
-        const wait = (j.leads || []).filter(l => l.status !== '已跟进').length;
-        if (wait > 0) { badges.mall = wait; renderNav(current, badges); }
-      }
-    }).catch(() => {});
-  fetch('/api/admin/users', H)
-    .then(r => r.json()).then(j => { if (j.ok && Array.isArray(j.users)) document.getElementById('stUsers').textContent = j.users.length + '+'; }).catch(() => {});
+  const setStat = (id, v) => { const n = el(id); if (n && v != null) n.textContent = v; };
+  const setBadge = (k, v) => { if (v > 0) badges[k] = v; else delete badges[k]; };
+  let badgeBusy = false;
+  async function loadBadges() {
+    if (badgeBusy) return;
+    badgeBusy = true;
+    try {
+      await Promise.all([
+        fetch('/api/admin/withdrawals?status=', H).then(r => r.json())
+          .then(j => { if (j.ok && j.stats) { setStat('stWd', j.stats.pending); setBadge('withdraw', j.stats.pending); } }).catch(() => {}),
+        fetch('/api/admin/activity-stats', H).then(r => r.json())
+          .then(j => { if (j.ok && j.game) { setStat('stPlaying', j.game.playingSessions); setBadge('game', j.game.playingSessions); } }).catch(() => {}),
+        fetch('/api/shanhai/admin/stats', H).then(r => r.json())
+          .then(j => { if (j.ok) setStat('stPlayers', j.players); }).catch(() => {}),
+        fetch('/api/admin/leads', H).then(r => r.json())
+          .then(j => { if (j.ok) setBadge('mall', (j.leads || []).filter(l => l.status !== '已跟进').length); }).catch(() => {}),
+        fetch('/api/admin/users', H).then(r => r.json())
+          .then(j => { if (j.ok && Array.isArray(j.users)) setStat('stUsers', j.users.length + '+'); }).catch(() => {}),
+      ]);
+    } finally { badgeBusy = false; }
+    updateNav(current, badges);
+  }
+
+  // 【v20.8】角标自动更新：切回窗口立刻刷 + 每 60s 一次；页面隐藏时停表（不白花流量）
+  const BADGE_MS = 60000;
+  let badgeTimer = null;
+  const startBadgeTimer = () => { if (!badgeTimer) badgeTimer = setInterval(() => { if (!document.hidden) loadBadges(); }, BADGE_MS); };
+  const stopBadgeTimer = () => { if (badgeTimer) { clearInterval(badgeTimer); badgeTimer = null; } };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { stopBadgeTimer(); return; }
+    loadBadges();          // 从别的窗口/标签切回来：角标 + 当前面板都取新数据
+    startBadgeTimer();
+    refreshKey(current);
+  });
 
   document.getElementById('logoutBtn').onclick = () => {
     localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user');
@@ -281,12 +363,13 @@ if (guardAdmin()) {
 
   // 初始面板：支持 #game / #mall / #security 等直达
   const init = (location.hash || '').replace('#', '');
-  renderNav('home', badges);   // 【修复】先渲染一次导航，任何后续异步/异常都不再影响左侧入口
-  navigate(['game', 'mall', 'security', 'orders', 'dispatch', 'overview', 'withdraw', 'recon', 'ads'].includes(init) ? init : 'home');
+  renderNav('home', badges);   // 先渲染一次导航，任何后续异步/异常都不再影响左侧入口
+  navigate(ALL_KEYS.includes(init) ? init : 'home');
   window.addEventListener('hashchange', () => {
     const k = (location.hash || '').replace('#', '');
     if (k && k !== current) navigate(k);
   });
+  loadBadges().then(startBadgeTimer);
 }
 </script>
 <script>
