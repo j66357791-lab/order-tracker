@@ -53,12 +53,23 @@ app.get('/api/orders', auth, adminOnly, async (req, res) => {
       query.status = { $in: sts };
     }
     if (req.query.q) {
-      query.orderNo = { $regex: String(req.query.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+      // 【v20.8】搜索走后端：原来前端拉全量订单在浏览器里过滤。
+      // 匹配口径与前台一致 —— 订单号 或 备注 模糊命中（大小写不敏感）。
+      const rx = { $regex: String(req.query.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+      query.$or = [{ orderNo: rx }, { note: rx }];
+    }
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 500);
+    // 【v20.8】按时间范围取数：前端传 month(YYYY-MM) / from / to 时只取该范围（台账页用它避免每次全量）
+    if (req.query.from || req.query.to) {
+      const rng = {};
+      if (req.query.from) rng.$gte = String(req.query.from);
+      if (req.query.to) rng.$lte = String(req.query.to);
+      query.date = Object.assign(query.date || {}, rng);
     }
     let orders = cacheGet(JSON.stringify(query));
     if (!orders) {
       orders = await db.collection(CONFIG.collection)
-        .find(query).sort({ date: -1, _id: -1 }).limit(500).toArray();
+        .find(query).sort({ date: -1, _id: -1 }).limit(limit).toArray();
       // 附带分单信息（该订单绑定的派单卡：写手/报酬/卡状态）
       const ids = orders.map(o => o._id.toString());
       const dmap = {};
