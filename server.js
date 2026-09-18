@@ -75,8 +75,13 @@ const DEPLOY_CHECK_FILES = [
   'server.js', 'config.js', 'package.json',
   'public/portal.html', 'public/member.html', 'public/portal-register.html', 'public/login.html',
   'public/index.html', 'public/dispatch.html', 'public/writer.html', 'public/game.html',
-  'public/admin_packages.html', 'public/admin_game.html',
-  'public/admin.html', 'public/admin_security.html',
+  // 【v20.4 修复】管理后台单页化后新增的页面与模块，原先一个都没进核验清单——
+  // 漏传 /admin/ 下任何一个文件，整个管理后台（左侧导航、全局搜索、三个面板）都会白屏，
+  // 而 /api/deploy-check 仍报"全部在线"。以下 12 项补齐。
+  'public/admin.html', 'public/dispatch-overview.html', 'public/withdraw.html', 'public/ads.html',
+  'public/admin/app.css', 'public/admin/app.js',
+  'public/admin/mod-game.js', 'public/admin/mod-mall.js', 'public/admin/mod-security.js',
+  'public/admin_packages.html', 'public/admin_game.html', 'public/admin_security.html',
   'public/robots.txt', 'public/service-worker.js', 'public/manifest.json',
   'public/games/shanhai/index.html', 'public/games/shanhai/css/style.css',
   'public/games/shanhai/js/weapons.js', 'public/games/shanhai/js/game.js',
