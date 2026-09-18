@@ -83,9 +83,9 @@
       </div>
 
       <div class="notice">
-        <b>十个入口已全部就位</b>，左侧导航可点右上角 ‹ 收起成图标条，鼠标划过看名字。<br>
-        <b>原生面板</b>（无嵌套滚动、打开即用）：工作台 / 游戏控制器 / 用户端配置 / 安全与用户 / <b>广告管理</b>；
-        其余 5 项（台账 / 派单聊天 / 派单总览 / 提现审批 / 财务对账）仍为原页面内嵌运行，正在按「由易到难」逐个迁成原生面板。
+        <b>十个入口已全部就位</b>，左侧导航可点顶部 ‹ 收起成图标条，鼠标划过看名字。<br>
+        <b>原生面板</b>（无嵌套滚动、打开即用）：工作台 / 游戏控制器 / 用户端配置 / 安全与用户 / <b>广告管理</b> / <b>提现审批</b>；
+        其余 4 项（台账 / 派单聊天 / 派单总览 / 财务对账）仍为原页面内嵌运行，正在按「由易到难」逐个迁成原生面板。
       </div>
     </div>
 
@@ -99,15 +99,13 @@
     <div id="panel-overview" style="display:none">
       <iframe id="frameOverview" class="embed-frame" title="派单总览"></iframe>
     </div>
-    <div id="panel-withdraw" style="display:none">
-      <iframe id="frameWithdraw" class="embed-frame" title="提现审批"></iframe>
-    </div>
     <div id="panel-recon" style="display:none">
       <iframe id="frameRecon" class="embed-frame" title="财务对账"></iframe>
     </div>
 
     <!-- ③ 模块面板容器（挂载后显示） -->
     <div id="panel-ads" style="display:none"></div>
+    <div id="panel-withdraw" style="display:none"></div>
     <div id="panel-game" style="display:none"></div>
     <div id="panel-mall" style="display:none"></div>
     <div id="panel-security" style="display:none"></div>
@@ -120,6 +118,7 @@ import { mount as mountGame } from '/admin/mod-game.js';
 import { mount as mountMall } from '/admin/mod-mall.js';
 import { mount as mountSecurity } from '/admin/mod-security.js';
 import { mount as mountAds } from '/admin/mod-ads.js';
+import { mount as mountWithdraw } from '/admin/mod-withdraw.js';
 
 window.navGo = (key) => { navigate(key); return false; };
 
@@ -131,6 +130,7 @@ if (guardAdmin()) {
   const badges = {};
   const PANELS = {
     ads: { el: document.getElementById('panel-ads'), mount: mountAds },
+    withdraw: { el: document.getElementById('panel-withdraw'), mount: mountWithdraw },
     game: { el: document.getElementById('panel-game'), mount: mountGame },
     mall: { el: document.getElementById('panel-mall'), mount: mountMall },
     security: { el: document.getElementById('panel-security'), mount: mountSecurity },
@@ -139,9 +139,9 @@ if (guardAdmin()) {
     orders: '/index.html?embed=1',
     dispatch: '/dispatch.html?embed=1',
     overview: '/dispatch-overview.html?embed=1',
-    withdraw: '/withdraw.html?embed=1',
     recon: '/dispatch-overview.html?embed=1&tab=recon',
-    // 【v20.6】ads 已迁为面板（mod-ads.js），不再走 iframe
+    // 【v20.6】ads 已迁为面板（mod-ads.js）
+    // 【v20.7】withdraw 已迁为面板（mod-withdraw.js）
   };
   const mounted = {};
   let current = 'home';
