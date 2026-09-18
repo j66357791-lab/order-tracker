@@ -9,6 +9,23 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="stylesheet" href="/admin/app.css">
+<style>
+/* 【自包含兜底】外壳骨架的关键样式内联一份：
+   service-worker 换版本后的首次访问可能仍拿到上一版 app.css，
+   内联后即使外链样式是旧的，导航与内嵌页高度也不会塌掉。 */
+.shell { display: flex; min-height: 100vh; }
+.nav { width: 238px; flex-shrink: 0; background: #fff; border-right: 1px solid var(--line); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.nav-items { flex: 1; padding: 10px; }
+.content { flex: 1; min-width: 0; padding: 26px 30px 60px; }
+.embed-frame { width: 100%; height: calc(100vh - 86px); border: 0; display: block; background: #faf7f1; }
+@media (max-width: 860px) {
+  .shell { flex-direction: column; }
+  .nav { width: 100%; height: auto; position: sticky; top: 0; z-index: 50; flex-direction: row; align-items: center; overflow-x: auto; padding: 0 8px; }
+  .nav-items { display: flex; padding: 6px; flex: 1; gap: 2px; }
+  .content { padding: 18px 16px 60px; }
+  .embed-frame { height: calc(100vh - 134px); }
+}
+</style>
 </head>
 <body>
 <div class="shell">
