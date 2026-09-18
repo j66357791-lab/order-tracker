@@ -55,13 +55,13 @@ export async function copyText(text) {
 }
 
 // —— 导航定义（方案二：十项；panel=已迁入本壳的面板，frame=仍在外部页面用 iframe 装） ——
-// 迁移进度：剩余 5 项为 frame，按「由易到难」逐个迁成 panel（每迁一个删一个 FRAMES 条目）
+// 迁移进度：已完成 ads / withdraw；剩余 4 项（台账 / 派单聊天 / 派单总览 / 财务对账）按「由易到难」继续
 export const NAV_ITEMS = [
   { key: 'home',     icon: '🏠', title: '工作台',     type: 'panel' },
   { key: 'orders',   icon: '📒', title: '台账',           type: 'frame', href: '/index.html?embed=1', desc: '接单台账与利润统计' },
   { key: 'dispatch', icon: '🎧', title: '派单聊天',   type: 'frame', href: '/dispatch.html?embed=1', desc: '与写手沟通 / 发派单卡' },
   { key: 'overview', icon: '📋', title: '派单总览',   type: 'frame', href: '/dispatch-overview.html?embed=1', desc: '全部派单卡进度与审核' },
-  { key: 'withdraw', icon: '💳', title: '提现审批',   type: 'frame', href: '/withdraw.html?embed=1', desc: '写手提现申请处理' },
+  { key: 'withdraw', icon: '💳', title: '提现审批',   type: 'panel', desc: '写手提现申请处理' },
   { key: 'recon',    icon: '💰', title: '财务对账',   type: 'frame', href: '/dispatch-overview.html?embed=1&tab=recon', desc: '台账 × 派单卡交叉核对' },
   { key: 'game',     icon: '🎮', title: '游戏控制器', type: 'panel', desc: '翻翻乐配置 / 山海数据 / 道具 / 审计' },
   { key: 'mall',     icon: '🛍', title: '用户端配置', type: 'panel', desc: '套餐 / 文案馆作品 / 咨询' },
