@@ -55,14 +55,14 @@ export async function copyText(text) {
 }
 
 // —— 导航定义（方案二：十项；panel=已迁入本壳的面板，frame=仍在外部页面用 iframe 装） ——
-// 迁移进度：已完成 ads / withdraw；剩余 4 项（台账 / 派单聊天 / 派单总览 / 财务对账）按「由易到难」继续
+// 迁移进度：已完成 ads / withdraw / overview / recon；剩余 2 项（台账 orders / 派单聊天 dispatch）
 export const NAV_ITEMS = [
   { key: 'home',     icon: '🏠', title: '工作台',     type: 'panel' },
   { key: 'orders',   icon: '📒', title: '台账',           type: 'frame', href: '/index.html?embed=1', desc: '接单台账与利润统计' },
   { key: 'dispatch', icon: '🎧', title: '派单聊天',   type: 'frame', href: '/dispatch.html?embed=1', desc: '与写手沟通 / 发派单卡' },
-  { key: 'overview', icon: '📋', title: '派单总览',   type: 'frame', href: '/dispatch-overview.html?embed=1', desc: '全部派单卡进度与审核' },
+  { key: 'overview', icon: '📋', title: '派单总览',   type: 'panel', desc: '全部派单卡进度与审核' },
   { key: 'withdraw', icon: '💳', title: '提现审批',   type: 'panel', desc: '写手提现申请处理' },
-  { key: 'recon',    icon: '💰', title: '财务对账',   type: 'frame', href: '/dispatch-overview.html?embed=1&tab=recon', desc: '台账 × 派单卡交叉核对' },
+  { key: 'recon',    icon: '💰', title: '财务对账',   type: 'panel', desc: '台账 × 派单卡交叉核对' },
   { key: 'game',     icon: '🎮', title: '游戏控制器', type: 'panel', desc: '翻翻乐配置 / 山海数据 / 道具 / 审计' },
   { key: 'mall',     icon: '🛍', title: '用户端配置', type: 'panel', desc: '套餐 / 文案馆作品 / 咨询' },
   { key: 'ads',      icon: '📝', title: '广告管理',   type: 'panel', desc: '写手端活动中心公告' },
@@ -72,6 +72,7 @@ export const NAV_ITEMS = [
 // —— 渲染左侧导航（currentKey 高亮当前面板；badge：角标数值/函数） ——
 // 【v20.6】文字包一层 .lbl：导航收起（.nav.mini）时只隐藏 .lbl，图标与角标保留；
 //         同时给每个入口加 title，收起后鼠标划过仍能看到名字。
+// 【v20.8】每个入口加 data-key，配合下面的 updateNav 做局部更新（切页不再重建整块 DOM）。
 export function renderNav(currentKey, badges = {}) {
   const host = document.getElementById('navItems');
   if (!host) return;
@@ -81,13 +82,35 @@ export function renderNav(currentKey, badges = {}) {
     const label = `<span class="lbl">${item.title}</span>`;
     if (item.type === 'panel' || item.type === 'frame') {
       const tip = item.desc ? item.title + ' · ' + item.desc : item.title;
-      return `<button class="nav-item ${item.key === currentKey ? 'on' : ''}" data-nav="${item.key}" title="${esc(tip)}"><span class="ico">${item.icon}</span>${label}${badge}</button>`;
+      return `<button class="nav-item ${item.key === currentKey ? 'on' : ''}" data-key="${item.key}" data-nav="${item.key}" title="${esc(tip)}"><span class="ico">${item.icon}</span>${label}${badge}</button>`;
     }
-    return `<a class="nav-item external" href="${item.href}" title="${esc(item.title + (item.desc ? ' · ' + item.desc : ''))}"><span class="ico">${item.icon}</span>${label}${badge}</a>`;
+    return `<a class="nav-item external" data-key="${item.key}" href="${item.href}" title="${esc(item.title + (item.desc ? ' · ' + item.desc : ''))}"><span class="ico">${item.icon}</span>${label}${badge}</a>`;
   }).join('');
   host.querySelectorAll('[data-nav]').forEach(btn => {
     btn.onclick = () => {
       if (typeof window.navigate === 'function') window.navigate(btn.dataset.nav);
     };
+  });
+}
+
+// —— 【v20.8】只更新高亮与角标，不重建 DOM ——
+// 切页时用这个替代 renderNav：避免每次重建 10 个按钮造成的高亮闪烁与 hover 丢失。
+// 首次（导航为空）自动回退到完整渲染。
+export function updateNav(currentKey, badges = {}) {
+  const host = document.getElementById('navItems');
+  if (!host) return;
+  const items = host.querySelectorAll('.nav-item');
+  if (!items.length) { renderNav(currentKey, badges); return; }
+  items.forEach(btn => {
+    const k = btn.dataset.key;
+    btn.classList.toggle('on', k === currentKey);
+    const cur = btn.querySelector('.badge');
+    const val = badges[k];
+    if (val) {
+      if (cur) cur.textContent = val;
+      else btn.insertAdjacentHTML('beforeend', `<span class="badge">${esc(val)}</span>`);
+    } else if (cur) {
+      cur.remove();
+    }
   });
 }
