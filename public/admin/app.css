@@ -122,6 +122,11 @@ button { font-family: inherit; }
 .item-card .ops { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .item-card .ops button { flex: 0 0 auto; }
 
+/* 【v21.1】派单聊天是全屏高度的独立工作台（会话列表 + 消息流 + 底部输入区），
+   给它一个"刚好一屏"的高度：和当年嵌 iframe 时的 calc(100vh - 86px) 一致 ——
+   26(上留白) + 高度 + 60(下留白) = 100vh，外壳不会多出一条滚动条，左侧导航照常可用。 */
+#panel-dispatch { height: calc(100vh - 86px); overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #f2f3f5; }
+
 /* 【v20.8】通用加载骨架（iframe / 懒加载模块切换时先占位，避免白屏） */
 .skeleton { padding: 6px 0; }
 .skeleton i { display: block; height: 14px; border-radius: 7px; background: var(--paper2); margin-bottom: 12px; animation: sk 1.2s ease-in-out infinite; }
@@ -190,6 +195,7 @@ tr:last-child td { border-bottom: none; }
   .content { padding: 18px 16px 60px; }
   /* 【修复】顶栏模式：内嵌页高度扣掉顶栏，避免被裁切 */
   .embed-frame { height: calc(100vh - 134px); }
+  #panel-dispatch { height: calc(100vh - 134px); }
   .grid2, .grid3, .grid4 { grid-template-columns: 1fr; }
   .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
   .content-head { flex-wrap: wrap; }
