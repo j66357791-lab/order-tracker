@@ -200,7 +200,32 @@
      .main 会掉进第一列 236px 的轨道里 → 整页被压成 236px 窄条（后台里"格式错乱/展示不全"的真因）。
      这里把 embed 的 .layout 直接改成单列，让 .main 吃满宽度。 */
   body.embed .layout { grid-template-columns: 1fr; max-width: none; gap: 0; padding: 0 16px 40px; }
-  body.embed .sidebar { display: none; }
+  /* 【v20.6】侧栏不再整块 display:none —— 那会把「⚡ 快捷录入」「🔍 快捷查询」一起藏掉。
+     改成右下角可开关的浮动工具抽屉：三张卡一个不少，点 ⚡ 展开、再点收起、点空白处也收起。 */
+  .side-fab { display: none; }
+  body.embed .side-fab {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; right: 20px; bottom: 20px; width: 54px; height: 54px;
+    border-radius: 50%; border: 1px solid var(--line); background: var(--card);
+    color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; padding: 0;
+    box-shadow: 0 10px 30px rgba(15,23,42,.20); z-index: 15;
+    transition: transform .18s ease, background .18s ease, color .18s ease, border-color .18s ease;
+  }
+  body.embed .side-fab:hover { transform: translateY(-2px); }
+  body.embed .side-fab.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+  body.embed .sidebar {
+    display: flex; flex-direction: column; gap: 10px;
+    position: fixed; right: 20px; bottom: 86px; top: auto; left: auto;
+    width: 330px; max-width: calc(100vw - 40px);
+    max-height: calc(100vh - 120px); overflow-y: auto;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px; box-shadow: 0 18px 50px rgba(15,23,42,.24);
+    z-index: 14;
+    transform: translateX(calc(100% + 44px)); opacity: 0; pointer-events: none;
+    transition: transform .22s cubic-bezier(.2,.8,.3,1), opacity .22s ease;
+  }
+  body.embed .sidebar.open { transform: none; opacity: 1; pointer-events: auto; }
+  body.embed .sidebar .side-card { box-shadow: none; }
   body.embed header .meta a { display: none; }
   body.embed .main .wrap { max-width: none; padding: 14px 0 24px; }
   body.embed header { margin-bottom: 12px; }
@@ -359,6 +384,10 @@
     </div>
   </div>
 </div>
+
+<!-- 悬浮工具开关（仅嵌入后台时显示）：月份切换 · 快捷查询 · 快捷录入 -->
+<button class="side-fab" id="sideFab" type="button" aria-expanded="false"
+        title="快捷工具：月份切换 / 快捷查询 / 快捷录入" aria-label="快捷工具">⚡</button>
 
 <!-- 走势图弹窗（加宽） -->
 <div class="mask" id="chartMask" onclick="if(event.target===this)closeChart()">
@@ -1140,6 +1169,33 @@ function exportCSV() {
   });
 })();
 </script>
+  <script>
+  /* 【v20.6】嵌入模式下的侧栏抽屉开关：
+     后台左侧已经有导航了，台账自己的侧栏（月份切换/快捷查询/快捷录入）改挂右下角 ⚡，
+     点开可用、点空白/按 Esc 收起；独立打开本页时按钮不显示，侧栏照旧常驻在左边。 */
+  (function () {
+    var fab = document.getElementById('sideFab');
+    var sb = document.querySelector('.sidebar');
+    if (!fab || !sb) return;
+    function setOpen(on) {
+      sb.classList.toggle('open', on);
+      fab.classList.toggle('on', on);
+      fab.setAttribute('aria-expanded', on ? 'true' : 'false');
+      fab.setAttribute('title', on ? '收起快捷工具' : '快捷工具：月份切换 / 快捷查询 / 快捷录入');
+    }
+    fab.addEventListener('click', function (e) {
+      e.stopPropagation();               // 别让下面的"点空白收起"立刻把它关掉
+      setOpen(!sb.classList.contains('open'));
+    });
+    document.addEventListener('click', function (e) {
+      if (!sb.classList.contains('open')) return;
+      if (sb.contains(e.target) || fab.contains(e.target)) return;   // 点抽屉里面的控件不收起
+      setOpen(false);
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
+  })();
+  </script>
+
   <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () {
