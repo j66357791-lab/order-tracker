@@ -101,17 +101,12 @@
       </div>
     </div>
 
-    <!-- ② 内嵌页面面板（首次点击加载 iframe）——骨架盖在上方，onload 后移除 -->
-    <div id="panel-orders" class="embed-panel" style="display:none">
-      <div class="sk-overlay" id="skOrders"><div class="skeleton"><i></i><i></i><i></i><i></i></div></div>
-      <iframe id="frameOrders" class="embed-frame" title="台账"></iframe>
-    </div>
-    <div id="panel-dispatch" class="embed-panel" style="display:none">
-      <div class="sk-overlay" id="skDispatch"><div class="skeleton"><i></i><i></i><i></i><i></i></div></div>
-      <iframe id="frameDispatch" class="embed-frame" style="background:#141024" title="派单工作台"></iframe>
-    </div>
+    <!-- ② 内嵌页面面板：全部迁完，已无 iframe。
+         保留 .embed-panel/.sk-overlay 样式与 ensureFrame 逻辑，万一以后还要临时挂外部页可直接用。 -->
 
     <!-- ③ 模块面板容器（挂载后显示） -->
+    <div id="panel-orders" style="display:none"></div>
+    <div id="panel-dispatch" style="display:none"></div>
     <div id="panel-ads" style="display:none"></div>
     <div id="panel-withdraw" style="display:none"></div>
     <div id="panel-overview" style="display:none"></div>
@@ -128,6 +123,8 @@ import { TOKEN, ME, guardAdmin, api, renderNav, updateNav, esc } from '/admin/ap
 // 【v20.8】面板模块按需加载：原来是 5 个 mod-* 静态 import，首屏就把本次根本不点的也一起下载了。
 // 现在点哪个下哪个；导航悬停/聚焦时提前下载（用户从移动到点下通常有 300~800ms，够下完）。
 const LAZY = {
+  orders:   () => import('/admin/mod-orders.js'),
+  dispatch: () => import('/admin/mod-chat.js'),
   overview: () => import('/admin/mod-cards.js').then(m => ({ mount: m.mountOverview })),
   recon:    () => import('/admin/mod-cards.js').then(m => ({ mount: m.mountRecon })),
   ads:      () => import('/admin/mod-ads.js'),
@@ -136,11 +133,8 @@ const LAZY = {
   mall:     () => import('/admin/mod-mall.js'),
   security: () => import('/admin/mod-security.js'),
 };
-// 仍在用 iframe 的两个（台账 / 派单聊天），迁移完这两条就空了
-const FRAMES = {
-  orders:   '/index.html?embed=1',
-  dispatch: '/dispatch.html?embed=1',
-};
+// 【v21.0】iframe 全部迁完，这里空了。保留结构是为了万一以后还要临时挂外部页。
+const FRAMES = {};
 
 if (guardAdmin()) {
   const name = ME.displayName || '管理员';
@@ -211,7 +205,7 @@ if (guardAdmin()) {
       if (!host.innerHTML.trim()) host.innerHTML = SKELETON;   // 骨架先顶上，避免切过去一片空白
       try {
         const mod = await LAZY[key]();
-        const r = mod.mount(host);
+        const r = await mod.mount(host);   // 支持 async mount（派单聊天要先加载 socket.io）
         if (r && typeof r.refresh === 'function') mounted[key].refresh = r.refresh;
       } catch (e) {
         host.innerHTML = '<div class="empty">模块加载失败（' + esc(String((e && e.message) || e)) + '）</div>';
