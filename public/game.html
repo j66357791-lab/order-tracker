@@ -47,28 +47,48 @@
   .btn-start { font-size:19px; padding:14px 52px; border-radius:30px; letter-spacing:2px; }
   .start-tip { font-size:11px; color:#b9a3d8; margin-top:10px; line-height:1.7; }
 
-  /* ===== 对局区 ===== */
-  .game-head { display:flex; justify-content:space-between; align-items:center; margin-top:14px; }
-  .wave-tag { font-size:14px; font-weight:700; color:#ffd76a; }
-  .round-dots { display:flex; gap:6px; }
-  .dot { width:10px; height:10px; border-radius:50%; background:rgba(255,255,255,.18); border:1px solid rgba(255,215,106,.4); }
-  .dot.cur { background:#ffd76a; box-shadow:0 0 8px rgba(255,215,106,.8); }
+  /* ===== 对局区（【v22.0】专属翻牌空间：进入后是一整个沉浸式场景，不再挤在长页里） ===== */
+  #pageGame { position:fixed; inset:0; z-index:30; display:flex; flex-direction:column;
+    padding:12px 12px 14px; background:radial-gradient(130% 72% at 50% 0%, #4a2385 0%, #2a1250 44%, #150826 100%); }
+  .pg-top { display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+  .pg-mid { text-align:center; }
+  .snd-btn { width:40px; height:40px; border-radius:50%; border:1px solid rgba(200,160,255,.45); background:rgba(30,12,55,.65); color:#ffd76a; font-size:17px; cursor:pointer; flex-shrink:0; }
+  .snd-btn.off { color:#8f7bad; }
+  .game-head { display:flex; justify-content:center; align-items:center; gap:14px; margin-top:12px; flex-shrink:0; }
+  .wave-tag { font-size:15px; font-weight:800; color:#ffd76a; letter-spacing:1px; text-shadow:0 0 12px rgba(255,215,106,.55); }
+  .round-dots { display:flex; gap:7px; }
+  .dot { width:11px; height:11px; border-radius:50%; background:rgba(255,255,255,.16); border:1px solid rgba(255,215,106,.4); transition:all .25s; }
+  .dot.cur { background:#ffd76a; box-shadow:0 0 10px rgba(255,215,106,.85); transform:scale(1.15); }
   .dot.done { background:#7ee08a; }
-  .pot { margin-top:12px; background:rgba(30,12,55,.72); border:1px dashed rgba(255,215,106,.4); border-radius:12px; padding:8px 12px; font-size:12px; color:#e6d6ff; display:flex; flex-wrap:wrap; gap:6px 14px; }
-  .pot b { color:#ffd76a; }
+  .pot { margin:12px auto 8px; width:100%; max-width:600px; background:rgba(30,12,55,.78); border:1px dashed rgba(255,215,106,.45); border-radius:14px; padding:10px 14px; font-size:12.5px; color:#e6d6ff; text-align:center; flex-shrink:0; }
+  .pot b { color:#ffd76a; font-size:14px; }
   .pot .empty { color:#8f7bad; }
 
-  .cards { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:16px; padding:10px; background:rgba(22,8,36,0.38); border:1px solid rgba(255,215,106,0.18); border-radius:16px; backdrop-filter:blur(2px); }
-  .card { aspect-ratio:3/4; perspective:600px; cursor:pointer; }
+  .cards { flex:1; display:grid; grid-template-columns:repeat(5,1fr); gap:10px; align-content:center;
+    width:100%; max-width:600px; margin:0 auto; padding:14px;
+    background:rgba(22,8,36,.45); border:1px solid rgba(255,215,106,.22); border-radius:18px; backdrop-filter:blur(2px); }
+  .card { aspect-ratio:3/4.1; perspective:700px; cursor:pointer; transition:transform .18s ease; }
+  .card:not(.disabled):hover { transform:translateY(-5px); }
+  .card:not(.disabled):active { transform:scale(.96); }
   .card-inner { position:relative; width:100%; height:100%; transform-style:preserve-3d; transition:transform .6s cubic-bezier(.4,.2,.2,1); }
   .card.open .card-inner { transform:rotateY(180deg); }
-  .card-face { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; border-radius:10px; overflow:hidden; background:#241040; }
+  .card-face { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; border-radius:12px; overflow:hidden; background:#241040; box-shadow:0 4px 14px rgba(0,0,0,.45); }
   .card-face img { width:100%; height:100%; object-fit:cover; display:block; }
   .card-front-face { transform:rotateY(180deg); display:flex; flex-direction:column; align-items:center; justify-content:center; }
   .card-front-face img.bg { position:absolute; inset:0; }
   .card-front-face .prize { position:relative; width:58%; margin-top:6%; }
-  .card-front-face .prize-txt { position:relative; font-size:11px; font-weight:700; color:#ffd76a; text-shadow:0 1px 3px #000; margin-top:6px; text-align:center; padding:0 2px; }
+  .card-front-face .prize-txt { position:relative; font-size:11.5px; font-weight:700; color:#ffd76a; text-shadow:0 1px 3px #000; margin-top:6px; text-align:center; padding:0 2px; }
   .card.disabled { pointer-events:none; }
+  .pg-tip { flex-shrink:0; text-align:center; font-size:11.5px; color:#b9a3d8; padding-top:10px; }
+
+  /* ===== 音效开关（【v22.0】） ===== */
+  .task-row { display:flex; align-items:center; gap:10px; padding:10px; background:#f8f9fa; border-radius:12px; }
+  .task-row img { width:32px; height:32px; }
+  .task-row .ti { flex:1; text-align:left; }
+  .task-row .tt { font-size:13px; font-weight:600; }
+  .task-row .td { font-size:11px; color:#999; margin-top:2px; }
+  .task-row .tr { text-align:right; }
+  .task-row .rw { font-size:11px; color:#d97706; font-weight:700; margin-bottom:4px; }
 
   /* ===== 弹窗 ===== */
   .mask { position:fixed; inset:0; background:rgba(10,4,22,.78); display:flex; align-items:center; justify-content:center; z-index:50; padding:24px; }
@@ -104,6 +124,7 @@
         <div class="title">✨ 魔法翻翻乐</div>
         <span class="act-time" id="actTime"></span>
       </div>
+      <button class="btn-back snd-btn" id="btnSndHome" onclick="toggleSnd()" title="音效 / 音乐开关">🔊</button>
       <button class="btn-back" onclick="location.href='/writer.html?tab=game'">退出</button>
     </div>
     <div class="inv" id="invBar"></div>
@@ -115,15 +136,16 @@
       </div>
       <button class="btn" id="btnDaily" onclick="claimDaily()">领取</button>
     </div>
-    <!-- 任务专区 -->
+    <!-- 任务专区（【v22.0】后台可配置，条目来自任务专区配置） -->
     <div class="task-bar" style="margin-top:10px">
       <img src="/assets/game/icon_key.png" alt="">
       <div class="t-info">
         <div class="t-name">📋 任务专区</div>
-        <div class="t-desc">每日登录领钥匙 · 完成游戏赢碎片 · 邀请好友得奖励</div>
+        <div class="t-desc" id="taskBarDesc">每日登录领钥匙 · 完成游戏赢碎片 · 邀请好友得奖励</div>
       </div>
       <button class="btn btn-ghost" onclick="showTasks()">查看全部</button>
     </div>
+    <!-- 开始区：点击进入专属翻牌空间 -->
     <div class="start-zone">
       <button class="btn btn-start" id="btnStart" onclick="startGame()">开始翻牌</button>
       <div class="start-tip">
@@ -138,11 +160,14 @@
     </div>
   </div>
 
-  <!-- ========= 对局页 ========= -->
+  <!-- ========= 对局页（【v22.0】专属翻牌空间：全屏沉浸场景） ========= -->
   <div id="pageGame" class="hidden">
-    <div class="topbar">
-      <div class="title" style="font-size:20px;">✨ 魔法翻翻乐</div>
-      <button class="btn-back" onclick="backHome()">离开</button>
+    <div class="pg-top">
+      <button class="btn-back" onclick="backHome()">← 离开</button>
+      <div class="pg-mid">
+        <div class="title" style="font-size:19px;">✨ 魔法翻翻乐</div>
+      </div>
+      <button class="snd-btn" id="btnSndGame" onclick="toggleSnd()" title="音效 / 音乐开关">🔊</button>
     </div>
     <div class="game-head">
       <span class="wave-tag" id="waveTag">第一波</span>
@@ -150,7 +175,7 @@
     </div>
     <div class="pot" id="potBar"></div>
     <div class="cards" id="cards"></div>
-    <div class="start-tip" style="text-align:center;">点击任意一张魔法牌翻开，查看本轮奖励</div>
+    <div class="pg-tip">点击任意一张魔法牌翻开 · 翻到「奖励逃跑了」可用复活石抵消一次 · 波次越高奖励越大</div>
   </div>
 
   <!-- ========= 商铺页 ========= -->
@@ -223,6 +248,11 @@ function render(){
   $('btnStart').textContent = STATE.session ? '对局进行中…' : '开始翻牌';
   $('composeDesc').textContent = `当前碎片 ${STATE.bag.frags||0} / ${STATE.activity.composeFragCost}，魔法球 ${STATE.bag.balls||0} 个`;
   $('btnCompose').disabled = (STATE.bag.frags||0) < STATE.activity.composeFragCost;
+  // 【v22.0】任务专区条目来自后台配置
+  const ts = STATE.tasks || [];
+  $('taskBarDesc').textContent = ts.length
+    ? ts.slice(0, 2).map(t => t.title).join(' · ')
+    : '每日登录领钥匙 · 完成游戏赢碎片 · 邀请好友得奖励';
   renderShop();
   const s = STATE.session;
   if (s) { showGame(s); if (s.waveDone) showWaveDone(s.wave, s.pot); else if (s.pendingEscape) showEscapeModal(s); }
@@ -239,8 +269,8 @@ function modal(html){ $('modalRoot').innerHTML = `<div class="mask"><div class="
 function closeModal(){ $('modalRoot').innerHTML = ''; }
 
 // ===== 每日钥匙 / 合成 / 福袋 =====
-async function claimDaily(){ try{ await api('/api/game/daily',{method:'POST'}); toast('领取成功：魔法钥匙 +1'); await refresh(); }catch(e){ toast(e.message); } }
-async function compose(){ try{ const r = await api('/api/game/compose',{method:'POST'}); modal(`<img class="m-ico" src="/assets/game/icon_ball.png"><h3>合成成功！</h3><p>消耗碎片 ×${STATE.activity.composeFragCost}，获得魔法球 ×1</p><div class="m-btns"><button class="btn" onclick="closeModal();refresh()">好的</button></div>`); }catch(e){ toast(e.message); } }
+async function claimDaily(){ try{ await api('/api/game/daily',{method:'POST'}); toast('领取成功：魔法钥匙 +1'); SND.coin(); await refresh(); }catch(e){ toast(e.message); } }
+async function compose(){ try{ const r = await api('/api/game/compose',{method:'POST'}); modal(`<img class="m-ico" src="/assets/game/icon_ball.png"><h3>合成成功！</h3><p>消耗碎片 ×${STATE.activity.composeFragCost}，获得魔法球 ×1</p><div class="m-btns"><button class="btn" onclick="closeModal();refresh()">好的</button></div>`); SND.coin(); }catch(e){ toast(e.message); } }
 async function openBags(){
   const bags = ['bagS','bagM','bagL'].filter(k => (STATE.bag[k]||0) > 0);
   if (!bags.length) return toast('暂无可拆的福袋，去翻牌赢取吧');
@@ -253,6 +283,7 @@ async function doOpen(size){
   closeModal();
   try{ const r = await api('/api/game/bag/open',{method:'POST',body:{size}});
     modal(`<img class="m-ico" src="${ICO[size]}"><h3>恭喜！</h3><div class="bag-open-txt">+${r.amount} 元</div><p>现金已存入你的钱包，可提现</p><div class="m-btns"><button class="btn" onclick="closeModal();refresh()">太棒了</button></div>`);
+    SND.bag();
   }catch(e){ toast(e.message); }
 }
 
@@ -298,6 +329,7 @@ async function flip(idx){
     // 【2026-09-14v3 体验修复】乐观翻开：请求期间卡面立即给"翻牌中"反馈，不再全灰干等
     document.querySelectorAll('.card').forEach(c=>c.classList.add('disabled'));
     $('card'+idx).classList.add('open');
+    SND.flip();
     face.innerHTML = `<div class="prize-txt">翻牌中…</div>`;
     let r;
     try { r = await api('/api/game/flip',{method:'POST'}); }
@@ -332,6 +364,10 @@ async function onFlipResult(r){
 }
 async function _onFlip(r){
   SESS = r.session || SESS;
+  // 【v22.0】音效：逃跑低沉音 / 普通奖励上扬音 / 大奖更华丽
+  if (r.escaped) SND.escape();
+  else if (r.got.type === 'ball' || r.got.type === 'bagL' || r.got.type === 'bagM') SND.big();
+  else SND.reward();
   if (r.escaped){
     if (r.canRevive){
       modal(`<img class="m-ico" src="https://sfile.chatglm.cn/workspace/image/21/2164971677.png"><h3>奖励逃跑了！</h3>
@@ -399,35 +435,29 @@ async function doGiveup(){ try{ await api('/api/game/giveup',{method:'POST'}); g
 async function decide(action){ try{ const r = await api('/api/game/decide',{method:'POST',body:{action}}); if(action==='cashout'){ modal(`<h3>落袋为安！</h3><div class="gain-list">${fmtSettled(r.settled).map(i=>`<span>${i}</span>`).join('')}</div><p style="margin-top:8px">奖励已存入背包</p><div class="m-btns"><button class="btn" onclick="gameOver()">返回大厅</button></div>`); } else { showGame({ wave:r.wave, round:r.round, pot:r.pot }); toast(`已携带宝物进入${WAVES[r.wave-1]}！`); } }catch(e){ toast(e.message); } }
 function gameOver(){ closeModal(); $('pageGame').classList.add('hidden'); $('pageHome').classList.remove('hidden'); refresh(); }
 function showTasks(){
-  modal(`<h3>📋 全部任务</h3>
+  // 【v22.0】任务专区改为后台可配置：条目、说明、奖励文案、按钮动作全部来自管理端
+  const tasks = (STATE.tasks && STATE.tasks.length) ? STATE.tasks : [
+    { id:'daily', title:'每日登录', desc:'每天可免费领取 1 把魔法钥匙', reward:'钥匙×1', action:'daily' },
+  ];
+  const icoFor = t => ({ daily:'key', play:'frag', invite:'key', bag:'ball' }[t.action] || 'ball');
+  const btnFor = t => {
+    if (t.action === 'daily') return `<button class="btn" ${STATE.dailyClaimed?'disabled':''} onclick="claimDaily()">${STATE.dailyClaimed?'已领取':'领取'}</button>`;
+    if (t.action === 'play')  return `<button class="btn btn-ghost" onclick="closeModal()">去翻牌</button>`;
+    if (t.action === 'bags')  return `<button class="btn btn-ghost" onclick="closeModal();openBags()">去拆袋</button>`;
+    if (t.action === 'link')  return `<button class="btn btn-ghost" onclick="gotoTask('${esc(t.link)}')">去完成</button>`;
+    return `<span style="font-size:11px;color:#999">了解详情</span>`;
+  };
+  modal(`<h3>📋 任务专区</h3>
     <div style="display:flex;flex-direction:column;gap:10px;margin:12px 0">
-      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8f9fa;border-radius:10px">
-        <img src="${ICO.key}" style="width:32px;height:32px">
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600">每日登录</div>
-          <div style="font-size:11px;color:#999">每天登录领取 1 把钥匙</div>
-        </div>
-        <span style="font-size:11px;color:#27c">每日可做</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8f9fa;border-radius:10px;opacity:.5">
-        <img src="${ICO.frag}" style="width:32px;height:32px">
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600">完成 1 局游戏</div>
-          <div style="font-size:11px;color:#999">完成1局（不论输赢）奖励1碎片</div>
-        </div>
-        <span style="font-size:11px;color:#999">即将上线</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:#f8f9fa;border-radius:10px;opacity:.5">
-        <img src="${ICO.key}" style="width:32px;height:32px">
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600">邀请好友</div>
-          <div style="font-size:11px;color:#999">邀请1人注册并完成首局奖励5钥匙</div>
-        </div>
-        <span style="font-size:11px;color:#999">即将上线</span>
-      </div>
+      ${tasks.map(t=>`<div class="task-row">
+        <img src="${ICO[icoFor(t)]}">
+        <div class="ti"><div class="tt">${esc(t.title)}</div><div class="td">${esc(t.desc||'')}</div></div>
+        <div class="tr"><div class="rw">${esc(t.reward||'')}</div>${btnFor(t)}</div>
+      </div>`).join('')}
     </div>
     <div class="m-btns"><button class="btn" onclick="closeModal()">关闭</button></div>`);
 }
+function gotoTask(u){ closeModal(); if (u) location.href = u; }
 function backHome(){ $('pageGame').classList.add('hidden'); $('pageShop').classList.add('hidden'); $('pageHome').classList.remove('hidden'); closeModal(); refresh(); }
 
 // ===== 商铺 =====
@@ -435,6 +465,101 @@ function showShop(){ $('pageHome').classList.add('hidden'); $('pageGame').classL
 async function buy(id){ try{ const r = await api('/api/game/shop/buy',{method:'POST',body:{id}}); toast(`兑换成功：${r.name}`); await refresh(); }catch(e){ toast(e.message); } }
 
 function logout(){ localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; }
+
+// ===== 【v22.0】音效与背景音乐（Web Audio 实时合成，零素材、离线可用） =====
+// 翻牌 / 奖励 / 逃跑 / 金币 / 福袋 各有专属音色；BGM 是慢速和弦循环垫乐。
+// 浏览器自动播放策略：第一次用户点按页面后才创建 AudioContext 并起 BGM。
+const SND = (() => {
+  let ctx = null, master = null, bgmTimer = null, chord = 0;
+  let enabled = localStorage.getItem('ff_snd') !== '0';
+  const CHORDS = [ [261.6, 329.6, 392.0], [293.7, 349.2, 440.0], [349.2, 440.0, 523.3], [329.6, 392.0, 493.9] ];
+  function ac(){
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createGain(); master.gain.value = 0.6; master.connect(ctx.destination);
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function tone(freq, dur, type, vol, when, slideTo){
+    if (!enabled) return;
+    try {
+      const c = ac(), t0 = c.currentTime + (when || 0);
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = type || 'sine';
+      o.frequency.setValueAtTime(freq, t0);
+      if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t0 + dur);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(vol || 0.2, t0 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(g); g.connect(master);
+      o.start(t0); o.stop(t0 + dur + 0.05);
+    } catch (e) {}
+  }
+  function swish(dur, vol, freq){
+    if (!enabled) return;
+    try {
+      const c = ac(), t0 = c.currentTime;
+      const len = Math.floor(c.sampleRate * dur);
+      const buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      const src = c.createBufferSource(); src.buffer = buf;
+      const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq || 1600; f.Q.value = 0.8;
+      const g = c.createGain(); g.gain.value = vol || 0.2;
+      src.connect(f); f.connect(g); g.connect(master);
+      src.start(t0);
+    } catch (e) {}
+  }
+  function pad(freqs, dur){
+    if (!enabled || !ctx) return;
+    try {
+      const t0 = ctx.currentTime;
+      freqs.forEach(f => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.linearRampToValueAtTime(0.035, t0 + 1.2);
+        g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+        o.connect(g); g.connect(master);
+        o.start(t0); o.stop(t0 + dur + 0.1);
+      });
+    } catch (e) {}
+  }
+  return {
+    get enabled(){ return enabled; },
+    // 首次用户手势：建 AudioContext + 起 BGM（浏览器要求必须有手势才能出声）
+    unlock(){ try { ac(); if (enabled) this.bgmStart(); } catch (e) {} },
+    toggle(){
+      enabled = !enabled; localStorage.setItem('ff_snd', enabled ? '1' : '0');
+      if (enabled) { try { ac(); } catch (e) {} this.bgmStart(); } else this.bgmStop();
+      return enabled;
+    },
+    flip(){ swish(0.16, 0.22, 1700); tone(560, 0.1, 'triangle', 0.1, 0.02, 320); },
+    reward(){ [660, 880, 1174].forEach((f, i) => tone(f, 0.15, 'triangle', 0.14, i * 0.08)); },
+    big(){ [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.24, 'triangle', 0.16, i * 0.1)); },
+    escape(){ tone(320, 0.5, 'sawtooth', 0.12, 0, 90); tone(180, 0.6, 'sine', 0.1, 0.1, 70); },
+    coin(){ [1318, 1760].forEach((f, i) => tone(f, 0.12, 'square', 0.08, i * 0.07)); },
+    bag(){ [392, 523, 659, 880].forEach((f, i) => tone(f, 0.16, 'triangle', 0.13, i * 0.09)); },
+    bgmStart(){
+      if (bgmTimer || !enabled) return;
+      try { ac(); } catch (e) { return; }
+      pad(CHORDS[chord % CHORDS.length], 4.2); chord++;
+      bgmTimer = setInterval(() => { pad(CHORDS[chord % CHORDS.length], 4.2); chord++; }, 4200);
+    },
+    bgmStop(){ if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; } },
+  };
+})();
+function toggleSnd(){
+  const on = SND.toggle();
+  document.querySelectorAll('.snd-btn').forEach(b => { b.textContent = on ? '🔊' : '🔇'; b.classList.toggle('off', !on); });
+  toast(on ? '音效与音乐已开启' : '已静音');
+}
+// 首次手势解锁音频（自动播放策略），并同步按钮状态
+document.addEventListener('pointerdown', function sndUnlock(){
+  SND.unlock();
+  document.querySelectorAll('.snd-btn').forEach(b => { b.textContent = SND.enabled ? '🔊' : '🔇'; b.classList.toggle('off', !SND.enabled); });
+  document.removeEventListener('pointerdown', sndUnlock);
+}, { once: true });
 
 refresh().catch(e => $('modalRoot').innerHTML = `<div class="mask"><div class="modal"><h3>加载失败</h3><p>${esc(e.message)}</p><div class="m-btns"><button class="btn" onclick="location.reload()">重试</button></div></div></div>`);
 </script>
@@ -490,53 +615,88 @@ const FX = (() => {
 </script>
 
 <script>
-// ===== 【2026-09-14】游戏资源包下载（进入游戏页时自行提示，不再依赖写手端预载） =====
+// ===== 【v22.0】游戏资源包下载（Cache Storage 持久化 + SW cache-first 回源） =====
+// 老版本只 fetch+blob 写 HTTP 缓存，而 SW 拦截图片请求时查的是 Cache Storage——两者不通，
+// 所以出现"点了下载、显示已下载，进游戏却还要重新加载"。现在直接写入 SW 读取的那份缓存，
+// 并且"已下载"的判定以 Cache Storage 里真的能查到全部资源为准（不再只看 localStorage 标记）。
 (function () {
-  var KEY = 'fanfanle_cache_version', VER = 'v1.6-20260914';
-  if (localStorage.getItem(KEY) === VER) return;
+  var KEY = 'fanfanle_cache_version', VER = 'v2.0-20260918';
+  var CACHE = 'fanfanle-assets-v2';
   var ASSETS = [
     '/assets/game/bg_main.jpg',
     '/assets/game/card_back.png', '/assets/game/card_front.png', '/assets/game/card_escape.png',
     '/assets/game/icon_key.png', '/assets/game/icon_ball.png', '/assets/game/icon_frag.png',
     '/assets/game/icon_revive.png', '/assets/game/bag_s.png', '/assets/game/bag_m.png', '/assets/game/bag_l.png',
   ];
-  var m = document.createElement('div');
-  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-  m.innerHTML = '<div style="background:linear-gradient(180deg,#2a1f4d,#1a1233);border:1px solid #ffd76a;border-radius:16px;padding:24px;max-width:320px;width:100%;text-align:center">'
-    + '<div style="font-size:40px;margin-bottom:10px">🪄</div>'
-    + '<h3 style="color:#ffd76a;font-size:17px;margin-bottom:10px">游戏资源包</h3>'
-    + '<p style="color:#cbb8ff;font-size:12px;line-height:1.6;margin-bottom:16px">下载本游戏美术资源（约 8MB），<br>完成后翻牌秒开、随时可玩不耗流量。</p>'
-    + '<div style="height:6px;background:rgba(255,255,255,.12);border-radius:99px;overflow:hidden;margin-bottom:6px">'
-    + '<div id="ffProgress" style="height:100%;width:0%;background:linear-gradient(90deg,#7c4dff,#ffd76a);transition:width .25s"></div></div>'
-    + '<div id="ffTip" style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:14px">等待开始…</div>'
-    + '<button id="ffGo" style="background:linear-gradient(135deg,#7c4dff,#6c3fd6);color:#fff;border:none;border-radius:10px;padding:11px 28px;font-size:14px;font-weight:700;cursor:pointer;margin-right:8px">立即下载</button>'
-    + '<button id="ffSkip" style="background:rgba(255,255,255,.1);color:#ccc;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:11px 20px;font-size:13px;cursor:pointer">暂不</button></div>';
-  document.body.appendChild(m);
-  function fin(ok) {
-    var t = document.getElementById('ffTip');
-    if (!t) return;
-    if (ok) { t.textContent = '下载完成！🎉'; localStorage.setItem(KEY, VER); setTimeout(function () { m.remove(); }, 1200); }
-    else t.textContent = '部分资源失败，游戏仍可正常玩';
+  function store() { return window.caches ? caches.open(CACHE) : Promise.reject(new Error('no caches')); }
+  // 已下载 = 每一个资源都能在 Cache Storage 里命中（真判定，不是只看标记）
+  async function allCached() {
+    if (!window.caches) return false;
+    try {
+      var c = await store();
+      for (var i = 0; i < ASSETS.length; i++) { var r = await c.match(ASSETS[i]); if (!r) return false; }
+      return true;
+    } catch (e) { return false; }
   }
-  document.getElementById('ffGo').onclick = async function () {
-    this.style.display = 'none';
-    document.getElementById('ffTip') && (document.getElementById('ffTip').textContent = '正在预载游戏资源…');
-    var done = 0, fail = 0;
+  async function download() {
+    var c = await store(), fail = 0;
     for (var i = 0; i < ASSETS.length; i++) {
       try {
-        var r = await fetch(ASSETS[i]);
+        var r = await fetch(ASSETS[i], { cache: 'no-cache' });
         if (!r.ok) throw 0;
-        await r.blob();  // 消费响应体，确保写入HTTP缓存
+        await c.put(ASSETS[i], r.clone());   // 写入 SW 会读的那份缓存
       } catch (e) { fail++; }
-      done++;
-      var p = document.getElementById('ffProgress'), tip = document.getElementById('ffTip');
-      if (p) p.style.width = Math.round(done / ASSETS.length * 100) + '%';
-      if (tip) tip.textContent = '下载中… ' + done + '/' + ASSETS.length;
     }
-    fin(!fail);
-  };
-  // 【2026-09-15】强制预下载：进入游戏即自动开始（可切后台，不可跳过）
-  document.getElementById('ffGo').onclick();
+    return fail === 0;
+  }
+
+  (async function boot() {
+    var done = false;
+    try { done = localStorage.getItem(KEY) === VER && await allCached(); } catch (e) {}
+    if (done) return;                       // 真的全部在缓存里：不弹窗、不下载
+
+    var m = document.createElement('div');
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    m.innerHTML = '<div style="background:linear-gradient(180deg,#2a1f4d,#1a1233);border:1px solid #ffd76a;border-radius:16px;padding:24px;max-width:320px;width:100%;text-align:center">'
+      + '<div style="font-size:40px;margin-bottom:10px">🪄</div>'
+      + '<h3 style="color:#ffd76a;font-size:17px;margin-bottom:10px">游戏资源包</h3>'
+      + '<p style="color:#cbb8ff;font-size:12px;line-height:1.6;margin-bottom:16px">下载本游戏美术资源（约 0.6MB），<br>完成后翻牌秒开、离线也能玩、不重复耗流量。</p>'
+      + '<div style="height:6px;background:rgba(255,255,255,.12);border-radius:99px;overflow:hidden;margin-bottom:6px">'
+      + '<div id="ffProgress" style="height:100%;width:0%;background:linear-gradient(90deg,#7c4dff,#ffd76a);transition:width .25s"></div></div>'
+      + '<div id="ffTip" style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:14px">等待开始…</div>'
+      + '<button id="ffGo" style="background:linear-gradient(135deg,#7c4dff,#6c3fd6);color:#fff;border:none;border-radius:10px;padding:11px 28px;font-size:14px;font-weight:700;cursor:pointer;margin-right:8px">立即下载</button>'
+      + '<button id="ffSkip" style="background:rgba(255,255,255,.1);color:#ccc;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:11px 20px;font-size:13px;cursor:pointer">暂不</button></div>';
+    document.body.appendChild(m);
+    function fin(ok) {
+      var t = document.getElementById('ffTip');
+      if (!t) return;
+      if (ok) { t.textContent = '下载完成！🎉 翻牌秒开'; localStorage.setItem(KEY, VER); setTimeout(function () { m.remove(); }, 1200); }
+      else t.textContent = '部分资源下载失败，游戏仍可正常玩（下次进入会自动补）';
+    }
+    async function run() {
+      var tip = document.getElementById('ffTip'), p = document.getElementById('ffProgress');
+      if (tip) tip.textContent = '正在下载游戏资源…';
+      var ok = true;
+      try {
+        var c = await store();
+        for (var i = 0; i < ASSETS.length; i++) {
+          try {
+            var r = await fetch(ASSETS[i], { cache: 'no-cache' });
+            if (!r.ok) throw 0;
+            await c.put(ASSETS[i], r.clone());
+          } catch (e) { ok = false; }
+          if (p) p.style.width = Math.round((i + 1) / ASSETS.length * 100) + '%';
+          if (tip) tip.textContent = '下载中… ' + (i + 1) + '/' + ASSETS.length;
+        }
+        ok = ok && await allCached();     // 下载完再真验一遍
+      } catch (e) { ok = false; }
+      fin(ok);
+    }
+    var go = document.getElementById('ffGo');
+    if (go) go.onclick = function () { this.style.display = 'none'; var s = document.getElementById('ffSkip'); if (s) s.style.display = 'none'; run(); };
+    // 【保留】进入游戏自动开始下载（可切后台）；"暂不"也只延后到下次进入
+    if (go) go.click();
+  })();
 })();
 </script>
 </body>
