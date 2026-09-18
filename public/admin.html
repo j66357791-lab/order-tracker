@@ -18,23 +18,41 @@
 .nav-items { flex: 1; padding: 10px; }
 .content { flex: 1; min-width: 0; padding: 26px 30px 60px; }
 .embed-frame { width: 100%; height: calc(100vh - 86px); border: 0; display: block; background: #faf7f1; }
+/* 导航收起态的骨架样式也内联一份（同上：防旧 app.css） */
+.nav-collapse { margin-left: auto; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink2); font-size: 13px; line-height: 1; cursor: pointer; }
+@media (min-width: 861px) {
+  .nav { transition: width .2s ease; }
+  .nav.mini { width: 68px; }
+  .nav.mini .nav-brand { flex-direction: column; gap: 7px; padding: 12px 6px; }
+  .nav.mini .nav-brand .name, .nav.mini .nav-brand .nav-role { display: none; }
+  .nav.mini .nav-collapse { margin-left: 0; }
+  .nav.mini .nav-items { padding: 10px 8px; }
+  .nav.mini .nav-item { justify-content: center; padding: 12px 0; gap: 0; }
+  .nav.mini .nav-item .lbl { display: none; }
+  .nav.mini .nav-item .ico { width: auto; font-size: 19px; }
+  .nav.mini .nav-foot .who { display: none; }
+  .nav.mini #logoutBtn .ico-out { display: inline; }
+  .nav.mini #logoutBtn .lbl { display: none; }
+}
+#logoutBtn .ico-out { display: none; }
 @media (max-width: 860px) {
   .shell { flex-direction: column; }
   .nav { width: 100%; height: auto; position: sticky; top: 0; z-index: 50; flex-direction: row; align-items: center; overflow-x: auto; padding: 0 8px; }
   .nav-items { display: flex; padding: 6px; flex: 1; gap: 2px; }
   .content { padding: 18px 16px 60px; }
   .embed-frame { height: calc(100vh - 134px); }
+  .nav-collapse { display: none; }
 }
 </style>
 </head>
 <body>
 <div class="shell">
   <aside class="nav">
-    <div class="nav-brand"><span class="seal">沐</span><span class="name serif">小沐文案</span><span class="nav-role">管理中心</span></div>
+    <div class="nav-brand"><span class="seal">沐</span><span class="name serif">小沐文案</span><span class="nav-role">管理中心</span><button class="nav-collapse" id="navToggle" type="button" title="收起 / 展开左侧导航" aria-label="收起或展开左侧导航">‹</button></div>
     <div class="nav-items" id="navItems"></div>
     <div class="nav-foot">
       <div class="who" id="whoName">…</div>
-      <button class="btn-ghost" style="width:100%" id="logoutBtn">退出登录</button>
+      <button class="btn-ghost" style="width:100%" id="logoutBtn" title="退出登录"><span class="ico-out">⏻</span><span class="lbl">退出登录</span></button>
     </div>
   </aside>
 
@@ -65,7 +83,9 @@
       </div>
 
       <div class="notice">
-        <b>已全部迁入</b> —— 左侧导航固定不动，十个入口即点即达；台账 / 派单聊天 / 派单总览 / 提现审批 / 财务对账 / 广告管理为原页面内嵌运行，功能与原来完全一致。
+        <b>十个入口已全部就位</b>，左侧导航可点右上角 ‹ 收起成图标条，鼠标划过看名字。<br>
+        <b>原生面板</b>（无嵌套滚动、打开即用）：工作台 / 游戏控制器 / 用户端配置 / 安全与用户 / <b>广告管理</b>；
+        其余 5 项（台账 / 派单聊天 / 派单总览 / 提现审批 / 财务对账）仍为原页面内嵌运行，正在按「由易到难」逐个迁成原生面板。
       </div>
     </div>
 
@@ -85,11 +105,9 @@
     <div id="panel-recon" style="display:none">
       <iframe id="frameRecon" class="embed-frame" title="财务对账"></iframe>
     </div>
-    <div id="panel-ads" style="display:none">
-      <iframe id="frameAds" class="embed-frame" title="广告管理"></iframe>
-    </div>
 
     <!-- ③ 模块面板容器（挂载后显示） -->
+    <div id="panel-ads" style="display:none"></div>
     <div id="panel-game" style="display:none"></div>
     <div id="panel-mall" style="display:none"></div>
     <div id="panel-security" style="display:none"></div>
@@ -101,6 +119,7 @@ import { TOKEN, ME, guardAdmin, api, renderNav, esc } from '/admin/app.js';
 import { mount as mountGame } from '/admin/mod-game.js';
 import { mount as mountMall } from '/admin/mod-mall.js';
 import { mount as mountSecurity } from '/admin/mod-security.js';
+import { mount as mountAds } from '/admin/mod-ads.js';
 
 window.navGo = (key) => { navigate(key); return false; };
 
@@ -111,6 +130,7 @@ if (guardAdmin()) {
 
   const badges = {};
   const PANELS = {
+    ads: { el: document.getElementById('panel-ads'), mount: mountAds },
     game: { el: document.getElementById('panel-game'), mount: mountGame },
     mall: { el: document.getElementById('panel-mall'), mount: mountMall },
     security: { el: document.getElementById('panel-security'), mount: mountSecurity },
@@ -121,7 +141,7 @@ if (guardAdmin()) {
     overview: '/dispatch-overview.html?embed=1',
     withdraw: '/withdraw.html?embed=1',
     recon: '/dispatch-overview.html?embed=1&tab=recon',
-    ads: '/ads.html?embed=1',
+    // 【v20.6】ads 已迁为面板（mod-ads.js），不再走 iframe
   };
   const mounted = {};
   let current = 'home';
@@ -236,6 +256,28 @@ if (guardAdmin()) {
     localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user');
     location.href = '/login.html';
   };
+
+  // —— 【v20.6】左侧导航收起 / 展开：只留图标，鼠标划过用 title 看名字；状态记在本地 ——
+  (function initNavCollapse() {
+    const nav = document.querySelector('.nav');
+    const btn = document.getElementById('navToggle');
+    const KEY = 'jdy_nav_mini';
+    if (!nav) return;
+    function apply(mini) {
+      nav.classList.toggle('mini', mini);
+      if (btn) {
+        btn.textContent = mini ? '›' : '‹';
+        btn.title = mini ? '展开左侧导航' : '收起左侧导航';
+        btn.setAttribute('aria-expanded', mini ? 'false' : 'true');
+      }
+    }
+    apply(localStorage.getItem(KEY) === '1');
+    if (btn) btn.onclick = () => {
+      const mini = !nav.classList.contains('mini');
+      apply(mini);
+      try { localStorage.setItem(KEY, mini ? '1' : '0'); } catch (e) {}
+    };
+  })();
 
   // 初始面板：支持 #game / #mall / #security 等直达
   const init = (location.hash || '').replace('#', '');
