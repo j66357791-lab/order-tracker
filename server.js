@@ -85,6 +85,8 @@ const DEPLOY_CHECK_FILES = [
   'public/admin/mod-ads.js',
   'public/admin/mod-withdraw.js',
   'public/admin/mod-cards.js',
+  'public/admin/mod-orders.js', 'public/admin/ledger.css',
+  'public/admin/mod-chat.js', 'public/admin/chat.css',
   'public/admin_packages.html', 'public/admin_game.html', 'public/admin_security.html',
   'public/robots.txt', 'public/service-worker.js', 'public/manifest.json',
   'public/games/shanhai/index.html', 'public/games/shanhai/css/style.css',
