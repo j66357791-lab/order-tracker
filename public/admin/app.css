@@ -76,6 +76,21 @@ button { font-family: inherit; }
 .stat b { display: block; font-size: 26px; color: var(--green); line-height: 1.3; }
 .stat span { font-size: 12.5px; color: var(--ink2); }
 .stat.warn b { color: var(--ochre); }
+.stat.danger b { color: var(--red); }
+.stat.plain { cursor: default; }
+.stat.plain:hover { transform: none; box-shadow: none; }
+
+/* 【v20.7】审批/清单列表项（提现审批用；后续派单总览等同类列表直接复用） */
+.item-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 12px; }
+.item-card .hd { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.item-card .who { font-size: 15.5px; font-weight: 600; }
+.item-card .amt { font-size: 20px; font-weight: 700; color: var(--green); white-space: nowrap; }
+.item-card .meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink2); margin-top: 4px; }
+.item-card .acts { display: flex; gap: 8px; margin-top: 10px; }
+.item-card .acts button { flex: 1; }
+.st-wait { color: var(--ochre); }
+.st-ok { color: var(--green2); }
+.st-bad { color: var(--red); }
 
 .btn-main { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 11px 20px; font-size: 14px; cursor: pointer; }
 .btn-main:hover { filter: brightness(1.06); }
@@ -117,6 +132,7 @@ tr:last-child td { border-bottom: none; }
 .mask.on { display: flex; }
 .modal { background: #fff; border-radius: 16px; max-width: 480px; width: 100%; padding: 26px; max-height: 86vh; overflow-y: auto; }
 .modal h3 { margin-bottom: 16px; font-size: 19px; }
+.modal .sub { font-size: 13px; color: var(--ink2); margin: -8px 0 14px; }
 .toast { position: fixed; left: 50%; top: 76px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 22px; border-radius: 99px; font-size: 13px; z-index: 200; display: none; max-width: 88vw; text-align: center; }
 
 /* ===== 移动端 ===== */
