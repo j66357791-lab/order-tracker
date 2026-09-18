@@ -23,7 +23,8 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
 
   // 概率表：escape=逃跑率；reward=[类型, 数量, 概率%]（每张表合计恒等于100%）
   // 类型：frag=魔法球碎片 key=魔法钥匙 ball=魔法球 bagS/M/L=福袋小/中/大
-  const PROB = {
+  // 【v22.0】改为 let：管理后台可整体覆盖（config.game_config.prob），代码内这份只是默认值
+  let PROB = {
     wave1: { escape: 30, reward: [['frag', 1, 50], ['key', 1, 5], ['ball', 1, 0.5], ['bagS', 1, 14.5]] },
     wave2: { escape: 30, reward: [['frag', 5, 50], ['key', 3, 10], ['ball', 1, 1], ['bagM', 1, 9]] },
     wave3: [ // 第三波逐轮递增（第1~5轮）
@@ -38,8 +39,9 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
   // 福袋现金区间（元），运营可调整
   const BAG_RANGE = { bagS: [0.30, 0.88], bagM: [1.68, 8.88], bagL: [18.88, 88.88] };
 
-  // 商铺：enabled=false 的为"可填充兑换商品位"，运营在数据库/此处补充
-  const SHOP = [
+  // 商铺：enabled=false 的为"可填充兑换商品位"
+  // 【v22.0】改为 let：管理后台可增删改（config.game_config.shop），代码内这份只是默认值
+  let SHOP = [
     { id: 'frag10',   name: '魔法球碎片×10',  icon: 'frag',   cost: 3,  give: { frags: 10 },   limit: 0, enabled: true },
     { id: 'key1',     name: '魔法钥匙×1',     icon: 'key',    cost: 5,  give: { keys: 1 },     limit: 0, enabled: true },
     { id: 'keys5',    name: '魔法钥匙×5',     icon: 'key',    cost: 20, give: { keys: 5 },      limit: 0, enabled: true },
@@ -49,7 +51,80 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
     { id: 'slot6',    name: '敬请期待',       icon: 'ball',   cost: 0,  give: {},               limit: 0, enabled: false },
   ];
 
+  // 【v22.0】任务专区：原先是前端写死的，现在后台可增删改排序（config.game_config.tasks）
+  // action: daily=每日领取(走 /api/game/daily) | link=跳转 | play=去翻牌 | info=纯展示
+  let TASKS = [
+    { id: 'daily',  title: '每日登录',       desc: '每天可免费领取 1 把魔法钥匙',      reward: '钥匙×1',   action: 'daily', link: '', enabled: true },
+    { id: 'play',   title: '完成一局翻牌',   desc: '消耗 1 把钥匙开一局，三波翻完',     reward: '碎片若干', action: 'play',  link: '', enabled: true },
+    { id: 'invite', title: '邀请好友注册',   desc: '邀请好友注册写手端并完成首单',      reward: '魔法球×1', action: 'link',  link: '/writer.html?tab=invite', enabled: true },
+    { id: 'bag',    title: '拆开一个福袋',   desc: '翻牌赢取福袋后到「拆福袋」开启',     reward: '现金红包', action: 'bags',  link: '', enabled: true },
+  ];
+
   const ITEM_NAMES = { frag: '魔法球碎片', key: '魔法钥匙', ball: '魔法球', bagS: '现金福袋(小)', bagM: '现金福袋(中)', bagL: '现金福袋(大)' };
+
+  // ==================== 【v22.0】覆盖项校验/归一化 ====================
+  const ITEM_KEYS = Object.keys(ITEM_NAMES);   // frag/key/ball/bagS/bagM/bagL
+  const INV_KEYS = ['frags', 'keys', 'balls', 'revives', 'bagS', 'bagM', 'bagL'];
+
+  function normShop(list) {
+    const out = [];
+    for (const s of (Array.isArray(list) ? list : [])) {
+      if (!s || !String(s.name || '').trim()) continue;
+      const give = {};
+      for (const k of INV_KEYS) if (Number(s.give?.[k]) > 0) give[k] = Number(s.give[k]);
+      out.push({
+        id: String(s.id || ('item' + (out.length + 1))).slice(0, 32),
+        name: String(s.name).trim().slice(0, 24),
+        icon: ITEM_KEYS.includes(s.icon) ? s.icon : 'ball',
+        cost: Math.max(0, Number(s.cost) || 0),
+        give, limit: Math.max(0, Number(s.limit) || 0),
+        desc: String(s.desc || '').slice(0, 60),
+        enabled: s.enabled !== false,
+      });
+    }
+    return out;
+  }
+  function normTasks(list) {
+    const out = [];
+    for (const t of (Array.isArray(list) ? list : [])) {
+      if (!t || !String(t.title || '').trim()) continue;
+      const action = ['daily', 'link', 'play', 'bags', 'info'].includes(t.action) ? t.action : 'info';
+      out.push({
+        id: String(t.id || ('task' + (out.length + 1))).slice(0, 32),
+        title: String(t.title).trim().slice(0, 24),
+        desc: String(t.desc || '').slice(0, 80),
+        reward: String(t.reward || '').slice(0, 24),
+        action, link: String(t.link || '').slice(0, 200),
+        enabled: t.enabled !== false,
+      });
+    }
+    return out;
+  }
+  function normProbTable(t) {
+    if (!t || !(t.escape >= 0 && t.escape <= 100)) return null;
+    if (!Array.isArray(t.reward) || !t.reward.length) return null;
+    let sum = t.escape;
+    const reward = [];
+    for (const r of t.reward) {
+      if (!Array.isArray(r) || r.length < 3) return null;
+      const [type, n, p] = r;
+      if (!ITEM_KEYS.includes(type)) return null;
+      if (!(Number(n) >= 1) || !(Number(p) >= 0)) return null;
+      sum += Number(p);
+      reward.push([type, Math.floor(Number(n)), Number(p)]);
+    }
+    if (sum > 100.5) return null;   // 允许 ≤0.5% 浮点误差，rollOnce 已有兜底
+    return { escape: Number(t.escape), reward };
+  }
+  function normProb(p) {
+    if (!p) return null;
+    const w1 = normProbTable(p.wave1), w2 = normProbTable(p.wave2);
+    if (!w1 || !w2) return null;
+    if (!Array.isArray(p.wave3) || p.wave3.length !== 5) return null;
+    const w3 = p.wave3.map(normProbTable);
+    if (w3.some(x => !x)) return null;
+    return { wave1: w1, wave2: w2, wave3: w3 };
+  }
 
   // ==================== 工具 ====================
   const rnd2 = (n) => Math.round(n * 100) / 100;
@@ -144,6 +219,10 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
       if (v.maxRevivesPerGame >= 0) ACTIVITY.maxRevivesPerGame = v.maxRevivesPerGame;
       if (v.composeFragCost > 0) ACTIVITY.composeFragCost = v.composeFragCost;
       for (const k of ['bagS', 'bagM', 'bagL']) if (Array.isArray(v[k]) && v[k].length === 2) BAG_RANGE[k] = v[k];
+      // 【v22.0】商铺 / 任务专区 / 掉落概率：后台可整体覆盖，读库失败用代码内默认值
+      if (Array.isArray(v.shop) && v.shop.length) { const s = normShop(v.shop); if (s.length) SHOP = s; }
+      if (Array.isArray(v.tasks)) { const t = normTasks(v.tasks); if (t.length) TASKS = t; }
+      if (v.prob) { const p = normProb(v.prob); if (p) PROB = p; }
       next();
     } catch (e) { next(); } // 配置读取失败不阻塞游戏，用代码内默认值
   });
@@ -175,7 +254,10 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
         reviveQuotaLeft: Math.max(0, ACTIVITY.maxRevivesPerGame - session.revivesUsed),
         table: tablePublic(session.wave, session.round),
       } : null,
-      shop: SHOP.map(s => ({ id: s.id, name: s.name, icon: s.icon, cost: s.cost, desc: s.desc || '', enabled: s.enabled })),
+      shop: SHOP.filter(s => s.enabled).map(s => ({ id: s.id, name: s.name, icon: s.icon, cost: s.cost, desc: s.desc || '', enabled: s.enabled })),
+      // 【v22.0】任务专区改为后台可配置，前端按 action 渲染按钮
+      tasks: TASKS.filter(t => t.enabled).map(t => ({ id: t.id, title: t.title, desc: t.desc, reward: t.reward, action: t.action, link: t.link })),
+      bagRange: BAG_RANGE,
     });
   }));
 
@@ -416,7 +498,7 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
     if (!adminGate(req, res)) return;
     const db = await getDb();
     const doc = await db.collection('config').findOne({ key: 'game_config' });
-    res.json({ ok: true, effective: { start: ACTIVITY.start, end: ACTIVITY.end, dailyFreeKey: ACTIVITY.dailyFreeKey, maxRevivesPerGame: ACTIVITY.maxRevivesPerGame, composeFragCost: ACTIVITY.composeFragCost, bagS: BAG_RANGE.bagS, bagM: BAG_RANGE.bagM, bagL: BAG_RANGE.bagL }, overrides: (doc && doc.value) || {}, prob: PROB, shop: SHOP });
+    res.json({ ok: true, effective: { start: ACTIVITY.start, end: ACTIVITY.end, dailyFreeKey: ACTIVITY.dailyFreeKey, maxRevivesPerGame: ACTIVITY.maxRevivesPerGame, composeFragCost: ACTIVITY.composeFragCost, bagS: BAG_RANGE.bagS, bagM: BAG_RANGE.bagM, bagL: BAG_RANGE.bagL }, overrides: (doc && doc.value) || {}, prob: PROB, shop: SHOP, tasks: TASKS, itemNames: ITEM_NAMES, invKeys: INV_KEYS });
   }));
 
   // 管理员：修改游戏配置（热调，立即生效）
@@ -436,6 +518,29 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
       if (b[k] !== undefined) {
         if (!Array.isArray(b[k]) || b[k].length !== 2 || !(b[k][0] >= 0 && b[k][1] > b[k][0])) return bad(res, 400, k + ' 应为 [最小值, 最大值] 且最大>最小');
         v[k] = [b[k][0], b[k][1]];
+      }
+    }
+    // 【v22.0】商铺 / 任务专区 / 掉落概率：整体提交、服务端校验后落库
+    if (b.shop !== undefined) {
+      const s = normShop(b.shop);
+      if (!s.length) return bad(res, 400, '商铺至少要有一个商品（名称不能为空）');
+      const ids = new Set(s.map(x => x.id));
+      if (ids.size !== s.length) return bad(res, 400, '商铺商品 id 不能重复');
+      v.shop = s;
+    }
+    if (b.tasks !== undefined) {
+      const t = normTasks(b.tasks);
+      if (!t.length) return bad(res, 400, '任务专区至少要有一个任务');
+      const ids = new Set(t.map(x => x.id));
+      if (ids.size !== t.length) return bad(res, 400, '任务 id 不能重复');
+      v.tasks = t;
+    }
+    if (b.prob !== undefined) {
+      if (b.prob === null) { delete v.prob; }   // 还原为代码默认值
+      else {
+        const p = normProb(b.prob);
+        if (!p) return bad(res, 400, '概率表格式不对：每张表 escape 0~100，奖励项 [类型,数量,概率%]，类型必须是 ' + ITEM_KEYS.join('/'));
+        v.prob = p;
       }
     }
     if (b.maintenance !== undefined) await db.collection('config').updateOne({ key: 'game_maintenance' }, { $set: { value: !!b.maintenance } }, { upsert: true });
