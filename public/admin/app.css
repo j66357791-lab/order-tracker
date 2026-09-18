@@ -28,6 +28,31 @@ button { font-family: inherit; }
 .nav-item.external .badge { background: var(--gold); }
 .nav-foot { padding: 10px; border-top: 1px solid var(--line); }
 .nav-foot .who { font-size: 12.5px; color: var(--ink2); padding: 6px 14px 10px; }
+#logoutBtn .ico-out { display: none; }
+
+/* ===== 【v20.6】左侧导航可收起：展开=图标+文字，收起=只留图标（昵称悬浮可见） ===== */
+.nav-collapse { margin-left: auto; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink2); font-size: 13px; line-height: 1; cursor: pointer; transition: background .15s, color .15s, transform .2s; }
+.nav-collapse:hover { background: var(--paper2); color: var(--ink); }
+/* 收起态只在桌面生效；≤860px 时导航本身已变成横向顶栏，不做收起 */
+@media (min-width: 861px) {
+  .nav { transition: width .2s ease; }
+  .nav.mini { width: 68px; }
+  .nav.mini .nav-brand { flex-direction: column; gap: 7px; padding: 12px 6px; }
+  .nav.mini .nav-brand .name,
+  .nav.mini .nav-brand .nav-role { display: none; }
+  .nav.mini .nav-collapse { margin-left: 0; }
+  .nav.mini .nav-items { padding: 10px 8px; }
+  .nav.mini .nav-item { justify-content: center; padding: 12px 0; gap: 0; }
+  .nav.mini .nav-item .lbl { display: none; }
+  .nav.mini .nav-item .ico { width: auto; font-size: 19px; }
+  .nav.mini .nav-item .badge { right: 6px; top: 7px; min-width: 15px; padding: 0 4px; font-size: 9.5px; }
+  .nav.mini .nav-foot { padding: 10px 8px; }
+  .nav.mini .nav-foot .who { display: none; }
+  .nav.mini .nav-foot .btn-ghost { padding: 9px 0; font-size: 15px; }
+  .nav.mini #logoutBtn .ico-out { display: inline; }
+  .nav.mini #logoutBtn .lbl { display: none; }
+}
+@media (max-width: 860px) { .nav-collapse { display: none; } }
 
 .content { flex: 1; min-width: 0; padding: 26px 30px 60px; }
 .content-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
