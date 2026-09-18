@@ -19,7 +19,7 @@ export function mount(root) {
       <button class="btn-main" id="secFindGo">查找用户</button>
     </div>
     <div id="secFindResult"></div>
-    <div id="secUserTable"><div class="empty">加载中…</div></div>
+    <div class="table-wrap" id="secUserTable"><div class="empty">加载中…</div></div>
   </div>
 
   <div class="card">
