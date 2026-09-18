@@ -62,6 +62,9 @@ button { font-family: inherit; }
 
 /* 【修复】内嵌页面统一高度：26(上) + 60(下) = 86，正好铺满一屏，外壳不再多出一条滚动条 */
 .embed-frame { width: 100%; height: calc(100vh - 86px); border: 0; display: block; background: var(--paper); }
+/* 【v20.8】iframe 加载骨架：盖在 iframe 上方，加载完移除，消除"切过去一片空白" */
+.embed-panel { position: relative; }
+.sk-overlay { position: absolute; inset: 0; background: var(--paper); z-index: 2; padding: 2px; }
 
 /* ===== 通用组件 ===== */
 .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 22px; margin-bottom: 18px; }
@@ -92,12 +95,51 @@ button { font-family: inherit; }
 .st-ok { color: var(--green2); }
 .st-bad { color: var(--red); }
 
+/* 【v20.8】通用状态胶囊（派单卡 / 台账单 / 提现单共用一套状态色） */
+.pill { font-size: 11px; border-radius: 99px; padding: 2px 10px; white-space: nowrap; }
+.pill.待接单 { background: #eef3f8; color: #3f6f9f; }
+.pill.已接单 { background: #fdf3e7; color: var(--ochre); }
+.pill.待审核 { background: #f3e8ff; color: var(--purple2, #7c3aed); }
+.pill.待打款 { background: #fdf7ec; color: #b07a1a; }
+.pill.已完成 { background: #e9f4ec; color: var(--green2); }
+.pill.已驳回 { background: #fde8e8; color: var(--red); }
+.pill.已拒绝 { background: #f1f1f1; color: var(--ink2); }
+.pill.待结算 { background: #fdf7ec; color: #b07a1a; }
+.pill.已结算 { background: #e9f4ec; color: var(--green2); }
+.pill.待开始 { background: #f1f1f1; color: var(--ink2); }
+.pill.进行中 { background: #eef3f8; color: #3f6f9f; }
+
+/* 【v20.8】卡片内联小提示条 */
+.note { border-radius: 10px; padding: 8px 12px; font-size: 12.5px; margin-top: 8px; }
+.note.warn { background: #fdf2ee; color: #8a3d2c; }
+.note.info { background: #eef3f8; color: #2c5a8a; }
+.stat.info b { color: var(--blue); }
+
+/* 【v20.8】财务对账差异项：按差异类型给标题上色 */
+.item-card.needReview .who { color: #7c3aed; }
+.item-card.needPay .who { color: var(--ochre); }
+.item-card.unsynced .who { color: var(--red); }
+.item-card .ops { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.item-card .ops button { flex: 0 0 auto; }
+
+/* 【v20.8】通用加载骨架（iframe / 懒加载模块切换时先占位，避免白屏） */
+.skeleton { padding: 6px 0; }
+.skeleton i { display: block; height: 14px; border-radius: 7px; background: var(--paper2); margin-bottom: 12px; animation: sk 1.2s ease-in-out infinite; }
+.skeleton i:nth-child(1) { width: 34%; height: 20px; }
+.skeleton i:nth-child(2) { width: 100%; height: 76px; }
+.skeleton i:nth-child(3) { width: 92%; height: 76px; }
+.skeleton i:nth-child(4) { width: 96%; height: 76px; }
+@keyframes sk { 0%, 100% { opacity: 1 } 50% { opacity: .5 } }
+@media (prefers-reduced-motion: reduce) { .skeleton i { animation: none } }
+
 .btn-main { background: var(--green); color: #fff; border: none; border-radius: 10px; padding: 11px 20px; font-size: 14px; cursor: pointer; }
 .btn-main:hover { filter: brightness(1.06); }
 .btn-main[disabled] { opacity: .6; cursor: default; }
 .btn-ghost { background: none; border: 1px solid var(--line); color: var(--ink2); border-radius: 10px; padding: 10px 16px; font-size: 13.5px; cursor: pointer; }
 .btn-ghost:hover { background: var(--paper2); color: var(--ink); }
 .btn-danger { background: var(--red); color: #fff; border: none; border-radius: 10px; padding: 10px 18px; font-size: 13.5px; cursor: pointer; }
+.btn-info { background: var(--blue); color: #fff; border: none; border-radius: 10px; padding: 10px 18px; font-size: 13.5px; cursor: pointer; }
+.btn-sm { padding: 6px 14px; font-size: 12.5px; }
 
 /* 【修复】宽表格容器：列多时在卡片内横向滚动，不再把整页撑宽 */
 .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
