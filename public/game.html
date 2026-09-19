@@ -258,10 +258,14 @@ function render(){
   if (s) { showGame(s); if (s.waveDone) showWaveDone(s.wave, s.pot); else if (s.pendingEscape) showEscapeModal(s); }
 }
 function renderShop(){
-  $('shopList').innerHTML = STATE.shop.map(it => it.enabled
-    ? `<div class="shop-item"><img src="${ICO[it.icon]||'https://sfile.chatglm.cn/workspace/image/68/68bcfbdaff.png'}"><div class="s-info"><div class="s-name">${esc(it.name)}</div><div class="s-desc">${esc(it.desc||'')}</div><div class="s-cost">魔法球 ×${it.cost}</div></div><button class="btn" onclick="buy('${it.id}')">兑换</button></div>`
-    : `<div class="shop-item" style="opacity:.55;"><img src="${ICO[it.icon]||'https://sfile.chatglm.cn/workspace/image/68/68bcfbdaff.png'}"><div class="s-info"><div class="s-name">${esc(it.name)}</div><div class="s-desc">${esc(it.desc||'新品整理中，敬请期待')}</div></div><button class="btn" disabled>即将上线</button></div>`
-  ).join('');
+  // 【v23.1】图标支持人工指定图片地址（后台配了 URL 就直接用），否则按内置图标名取
+  const icoSrc = v => /^(https?:\/\/|\/assets\/|\/games\/)/.test(v || '') ? v : (ICO[v] || ICO.ball);
+  $('shopList').innerHTML = STATE.shop.map(it => {
+    const src = icoSrc(it.icon);
+    return it.enabled
+    ? `<div class="shop-item"><img src="${src}" onerror="this.src='${ICO.ball}'"><div class="s-info"><div class="s-name">${esc(it.name)}</div><div class="s-desc">${esc(it.desc||'')}</div><div class="s-cost">魔法球 ×${it.cost}</div></div><button class="btn" onclick="buy('${it.id}')">兑换</button></div>`
+    : `<div class="shop-item" style="opacity:.55;"><img src="${src}" onerror="this.src='${ICO.ball}'"><div class="s-info"><div class="s-name">${esc(it.name)}</div><div class="s-desc">${esc(it.desc||'新品整理中，敬请期待')}</div></div><button class="btn" disabled>即将上线</button></div>`;
+  }).join('');
 }
 
 // ===== 弹窗 =====
