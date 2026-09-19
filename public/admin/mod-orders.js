@@ -182,7 +182,7 @@ export function mount(host) {
     ).slice(0, 12);
     box.innerHTML = hits.length ? hits.map(o => `
       <div class="q-item" onclick="this.getRootNode().host.__ledger.jumpToOrder('${o._id}')">
-        <b>${esc(o.orderNo)}</b>
+        <b class="cpy" data-copy="${esc(o.orderNo)}" title="点击复制单号">${esc(o.orderNo)}</b>
         <span>${fmt(r2(o.amount))} 元 · ${stLabel(o.status)}${o.note ? ' · ' + esc(o.note.slice(0, 16)) : ''}</span>
       </div>`).join('')
       : '<div class="q-empty">没有匹配的订单（订单号和备注都搜了）</div>';
@@ -296,7 +296,7 @@ export function mount(host) {
       tbody.innerHTML = rows.map(o => `
         <tr>
           <td>${o.date || ''}</td>
-          <td><b>${esc(o.orderNo)}</b></td>
+          <td><b class="cpy" data-copy="${esc(o.orderNo)}" title="点击复制单号">${esc(o.orderNo)}</b></td>
           <td class="num">${fmt(o.amount)}</td>
           <td class="num">${o.shareRate}%</td>
           <td class="num" style="color:var(--green);font-weight:600">${fmt(r2(share(o)))}</td>
@@ -520,7 +520,7 @@ export function mount(host) {
           ${list.map(o => `
             <tr>
               <td>${o.date || ''}</td>
-              <td><b>${esc(o.orderNo)}</b>${o.doneDate === d && o.date !== d ? ' <span class="tag 待结算" title="当天完单">当日完单</span>' : ''}</td>
+              <td><b class="cpy" data-copy="${esc(o.orderNo)}" title="点击复制单号">${esc(o.orderNo)}</b>${o.doneDate === d && o.date !== d ? ' <span class="tag 待结算" title="当天完单">当日完单</span>' : ''}</td>
               <td class="num">${fmt(o.amount)}</td>
               <td class="num">${o.shareRate}%</td>
               <td class="num" style="color:var(--green);font-weight:600">${fmt(r2(share(o)))}</td>
@@ -571,7 +571,7 @@ export function mount(host) {
     shDoc.getElementById('todoList').innerHTML = list.map(o => `
       <div class="todo-item">
         <span class="tag ${stLabel(o.status)}">${stLabel(o.status)}</span>
-        <b>${esc(o.orderNo)}</b>
+        <b class="cpy" data-copy="${esc(o.orderNo)}" title="点击复制单号">${esc(o.orderNo)}</b>
         <span class="todo-meta">接单日 ${o.date} · ${fmt(o.amount)} 元 · 分成 ${fmt(r2(share(o)))} 元${o.note ? ' · ' + esc(o.note) : ''}</span>
         <select class="todo-act" data-id="${o._id}">
           <option value="">更新进度 →</option>
@@ -605,6 +605,44 @@ export function mount(host) {
   let editingId = null;
   const $ = id => shDoc.getElementById(id);
   const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  // 【v23.3】单号点击复制：台账原来被 App 壳的 user-select:none 禁了选中，用户没法复制单号。
+  // 现在除了放开选中，带 .cpy 的单号点一下直接进剪贴板。
+  let cpyT = null;
+  function cpyToast(msg) {
+    // 注意：ShadowRoot 没有 createElement，元素要用 document.createElement 再挂进 shadow
+    const t = document.createElement('div');
+    t.className = 'cpy-toast';
+    t.textContent = msg;
+    const old = shDoc.querySelector('.cpy-toast');
+    if (old) old.remove();
+    shDoc.appendChild(t);
+    clearTimeout(cpyT);
+    cpyT = setTimeout(() => t.remove(), 1600);
+  }
+  async function copyText(txt) {
+    try { await navigator.clipboard.writeText(txt); return true; }
+    catch (e) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+        shDoc.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        ta.remove();
+        return ok;
+      } catch (e2) { return false; }
+    }
+  }
+  shDoc.addEventListener('click', e => {
+    const el = e.target.closest && e.target.closest('.cpy');
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const txt = el.dataset.copy || el.textContent.trim();
+    copyText(txt).then(ok => cpyToast(ok ? '已复制：' + txt : '复制失败，请手动选中文字复制'));
+  });
 
   function openModal(id) {
     editingId = id || null;
