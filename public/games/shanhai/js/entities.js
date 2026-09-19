@@ -77,12 +77,17 @@ class Hero {
 // ================= 怪物 =================
 class Enemy {
   constructor() { this.alive = false; }
-  reset(type, x, y) {
-    const d = CONFIG.enemies[type];
+  reset(type, x, y, elite = false) {
+    let d = CONFIG.enemies[type];
+    // 【v24.4】按关卡缩放属性（南山草泽 20 关）：HP/伤害随关卡提升
+    const m = (window.Game && Game.stageMul) || { hp: 1, dmg: 1 };
     this.type = type; this.def = d;
     this.x = x; this.y = y;
-    this.hp = d.hp; this.maxHp = d.hp;
+    this.hp = Math.round(d.hp * m.hp); this.maxHp = this.hp;
     this.speed = d.speed;
+    this.dmgMul = m.dmg;
+    this.elite = elite;
+    this.scale = elite ? 1.35 : 1;
     this.animT = Math.random() * 4;
     this.slow = 0; this.slowT = 0;
     this.shotT = Math.random() * 1.5;
@@ -90,6 +95,7 @@ class Enemy {
     this.alive = true;
     this.hitFlash = 0;
   }
+  effRadius() { return Math.round(this.def.radius * this.scale); }
   update(dt, hero, spawnBullet) {
     this.animT += dt;
     if (this.hitFlash > 0) this.hitFlash -= dt;
@@ -111,7 +117,7 @@ class Enemy {
       this.shotT -= dt;
       if (this.shotT <= 0 && dist < this.def.shotRange) {
         this.shotT = this.def.shotCd;
-        spawnBullet(this.x, this.y, dx / dist, dy / dist, this.def.shotDmg, "enemyshot");
+        spawnBullet(this.x, this.y, dx / dist, dy / dist, Math.round(this.def.shotDmg * this.dmgMul), "enemyshot");
       }
     } else {
       this.x += (dx / dist) * sp * dt;
@@ -132,23 +138,31 @@ class Enemy {
       // 受击白闪：临时 canvas 滤镜太贵，用 globalAlpha 叠画一帧白色矩形近似
       ctx.save();
       ctx.globalAlpha = 0.85;
-      Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, 1, this.facing < 0);
+      Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, this.scale, this.facing < 0);
       ctx.globalCompositeOperation = "source-atop";
       ctx.restore();
       ctx.save();
       ctx.globalAlpha = 0.5;
-      Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, 1, this.facing < 0);
+      Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, this.scale, this.facing < 0);
       ctx.restore();
     } else {
-      Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, 1, this.facing < 0);
+      Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, this.scale, this.facing < 0);
     }
-    // 血条（受伤才显示）
-    if (this.hp < this.maxHp) {
-      const w = 20, h = 3;
+    // 精英底座光环
+    if (this.elite) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.strokeStyle = "#FFD24A"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(this.x, this.y + 12, 16 * this.scale, 6 * this.scale, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+    // 血条（受伤才显示；精英常显）
+    if (this.hp < this.maxHp || this.elite) {
+      const w = 20 + (this.elite ? 8 : 0), h = 3;
       ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillRect(this.x - w / 2, this.y + 10, w, h);
-      ctx.fillStyle = "#E8503C";
-      ctx.fillRect(this.x - w / 2, this.y + 10, w * Math.max(0, this.hp / this.maxHp), h);
+      ctx.fillRect(this.x - w / 2, this.y + 10 * this.scale, w, h);
+      ctx.fillStyle = this.elite ? "#FFD24A" : "#E8503C";
+      ctx.fillRect(this.x - w / 2, this.y + 10 * this.scale, w * Math.max(0, this.hp / this.maxHp), h);
     }
     // 冰减速标识
     if (this.slowT > 0) {
