@@ -25,7 +25,29 @@ const Game = (() => {
   }
 
   // ============ 开局 ============
-  function startRun(stage = 1) {
+  // 【v24.4】第一章 · 南山草泽 20 关：按关卡号缩放波次数量 / 怪物属性 / Boss
+  // 设计（普通难度）：
+  //   L1 练手（数量×0.7、Boss 600）→ L2 数量属性明显增强（×1.3 / HP×1.2）
+  //   → L3 起线性爬坡（数量 +0.15/关，HP +0.22/关，伤害 +0.09/关）
+  //   → L4 解锁毕方、L7 解锁旋龟；L5 起第 5/10/13 波出精英（体型×1.35、HP×3、经验×5）
+  //   → L20 终局：Boss 4800 血且召唤翻倍
+  function stageMul(n) {
+    const count = n === 1 ? 0.7 : n === 2 ? 1.3 : 1.3 + 0.15 * (n - 2);
+    return {
+      n,
+      count,                                  // 每波数量倍率
+      hp: 1 + 0.22 * (n - 1),                 // 怪物生命倍率
+      dmg: 1 + 0.09 * (n - 1),                // 怪物伤害倍率
+      bossHp: (600 + 220 * (n - 1)) * (n === 20 ? 1.5 : 1),
+      elite: n >= 5,                          // 精英开关
+      unlockAt: { bifang: 4, xuangui: 7 },    // 新怪解锁关卡
+    };
+  }
+  let stage = 1, MUL = stageMul(1);
+
+  function startRun(stageNo = 1) {
+    stage = Math.max(1, Math.min(20, stageNo | 0));
+    MUL = stageMul(stage);
     hero = new Hero();
     // —— 养成加成接入（来自 META 档案）——
     try {
@@ -87,19 +109,26 @@ const Game = (() => {
     waveT = w.dur;
     if (w.spawn[0][0] === "BOSS") {
       spawnBoss();
-      UI.banner(`最终波`, `山臊王 现身！`);
+      UI.banner(`最终波`, `${CONFIG.boss.name} 现身！`);
       return;
     }
     // 生成节奏：整波怪在 dur 内分批刷
+    // 【v24.4】按关卡缩放数量 + 过滤未解锁怪 + 精英注入（L5 起，第 5/10/13 波）
     spawnQueue = [];
     for (const [type, count] of w.spawn) {
-      for (let k = 0; k < count; k++) spawnQueue.push(type);
+      if (MUL.unlockAt[type] && stage < MUL.unlockAt[type]) continue;
+      let n = Math.round(count * MUL.count);
+      const eliteHere = MUL.elite && [4, 9, 12].includes(i);
+      for (let k = 0; k < n; k++) spawnQueue.push(spawnQueue.length < 2 && eliteHere ? "elite:" + type : type);
     }
-    // 洗牌
-    for (let i = spawnQueue.length - 1; i > 0; i--) {
+    // 洗牌（精英条目保持在队首先刷）
+    const elites = spawnQueue.filter(s => s.indexOf("elite:") === 0);
+    const normals = spawnQueue.filter(s => s.indexOf("elite:") !== 0);
+    for (let i = normals.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [spawnQueue[i], spawnQueue[j]] = [spawnQueue[j], spawnQueue[i]];
+      [normals[i], normals[j]] = [normals[j], normals[i]];
     }
+    spawnQueue = elites.concat(normals);
     spawnT = 0;
     UI.banner(`第 ${i + 1} 波`, "");
   }
@@ -108,12 +137,18 @@ const Game = (() => {
     // 从玩家视野外圈生成
     const a = Math.random() * Math.PI * 2;
     const r = Math.max(W, H) * 0.62 + 60;
-    enemyPool.spawn(type, hero.x + Math.cos(a) * r, hero.y + Math.sin(a) * r);
+    let isElite = false;
+    if (type.indexOf("elite:") === 0) { isElite = true; type = type.slice(6); }
+    enemyPool.spawn(type, hero.x + Math.cos(a) * r, hero.y + Math.sin(a) * r, isElite);
   }
 
   function spawnBoss() {
     boss = new Boss();
     boss.reset(hero.x + 300, hero.y - 200);
+    // 【v24.4】Boss 按关卡缩放（600 + 220×(n-1)，L20 ×1.5）
+    const ratio = MUL.bossHp / CONFIG.boss.hp;
+    boss.maxHp = boss.hp = Math.round(boss.hp * ratio);
+    if (stage === 20) boss.enrage = true;   // 终局：召唤翻倍
   }
 
   // ============ 弹幕发射桥 ============
@@ -130,8 +165,9 @@ const Game = (() => {
       projPool.spawn(kind, x, y, dx, dy, { dmg, speed: 180, radius: 8 });
     },
     summonMinions(n) {
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2;
+      const cnt = boss && boss.enrage ? n * 2 : n;   // 【v24.4】L20 终局：召唤翻倍
+      for (let i = 0; i < cnt; i++) {
+        const a = (i / cnt) * Math.PI * 2;
         enemyPool.spawn("shanhao", boss.x + Math.cos(a) * 70, boss.y + Math.sin(a) * 70);
       }
       UI.toast(`山臊王 召唤了爪牙！`);
@@ -192,8 +228,8 @@ const Game = (() => {
       e.update(dt, hero, (x, y, dx, dy, dmg) => projPool.spawn("enemyshot", x, y, dx, dy, { dmg, speed: 170, radius: 6 }));
       // 接触
       const d = Math.hypot(e.x - hero.x, e.y - hero.y);
-      if (d < e.def.radius + hero.radius) {
-        if (hero.hurt(e.def.dmg)) {
+      if (d < e.effRadius() + hero.radius) {
+        if (hero.hurt(Math.round(e.def.dmg * (e.dmgMul || 1)))) {
           dmgTextPool.spawn(hero.x, hero.y - 20, `-${e.def.dmg}`, "#FF8A70", true);
           shakeT = Math.max(shakeT, 0.18);
         }
@@ -217,7 +253,9 @@ const Game = (() => {
     // 玩家弹 → 怪命中（网格查询）
     projPool.forEach(p => {
       p.update(dt);
-      if (!p.alive) return;
+      // 【v24.4 重大修复】死亡弹幕原来说从不回收——一直留在池里、被反复画在最后位置：
+      // 这就是"白色残影"、"旋风刃卡住掉在地上"、越玩越卡的共同根因
+      if (!p.alive) { projPool.despawn(p); return; }
       if (p.kind === "enemyshot" || p.kind === "bossrock") {
         // 敌弹 → 玩家
         const d = Math.hypot(p.x - hero.x, p.y - hero.y);
@@ -235,7 +273,7 @@ const Game = (() => {
       for (const e of near) {
         if (!e.alive || p.hitIds.includes(e)) continue;
         const d = Math.hypot(e.x - p.x, e.y - p.y);
-        if (d < p.radius + e.def.radius) {
+        if (d < p.radius + e.effRadius()) {
           const crit = Math.random() < CONFIG.critRate;
           const dmg = Math.round(p.dmg * (crit ? CONFIG.critMul : 1));
           const killed = e.hurt(dmg, p.slow);
@@ -315,7 +353,11 @@ const Game = (() => {
     hero.kills++;
     fxPool.spawn("die", e.x, e.y - 6, 1);
     pickupPool.spawn("orb", e.x, e.y);
+    // 【v24.4】精英多掉 2 颗经验珠
+    const orbs = e.elite ? 3 : 1;
+    for (let i = 1; i < orbs; i++) pickupPool.spawn("orb", e.x + (Math.random() - 0.5) * 30, e.y + (Math.random() - 0.5) * 30);
     if (Math.random() < CONFIG.orbs.meat.dropRate) pickupPool.spawn("meat", e.x + 10, e.y + 6);
+    if (e.elite) UI.toast(`精英妖物被斩杀！`);
     enemyPool.despawn(e);
   }
 
@@ -409,8 +451,18 @@ const Game = (() => {
 
   // ============ 渲染 ============
   function render(dt) {
+    try {
+      renderInner(dt);
+    } catch (e) {
+      // 【v24.4】渲染异常不再杀死整个循环（原来一帧异常=游戏永久卡死）
+      if (window.__err) window.__err.push("render: " + e.message);
+      console.error("render error:", e);
+    }
     lastDt = dt || 0.016;
     window.Game && (Game.lastDt = lastDt);
+  }
+
+  function renderInner(dt) {
     ctx.fillStyle = "#5E7C46";
     ctx.fillRect(0, 0, W, H);
     if (state === "title") { UI && UI.drawTitleBg && UI.drawTitleBg(ctx); return; }
@@ -539,11 +591,21 @@ const Game = (() => {
     get waveIdx() { return waveIdx; },
     pause() { state = "title"; },
     get __boss() { return boss; },
+    get stageMul() { return MUL; },   // 【v24.4】供 entities 读取关卡倍率
     __debug: {
       toWave(n) { waveIdx = Math.min(Math.max(n, 1), CONFIG.waves.length) - 1; startWave(waveIdx); },
       god(on) { if (hero) hero.godMode = !!on; },
       killBoss() { if (boss && boss.alive) boss.hp = 0; },
       buildChoices,   // 【v24.3】暴露三选一构建，供内测与自动化验收
+      // 【v24.4】关卡与旋风刃诊断
+      stage() { return { stage, mul: MUL }; },
+      blades() {
+        const out = [];
+        for (const p of (projPool ? projPool.active : [])) {
+          if (p.kind === "gale") out.push({ x: Math.round(p.x), y: Math.round(p.y), life: +p.life.toFixed(1), alive: p.alive });
+        }
+        return { hero: hero ? { x: Math.round(hero.x), y: Math.round(hero.y) } : null, blades: out };
+      },
     },
   };
   return api;
