@@ -142,6 +142,17 @@ export function mount(root) {
   <!-- ============ 区三：数据与日志 ============ -->
   <div id="gmZone-data" style="display:none">
     <div class="card">
+      <h2 class="serif">数据库占用</h2>
+      <div class="sub">每个集合的文档数与占用空间（按存储大小排序）· 总计：<b id="gmDbTotal">-</b></div>
+      <div id="gmDbStats" style="margin-top:10px"><div class="empty">加载中…</div></div>
+      <div class="inline" style="margin-top:10px"><button class="btn-ghost" id="gmDbReload">重新统计</button></div>
+    </div>
+    <div class="card">
+      <h2 class="serif">可清理项（开发阶段清历史数据）</h2>
+      <div class="sub">只显示数量，点"清理"会二次确认后删除指定天数之前的数据；活跃数据不受影响。</div>
+      <div id="gmDbClean" style="margin-top:10px"><div class="empty">加载中…</div></div>
+    </div>
+    <div class="card">
       <h2 class="serif">翻翻乐数据总览</h2>
       <div class="grid3" id="gmStats"><div class="empty">加载中…</div></div>
       <div class="inline" style="margin-top:14px">
@@ -559,6 +570,40 @@ export function mount(root) {
     } catch (e) { toast(e.message); }
   }
 
+  // ==================== 【v24.0】数据库占用与清理 ====================
+  async function loadDb() {
+    try {
+      const s = await api('/api/admin/db/stats');
+      $('gmDbTotal').textContent = s.totalText || '-';
+      $('gmDbStats').innerHTML = `<table><tr><th>集合</th><th>文档数</th><th>数据大小</th><th>存储占用</th><th>索引</th></tr>` +
+        s.collections.map(c => `<tr><td><code>${esc(c.name)}</code></td><td class="num">${c.count ?? '-'}</td><td class="num">${fmtB(c.size)}</td><td class="num">${fmtB(c.storage)}</td><td class="num">${fmtB(c.indexSize)}</td></tr>`).join('') + '</table>';
+    } catch (e) { $('gmDbStats').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+    try {
+      const c = await api('/api/admin/db/cleanup-candidates');
+      $('gmDbClean').innerHTML = c.candidates.map(x => `
+        <div class="item-card" style="padding:10px 14px">
+          <div class="inline" style="justify-content:flex-start;gap:10px">
+            <b style="min-width:150px">${esc(x.label)}</b>
+            <span class="sub" style="flex:1">${x.days} 天前的数据</span>
+            <b class="num">${x.count}</b><span class="sub">条</span>
+            <input type="number" min="1" value="${x.days}" data-days="${x.target}" style="max-width:76px" title="改成别的天数再点清理">
+            <button class="btn-danger" style="padding:5px 14px" data-clean="${x.target}" ${x.count ? '' : 'disabled style="opacity:.5;padding:5px 14px"'}>清理</button>
+          </div>
+        </div>`).join('');
+    } catch (e) { $('gmDbClean').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+  }
+  const fmtB = n => n == null ? '-' : (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B');
+  $('gmDbReload').onclick = loadDb;
+  $('gmDbClean').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-clean]');
+    if (!btn) return;
+    const target = btn.dataset.clean;
+    const days = Number(root.querySelector(`[data-days="${target}"]`).value) || 30;
+    if (!confirm('确定删除「' + target + '」中 ' + days + ' 天前的数据？删除后不可恢复。')) return;
+    try { const r = await api('/api/admin/db/cleanup', { method: 'POST', body: JSON.stringify({ target, days }) }); toast('已清理 ' + r.deleted + ' 条'); loadDb(); }
+    catch (err) { toast(err.message); }
+  });
+
   $('gmRefresh').onclick = () => { loadStats(); loadShanhai(); loadCfg(); };
   $('gmCleanup').onclick = cleanup;
   $('gmMaint').onclick = toggleMaint;
@@ -566,6 +611,6 @@ export function mount(root) {
   $('gmFind').onclick = findUser;
   $('gmGrant').onclick = grant;
 
-  loadStats(); loadShanhai(); loadCfg();
-  return { refresh: () => { loadStats(); loadShanhai(); loadCfg(); } };
+  loadStats(); loadShanhai(); loadCfg(); loadDb();
+  return { refresh: () => { loadStats(); loadShanhai(); loadCfg(); loadDb(); } };
 }
