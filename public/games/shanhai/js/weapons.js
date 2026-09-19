@@ -255,15 +255,8 @@ class Projectile {
         Assets.draw(ctx, "swordspin", f, 0, 0, 1.1);
         ctx.restore();
       } else {
-        // 普通飞剑：剑尖朝向飞行方向（+90°，贴图竖直向上）+ 剑光拖尾强化方向感
-        ctx.save();
-        ctx.strokeStyle = "rgba(230, 245, 235, .5)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(this.x - this.dx * 22, this.y - this.dy * 22);
-        ctx.lineTo(this.x - this.dx * 6, this.y - this.dy * 6);
-        ctx.stroke();
-        ctx.restore();
+        // 普通飞剑：剑尖朝向飞行方向（+90°，贴图竖直向上）
+        // 【v24.4】去掉剑后白色拖尾线——用户反馈的"白色残影"就是它
         ctx.save(); ctx.translate(this.x, this.y);
         ctx.rotate(Math.atan2(this.dy, this.dx) + Math.PI / 2);
         Assets.draw(ctx, "sword", 0, 0, 1.25);
