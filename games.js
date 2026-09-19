@@ -72,10 +72,13 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
       if (!s || !String(s.name || '').trim()) continue;
       const give = {};
       for (const k of INV_KEYS) if (Number(s.give?.[k]) > 0) give[k] = Number(s.give[k]);
+      // 【v23.1】图标改为人工选择：既可以是内置图标名，也可以直接贴图片地址（http(s):// 或 /assets/ 开头）
+      const rawIcon = String(s.icon || '').trim();
+      const isUrl = /^(https?:\/\/|\/assets\/|\/games\/)/.test(rawIcon);
       out.push({
         id: String(s.id || ('item' + (out.length + 1))).slice(0, 32),
         name: String(s.name).trim().slice(0, 24),
-        icon: ITEM_KEYS.includes(s.icon) ? s.icon : 'ball',
+        icon: isUrl ? rawIcon.slice(0, 300) : (ITEM_KEYS.includes(rawIcon) ? rawIcon : 'ball'),
         cost: Math.max(0, Number(s.cost) || 0),
         give, limit: Math.max(0, Number(s.limit) || 0),
         desc: String(s.desc || '').slice(0, 60),
