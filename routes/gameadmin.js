@@ -132,7 +132,15 @@ app.post('/api/admin/game-grant', auth, adminOnly, async (req, res) => {
     if (!Number.isFinite(amt) || amt === 0 || Math.abs(amt) > 100000) {
       return res.status(400).json({ ok: false, error: '数量需为有限数字（单次±10万以内）' });
     }
-    const update = { $inc: { [item]: amt }, $set: { updatedAt: new Date() } };
+    // 【v23.2】upsert 建档时补全标准字段——否则发给一个从没玩过游戏的玩家，
+    // 档案里只有被发放的那一个字段，管理端查询会显示一排 undefined
+    const defaults = { keys: 0, balls: 0, frags: 0, revives: 0, bagS: 0, bagM: 0, bagL: 0, totalGames: 0 };
+    delete defaults[item];   // 被发放的道具走 $inc，避免和 $setOnInsert 冲突
+    const update = {
+      $inc: { [item]: amt },
+      $set: { updatedAt: new Date() },
+      $setOnInsert: Object.assign({ userId: String(userId), createdAt: new Date() }, defaults),
+    };
     const p = await db.collection('game_profiles').findOneAndUpdate(
       { userId: String(userId) }, update, { returnDocument: 'after', upsert: true }
     );
