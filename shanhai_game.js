@@ -10,13 +10,14 @@ import { limit } from './lib/ratelimit.js';
 
 export default function mountShanhaiGame(app, { auth, getDb }) {
 
-  // ==================== 反作弊阈值（M1 第一关口径） ====================
+  // ==================== 反作弊阈值 ====================
+  // 【v24.4】第一章 · 南山草泽扩为普通 20 关：上限与击杀密度随关卡放大
   const LIMITS = {
     maxTimeSec: 7200,        // 单局时长上限 2h
-    maxKillsPerMin: 120,     // 击杀/分钟上限（第一关波次密度 < 60）
-    maxLevel: 40,            // 第一关经验总量对应等级上限
+    maxKillsPerMin: 120,     // 击杀/分钟基准（L1 波次密度 < 60；高关卡密度更高，按关卡放大）
+    maxLevel: 60,            // 等级上限（20 关经验总量提升）
     winMinTimeSec: 60,       // 通关最短合理用时（15波+Boss < 1min 不可能）
-    maxStage: 3,             // 关卡数上限——与前端 index.html 的 STAGES 数组保持一致
+    maxStage: 20,            // 关卡数上限——第一章普通 20 关
     killHardCap: 20000,      // 单局击杀硬上限（防超长挂机脚本刷仙玉）
   };
 
@@ -121,7 +122,9 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       // —— 合理性校验（不合格只记战绩不发奖励） ——
       // 【2026-09-17 安全修复】原校验在 t≤30 秒时不检查击杀上限（上报 timeSec=30,
       // kills=100万 可白拿百万仙玉），且 stage 无上限可无限刷首通奖励——补上绝对上限
-      const kCap = Math.min(LIMITS.killHardCap, Math.ceil(Math.max(t, 60) / 60) * LIMITS.maxKillsPerMin + 50);
+      // 【v24.4】击杀密度上限随关卡放大（高关卡波次密度更高，1 + 0.16×(st-1)）
+      const densityCap = Math.ceil(LIMITS.maxKillsPerMin * (1 + 0.16 * (st - 1)));
+      const kCap = Math.min(LIMITS.killHardCap, Math.ceil(Math.max(t, 60) / 60) * densityCap + 50);
       const bad = t < 0 || t > LIMITS.maxTimeSec
         || k < 0 || k > kCap
         || lv < 1 || lv > LIMITS.maxLevel
@@ -134,7 +137,9 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       const firstClear = isWin && !(before.clearedStages || []).includes(st);
 
       // —— 战绩 + 养成奖励原子入账 ——
-      const gainXianyu = k * META_CFG.killXianyu + (isWin ? META_CFG.winXianyu : 0) + (firstClear ? META_CFG.firstClearXianyu : 0);
+      // 【v24.4】首通奖励随关卡递增：150 + 30×(st-1)，上限 720
+      const firstClearGain = Math.min(720, META_CFG.firstClearXianyu + (st - 1) * 30);
+      const gainXianyu = k * META_CFG.killXianyu + (isWin ? META_CFG.winXianyu : 0) + (firstClear ? firstClearGain : 0);
       const gainLingqi = isWin ? META_CFG.winLingqi : 0;
       const stars = isWin ? (t < 180 ? 3 : t < 360 ? 2 : 1) : 0;
       // 【二次复核修正】bestTimeSec 原来用对象展开生成第二个 $set，首通那一局会把
