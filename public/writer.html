@@ -695,9 +695,12 @@ if (!TOKEN || !USER) location.href = '/login.html';
 let ME = null;
 
 // URL参数：?tab=game 直接切游戏tab
+// 【v24.1】游戏退出返回：sessionStorage.writer_return_tab === 'atGame' 时同样切到活动页
+// （覆盖两种情况：bfcache 恢复在 pageshow 里处理；整页重载在这里处理）
 (function(){
   const p = new URLSearchParams(location.search);
-  if(p.get('tab')==='game'){
+  if(p.get('tab')==='game' || sessionStorage.getItem('writer_return_tab')==='atGame'){
+    sessionStorage.removeItem('writer_return_tab');
     window.addEventListener('load', () => {
       setTimeout(() => {
         const t = document.querySelector('.act-tab[data-at="atGame"]');
@@ -2238,9 +2241,17 @@ document.querySelectorAll('.act-tab').forEach(t => t.onclick = () => {
 
 // 【v24.0】从游戏页 history.back() 返回时走 bfcache 恢复（pageshow persisted）——
 // 这时游戏里的钥匙/背包可能已变化，重新拉一次游戏入口数据，避免显示旧状态
+// 【v24.1】若带着"从游戏退出"的标记，bfcache 恢复后也强制切到「活动」页签
 window.addEventListener("pageshow", function (e) {
   if (!e.persisted) return;
   try { if (typeof loadGameEntry === "function") loadGameEntry(); } catch (_e) {}
+  try {
+    if (sessionStorage.getItem('writer_return_tab') === 'atGame') {
+      sessionStorage.removeItem('writer_return_tab');
+      const t = document.querySelector('.act-tab[data-at="atGame"]');
+      if (t && !t.classList.contains('on')) t.click();
+    }
+  } catch (_e) {}
 });
 
 async function loadGameEntry() {
