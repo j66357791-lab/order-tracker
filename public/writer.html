@@ -2236,6 +2236,13 @@ document.querySelectorAll('.act-tab').forEach(t => t.onclick = () => {
   if (t.dataset.at === 'atGame') { const g2 = document.getElementById('atGame2'); if (g2) g2.classList.add('on'); loadGameEntry(); }
 });
 
+// 【v24.0】从游戏页 history.back() 返回时走 bfcache 恢复（pageshow persisted）——
+// 这时游戏里的钥匙/背包可能已变化，重新拉一次游戏入口数据，避免显示旧状态
+window.addEventListener("pageshow", function (e) {
+  if (!e.persisted) return;
+  try { if (typeof loadGameEntry === "function") loadGameEntry(); } catch (_e) {}
+});
+
 async function loadGameEntry() {
   try {
     const r = await fetch('/api/game/state', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('jdy_token') } });
