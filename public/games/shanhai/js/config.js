@@ -47,6 +47,12 @@ const CONFIG = {
       dmgPerLv: 5, cdPerLv: -0.2, piercePerLv: 1, maxLv: 5,
       lvDesc: ["1枚冰锥·减速30%", "伤害+5", "冰锥+1", "冷却-0.2s·穿透+1", "伤害+5·穿透+1"],
     },
+    galeorb: {
+      name: "旋风刃", desc: "灵刃绕体旋飞，绞碎近身之敌",
+      baseDmg: 10, cd: 5.0, blades: 2, radius: 66, rotSpd: 2.6, life: 4.2, hitCd: 0.45,
+      dmgPerLv: 4, maxLv: 5,
+      lvDesc: ["2柄灵刃绕体", "伤害+4", "灵刃+1", "伤害+4", "灵刃+1·伤+4"],
+    },
     body: {
       name: "修身体质", desc: "体魄强健，血气充盈",
       hpPerLv: 20, maxLv: 5, kind: "passive",
