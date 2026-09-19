@@ -77,6 +77,16 @@ class WeaponSystem {
       slow: { pct: W.slowPct, dur: W.slowDur },
     };
   }
+  // 【v24.3】旋风刃：绕体旋飞的灵刃（复用 sword_spin 贴图，零新素材）
+  galeParams() {
+    const W = CONFIG.weapons.galeorb, lv = this.lv("galeorb");
+    if (!lv) return null;
+    return {
+      dmg: (W.baseDmg + W.dmgPerLv * (lv - 1)) * this.hero.dmgMul,
+      blades: W.blades + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0),
+      radius: W.radius, rot: W.rotSpd, life: W.life, hitCd: W.hitCd,
+    };
+  }
 
   update(dt, enemies, fire, boss) {
     for (const s of Object.values(this.slots)) s.t -= dt;
@@ -137,6 +147,17 @@ class WeaponSystem {
         }
       }
     }
+    // 【v24.3】旋风刃：绕体灵刃（不索敌，纯环绕，接触即伤，带个体冷却）
+    const gp = this.galeParams();
+    const gslot = this.slots.galeorb;
+    if (gp && gslot && gslot.t <= 0) {
+      gslot.t = gp.cd;
+      for (let i = 0; i < gp.blades; i++) {
+        fire("gale", this.hero.x, this.hero.y, 0, 0, {
+          ...gp, hero: this.hero, ang: (i / gp.blades) * Math.PI * 2,
+        });
+      }
+    }
   }
 }
 
@@ -173,11 +194,34 @@ class Projectile {
     this.target = params.target || null;
     this.homing = !!params.homing;
     this.isSword = (kind === "sword" || kind === "swordburst");
+    // 【v24.3】旋风刃：绕体旋转模式（跟随英雄、按角度公转、带命中冷却）
+    if (kind === "gale") {
+      this.orbit = true;
+      this.orbA = params.ang || 0;
+      this.orbR = params.radius || 66;
+      this.orbW = params.rot || 2.6;
+      this.heroRef = params.hero || null;
+      this.life = params.life || 4.2;
+      this.hitCdT = 0;
+      this.pierce = 9999;         // 不因命中消失，靠 hitIds 冷却限伤
+      this.radius = 10;           // 碰撞半径（与公转半径区分）
+    }
   }
   update(dt) {
     this.animT += dt;
     this.life -= dt;
     if (this.life <= 0) { this.alive = false; return; }
+    // 旋风刃：绕英雄公转
+    if (this.orbit) {
+      this.orbA += this.orbW * dt;
+      this.hitCdT -= dt;
+      if (this.hitCdT <= 0) { this.hitIds.length = 0; this.hitCdT = 0.45; }
+      if (this.heroRef) {
+        this.x = this.heroRef.x + Math.cos(this.orbA) * this.orbR;
+        this.y = this.heroRef.y + Math.sin(this.orbA) * this.orbR;
+      }
+      return;
+    }
     // 锁妖剑诀：弹道追踪目标（目标死亡则直线飞出）
     if (this.homing && this.target && this.target.alive !== false) {
       const tx = this.target.x - this.x, ty = this.target.y - this.y;
@@ -192,6 +236,16 @@ class Projectile {
     this.y += this.dy * this.speed * dt;
   }
   draw(ctx) {
+    // 【v24.3】旋风刃：绕体飞旋的灵刃（swordspin 序列帧 + 公转角朝向）
+    if (this.kind === "gale") {
+      const f = Assets.frame("swordspin", this.animT, 10);
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.orbA + Math.PI / 2);
+      Assets.draw(ctx, "swordspin", f, 0, 0, 1.0);
+      ctx.restore();
+      return;
+    }
     if (this.isSword) {
       if (this.kind === "swordburst") {
         // 万剑归宗：旋转序列帧飞剑
