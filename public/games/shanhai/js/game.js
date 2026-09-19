@@ -38,6 +38,11 @@ const Game = (() => {
         hero.iceBonus = B.iceCount;
         hero.maxHpBase = Math.round(hero.maxHpBase * hero.hpMulExternal * B.bodyHpMul);
         hero.hp = hero.maxHp;
+        // 【v24.3 属性统一】这四条装备加成原来只算不接——装备页显示有，局内实际无效：
+        hero.dmgMul = B.dmgMul;                                        // 配饰：全伤害
+        hero.speed = CONFIG.hero.speed * B.moveMul;                    // 鞋子：移速
+        hero.pickupRadius = CONFIG.hero.pickupRadius * B.pickupMul;    // 腰带：拾取范围
+        hero.expMul = B.expMul;                                        // 发冠：经验获取
       }
     } catch (e) { console.warn("meta bonus fail", e); }
     weapons = new WeaponSystem(hero);
@@ -270,7 +275,7 @@ const Game = (() => {
       const r = pk.update(dt, hero);
       if (r === "exp") {
         pickupPool.despawn(pk);
-        const ups = hero.gainExp(CONFIG.orbs.value);
+        const ups = hero.gainExp(Math.max(1, Math.round(CONFIG.orbs.value * (hero.expMul || 1))));
         if (ups > 0) openLevelUp();
       } else if (r === "heal") {
         pickupPool.despawn(pk);
@@ -329,7 +334,7 @@ const Game = (() => {
     const pool = [];
     const W = CONFIG.weapons;
     // 已有技能可升级
-    for (const key of ["fireline", "icepick"]) {
+    for (const key of ["fireline", "icepick", "galeorb"]) {
       if (weapons.has(key)) {
         if (weapons.lv(key) < W[key].maxLv) pool.push({ key, kind: "up" });
       } else {
@@ -538,6 +543,7 @@ const Game = (() => {
       toWave(n) { waveIdx = Math.min(Math.max(n, 1), CONFIG.waves.length) - 1; startWave(waveIdx); },
       god(on) { if (hero) hero.godMode = !!on; },
       killBoss() { if (boss && boss.alive) boss.hp = 0; },
+      buildChoices,   // 【v24.3】暴露三选一构建，供内测与自动化验收
     },
   };
   return api;
