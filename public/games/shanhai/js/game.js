@@ -81,7 +81,9 @@ const Game = (() => {
     genDecor();
     state = "playing";
     UI.showHud();
-    UI.banner(`第 1 波`, CONFIG.waves[0].spawnText || "");
+    UI.banner(`第 1 波`, `第一关 第 ${stage} 关 · 第 1 波`);
+    // 【v24.5】进入战斗：解锁音频（需用户手势）+ 起战斗 BGM
+    if (window.SFX) { SFX.unlock(); SFX.bgmStart(); }
   }
 
   function genDecor() {
@@ -230,6 +232,7 @@ const Game = (() => {
       const d = Math.hypot(e.x - hero.x, e.y - hero.y);
       if (d < e.effRadius() + hero.radius) {
         if (hero.hurt(Math.round(e.def.dmg * (e.dmgMul || 1)))) {
+          if (window.SFX) SFX.hurt();
           dmgTextPool.spawn(hero.x, hero.y - 20, `-${e.def.dmg}`, "#FF8A70", true);
           shakeT = Math.max(shakeT, 0.18);
         }
@@ -242,6 +245,7 @@ const Game = (() => {
         boss.update(dt, hero, bossApi);
         const d = Math.hypot(boss.x - hero.x, boss.y - hero.y);
         if (d < CONFIG.boss.radius + hero.radius && hero.hurt(CONFIG.boss.contactDmg)) {
+          if (window.SFX) SFX.hurt();
           dmgTextPool.spawn(hero.x, hero.y - 20, `-${CONFIG.boss.contactDmg}`, "#FF8A70", true);
           shakeT = 0.3;
         }
@@ -278,6 +282,8 @@ const Game = (() => {
           const dmg = Math.round(p.dmg * (crit ? CONFIG.critMul : 1));
           const killed = e.hurt(dmg, p.slow);
           stats.dmg += dmg;
+          // 【v24.5】打击音效：飞剑=金属脆响，火=呼，冰=叮，旋风刃=擦身声
+          if (window.SFX) SFX.hit(p.kind, crit);
           dmgTextPool.spawn(e.x, e.y - 8, crit ? dmg + "!" : dmg, crit ? "#FFD24A" : "#FFE082", crit);
           fxPool.spawn("hit", e.x, e.y - 6, 0.8);
           if (killed) {
@@ -313,10 +319,12 @@ const Game = (() => {
       const r = pk.update(dt, hero);
       if (r === "exp") {
         pickupPool.despawn(pk);
+        if (window.SFX) SFX.orb();
         const ups = hero.gainExp(Math.max(1, Math.round(CONFIG.orbs.value * (hero.expMul || 1))));
         if (ups > 0) openLevelUp();
       } else if (r === "heal") {
         pickupPool.despawn(pk);
+        if (window.SFX) SFX.heal();
         hero.hp = Math.min(hero.maxHp, hero.hp + CONFIG.orbs.meat.heal);
         dmgTextPool.spawn(hero.x, hero.y - 24, `+${CONFIG.orbs.meat.heal}`, "#7FE89A", true);
       }
@@ -333,6 +341,7 @@ const Game = (() => {
     // 死亡
     if (hero.hp <= 0) {
       state = "over";
+      if (window.SFX) { SFX.hurt(); SFX.bgmStop(); SFX.gameOver(); }
       UI.gameOver(stats, hero);
     }
 
@@ -351,6 +360,7 @@ const Game = (() => {
   function onEnemyDead(e) {
     stats.kills++;
     hero.kills++;
+    if (window.SFX) SFX.enemyDie(e.elite);
     fxPool.spawn("die", e.x, e.y - 6, 1);
     pickupPool.spawn("orb", e.x, e.y);
     // 【v24.4】精英多掉 2 颗经验珠
@@ -362,12 +372,14 @@ const Game = (() => {
   }
 
   function onBossDead() {
+    if (window.SFX) SFX.bossDie();
     fxPool.spawn("die", boss.x, boss.y, 2.2);
     fxPool.spawn("smash", boss.x, boss.y, 1.5);
     for (let i = 0; i < 10; i++) pickupPool.spawn("orb", boss.x + (Math.random() - 0.5) * 90, boss.y + (Math.random() - 0.5) * 90);
     UI.toast(`山臊王 已被斩杀！`);
     boss = null;
     state = "win";
+    if (window.SFX) { SFX.bgmStop(); SFX.victory(); }
     UI.victory(stats, hero);
   }
 
@@ -422,6 +434,7 @@ const Game = (() => {
   function openLevelUp() {
     if (boss && !boss.alive) return;   // Boss 已亡：胜利结算优先，不再弹升级
     state = "levelup";
+    if (window.SFX) SFX.levelUp();
     fxPool.spawn("levelup", hero.x, hero.y, 1.4);
     const choices = buildChoices();
     UI.levelUp(hero.level, choices, pick => {
