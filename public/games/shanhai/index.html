@@ -94,6 +94,7 @@
 
       <!-- 养成·装备页（斩妖录·贰）【v24.3 重排：左50%角色+属性 / 右50%装备格】【v24.4 去掉重复货币】 -->
       <div class="home-tab" id="tabGrow">
+        <div class="grow-sec">◆ 神行装束（点击装备查看属性 · 可卸下）</div>
         <div class="equip-layout">
           <!-- 左 50%：角色（与局内同一序列帧形象）+ 统一属性 -->
           <div class="eq-left">
@@ -229,6 +230,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
 <script src="js/entities.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/effects.js"></script>
+<script src="js/audio.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/game.js"></script>
 <script>
@@ -265,13 +267,21 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <div style="background:linear-gradient(180deg,#f5f0e0,#e8dcc8);border-radius:16px;padding:20px;width:280px;text-align:center" onclick="event.stopPropagation()">
           <div style="font-size:18px;font-weight:900;color:#3a5a4a;margin-bottom:16px">设置</div>
           <div style="display:flex;flex-direction:column;gap:10px">
-            <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" onclick="this.parentElement.parentElement.parentElement.remove();alert('音效功能开发中')">🔊 音效设置</div>
+            <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" id="sndToggle">${(window.SFX && SFX.enabled) ? "🔊 音效：开" : "🔇 音效：关"}</div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" onclick="exitToWriter()">🏠 返回网站</div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer;color:#c0392b" onclick="localStorage.removeItem('jdy_token');localStorage.removeItem('jdy_user');location.href='/login.html'">🚪 退出登录</div>
           </div>
         </div>
       </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
+    // 【v24.5】音效开关（真实生效，localStorage 记忆）
+    const tg = document.getElementById('sndToggle');
+    if (tg) tg.onclick = (ev) => {
+      ev.stopPropagation();
+      const on = window.SFX ? SFX.toggle() : false;
+      tg.textContent = on ? "🔊 音效：开" : "🔇 音效：关";
+      toast(on ? "音效已开启" : "音效已关闭");
+    };
   }
   window.showUserMenu = showUserMenu;
 
@@ -338,7 +348,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
   function renderHome() {
     const p = META.profile || {};
-    if (Array.isArray(p.stageStars)) { META.stageStars = Object.fromEntries(p.stageStars.map(s => [s, 3])); }
+    // 【v24.5】星级图以服务端档案为准（跨设备），本地也留一份
+    const ss = Object.assign({}, p.stageStars || {}, META.stageStars || {});
+    Object.keys(ss).forEach(k => { const v = +ss[k] || 0; if (v) localStorage.setItem("sh_stars_" + k, String(v)); });
+    META.stageStars = ss;
     $("tbXianyu").textContent = p.xianyu || 0;
     $("tbLingqi").textContent = p.lingqi || 0;
     $("shXianyu").textContent = p.xianyu || 0;   // 山海录页货币同步
@@ -428,6 +441,66 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   function startEqAnim() { if (!eqRAF) { eqLast = 0; eqRAF = requestAnimationFrame(eqAnim); } }
   function stopEqAnim() { if (eqRAF) { cancelAnimationFrame(eqRAF); eqRAF = null; } }
   const SLOT_NAME = { weapon: "武器", armor: "衣服", crown: "发冠", belt: "腰带", boots: "鞋子", accessory: "配饰" };
+  // 【v24.5】词条说明（装备详情弹窗用）
+  const AFFIX_DESC = {
+    weapon:  ["攻击", "提升飞剑/技能的基础攻击力（绝对数值，直接叠加在角色基础攻击 5 之上）"],
+    armor:   ["生命", "提升生命上限（百分比），直接换算进你的气血总量"],
+    crown:   ["经验", "提升经验获取速度，升级更快、三选一更多"],
+    belt:    ["拾取", "扩大经验珠与掉落的拾取半径，走位更省心"],
+    boots:   ["移速", "提升移动速度，躲弹幕与风筝怪群的关键"],
+    accessory:["全伤害", "提升所有技能造成的伤害（含火球、冰锥、旋风刃）"],
+  };
+  const SLOT_ICON = { weapon: "icon_weapon", armor: "icon_armor", crown: "icon_crown", belt: "icon_belt", boots: "icon_boots", accessory: "icon_accessory" };
+
+  // 装备详情弹窗：查看属性 → 卸下 / 升级（占位）
+  function showEquipDetail(slot) {
+    const p = META.profile || {};
+    const it = (p.equip || {})[slot];
+    const meta = AFFIX_DESC[slot] || ["", ""];
+    const old = document.getElementById("eqDetailMask");
+    if (old) old.remove();
+    const mask = document.createElement("div");
+    mask.id = "eqDetailMask";
+    mask.className = "eq-detail-mask";
+    mask.onclick = () => mask.remove();
+    if (!it) {
+      const best = (p.bag || []).filter(b => b.slot === slot).sort((a, b) => (b.val || 0) - (a.val || 0))[0];
+      mask.innerHTML = `<div class="eq-detail" onclick="event.stopPropagation()">
+        <div class="eqd-title">${SLOT_NAME[slot]} · 空</div>
+        <div class="eqd-row"><span>当前</span><b>未穿戴</b></div>
+        <div class="eqd-desc">${meta[0]}：${meta[1]}</div>
+        <div class="eqd-desc" style="color:#8ef0a0">${best ? "行囊里有一件更好的（" + best.name + " +" + best.val + "），点背包即可穿戴" : "去商城寻宝可得装备，空槽会自动穿戴"}</div>
+        <div class="eqd-btns">
+          <button class="btn-gacha" id="eqdClose"><i>知道了</i></button>
+          <button class="btn-gacha ten" id="eqdShop"><i>去寻宝</i></button>
+        </div>
+      </div>`;
+      document.getElementById("app").appendChild(mask);
+      document.getElementById("eqdClose").onclick = () => mask.remove();
+      document.getElementById("eqdShop").onclick = () => { mask.remove(); document.querySelector('.hn-item[data-tab="tabShop"]').click(); };
+      return;
+    }
+    const cur = Number(it.val) || 0;
+    const bestInBag = (p.bag || []).filter(b => b.slot === slot && (b.val || 0) > cur).sort((a, b) => b.val - a.val)[0];
+    mask.innerHTML = `<div class="eq-detail" onclick="event.stopPropagation()">
+      <div class="eqd-title" style="color:${it.color || "#e8dcc8"}">${it.name}</div>
+      <div class="eqd-sub">${it.qualityName || ""} · ${SLOT_NAME[slot]}</div>
+      <div class="eqd-row"><span>${it.affix || meta[0]}</span><b style="color:${it.color || "#ffd76a"}">+${cur}${slot === "weapon" ? "" : "%"}</b></div>
+      <div class="eqd-row"><span>对局内生效</span><b>${slot === "weapon" ? "攻击力 " + (5 + cur).toFixed(1) : (meta[0] + " " + (cur) + "%")}</b></div>
+      <div class="eqd-desc">${meta[1]}</div>
+      ${bestInBag ? `<div class="eqd-desc" style="color:#8ef0a0">行囊里有更好的：${bestInBag.name} +${bestInBag.val}${slot === "weapon" ? "" : "%"}</div>` : ""}
+      <div class="eqd-btns">
+        <button class="btn-gacha" id="eqdUnequip"><i>卸 下</i><b>放回背包</b></button>
+        <button class="btn-gacha ten" id="eqdUpgrade"><i>升 级</i><b>即将开放</b></button>
+      </div>
+    </div>`;
+    document.getElementById("app").appendChild(mask);
+    document.getElementById("eqdUnequip").onclick = async () => {
+      try { await META.unequip(slot); await META.load(); renderGrow(); renderHome(); mask.remove(); toast("已卸下" + SLOT_NAME[slot] + "，放回背包"); }
+      catch (e) { toast(e.error || "卸下失败"); }
+    };
+    document.getElementById("eqdUpgrade").onclick = () => toast("装备升级（消耗灵气强化词条）即将开放");
+  }
   function renderEquip() {
     const p = META.profile || {};
     const eq = p.equip || {};
@@ -448,12 +521,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       } else { ico.src = `/games/shanhai/assets/${SLOT_ICON[slot]}.png`; ico.style.display = "block"; ico.style.opacity = ".22"; v.innerHTML = "空 · " + SLOT_NAME[slot]; el.classList.remove("filled"); }
     });
     $("eqPower").textContent = "神力 " + Math.round(power * 10) / 10;
-    document.querySelectorAll(".eq-slot").forEach(el => el.onclick = async () => {
-      const slot = el.dataset.slot;
-      if (!(META.profile || {}).equip || !META.profile.equip[slot]) return;
-      try { await META.unequip(slot); await META.load(); renderGrow(); renderHome(); toast("已卸下" + SLOT_NAME[slot]); }
-      catch (e) { toast(e.error || "操作失败"); }
-    });
+    // 【v24.5】点装备格 → 弹详情（查看属性 / 卸下 / 升级占位），不再直接卸下
+    document.querySelectorAll(".eq-slot").forEach(el => el.onclick = () => showEquipDetail(el.dataset.slot));
   }
   function renderBag() {
     const p = META.profile || {};
