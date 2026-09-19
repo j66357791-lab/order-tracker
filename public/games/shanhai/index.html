@@ -190,7 +190,9 @@
 const SH_TOKEN = localStorage.getItem("jdy_token");
 if (!SH_TOKEN) location.href = "/login.html";
 // 【v24.0】从写手端点进来的走 history.back()：写手端走 bfcache 恢复，不整页重载不闪白屏
+// 【v24.1】sessionStorage 留标记 → 写手端恢复/加载后直接落在「活动」页签
 function exitToWriter(){
+  try { sessionStorage.setItem("writer_return_tab", "atGame"); } catch (e) {}
   try {
     if (document.referrer && document.referrer.indexOf("/writer.html") !== -1 && history.length > 1) { history.back(); return; }
   } catch (e) {}
