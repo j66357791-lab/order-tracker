@@ -93,6 +93,7 @@ const DEPLOY_CHECK_FILES = [
   'public/games/shanhai/js/weapons.js', 'public/games/shanhai/js/game.js',
   'public/games/shanhai/js/config.js', 'public/games/shanhai/js/meta.js',
   'public/games/shanhai/js/ui.js', 'public/games/shanhai/js/assets.js',
+  'public/games/shanhai/js/audio.js', 'public/games/shanhai/js/entities.js', 'public/games/shanhai/js/effects.js', 'public/games/shanhai/js/pool.js',
   'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js',
   'routes/portal.js', 'routes/authx.js', 'routes/user.js', 'routes/orders.js',
   'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js', 'routes/dbadmin.js',
