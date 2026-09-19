@@ -166,19 +166,24 @@ const UI = (() => {
     ov.style.display = "flex";
     const best = Math.max(+(localStorage.getItem("m1_best_win") || 0), stats.time);
     localStorage.setItem("m1_best_win", best);
+    // 【v24.5】星级按剩余血量：满血 3 星 / ≥60% 2 星 / <60% 1 星
+    const hpPct = Math.max(0, Math.min(1, (hero.hp || 0) / (hero.maxHp || 1)));
+    const star = hpPct >= 0.999 ? 3 : hpPct >= 0.6 ? 2 : 1;
     ov.innerHTML = `
       <div class="panel">
         <div class="panel-title win">斩妖功成</div>
         <div class="win-sub">山臊王授首 · 第一关通关</div>
+        <div class="star-big">${"★".repeat(star)}${"☆".repeat(3 - star)}</div>
         <div class="result-grid">
           <div><i>用时</i><b>${fmtTime(stats.time)}</b></div>
           <div><i>境界</i><b>Lv.${hero.level}</b></div>
           <div><i>斩妖</i><b>${hero.kills}</b></div>
+          <div><i>余血</i><b>${Math.ceil(hero.hp)}/${hero.maxHp}</b></div>
           <div><i>承伤</i><b>${Math.round(hero.dmgTaken)}</b></div>
           <div><i>历史最快</i><b>${fmtTime(best)}</b></div>
         </div>
         <button class="btn" onclick="Game.restart()">再战一轮</button>
-        <div class="hint">M1 原型到此为止 —— M2 将解锁装备词条与法宝流派</div>
+        <div class="hint">星级规则：满血通关 3 星 · 余血 ≥60% 2 星 · 更低 1 星<br>M1 原型到此为止 —— M2 将解锁装备词条与法宝流派</div>
       </div>`;
   }
 
