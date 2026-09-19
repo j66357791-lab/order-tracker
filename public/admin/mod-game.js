@@ -224,6 +224,10 @@ export function mount(root) {
   }
 
   // ==================== 商铺（魔法球能换什么） ====================
+  // 【v23.1】图标人工选择：内置图标下拉（带缩略图预览）+ 可直接贴图片地址，不再按道具类型自动配
+  const ICON_IMG = { frag: '/assets/game/icon_frag.png', key: '/assets/game/icon_key.png', ball: '/assets/game/icon_ball.png', revive: '/assets/game/icon_revive.png', bagS: '/assets/game/bag_s.png', bagM: '/assets/game/bag_m.png', bagL: '/assets/game/bag_l.png' };
+  const isIconUrl = v => /^(https?:\/\/|\/assets\/|\/games\/)/.test(v || '');
+  const icoSrc = v => isIconUrl(v) ? v : (ICON_IMG[v] || '');
   let SHOP_ROWS = [];
   function renderShopRows(list) {
     SHOP_ROWS = list.map(x => ({
@@ -242,13 +246,27 @@ export function mount(root) {
     return g;
   }
   function paintShopRows() {
-    $('gmShopRows').innerHTML = SHOP_ROWS.map((s, i) => `
+    $('gmShopRows').innerHTML = SHOP_ROWS.map((s, i) => {
+      const urlMode = isIconUrl(s.icon);
+      return `
       <div class="item-card" style="padding:10px 12px">
         <div class="inline" style="gap:6px">
+          <span style="width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:#fff;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+            ${s.icon ? `<img src="${esc(icoSrc(s.icon))}" style="width:36px;height:36px;object-fit:contain" onerror="this.style.opacity=.2">` : '<span class="sub" style="font-size:10px">未选</span>'}
+          </span>
           <input data-i="${i}" data-f="name" value="${esc(s.name)}" placeholder="兑换项名称，如：魔法钥匙×5" style="flex:2;min-width:130px">
           <label class="mini-lbl" style="flex-direction:row;align-items:center;gap:5px">需要魔法球<input data-i="${i}" data-f="cost" type="number" min="0" value="${s.cost ?? 0}" style="max-width:80px"></label>
           <label style="font-size:12.5px;color:var(--ink2);display:flex;align-items:center;gap:5px"><input type="checkbox" data-i="${i}" data-f="enabled" ${s.enabled ? 'checked' : ''}>上架</label>
           <button class="btn-ghost" style="padding:4px 12px" data-del="${i}">删除</button>
+        </div>
+        <div class="inline" style="gap:6px;margin-top:6px">
+          <span style="font-size:12.5px;color:var(--ink2)">图标：</span>
+          <select data-i="${i}" data-f="iconSel" style="max-width:150px">
+            ${Object.entries(ICON_IMG).map(([k, src]) => `<option value="${k}" ${s.icon === k ? 'selected' : ''}>${GIVE_LBL[k]}</option>`).join('')}
+            <option value="__custom" ${urlMode ? 'selected' : ''}>自定义图片…</option>
+          </select>
+          <input data-i="${i}" data-f="iconUrl" value="${urlMode ? esc(s.icon) : ''}" placeholder="粘贴图片地址（https://… 或 /assets/…）" style="flex:1;min-width:160px;${urlMode ? '' : 'display:none'}">
+          <span style="flex:1"></span>
         </div>
         <div class="inline" style="gap:6px;margin-top:6px">
           <span style="font-size:12.5px;color:var(--ink2)">兑换后发给玩家：</span>
@@ -261,7 +279,8 @@ export function mount(root) {
         <div class="inline" style="gap:6px;margin-top:6px">
           <input data-i="${i}" data-f="desc" value="${esc(s.desc)}" placeholder="给玩家的一句话说明（选填）" style="flex:1;min-width:150px">
         </div>
-      </div>`).join('') || '<div class="empty">还没有兑换项，点下方「加一个兑换项」</div>';
+      </div>`;
+    }).join('') || '<div class="empty">还没有兑换项，点下方「加一个兑换项」</div>';
   }
   $('gmShopRows').addEventListener('input', e => {
     const i = e.target.dataset.i, f = e.target.dataset.f;
@@ -271,7 +290,17 @@ export function mount(root) {
     else if (f === 'pnum') s.pairs[Number(e.target.dataset.p)][1] = Number(e.target.value) || 0;
     else if (f === 'enabled') s.enabled = e.target.checked;
     else if (f === 'cost') s.cost = Number(e.target.value) || 0;
+    else if (f === 'iconUrl') s.icon = e.target.value.trim();   // 自定义图片地址实时写入，缩略图即时预览
+    else if (f === 'iconSel') { /* select 走 change */ }
     else s[f] = e.target.value;
+    if (f === 'iconUrl') { const img = e.target.closest('.item-card').querySelector('img'); if (img && isIconUrl(s.icon)) { img.src = s.icon; img.style.opacity = 1; } }
+  });
+  $('gmShopRows').addEventListener('change', e => {
+    const i = e.target.dataset.i, f = e.target.dataset.f;
+    if (i === undefined || f !== 'iconSel') return;
+    const s = SHOP_ROWS[i]; if (!s) return;
+    if (e.target.value === '__custom') { s.icon = 'https://'; paintShopRows(); }
+    else { s.icon = e.target.value; paintShopRows(); }
   });
   $('gmShopRows').addEventListener('click', e => {
     const del = e.target.closest('[data-del]');
@@ -289,6 +318,8 @@ export function mount(root) {
     }));
     for (const r of rows) {
       if (!r.name.trim()) { toast('有兑换项没填名称'); return; }
+      if (!r.icon) { toast('「' + r.name + '」还没选图标（选一个内置的，或贴图片地址）'); return; }
+      if (!(r.icon in ICON_IMG) && !/^(https?:\/\/|\/assets\/|\/games\/)/.test(r.icon)) { toast('「' + r.name + '」的图片地址要以 http(s):// 或 /assets/ 开头'); return; }
       if (!Object.keys(r.give).length) { toast('「' + r.name + '」还没选兑换后发什么'); return; }
       if (r.enabled && !(r.cost > 0)) { toast('「' + r.name + '」要填需要多少个魔法球（想免费送就先取消上架）'); return; }
     }
