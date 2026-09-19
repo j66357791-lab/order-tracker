@@ -125,7 +125,7 @@
         <span class="act-time" id="actTime"></span>
       </div>
       <button class="btn-back snd-btn" id="btnSndHome" onclick="toggleSnd()" title="音效 / 音乐开关">🔊</button>
-      <button class="btn-back" onclick="location.href='/writer.html?tab=game'">退出</button>
+      <button class="btn-back" onclick="exitToWriter()">退出</button>
     </div>
     <div class="inv" id="invBar"></div>
     <div class="task-bar">
@@ -469,6 +469,14 @@ function showShop(){ $('pageHome').classList.add('hidden'); $('pageGame').classL
 async function buy(id){ try{ const r = await api('/api/game/shop/buy',{method:'POST',body:{id}}); toast(`兑换成功：${r.name}`); await refresh(); }catch(e){ toast(e.message); } }
 
 function logout(){ localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; }
+// 【v24.0】从写手端点进来的走 history.back()：写手端走浏览器往返缓存（bfcache）恢复，
+// 不整页重载、不闪白屏，翻牌/背包状态也保留。直接打开游戏页时回退到写手端游戏页签。
+function exitToWriter(){
+  try {
+    if (document.referrer && document.referrer.indexOf('/writer.html') !== -1 && history.length > 1) { history.back(); return; }
+  } catch (e) {}
+  location.href = '/writer.html?tab=game';
+}
 
 // ===== 【v22.0】音效与背景音乐（Web Audio 实时合成，零素材、离线可用） =====
 // 翻牌 / 奖励 / 逃跑 / 金币 / 福袋 各有专属音色；BGM 是慢速和弦循环垫乐。
