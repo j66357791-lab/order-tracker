@@ -189,6 +189,13 @@
 // ===== 后端对接层 =====
 const SH_TOKEN = localStorage.getItem("jdy_token");
 if (!SH_TOKEN) location.href = "/login.html";
+// 【v24.0】从写手端点进来的走 history.back()：写手端走 bfcache 恢复，不整页重载不闪白屏
+function exitToWriter(){
+  try {
+    if (document.referrer && document.referrer.indexOf("/writer.html") !== -1 && history.length > 1) { history.back(); return; }
+  } catch (e) {}
+  location.href = "/writer.html?tab=game";
+}
 async function shApi(path, opt = {}) {
   const r = await fetch(path, { ...opt, headers: { "Content-Type": "application/json", Authorization: "Bearer " + SH_TOKEN, ...(opt.headers || {}) } });
   if (r.status === 401) { localStorage.removeItem("jdy_token"); localStorage.removeItem("jdy_user"); location.href = "/login.html"; throw new Error("未登录"); }
@@ -239,7 +246,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           <div style="font-size:18px;font-weight:900;color:#3a5a4a;margin-bottom:16px">设置</div>
           <div style="display:flex;flex-direction:column;gap:10px">
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" onclick="this.parentElement.parentElement.parentElement.remove();alert('音效功能开发中')">🔊 音效设置</div>
-            <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" onclick="location.href='/writer.html?tab=game'">🏠 返回网站</div>
+            <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" onclick="exitToWriter()">🏠 返回网站</div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer;color:#c0392b" onclick="localStorage.removeItem('jdy_token');localStorage.removeItem('jdy_user');location.href='/login.html'">🚪 退出登录</div>
           </div>
         </div>
