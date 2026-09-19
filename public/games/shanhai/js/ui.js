@@ -44,8 +44,8 @@ const UI = (() => {
     const ws = window.Game && Game.__weapons;
     bar.innerHTML = "";
     if (!ws) return;
-    const icons = { sword: "剑", fireline: "火", icepick: "冰", body: "体" };
-    const names = { sword: "御剑术", fireline: "火球术", icepick: "寒冰锥", body: "修身体质" };
+    const icons = { sword: "剑", fireline: "火", icepick: "冰", body: "体", galeorb: "风" };
+    const names = { sword: "御剑术", fireline: "火球术", icepick: "寒冰锥", body: "修身体质", galeorb: "旋风刃" };
     for (const [key, s] of Object.entries(ws.slots)) {
       const el = document.createElement("div");
       el.className = "skill-chip";
@@ -105,6 +105,8 @@ const UI = (() => {
       fireline: { name: "火球术", icon: "火", desc: lv => `自动射出火羽灼烧最近之敌<br>${W.fireline.baseDmg + W.fireline.dmgPerLv * (lv - 1)} 伤害 · ${(W.fireline.cd + W.fireline.cdPerLv * (lv - 1)).toFixed(2)}s` },
       icepick: { name: "寒冰锥", icon: "冰", desc: lv => `穿透冰锥减速敌人<br>${W.icepick.baseDmg + W.icepick.dmgPerLv * (lv - 1)} 伤害 · 减速 ${Math.round(W.icepick.slowPct * 100)}%` },
       body: { name: "修身体质", icon: "体", desc: lv => `气血上限提升 ${W.body.hpPerLv}%<br>当前上限 +${W.body.hpPerLv}` },
+      // 【v24.3】旋风刃
+      galeorb: { name: "旋风刃", icon: "风", desc: lv => `灵刃绕体旋飞，绞碎近身之敌<br>${W.galeorb.blades + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0)} 柄 · ${W.galeorb.baseDmg + W.galeorb.dmgPerLv * (lv - 1)} 伤害/击` },
     };
     for (const c of choices) {
       const card = document.createElement("div");
