@@ -84,6 +84,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       equip: { weapon: { id: 'eq_sword_starter', slot: 'weapon', quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 }, armor: null, crown: null, belt: null, boots: null, accessory: null },
       bag: [],
       clearedStages: [],
+      stageStars: {},   // 【v24.5】每关最高星级（跨设备保留，前端解锁与展示都用它）
     };
     await db.collection('shanhai_profiles').updateOne(
       { userId }, { $setOnInsert: doc }, { upsert: true });
@@ -112,7 +113,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
   app.post('/api/shanhai/result', auth, limit({ name: 'shanhai-result', max: 10, windowMs: 60 * 1000, msg: '战绩上报太频繁，请稍后再试' }), async (req, res) => {
     try {
       const db = await getDb();
-      const { win, timeSec, kills, level, dmgTaken, stage } = req.body || {};
+      const { win, timeSec, kills, level, dmgTaken, stage, hpPct } = req.body || {};
       const t = Math.floor(Number(timeSec) || 0);
       const k = Math.floor(Number(kills) || 0);
       const lv = Math.floor(Number(level) || 1);
@@ -141,14 +142,20 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       const firstClearGain = Math.min(720, META_CFG.firstClearXianyu + (st - 1) * 30);
       const gainXianyu = k * META_CFG.killXianyu + (isWin ? META_CFG.winXianyu : 0) + (firstClear ? firstClearGain : 0);
       const gainLingqi = isWin ? META_CFG.winLingqi : 0;
-      const stars = isWin ? (t < 180 ? 3 : t < 360 ? 2 : 1) : 0;
+      // 【v24.5】星级改按剩余血量：满血 3 星 / ≥60% 2 星 / <60% 1 星
+      // （原来按用时算，玩家反馈"满血通关只给一星"）
+      const hp = Number(hpPct);
+      const stars = isWin
+        ? (Number.isFinite(hp) ? (hp >= 0.999 ? 3 : hp >= 0.6 ? 2 : 1) : (t < 180 ? 3 : t < 360 ? 2 : 1))
+        : 0;
       // 【二次复核修正】bestTimeSec 原来用对象展开生成第二个 $set，首通那一局会把
       // 前面 $set 里的 username/updatedAt 整体覆盖丢掉——改为预先组装同一个 $set
       const setResult = { username: req.user.displayName || req.user.username, updatedAt: new Date() };
       if (isWin && t > 0 && before.bestTimeSec == null) setResult.bestTimeSec = t;
       const upd = {
         $inc: { plays: 1, wins: isWin ? 1 : 0, totalKills: k, xianyu: gainXianyu, lingqi: gainLingqi },
-        $max: { bestKills: k, maxLevel: lv },
+        // 【v24.5】星级写入档案（$max 保证只升不降）
+        $max: isWin ? { bestKills: k, maxLevel: lv, ["stageStars." + st]: stars } : { bestKills: k, maxLevel: lv },
         $set: setResult,
         ...(firstClear ? { $addToSet: { clearedStages: st } } : {}),
       };
@@ -163,6 +170,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         ok: true,
         xianyu: gainXianyu, lingqi: gainLingqi, firstClear, stars,
         balance: { xianyu: p.xianyu, lingqi: p.lingqi },
+        stageStars: p.stageStars || {},
         profile: { plays: p.plays, wins: p.wins, bestTimeSec: p.bestTimeSec, bestKills: p.bestKills },
       });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
