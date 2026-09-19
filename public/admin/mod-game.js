@@ -115,7 +115,7 @@ export function mount(root) {
       <div class="card">
         <h2 class="serif">给玩家发道具 / 扣道具</h2>
         <div class="sub">输入玩家 ID 查背包；发放填正数、扣除填负数。</div>
-        <div class="inline"><input id="gmUid" placeholder="玩家 ID（userId）"><button class="btn-main" id="gmFind">查询背包</button></div>
+        <div class="inline"><input id="gmUid" placeholder="玩家手机号 / 工号 / ID"><button class="btn-main" id="gmFind">查询背包</button></div>
         <div id="gmUserBox" style="margin-top:10px"></div>
         <div class="inline" style="margin-top:10px">
           <select id="gmGrantItem" style="max-width:170px">
@@ -462,18 +462,39 @@ export function mount(root) {
   };
 
   // ==================== 玩家查询 / 发放 ====================
+  // 【v23.2】玩家标识支持三种输入：手机号（=登录用户名）/ 7位工号 uid / 玩家ID(users._id)。
+  // 原来 direct 传任何字符串去查 game_profiles，输错就是一排 undefined。
+  async function resolveUserId(input) {
+    const key = String(input || '').trim();
+    if (!key) throw new Error('先在上方输入玩家的手机号 / 工号 / ID');
+    try {
+      const u = await api('/api/admin/find-user/' + encodeURIComponent(key));
+      return { id: u.user._id, label: (u.user.name || u.user.phone || '玩家') + (u.user.uid ? '（工号 ' + u.user.uid + '）' : '') };
+    } catch (e) {
+      // 不是手机号/工号：当作用户 ID 原样使用
+      return { id: key, label: '玩家 ID：' + key };
+    }
+  }
+  function profileTable(label, p) {
+    const q = x => (x === undefined || x === null) ? 0 : x;
+    if (!p) return '<div class="empty">该玩家还没有游戏档案（还没玩过游戏）。<br>可以直接在下方发放道具，系统会自动建档。</div>';
+    return `<table><tr><th>钥匙</th><th>魔法球</th><th>碎片</th><th>复活石</th><th>福袋小/中/大</th><th>累计局数</th></tr>
+      <tr><td class="num">${q(p.keys)}</td><td class="num">${q(p.balls)}</td><td class="num">${q(p.frags)}</td><td class="num">${q(p.revives)}</td>
+      <td class="num">${q(p.bagS)}/${q(p.bagM)}/${q(p.bagL)}</td><td class="num">${q(p.totalGames)}</td></tr></table>`;
+  }
   async function findUser() {
     try {
-      const p = await api('/api/admin/game-profile/' + $('gmUid').value.trim());
-      $('gmUserBox').innerHTML = `<table><tr><th>钥匙</th><th>魔法球</th><th>碎片</th><th>复活石</th><th>福袋小/中/大</th><th>累计局数</th></tr>
-        <tr><td class="num">${p.profile.keys}</td><td class="num">${p.profile.balls}</td><td class="num">${p.profile.frags}</td><td class="num">${p.profile.revives}</td>
-        <td class="num">${p.profile.bagS}/${p.profile.bagM}/${p.profile.bagL}</td><td class="num">${p.profile.totalGames ?? '-'}</td></tr></table>`;
+      const u = await resolveUserId($('gmUid').value);
+      const p = await api('/api/admin/game-profile/' + encodeURIComponent(u.id));
+      $('gmUserBox').innerHTML = '<div class="sub" style="margin-bottom:6px">玩家：' + esc(u.label) + '</div>' + profileTable(u.label, p.profile);
     } catch (e) { $('gmUserBox').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
   }
   async function grant() {
     try {
-      await api('/api/admin/game-grant', { method: 'POST', body: JSON.stringify({ userId: $('gmUid').value.trim(), item: $('gmGrantItem').value, amount: +$('gmGrantN').value }) });
-      toast('发放成功'); findUser();
+      const u = await resolveUserId($('gmUid').value);
+      const r = await api('/api/admin/game-grant', { method: 'POST', body: JSON.stringify({ userId: u.id, item: $('gmGrantItem').value, amount: +$('gmGrantN').value }) });
+      toast('发放成功，档案已更新');
+      $('gmUserBox').innerHTML = '<div class="sub" style="margin-bottom:6px">玩家：' + esc(u.label) + '</div>' + profileTable(u.label, r.profile);
     } catch (e) { toast(e.message); }
   }
 
