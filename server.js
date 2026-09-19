@@ -95,7 +95,7 @@ const DEPLOY_CHECK_FILES = [
   'public/games/shanhai/js/ui.js', 'public/games/shanhai/js/assets.js',
   'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js',
   'routes/portal.js', 'routes/authx.js', 'routes/user.js', 'routes/orders.js',
-  'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js',
+  'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js', 'routes/dbadmin.js',
   // 【终审补充】漏列的三个后端文件：activity.js 承载红包解冻打款链路，games/shanhai 是两个游戏模块
   'routes/activity.js', 'games.js', 'shanhai_game.js',
 ];
@@ -165,6 +165,7 @@ try {
 (await import('./routes/cards.js')).default(ctx);
 (await import('./routes/worktime.js')).default(ctx);
 (await import('./routes/gameadmin.js')).default(ctx);
+(await import('./routes/dbadmin.js')).default(ctx);   // 【v24.0】数据库占用与清理
 (await import('./routes/portal.js')).default(app, ctx);
 // ---- 游戏模块 ----
 try {
