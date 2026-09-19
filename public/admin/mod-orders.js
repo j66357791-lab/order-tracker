@@ -757,14 +757,11 @@ export function mount(host) {
         fab.setAttribute('title', on ? '收起快捷工具' : '快捷工具：月份切换 / 快捷查询 / 快捷录入');
       }
       fab.addEventListener('click', function (e) {
-        e.stopPropagation();               // 别让下面的"点空白收起"立刻把它关掉
+        e.stopPropagation();
         setOpen(!sb.classList.contains('open'));
       });
-      document.addEventListener('click', function (e) {
-        if (!sb.classList.contains('open')) return;
-        if (sb.contains(e.target) || fab.contains(e.target)) return;   // 点抽屉里面的控件不收起
-        setOpen(false);
-      });
+      // 【v24.1】按用户反馈去掉"点空白处自动收起"——点表格/翻页都会把抽屉关掉，太烦。
+      // 现在只有两种方式收起：再点一次 ⚡，或按 Esc。抽屉保持打开不影响其他操作。
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
     })();
   
