@@ -290,12 +290,21 @@ app.get('/api/admin/withdrawals', auth, adminOnly, async (req, res) => {
     if (q) list = rows.filter(w =>
       (w.displayName || '').toLowerCase().includes(q) ||
       (w.alipay && (String(w.alipay.account || '').includes(q) || String(w.alipay.name || '').toLowerCase().includes(q))));
-    const [pending, paid, rejected] = await Promise.all([
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const [pending, paid, rejected,
+      paidMonthCount, paidMonthAgg] = await Promise.all([
       db.collection('withdrawals').countDocuments({ status: '待处理' }),
       db.collection('withdrawals').countDocuments({ status: '已打款' }),
       db.collection('withdrawals').countDocuments({ status: '已驳回' }),
+      // 【v24.0】打款工作台：本月已打款笔数与金额
+      db.collection('withdrawals').countDocuments({ status: '已打款', paidAt: { $gte: monthStart } }),
+      db.collection('withdrawals').aggregate([
+        { $match: { status: '已打款', paidAt: { $gte: monthStart } } },
+        { $group: { _id: null, amount: { $sum: '$amount' } } }
+      ]).toArray(),
     ]);
-    res.json({ ok: true, withdrawals: list, stats: { pending, paid, rejected } });
+    res.json({ ok: true, withdrawals: list, stats: { pending, paid, rejected,
+      paidMonthCount, paidMonthAmount: Math.round(((paidMonthAgg[0] && paidMonthAgg[0].amount) || 0) * 100) / 100 } });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 审批打款：标记已打款；订单型提现同时把这批派单卡结清（台账同步 + 红包解冻）
@@ -334,7 +343,9 @@ app.post('/api/admin/withdrawals/:id/pay', auth, adminOnly, async (req, res) => 
     }
     const r = await db.collection('withdrawals').findOneAndUpdate(
       { _id: w._id, status: '待处理' },
-      { $set: { status: '已打款', paidAt: new Date(), note, paidCards } },
+      { $set: { status: '已打款', paidAt: new Date(), note, paidCards,
+        // 【v24.0】打款工作台：记录打款凭证号（支付宝流水号）与渠道，便于对账
+        voucherNo: String(req.body?.voucherNo || '').slice(0, 64), paidVia: 'alipay' } },
       { returnDocument: 'after' });
     // 【二次复核补充】并发双击时条件更新落空要明确报错，不能返回 ok:true + withdrawal:null
     if (!r) return res.status(409).json({ ok: false, error: '该申请已被处理，请刷新列表' });
