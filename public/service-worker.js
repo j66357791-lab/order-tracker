@@ -3,7 +3,7 @@
  * 【2026-09-17 修复】图片原为"命中缓存永不回源"的永久缓存，换图后老用户永远看到旧图；
  * 现改为后台更新式缓存，升级缓存版本号清掉历史永久缓存
  */
-const CACHE_VERSION = 'jiedan-v14-20260918';
+const CACHE_VERSION = 'jiedan-v15-20260919';
 // 【v22.0】游戏美术资源专用缓存：由游戏页的"资源包下载"显式写入，SW 对这类请求 cache-first。
 // 注意：activate 的清理逻辑必须把这个缓存列入白名单，否则每次 SW 激活都会把已下载的资源包清空。
 const GAME_CACHE = 'fanfanle-assets-v2';
