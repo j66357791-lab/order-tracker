@@ -31,7 +31,7 @@
     </div>
     <div class="cover-foot">
       <div class="tap-hint" id="tapEnter" style="display:none">— 轻触进入 —</div>
-      <div class="cover-ver">V1.5 · 御火行者</div>
+      <div class="cover-ver">V1.6 · 风起青萍</div>
     </div>
   </div>
 
@@ -87,27 +87,31 @@
         <div class="daily-tip">每局皆得仙玉 · 首通另有重赏</div>
       </div>
 
-      <!-- 养成·装备页（斩妖录·贰） -->
+      <!-- 养成·装备页（斩妖录·贰）【v24.3 重排：左50%角色+属性 / 右50%装备格】 -->
       <div class="home-tab" id="tabGrow">
         <div class="grow-cur">
           <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="growXianyu">0</b></span>
           <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="growLingqi">0</b></span>
         </div>
-        <div class="grow-sec">◆ 神行装束（点击已穿装备可卸下）</div>
         <div class="equip-layout">
-          <div class="eq-col">
-            <div class="eq-slot" data-slot="weapon" id="slotWeapon"><i>武器</i><b class="eq-v">空</b></div>
-            <div class="eq-slot" data-slot="armor" id="slotArmor"><i>衣服</i><b class="eq-v">空</b></div>
-            <div class="eq-slot" data-slot="crown" id="slotCrown"><i>发冠</i><b class="eq-v">空</b></div>
+          <!-- 左 50%：角色（与局内同一序列帧形象）+ 统一属性 -->
+          <div class="eq-left">
+            <div class="eq-center">
+              <canvas id="eqHeroCv" width="96" height="96"></canvas>
+              <div class="eq-power" id="eqPower">神力 0</div>
+            </div>
+            <div class="attr-panel" id="attrPanel"></div>
           </div>
-          <div class="eq-center">
-            <img src="/games/shanhai/assets/hero_full.png?v=9" id="eqHero" alt="">
-            <div class="eq-power" id="eqPower">神力 0</div>
-          </div>
-          <div class="eq-col">
-            <div class="eq-slot" data-slot="belt" id="slotBelt"><i>腰带</i><b class="eq-v">空</b></div>
-            <div class="eq-slot" data-slot="boots" id="slotBoots"><i>鞋子</i><b class="eq-v">空</b></div>
-            <div class="eq-slot" data-slot="accessory" id="slotAccessory"><i>配饰</i><b class="eq-v">空</b></div>
+          <!-- 右 50%：6 装备格（2×3 紧凑排布） -->
+          <div class="eq-right">
+            <div class="eq-grid">
+              <div class="eq-slot" data-slot="weapon" id="slotWeapon"><i>武器</i><b class="eq-v">空</b></div>
+              <div class="eq-slot" data-slot="armor" id="slotArmor"><i>衣服</i><b class="eq-v">空</b></div>
+              <div class="eq-slot" data-slot="crown" id="slotCrown"><i>发冠</i><b class="eq-v">空</b></div>
+              <div class="eq-slot" data-slot="belt" id="slotBelt"><i>腰带</i><b class="eq-v">空</b></div>
+              <div class="eq-slot" data-slot="boots" id="slotBoots"><i>鞋子</i><b class="eq-v">空</b></div>
+              <div class="eq-slot" data-slot="accessory" id="slotAccessory"><i>配饰</i><b class="eq-v">空</b></div>
+            </div>
           </div>
         </div>
         <div class="grow-sec bag-sec">◆ 装备背包 <span class="bag-count" id="bagCount">0/50</span>（点击穿戴）</div>
@@ -120,9 +124,23 @@
         <div id="shBoard" class="board-list"></div>
       </div>
 
-      <!-- 商城（占位） -->
+      <!-- 商城（【v24.3】标准抽卡） -->
       <div class="home-tab" id="tabShop">
-        <div class="empty-tip" style="padding:60px 0">商城敬请期待…</div>
+        <div class="shop-banner">
+          <div class="shop-banner-t">✦ 玄机宝阁 ✦</div>
+          <div class="shop-banner-s">寻宝得神装 · 槽位空缺自动穿戴</div>
+        </div>
+        <div class="grow-cur">
+          <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="shopXianyu">0</b></span>
+          <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="shopLingqi">0</b></span>
+        </div>
+        <div class="gacha-btns">
+          <button class="btn-gacha" id="btnDraw1"><i>寻宝 ×1</i><b>120 ◉</b></button>
+          <button class="btn-gacha ten" id="btnDraw10"><i>寻宝 ×10</i><b>1200 ◉</b></button>
+        </div>
+        <div class="gacha-rates">概率公示：凡品 52% · 良品 28% · 上品 14% · 仙品 5% · 神品 1%</div>
+        <div class="gacha-grid" id="drawGrid"></div>
+        <div class="empty-tip" id="drawEmpty">九霄玄机，一抽定缘</div>
       </div>
       <!-- 山海录：技能强化 + 斩妖图志 -->
       <div class="home-tab" id="tabShanhai">
@@ -140,9 +158,8 @@
         </div>
         <div class="grow-sec">◆ 技能强化（火球术/寒冰锥/修身体质 · 永久生效）</div>
         <div id="skillList" class="skill-list"></div>
-        <div class="grow-sec">◆ 装备寻宝（<b>120</b> 仙玉一抽 · 空槽自动穿戴）</div>
-        <button class="btn-jade" id="btnDraw">寻 宝 · 120 ◉</button>
-        <div class="draw-result" id="drawResult"></div>
+        <div class="grow-sec">◆ 局内新技 · 旋风刃（升级三选一有概率习得）</div>
+        <div class="sk-row"><i>风 · 旋风刃</i><span>2 柄灵刃绕体旋飞，绞碎近身之敌；升 3/5 层各 +1 柄</span></div>
         <div class="grow-sec">◆ 斩妖图志</div>
         <div class="sh-lore">山海经异兽志 · 南山经首列：狌狌知往，鹿蜀佩宜，旋龟愈聋，鯤鱼无肿。斩妖证道，录名于此。</div>
       </div>
@@ -302,6 +319,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     $("growLingqi").textContent = p.lingqi || 0;
     $("shXianyu").textContent = p.xianyu || 0;   // 山海录页货币同步
     $("shLingqi").textContent = p.lingqi || 0;
+    $("shopXianyu").textContent = p.xianyu || 0; // 商城页货币同步
+    $("shopLingqi").textContent = p.lingqi || 0;
     $("tbName").textContent = p.username || "御火行者";
     const wins = p.wins || 0;
     $("tbTitle").textContent = wins >= 10 ? "山海伏妖师" : wins >= 3 ? "斩妖剑客" : wins >= 1 ? "初露锋芒" : "初入山海";
@@ -361,7 +380,48 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     });
     renderEquip();
     renderBag();
+    renderAttrs();
   }
+  // 【v24.3】统一属性面板：数值与局内实际生效的完全一致（META.bonus 为唯一来源）
+  function renderAttrs() {
+    const B = META.bonus();
+    const p = META.profile || {};
+    const eq = p.equip || {};
+    const atk = 5 + (eq.weapon ? (eq.weapon.val || 0) : 0);   // 与 weapons.js swordParams 同式
+    const pct = v => "+" + Math.round((v - 1) * 100) + "%";
+    const rows = [
+      ["⚔ 攻击力（飞剑）", atk.toFixed(1)],
+      ["🗡 全伤害", pct(B.dmgMul)],
+      ["❤ 生命上限", pct(B.hpMul)],
+      ["✦ 经验获取", pct(B.expMul)],
+      ["◎ 拾取范围", pct(B.pickupMul)],
+      ["👟 移动速度", pct(B.moveMul)],
+    ];
+    $("attrPanel").innerHTML = rows.map(r => `<div class="attr-row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
+  }
+  // 【v24.3】装备页角色 = 局内同一序列帧形象（进入页签才启动动画，离开即停）
+  let eqRAF = null, eqLast = 0, eqT = 0;
+  function eqAnim(ts) {
+    if (!eqRAF) return;
+    const cv = document.getElementById("eqHeroCv");
+    if (!cv) { eqRAF = null; return; }
+    if (!eqLast) eqLast = ts;
+    eqT += Math.min(0.05, (ts - eqLast) / 1000);
+    eqLast = ts;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.imageSmoothingEnabled = false;
+    const s = Assets.get("hero");
+    if (s) {
+      const f = Math.floor(eqT * 4) % s.frames;
+      const sc = 2.6;
+      ctx.drawImage(s.img, f * s.fw, 0, s.fw, s.fh,
+        (cv.width - s.fw * sc) / 2, (cv.height - s.fh * sc) / 2 + 8, s.fw * sc, s.fh * sc);
+    }
+    eqRAF = requestAnimationFrame(eqAnim);
+  }
+  function startEqAnim() { if (!eqRAF) { eqLast = 0; eqRAF = requestAnimationFrame(eqAnim); } }
+  function stopEqAnim() { if (eqRAF) { cancelAnimationFrame(eqRAF); eqRAF = null; } }
   const SLOT_NAME = { weapon: "武器", armor: "衣服", crown: "发冠", belt: "腰带", boots: "鞋子", accessory: "配饰" };
   function renderEquip() {
     const p = META.profile || {};
@@ -416,21 +476,41 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     setTimeout(() => t.remove(), 1800);
   }
 
-  // —— 抽装备寻宝 ——
-  $("btnDraw").onclick = async () => {
-    $("btnDraw").disabled = true;
-    try {
-      const d = await META.draw();
-      await META.load();
-      renderHome();
-      const g = d.item;
-      $("drawResult").innerHTML = `<div class="draw-pop" style="border-color:${g.color}">
-        寻得 <b style="color:${g.color}">${g.qualityName}·${g.name}</b>（${SLOT_NAME[g.slot]}）
-        ${g.affix} +${g.val}%
-        <small>${d.autoEquipped ? "槽位空缺 · 已自动穿戴" : "已放入背包"}</small></div>`;
-    } catch (e) { toast(e.error || "抽取失败"); }
-    $("btnDraw").disabled = false;
-  };
+  // —— 抽装备寻宝（【v24.3】移入商城，单抽/十连 + 逐个揭示）——
+  const GACHA_RATES = [["凡品", 52, "#cfd8dc"], ["良品", 28, "#8ef0a0"], ["上品", 14, "#8ecff0"], ["仙品", 5, "#c9a0ff"], ["神品", 1, "#ffd76a"]];
+  function setDrawBusy(b) {
+    document.querySelectorAll(".btn-gacha").forEach(x => x.disabled = b);
+  }
+  function drawCellHTML(g, i) {
+    const rare = g.quality === "gold" || g.quality === "purple";
+    return `<div class="gacha-cell q-${g.quality} ${rare ? "rare" : ""}" style="animation-delay:${i * 90}ms">
+      ${rare ? '<span class="gacha-ray"></span>' : ""}
+      <img class="bag-ico" src="/games/shanhai/assets/icon_${g.slot}.png" alt="" onerror="this.style.opacity=.25">
+      <b style="color:${g.color}">${g.qualityName}</b>
+      <em>${g.name}</em>
+      <i>${g.affix} +${g.val}${g.slot === "weapon" ? "" : "%"}</i>
+    </div>`;
+  }
+  async function doDraw(n) {
+    const cost = 120 * n;
+    const p = META.profile || {};
+    if ((p.xianyu || 0) < cost) { toast("仙玉不足（还差 " + (cost - (p.xianyu || 0)) + " ◉）· 去斩妖赚仙玉吧"); return; }
+    setDrawBusy(true);
+    $("drawEmpty").style.display = "none";
+    $("drawGrid").innerHTML = "";
+    let ok = 0;
+    for (let i = 0; i < n; i++) {
+      try {
+        const d = await META.draw();
+        ok++;
+        $("drawGrid").insertAdjacentHTML("beforeend", drawCellHTML(d.item, i));
+      } catch (e) { toast(e.error || "抽取失败"); break; }
+    }
+    if (ok) { await META.load(); renderHome(); toast(ok === n ? "寻宝 " + ok + " 连完成！" : "寻得 " + ok + " 件宝物"); }
+    setDrawBusy(false);
+  }
+  $("btnDraw1").onclick = () => doDraw(1);
+  $("btnDraw10").onclick = () => doDraw(10);
 
   // —— 主页 tab 切换 ——
   document.querySelectorAll(".hn-item").forEach(n => n.onclick = async () => {
@@ -439,8 +519,9 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     n.classList.add("on");
     $("" + n.dataset.tab).classList.add("on");
     if (n.dataset.tab === "tabBoard") loadBoard();
-    if (n.dataset.tab === "tabGrow") renderGrow();
+    if (n.dataset.tab === "tabGrow") { renderGrow(); startEqAnim(); }
     if (n.dataset.tab === "tabShanhai") renderGrow();   // 【2026-09-14】技能移入山海录
+    if (n.dataset.tab !== "tabGrow") stopEqAnim();       // 【v24.3】离开装备页停动画
   });
 
   // —— 榜单 ——
