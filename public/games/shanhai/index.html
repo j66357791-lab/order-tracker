@@ -68,6 +68,11 @@
             <img src="/games/shanhai/assets/stage-bar-new.png?v=10" alt="">
             <span id="stageName">南山草泽</span>
           </div>
+          <!-- 【v24.4】难度页签：普通 20 关 / 困难 20 关（暂不开放） -->
+          <div class="diff-tabs">
+            <button class="diff-btn on" id="diffNormal">普通</button>
+            <button class="diff-btn" id="diffHard">困难 🔒</button>
+          </div>
           <div class="stage-main">
             <div class="stage-arrow left" id="stagePrev">‹</div>
             <img src="/games/shanhai/assets/stage-mountain-new.png?v=9" class="stage-img" alt="">
@@ -84,15 +89,11 @@
         <div class="stage-actions">
           <button class="btn-stage-big" id="btnEnterBattle">出 战</button>
         </div>
-        <div class="daily-tip">每局皆得仙玉 · 首通另有重赏</div>
+        <div class="daily-tip" id="stageTip">每局皆得仙玉 · 首通另有重赏</div>
       </div>
 
-      <!-- 养成·装备页（斩妖录·贰）【v24.3 重排：左50%角色+属性 / 右50%装备格】 -->
+      <!-- 养成·装备页（斩妖录·贰）【v24.3 重排：左50%角色+属性 / 右50%装备格】【v24.4 去掉重复货币】 -->
       <div class="home-tab" id="tabGrow">
-        <div class="grow-cur">
-          <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="growXianyu">0</b></span>
-          <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="growLingqi">0</b></span>
-        </div>
         <div class="equip-layout">
           <!-- 左 50%：角色（与局内同一序列帧形象）+ 统一属性 -->
           <div class="eq-left">
@@ -306,17 +307,40 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   window.showBoard = showBoard;
 
   // —— 主页渲染 ——
-  const STAGES = [
-    { id: 1, name: "南山草泽", sub: "15 波 · 山臊王", open: true },
-    { id: 2, name: "雪域寒潭", sub: "冰封之地 · 敬请期待", open: false },
-    { id: 3, name: "炎火山径", sub: "地火翻涌 · 敬请期待", open: false },
-  ];
+  // 【v24.4】第一章 · 南山草泽：普通 20 关（通关解锁下一关）+ 困难 20 关（暂不开放）
+  const CHAPTER = { name: "南山草泽", total: 20 };
+  const CN_NUM = ["零","一","二","三","四","五","六","七","八","九","十","十一","十二","十三","十四","十五","十六","十七","十八","十九","二十"];
+  const LVL_SUB = {
+    1: "练手局 · 节奏舒缓", 2: "妖群渐起 · 数量与属性增强", 3: "兽群游荡", 4: "毕方来袭 · 远程压制",
+    5: "精英初现", 7: "旋龟入列 · 重甲压阵", 10: "草泽双精英", 15: "妖潮之夜", 20: "山臊王 · 真身降临",
+  };
+  function starsOf(n) { return (META.stageStars || {})[n] || (localStorage.getItem("sh_stars_" + n) | 0) || 0; }
+  function stageOpen(n) { return n === 1 || starsOf(n - 1) > 0; }
+  let curStageIdx = 0;   // 0-based，显示关号 = idx+1
+  function renderStage(i) {
+    curStageIdx = Math.max(0, Math.min(CHAPTER.total - 1, i));
+    const n = curStageIdx + 1;
+    const open = stageOpen(n);
+    const stars = starsOf(n);
+    $("stageName").textContent = CHAPTER.name;
+    $("stageLevel").textContent = "第 " + CN_NUM[n] + " 关";
+    $("stageSub").textContent = LVL_SUB[n] ? ("15 波 · 山臊王 · " + LVL_SUB[n]) : ("15 波 · 山臊王 · 怪物强化 ×" + (1 + 0.22 * (n - 1)).toFixed(1));
+    $("stageStars").innerHTML = Array.from({ length: 3 }, (_, i) =>
+      `<img src="/games/shanhai/assets/star-${i < stars ? "gold" : "transparent"}.png" class="star-i ${i < stars ? "on" : ""}" alt="">`).join("");
+    document.getElementById("stagePrev").style.opacity = curStageIdx > 0 ? "1" : ".3";
+    document.getElementById("stageNext").style.opacity = curStageIdx < CHAPTER.total - 1 ? "1" : ".3";
+    const btn = document.getElementById("btnEnterBattle");
+    btn.disabled = !open;
+    btn.textContent = open ? "出 战" : "未解锁";
+    $("stageTip").textContent = open
+      ? (n === 1 ? "第一关 · 练手局，熟悉走位与三选一" : `首通奖励 ${150 + (n - 1) * 30} ◉ · 重复通关得灵气`)
+      : "通关上一关后解锁";
+  }
   function renderHome() {
     const p = META.profile || {};
+    if (Array.isArray(p.stageStars)) { META.stageStars = Object.fromEntries(p.stageStars.map(s => [s, 3])); }
     $("tbXianyu").textContent = p.xianyu || 0;
     $("tbLingqi").textContent = p.lingqi || 0;
-    $("growXianyu").textContent = p.xianyu || 0;
-    $("growLingqi").textContent = p.lingqi || 0;
     $("shXianyu").textContent = p.xianyu || 0;   // 山海录页货币同步
     $("shLingqi").textContent = p.lingqi || 0;
     $("shopXianyu").textContent = p.xianyu || 0; // 商城页货币同步
@@ -324,35 +348,16 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     $("tbName").textContent = p.username || "御火行者";
     const wins = p.wins || 0;
     $("tbTitle").textContent = wins >= 10 ? "山海伏妖师" : wins >= 3 ? "斩妖剑客" : wins >= 1 ? "初露锋芒" : "初入山海";
-    // 关卡展示（单关卡+左右切换）
-    let curStageIdx = 0;
-    function renderStage(i) {
-      curStageIdx = i;
-      const s = STAGES[i];
-      const stars = (META.stageStars || {})[s.id] || (localStorage.getItem("sh_stars_" + s.id) | 0) || 0;
-      $("stageName").textContent = s.name;
-      $("stageSub").textContent = s.sub;
-      $("stageStars").innerHTML = Array.from({ length: 3 }, (_, i) =>
-        `<img src="/games/shanhai/assets/star-${i < stars ? "gold" : "transparent"}.png" class="star-i ${i < stars ? "on" : ""}" alt="">`).join("");
-      // 左右箭头显示
-      document.getElementById("stagePrev").style.opacity = i > 0 ? "1" : ".3";
-      document.getElementById("stageNext").style.opacity = i < STAGES.length - 1 ? "1" : ".3";
-      // 出战按钮状态
-      const btn = document.getElementById("btnEnterBattle");
-      if (s.open) {
-        btn.disabled = false;
-        btn.textContent = "出 战";
-      } else {
-        btn.disabled = true;
-        btn.textContent = "未解锁";
-      }
-    }
+    // 关卡展示（单关卡+左右切换，共 20 关）
     renderStage(0);
     document.getElementById("stagePrev").onclick = () => { if (curStageIdx > 0) renderStage(curStageIdx - 1); };
-    document.getElementById("stageNext").onclick = () => { if (curStageIdx < STAGES.length - 1) renderStage(curStageIdx + 1); };
+    document.getElementById("stageNext").onclick = () => { if (curStageIdx < CHAPTER.total - 1) renderStage(curStageIdx + 1); };
     document.getElementById("btnEnterBattle").onclick = () => {
-      if (STAGES[curStageIdx].open) enterBattle(STAGES[curStageIdx].id);
+      const n = curStageIdx + 1;
+      if (stageOpen(n)) enterBattle(n);
     };
+    // 难度页签：困难 20 关暂不开放
+    document.getElementById("diffHard").onclick = () => toast("困难模式（20 关）即将开放 · 先在普通难度证道吧");
     // 养成
     renderGrow();
   }
