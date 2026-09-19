@@ -282,16 +282,29 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .tb-currency.lingqi b { color: #cfeaff; }
 
 .equip-layout { display: flex; gap: 10px; align-items: stretch; margin: 10px 0; }
-.eq-col { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+/* 【v24.3】50/50 重排：左=角色+统一属性，右=紧凑装备格；不再占满整屏 */
+.eq-left { width: 50%; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.eq-right { width: 50%; display: flex; flex-direction: column; min-width: 0; }
+.eq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .eq-slot { background-image: linear-gradient(rgba(8,6,4,.55), rgba(8,6,4,.55)), url('../assets/eq-slot-bg.png'); background-size: cover; background-position: center; border: 1px solid rgba(212,184,122,.45); border-radius: 12px; padding: 10px 8px; text-align: center; cursor: pointer; transition: all .15s; min-height: 58px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
 .eq-slot i { display: block; font-style: normal; font-size: 11px; color: #A89878; letter-spacing: 3px; margin-bottom: 5px; }
 .eq-slot .eq-name { display: block; font-size: 13px; font-weight: 700; }
 .eq-slot .eq-affix { display: block; font-size: 11px; color: #E8DCC8; opacity: .85; font-style: normal; margin-top: 2px; }
 .eq-slot.filled { background-image: linear-gradient(rgba(50,32,8,.62), rgba(50,32,8,.62)), url('../assets/eq-slot-bg.png'); background-size: cover; background-position: center; border-color: rgba(255,215,106,.75); box-shadow: 0 0 12px rgba(255,215,106,.25), 0 0 10px rgba(255,215,106,.12) inset; }
 .eq-slot.filled:hover { border-color: #ff9a3c; }
-.eq-center { flex: 1.1; display: flex; flex-direction: column; align-items: center; justify-content: center; background-image: linear-gradient(rgba(10,8,5,.18), rgba(10,8,5,.18)), url('../assets/eq-hero-bg.png'); background-size: cover; background-position: center top; border-radius: 14px; border: 1px solid rgba(212,184,122,.45); padding: 8px 6px; box-shadow: 0 3px 14px rgba(0,0,0,.45); }
-.eq-center img { height: 138px; max-width: 100%; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 6px 14px rgba(0,0,0,.55)); transition: transform .3s; }
-.eq-center img:hover { transform: scale(1.04); }
+.eq-center { display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(212,184,122,.16), rgba(0,0,0,.34) 72%); border-radius: 14px; border: 1px solid rgba(212,184,122,.45); padding: 10px 6px; box-shadow: 0 3px 14px rgba(0,0,0,.45); }
+#eqHeroCv { width: 96px; height: 96px; image-rendering: pixelated; filter: drop-shadow(0 6px 12px rgba(0,0,0,.55)); }
+/* 【v24.3】紧凑装备格（2×3） */
+.equip-layout .eq-slot { min-height: 72px; padding: 7px 6px; border-radius: 10px; }
+.equip-layout .eq-slot i { letter-spacing: 1px; margin-bottom: 3px; font-size: 10px; }
+.equip-layout .eq-slot .eq-name { font-size: 12px; }
+.equip-layout .eq-slot .eq-affix { font-size: 10px; }
+.equip-layout .eq-slot .eq-ico { display: none; }
+/* 【v24.3】统一属性面板（与局内实际生效数值一致） */
+.attr-panel { background: rgba(0,0,0,.30); border: 1px solid rgba(212,184,122,.35); border-radius: 12px; padding: 8px 10px; }
+.attr-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px dashed rgba(212,184,122,.18); font-size: 12.5px; color: #E8DCC8; }
+.attr-row:last-child { border-bottom: none; }
+.attr-row b { color: #ffd76a; font-weight: 800; }
 .eq-power { margin-top: 6px; font-size: 13px; font-weight: 900; color: #ffd76a; letter-spacing: 2px; }
 
 .bag-sec { margin-top: 12px; }
@@ -313,6 +326,34 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 
 .draw-pop { margin: 10px 0; padding: 10px 12px; border: 1px solid; border-radius: 10px; background: rgba(0,0,0,.3); font-size: 13px; color: #E8DCC8; animation: popin .35s ease; }
 .draw-pop small { display: block; margin-top: 4px; color: #A89878; }
+
+/* ================= 【v24.3】商城 · 标准抽卡 ================= */
+.shop-banner { background: radial-gradient(ellipse at 50% 120%, rgba(255,215,106,.30), rgba(10,8,5,.20) 70%), linear-gradient(135deg, rgba(30,26,14,.85), rgba(10,12,10,.85)); border: 1px solid rgba(212,184,122,.55); border-radius: 14px; padding: 16px 12px; text-align: center; margin-bottom: 10px; }
+.shop-banner-t { font-size: 20px; font-weight: 900; color: #ffd76a; letter-spacing: 6px; text-shadow: 0 2px 10px rgba(255,180,40,.4); }
+.shop-banner-s { font-size: 11.5px; color: #A89878; margin-top: 5px; letter-spacing: 2px; }
+.gacha-btns { display: flex; gap: 10px; margin-top: 12px; }
+.btn-gacha { flex: 1; background: linear-gradient(180deg, #2C8A6E, #1E6650); border: 1px solid #3EC9A0; border-radius: 12px; padding: 10px 6px; cursor: pointer; text-align: center; transition: all .15s; }
+.btn-gacha.ten { background: linear-gradient(180deg, #8A6A2C, #664E1E); border-color: #E0B85A; }
+.btn-gacha i { display: block; font-style: normal; font: bold 14px "PingFang SC", sans-serif; color: #F0FBE8; letter-spacing: 2px; }
+.btn-gacha b { display: block; font: 11px sans-serif; color: rgba(240,248,232,.75); margin-top: 3px; }
+.btn-gacha:active { transform: scale(.97); }
+.btn-gacha:disabled { filter: grayscale(.6) brightness(.7); cursor: wait; }
+.gacha-rates { font-size: 10.5px; color: #8f8468; text-align: center; margin-top: 8px; letter-spacing: .5px; }
+.gacha-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+.gacha-cell { position: relative; background: rgba(0,0,0,.32); border: 1px solid rgba(120,110,90,.4); border-radius: 10px; padding: 10px 4px 8px; text-align: center; overflow: hidden; animation: gachain .4s ease backwards; }
+@keyframes gachain { from { transform: translateY(14px) scale(.86); opacity: 0; } to { transform: none; opacity: 1; } }
+.gacha-cell .bag-ico { display: block; height: 34px; max-width: 80%; margin: 0 auto 4px; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(0,0,0,.4)); }
+.gacha-cell b { display: block; font-size: 12px; font-weight: 800; }
+.gacha-cell em { display: block; font-style: normal; font-size: 10.5px; color: #E8DCC8; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gacha-cell i { display: block; font-style: normal; font-size: 10px; color: #A89878; margin-top: 2px; }
+.gacha-cell.q-white { border-color: rgba(207,216,220,.5); }
+.gacha-cell.q-green { border-color: rgba(142,240,160,.55); }
+.gacha-cell.q-blue { border-color: rgba(142,207,240,.55); }
+.gacha-cell.q-purple { border-color: rgba(201,160,255,.65); box-shadow: 0 0 10px rgba(201,160,255,.25) inset; }
+.gacha-cell.q-gold { border-color: rgba(255,215,106,.75); box-shadow: 0 0 14px rgba(255,215,106,.3) inset; }
+.gacha-cell.rare .gacha-ray { position: absolute; inset: -40%; background: conic-gradient(from 0deg, transparent 0 12deg, rgba(255,255,255,.16) 14deg 20deg, transparent 22deg 36deg, rgba(255,255,255,.16) 38deg 44deg, transparent 46deg 60deg, rgba(255,255,255,.16) 62deg 68deg, transparent 70deg 84deg, rgba(255,255,255,.16) 86deg 92deg, transparent 94deg 108deg, rgba(255,255,255,.16) 110deg 116deg, transparent 118deg 132deg, rgba(255,255,255,.16) 134deg 140deg, transparent 142deg 156deg, rgba(255,255,255,.16) 158deg 164deg, transparent 166deg 180deg, rgba(255,255,255,.16) 182deg 188deg, transparent 190deg 204deg, rgba(255,255,255,.16) 206deg 212deg, transparent 214deg 228deg, rgba(255,255,255,.16) 230deg 236deg, transparent 238deg 252deg, rgba(255,255,255,.16) 254deg 260deg, transparent 262deg 276deg, rgba(255,255,255,.16) 278deg 284deg, transparent 286deg 300deg, rgba(255,255,255,.16) 302deg 308deg, transparent 310deg 324deg, rgba(255,255,255,.16) 326deg 332deg, transparent 334deg 348deg, rgba(255,255,255,.16) 350deg 356deg, transparent 358deg); animation: rayspin 5s linear infinite; pointer-events: none; }
+@keyframes rayspin { to { transform: rotate(360deg); } }
+.gacha-cell.q-gold .bag-ico { filter: drop-shadow(0 0 6px rgba(255,215,106,.8)); }
 @keyframes popin { from { transform: scale(.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 /* ===== 【2026-09-14】山海录 + 新山图样式 ===== */
@@ -323,7 +364,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .eq-slot { text-align: center; }
 .eq-ico { display: block; height: 52px; max-width: 70%; margin: 0 auto 4px; object-fit: contain; filter: drop-shadow(0 3px 8px rgba(0,0,0,.45)); }
 .bag-cell .bag-ico { display: block; height: 34px; max-width: 80%; margin: 2px auto; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(0,0,0,.4)); }
-.eq-slot { min-height: 118px; }
+.eq-slot { min-height: 72px; }
 
 /* 【2026-09-15c】御剑五诀技能卡 */
 .sword-skills { background: rgba(0,0,0,.28); border: 1px solid rgba(212,184,122,.28); border-radius: 12px; padding: 6px 12px; margin: 8px 0; }
