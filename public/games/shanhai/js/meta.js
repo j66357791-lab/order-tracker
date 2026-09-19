@@ -55,9 +55,13 @@ const META = (() => {
         kills: h.kills || 0,
         level: h.level || 1,
         dmgTaken: Math.round(h.dmgTaken || 0),
+        // 【v24.5】星级按剩余血量：满血 3 星 / ≥60% 2 星 / <60% 1 星
+        hpPct: +Math.max(0, Math.min(1, (h.hp || 0) / (h.maxHp || 1))).toFixed(3),
       });
       profile = Object.assign({}, profile, d.balance ? { xianyu: d.balance.xianyu, lingqi: d.balance.lingqi } : {});
       if (d.stars) stageStars[stage] = d.stars;
+      // 【v24.5】档案里的星级图（跨设备）合并进本地
+      if (d.stageStars) stageStars = Object.assign({}, d.stageStars, stageStars);
       return d;
     } catch (e) { return null; }
   }
