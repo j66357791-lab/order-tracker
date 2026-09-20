@@ -189,6 +189,19 @@ try {
   } catch (e) { console.error('uid补齐失败:', e.message); }
 })();
 
+// —— 【v24.8】山海挂机收益：给"已解锁条件但还没有计时起点"的老玩家从现在开始计时 ——
+// 幂等：只补 idleAt 缺失的档案，重复重启不会重复发奖，也不会补发历史时长
+(async () => {
+  try {
+    const db = await getDb();
+    const mod = await import('./shanhai_game.js');
+    const fn = (mod.default && mod.default.activateIdle) || mod.activateIdle;
+    if (typeof fn !== 'function') return;
+    const r = await fn(db);
+    console.log(`[山海·挂机] 解锁线：通关第 ${r.unlockStage} 关 ｜ 符合条件 ${r.eligible} 人 ｜ 本次激活 ${r.activated} 人 ｜ 已在计时 ${r.already} 人`);
+  } catch (e) { console.error('挂机激活迁移失败:', e.message); }
+})();
+
 // ---- 兜底与启动 ----
 app.use((req, res) => res.status(404).json({ ok: false, error: '接口不存在' }));
 server.listen(CONFIG.port, () => {
