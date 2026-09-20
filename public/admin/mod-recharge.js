@@ -13,6 +13,9 @@ export function mount(root) {
       <div><label class="lab">通道开关</label>
         <select id="rcEnabled"><option value="1">开放充值</option><option value="0">暂停充值</option></select>
       </div>
+      <div><label class="lab">机器识别（OCR）</label>
+        <select id="rcOcr"><option value="1">开启（小额自动到账）</option><option value="0">关闭（全部转人工审核）</option></select>
+      </div>
       <div><label class="lab">自动到账单笔上限（元）</label><input id="rcAutoMax" type="number" min="0" step="1"></div>
       <div><label class="lab">自动到账单日笔数上限</label><input id="rcDailyCount" type="number" min="0" step="1"></div>
       <div><label class="lab">自动到账单日金额上限（元）</label><input id="rcDailyAmount" type="number" min="0" step="1"></div>
@@ -63,13 +66,16 @@ export function mount(root) {
       $('rcAcc').value = CFG.alipayAccount || '';
       $('rcName').value = CFG.alipayName || '';
       $('rcEnabled').value = CFG.enabled ? '1' : '0';
+      $('rcOcr').value = CFG.ocrEnabled === false ? '0' : '1';
       $('rcAutoMax').value = CFG.autoMax; $('rcDailyCount').value = CFG.autoDailyCount;
       $('rcDailyAmount').value = CFG.autoDailyAmount; $('rcMin').value = CFG.minAmount; $('rcMax').value = CFG.maxAmount;
       $('rcTip').value = CFG.tip || '';
       const o = r.ocr || {};
-      $('rcOcrState').innerHTML = o.available === true
-        ? '<span style="color:var(--green2)">OCR 引擎就绪</span>'
-        : (o.available === false ? '<span style="color:#c9a227">OCR 未就绪：' + esc(o.reason || '') + '（充值将全部转人工审核）</span>' : '<span class="sub">OCR 引擎未测试（首次识别时加载）</span>');
+      $('rcOcrState').innerHTML = !o.enabled
+        ? '<span style="color:#c9a227">机器识别已关闭：充值单全部转人工审核</span>'
+        : (o.available === true
+          ? '<span style="color:var(--green2)">OCR 引擎就绪' + (o.circuitOpen ? '（熔断中，本单转人工）' : '') + '</span>'
+          : '<span class="sub">OCR 已开启，首次识别时加载引擎（' + esc(o.reason || '未测试') + '）</span>');
     } catch (e) { toast(e.message); }
   }
   $('rcSave').onclick = async () => {
@@ -77,6 +83,7 @@ export function mount(root) {
       await api('/api/admin/recharge/config', { method: 'POST', body: JSON.stringify({
         alipayAccount: $('rcAcc').value.trim(), alipayName: $('rcName').value.trim(),
         enabled: $('rcEnabled').value === '1',
+        ocrEnabled: $('rcOcr').value === '1',
         autoMax: Number($('rcAutoMax').value), autoDailyCount: Number($('rcDailyCount').value),
         autoDailyAmount: Number($('rcDailyAmount').value), minAmount: Number($('rcMin').value), maxAmount: Number($('rcMax').value),
         tip: $('rcTip').value.trim(),
