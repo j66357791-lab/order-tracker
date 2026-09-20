@@ -16,6 +16,9 @@ export function mount(root) {
       <div><label class="lab">机器识别（OCR）</label>
         <select id="rcOcr"><option value="1">开启（小额自动到账）</option><option value="0">关闭（全部转人工审核）</option></select>
       </div>
+      <div><label class="lab">订单号核验（免 OCR）</label>
+        <select id="rcOrderNo"><option value="1">开启（填订单号即秒到账）</option><option value="0">关闭</option></select>
+      </div>
       <div><label class="lab">自动到账单笔上限（元）</label><input id="rcAutoMax" type="number" min="0" step="1"></div>
       <div><label class="lab">自动到账单日笔数上限</label><input id="rcDailyCount" type="number" min="0" step="1"></div>
       <div><label class="lab">自动到账单日金额上限（元）</label><input id="rcDailyAmount" type="number" min="0" step="1"></div>
@@ -67,6 +70,7 @@ export function mount(root) {
       $('rcName').value = CFG.alipayName || '';
       $('rcEnabled').value = CFG.enabled ? '1' : '0';
       $('rcOcr').value = CFG.ocrEnabled === false ? '0' : '1';
+      $('rcOrderNo').value = CFG.orderNoVerify === false ? '0' : '1';
       $('rcAutoMax').value = CFG.autoMax; $('rcDailyCount').value = CFG.autoDailyCount;
       $('rcDailyAmount').value = CFG.autoDailyAmount; $('rcMin').value = CFG.minAmount; $('rcMax').value = CFG.maxAmount;
       $('rcTip').value = CFG.tip || '';
@@ -84,6 +88,7 @@ export function mount(root) {
         alipayAccount: $('rcAcc').value.trim(), alipayName: $('rcName').value.trim(),
         enabled: $('rcEnabled').value === '1',
         ocrEnabled: $('rcOcr').value === '1',
+        orderNoVerify: $('rcOrderNo').value === '1',
         autoMax: Number($('rcAutoMax').value), autoDailyCount: Number($('rcDailyCount').value),
         autoDailyAmount: Number($('rcDailyAmount').value), minAmount: Number($('rcMin').value), maxAmount: Number($('rcMax').value),
         tip: $('rcTip').value.trim(),
@@ -116,17 +121,19 @@ export function mount(root) {
         <div class="stat"><i>机器自动到账</i><b>${s.autoPaid || 0}</b></div>
         <div class="stat"><i>累计充值金额</i><b>¥${(r.total && r.total.total || 0).toFixed(2)}</b></div>`;
       const rows = r.rows || [];
-      $('rcOrders').innerHTML = rows.length ? `<table><tr><th>单号/时间</th><th>写手</th><th>申报</th><th>机器识别</th><th>截图</th><th>状态</th><th>操作</th></tr>` + rows.map(o => {
+      $('rcOrders').innerHTML = rows.length ? `<table><tr><th>单号/时间</th><th>写手</th><th>申报</th><th>机器识别</th><th>订单号</th><th>截图</th><th>状态</th><th>操作</th></tr>` + rows.map(o => {
         const st = ST[o.status] || [o.status, ''];
         const t = o.createdAt ? cnTime(o.createdAt) : '';
+        const vm = o.verifyMethod === 'ocr' ? '截图识别' : (o.verifyMethod === 'orderNo' ? '订单号' : '');
         return `<tr>
           <td><code>${esc(o.no || '')}</code><div class="sub">${esc(t)}</div></td>
           <td>${esc(o.username || '')}</td>
           <td class="num">¥${(o.amount || 0).toFixed(2)}</td>
           <td class="num">${o.ocrAmount != null ? '¥' + o.ocrAmount.toFixed(2) : '<span class="sub">未识别</span>'}
-            <div class="sub">${o.ocrOk ? '置信 ' + (o.ocrConfidence || 0) + (o.amountMatched ? ' · 一致' : ' · 不一致') : '识别失败'}</div></td>
+            <div class="sub">${o.ocrOk ? '置信 ' + (o.ocrConfidence || 0) + (o.amountMatched ? ' · 一致' : ' · 不一致') : esc((o.reason || '').slice(0, 26))}</div></td>
+          <td><code style="font-size:11px">${o.orderNo ? esc(String(o.orderNo).slice(-10)) : '<span class="sub">未填</span>'}</code></td>
           <td>${o.shotFileId ? `<button class="btn-ghost" style="padding:3px 9px" data-shot="${esc(o.shotFileId)}">查看截图</button>` : '<span class="sub">无</span>'}</td>
-          <td><b class="${st[1]}">${st[0]}</b>${o.reason ? '<div class="sub">' + esc(o.reason) + '</div>' : ''}${o.reviewNote ? '<div class="sub">备注：' + esc(o.reviewNote) + '</div>' : ''}</td>
+          <td><b class="${st[1]}">${st[0]}</b>${vm ? '<div class="sub">核验：' + vm + '</div>' : ''}${o.reason ? '<div class="sub">' + esc(o.reason) + '</div>' : ''}${o.reviewNote ? '<div class="sub">备注：' + esc(o.reviewNote) + '</div>' : ''}</td>
           <td>${(o.status === 'pending' || o.status === 'auto_paid')
             ? `<button class="btn-main" style="padding:4px 10px" data-ok="${esc(String(o._id))}">到账</button>
                <button class="btn-danger" style="padding:4px 10px;margin-top:4px" data-no="${esc(String(o._id))}">驳回</button>`
