@@ -109,6 +109,7 @@
     <div id="panel-dispatch" style="display:none"></div>
     <div id="panel-ads" style="display:none"></div>
     <div id="panel-withdraw" style="display:none"></div>
+    <div id="panel-recharge" style="display:none"></div>
     <div id="panel-overview" style="display:none"></div>
     <div id="panel-recon" style="display:none"></div>
     <div id="panel-game" style="display:none"></div>
@@ -129,6 +130,7 @@ const LAZY = {
   recon:    () => import('/admin/mod-cards.js').then(m => ({ mount: m.mountRecon })),
   ads:      () => import('/admin/mod-ads.js'),
   withdraw: () => import('/admin/mod-withdraw.js'),
+  recharge: () => import('/admin/mod-recharge.js'),
   game:     () => import('/admin/mod-game.js'),
   mall:     () => import('/admin/mod-mall.js'),
   security: () => import('/admin/mod-security.js'),
