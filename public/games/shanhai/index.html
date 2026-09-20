@@ -85,6 +85,7 @@
             <img src="/games/shanhai/assets/star-transparent.png?v=9" alt="">
           </div>
           <div class="stage-sub" id="stageSub">15 波 · 山臊王</div>
+          <div class="stamina-line" id="staminaLine">体力 10/10</div>
         </div>
         <div class="stage-actions">
           <button class="btn-stage-big" id="btnEnterBattle">出 战</button>
@@ -384,6 +385,42 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   };
   function starsOf(n) { return (META.stageStars || {})[n] || (localStorage.getItem("sh_stars_" + n) | 0) || 0; }
   function stageOpen(n) { return n === 1 || starsOf(n - 1) > 0; }
+  // 【v24.9】体力：上限 10，挑战一局 1 点，每 2 小时恢复 1 点（服务端计时）
+  function fmtHMS(sec) {
+    const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = Math.floor(sec % 60);
+    return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  }
+  let staminaLocal = null;   // 本地倒计时用的副本（服务端为准）
+  function renderStamina() {
+    const s = staminaLocal || META.stamina || { cur: 10, cap: 10, nextInSec: 0, atCap: true };
+    const el = document.getElementById("staminaLine");
+    const btn = document.getElementById("btnEnterBattle");
+    const open = stageOpen(curStageIdx + 1);
+    if (el) {
+      el.textContent = "体力 " + s.cur + "/" + s.cap
+        + (s.cur >= s.cap ? " · 已满" : " · 下一恢复 " + fmtHMS(s.nextInSec));
+      el.classList.toggle("low", s.cur <= 0);
+    }
+    if (btn && open) {
+      const noSta = s.cur < 1;
+      btn.disabled = noSta;
+      btn.textContent = noSta ? "体力不足" : "出 战";
+    }
+  }
+  function startStaminaTick() {
+    if (window.__staTick) return;
+    window.__staTick = setInterval(() => {
+      if (!staminaLocal) return;
+      if (staminaLocal.cur < staminaLocal.cap) {
+        staminaLocal.nextInSec = Math.max(0, staminaLocal.nextInSec - 1);
+        if (staminaLocal.nextInSec === 0 && staminaLocal.cur < staminaLocal.cap) {
+          staminaLocal.cur++; staminaLocal.nextInSec = staminaLocal.cur >= staminaLocal.cap ? 0 : 7200;
+          META.staminaInfo().then(s => { staminaLocal = s; }).catch(() => {});
+        }
+        renderStamina();
+      }
+    }, 1000);
+  }
   let curStageIdx = 0;   // 0-based，显示关号 = idx+1
   function renderStage(i) {
     curStageIdx = Math.max(0, Math.min(CHAPTER.total - 1, i));
@@ -403,6 +440,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     $("stageTip").textContent = open
       ? (n === 1 ? "第一关 · 练手局，熟悉走位与三选一" : `首通奖励 ${150 + (n - 1) * 30} ◉ · 重复通关得灵气`)
       : "通关上一关后解锁";
+    renderStamina();   // 【v24.9】体力状态
   }
   function renderHome() {
     const p = META.profile || {};
@@ -437,6 +475,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     document.getElementById("diffHard").onclick = () => toast("困难模式（20 关）即将开放 · 先在普通难度证道吧");
     // 养成
     renderGrow();
+    // 【v24.9】体力：首次进入拉权威值（之后由本地倒计时维护，进战斗/结算时再与服务器同步）
+    if (!staminaLocal) META.staminaInfo().then(s => { staminaLocal = s; renderStamina(); }).catch(() => { renderStamina(); });
+    else renderStamina();
+    startStaminaTick();
   }
   function renderGrow() {
     const p = META.profile || {};
@@ -630,6 +672,71 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     };
   }
 
+  // 【v24.9】统一装备展示页：替换装备 / 升级装备（本版不开发）/ 分解装备
+  // from: 'equipped'（已穿戴，可卸下）| 'bag'（背包里，可替换/分解）
+  function showItemSheet(slot, it, from) {
+    const old = document.getElementById("itemMask");
+    if (old) old.remove();
+    const p = META.profile || {};
+    const meta = AFFIX_DESC[slot] || ["", ""];
+    const cur = Number(it.val) || 0;
+    const onBody = (p.equip || {})[slot];
+    const price = META.dismantlePrice(it);
+    const sameSlotBest = (p.bag || []).filter(b => b.slot === slot && b.id !== it.id).sort((a, b) => (b.val || 0) - (a.val || 0))[0];
+    // 替换/穿戴后的效果对比
+    const afterVal = cur;
+    const beforeVal = onBody && from === "bag" ? (Number(onBody.val) || 0) : null;
+    const cmp = (from === "bag" && beforeVal !== null)
+      ? `<div class="eqd-row"><span>替换对比</span><b>${tierName(onBody)} +${beforeVal}${slot === "weapon" ? "" : "%"} → ${tierName(it)} +${afterVal}${slot === "weapon" ? "" : "%"}</b></div>`
+      : "";
+    const mask = document.createElement("div");
+    mask.id = "itemMask";
+    mask.className = "eq-detail-mask";
+    mask.onclick = () => mask.remove();
+    mask.innerHTML = `<div class="eq-detail" onclick="event.stopPropagation()">
+      <div class="eqd-title" style="color:${it.color || "#e8dcc8"}">${tierName(it)}</div>
+      <div class="eqd-sub">${TIER_CN[tierOf(it)]} · ${it.qualityName || ""} · ${SLOT_NAME[slot]}${from === "equipped" ? " · 穿戴中" : ""}</div>
+      <div class="eqd-row"><span>${it.affix || meta[0]}</span><b style="color:${it.color || "#ffd76a"}">+${cur}${slot === "weapon" ? "" : "%"}</b></div>
+      <div class="eqd-row"><span>对局内生效</span><b>${slot === "weapon" ? "攻击力 " + (5 + cur).toFixed(1) : (meta[0] + " " + cur + "%")}</b></div>
+      ${cmp}
+      ${from === "equipped" && sameSlotBest ? `<div class="eqd-desc" style="color:#8ef0a0">行囊里有更好的：${tierName(sameSlotBest)} +${sameSlotBest.val}${slot === "weapon" ? "" : "%"}</div>` : ""}
+      <div class="eqd-desc">${meta[1]}<br>分解可得 <b>${price} ◉</b> 仙玉（一阶基础价：凡 5 / 良 10 / 上 20 / 仙 50 / 神 100）</div>
+      <div class="eqd-btns three">
+        ${from === "bag"
+          ? `<button class="btn-gacha" id="itemEquip"><i>替换装备</i><b>${onBody ? "换下当前" : "穿戴"}</b></button>`
+          : `<button class="btn-gacha" id="itemUnequip"><i>卸 下</i><b>放回背包</b></button>`}
+        <button class="btn-gacha lock" id="itemUpgrade"><i>升级装备</i><b>本版不开放</b></button>
+        <button class="btn-gacha ten" id="itemBreak"><i>分 解</i><b>+${price} ◉</b></button>
+      </div>
+    </div>`;
+    document.getElementById("app").appendChild(mask);
+    const close = () => mask.remove();
+    const eqBtn = document.getElementById("itemEquip");
+    if (eqBtn) eqBtn.onclick = async () => {
+      eqBtn.disabled = true;
+      try { await META.equip(it.id); await META.load(); renderGrow(); renderHome(); close(); toast("已换上 " + tierName(it)); }
+      catch (e) { eqBtn.disabled = false; toast(e.error || "替换失败"); }
+    };
+    const unBtn = document.getElementById("itemUnequip");
+    if (unBtn) unBtn.onclick = async () => {
+      unBtn.disabled = true;
+      try { await META.unequip(slot); await META.load(); renderGrow(); renderHome(); close(); toast("已卸下，放回背包"); }
+      catch (e) { unBtn.disabled = false; toast(e.error || "卸下失败"); }
+    };
+    document.getElementById("itemUpgrade").onclick = () => toast("装备升级下个版本开放");
+    document.getElementById("itemBreak").onclick = async (ev) => {
+      const b = ev.currentTarget;
+      if (from === "equipped") { toast("穿戴中的装备请先卸下再分解"); return; }
+      if (!confirm("分解「" + tierName(it) + "」可得 " + price + " 仙玉，分解后装备消失，确定吗？")) return;
+      b.disabled = true;
+      try {
+        const r = await META.dismantle(it.id);
+        await META.load(); renderGrow(); renderHome(); close();
+        toast("分解成功 · 仙玉 +" + r.gain);
+      } catch (e) { b.disabled = false; toast(e.error || "分解失败"); }
+    };
+  }
+
   // 装备详情弹窗：查看属性 → 卸下 / 升级（占位）
   function showEquipDetail(slot) {
     const p = META.profile || {};
@@ -699,8 +806,13 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       } else { ico.src = `/games/shanhai/assets/${SLOT_ICON[slot]}.png`; ico.style.display = "block"; ico.style.opacity = ".22"; v.innerHTML = "空 · " + SLOT_NAME[slot]; el.classList.remove("filled"); }
     });
     $("eqPower").textContent = "神力 " + Math.round(power * 10) / 10;
-    // 【v24.5】点装备格 → 弹详情（查看属性 / 卸下 / 升级占位），不再直接卸下
-    document.querySelectorAll(".eq-slot").forEach(el => el.onclick = () => showEquipDetail(el.dataset.slot));
+    // 【v24.9】点装备格 → 统一展示页（卸下 / 升级占位 / 分解）
+    document.querySelectorAll(".eq-slot").forEach(el => el.onclick = () => {
+      const slot = el.dataset.slot;
+      const it = (META.profile.equip || {})[slot];
+      if (!it) { showEquipDetail(slot); return; }   // 空槽：给出寻宝引导
+      showItemSheet(slot, it, "equipped");
+    });
   }
   function renderBag() {
     const p = META.profile || {};
@@ -716,9 +828,11 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <b style="color:${it.color || "#cfd8dc"}">${it.name || ""}</b>
         <em>${it.affix || ""}+${it.val}${it.slot === "weapon" ? "" : "%"}</em>
       </div>`).join("");
-    grid.querySelectorAll(".bag-cell").forEach(c => c.onclick = async () => {
-      try { await META.equip(c.dataset.id); await META.load(); renderGrow(); renderHome(); toast("穿戴成功"); }
-      catch (e) { toast(e.error || "穿戴失败"); }
+    grid.querySelectorAll(".bag-cell").forEach(c => c.onclick = () => {
+      // 【v24.9】背包装备点开也是展示页：替换装备 / 升级（本版不开放）/ 分解
+      const it = (META.profile.bag || []).find(b => b.id === c.dataset.id);
+      if (!it) return;
+      showItemSheet(it.slot, it, "bag");
     });
   }
   function toast(msg) {
@@ -835,7 +949,20 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
 
   /* ============ 战斗 ============ */
   let curStage = 1;
-  function enterBattle(stage) {
+  async function enterBattle(stage) {
+    // 【v24.9】挑战消耗 1 点体力（服务端扣，客户端只做同步与提示）
+    const btn = document.getElementById("btnEnterBattle");
+    btn.disabled = true;
+    try {
+      const d = await META.consumeStamina();
+      staminaLocal = d.stamina;
+      renderStamina();
+    } catch (e) {
+      renderStamina();
+      toast(e.error || "体力不足");
+      if (e.stamina) { staminaLocal = e.stamina; renderStamina(); }
+      return;
+    }
     curStage = stage;
     showScreen("scrBattle");
     window.dispatchEvent(new Event("resize"));
@@ -845,7 +972,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     Game.state !== undefined && (Game.pause());
     $("overlay").style.display = "none";
     showScreen("scrHome");
-    META.load().then(renderHome);
+    META.load().then(d => { staminaLocal = META.stamina; renderHome(); });
   }
   $("btnQuitBattle").onclick = backHome;
 
