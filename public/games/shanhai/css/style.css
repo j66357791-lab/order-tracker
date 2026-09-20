@@ -334,8 +334,23 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .diff-btn:not(.on):hover { color: #E8DCC8; border-color: rgba(212,184,122,.6); }
 
 /* ================= 【v24.6】挂机收益入口与面板 ================= */
-#idleEntry { position: absolute; right: 14px; bottom: 96px; width: 74px; text-align: center; cursor: pointer; z-index: 5; }
+#idleEntry { position: absolute; right: 12px; bottom: 104px; width: 78px; text-align: center; cursor: pointer; z-index: 5; }
+#craftEntry { position: absolute; right: 12px; bottom: 186px; width: 78px; text-align: center; cursor: pointer; z-index: 5; }
+.craft-icon { width: 56px; height: 56px; display: block; margin: 0 auto; filter: drop-shadow(0 4px 10px rgba(0,0,0,.5)); }
 #tabFight { position: relative; }
+.idle-dot { position: absolute; top: 2px; right: 16px; width: 9px; height: 9px; border-radius: 50%; background: #ff5a4a; box-shadow: 0 0 8px rgba(255,90,74,.9); animation: dotPulse 1.6s ease-in-out infinite; }
+@keyframes dotPulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: .75; } }
+.idle-spark { animation: sparkTwinkle 2.2s ease-in-out infinite; }
+.idle-spark.s2 { animation-delay: .7s; }
+.idle-spark.s3 { animation-delay: 1.3s; }
+.idle-rays { animation: raysPulse 2.6s ease-in-out infinite; }
+@keyframes sparkTwinkle { 0%,100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
+@keyframes raysPulse { 0%,100% { opacity: .35; } 50% { opacity: .7; } }
+.craft-wrap { margin: 8px 2px 10px; }
+.craft-bar { height: 10px; border-radius: 99px; background: rgba(0,0,0,.16); overflow: hidden; border: 1px solid rgba(212,184,122,.5); }
+.craft-bar i { display: block; height: 100%; background: linear-gradient(90deg, #f7b733, #ffe08a); transition: width .4s; }
+.craft-num { text-align: center; margin-top: 6px; font: 800 14px "PingFang SC", sans-serif; color: #6b5a33; }
+.craft-num span { font-weight: 500; font-size: 11px; color: #8a7d63; }
 /* 【v24.6】玄机宝阁九阶页签 */
 .tier-strip { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 8px; }
 .tier-chip { flex: 0 0 auto; font: 700 12px "PingFang SC", sans-serif; letter-spacing: 1px; color: #A89878; background: rgba(0,0,0,.30); border: 1px solid rgba(212,184,122,.32); border-radius: 9px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
