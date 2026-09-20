@@ -115,13 +115,46 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
   // 产出：① 仙玉 0.1/分钟 + 0.05/分钟×已通关最高关  ② 钥匙 0.0001/分钟 + 0.0001/分钟×已通关最高关
   // 钥匙为小数进度累积，凑齐整把后在「道具合成」里兑换才进翻翻乐背包（避免小数道具流进翻翻乐）
   const IDLE_CFG = {
-    unlockStage: 5,      // 通关第 5 关解锁
+    unlockStage: 2,      // 【v24.8】解锁线下调到第 2 关（原来第 5 关）——第 1 关练手，第 2 关起即可挂机
     maxHours: 8,         // 累计上限 8 小时
     xianyuBase: 0.1,
     xianyuPerStage: 0.05,
     keyBase: 0.0001,
     keyPerStage: 0.0001,
   };
+
+  // 【v24.8】符合挂机条件的档案（已通关 ≥ unlockStage 关）
+  function eligibleIdleQuery(unlockStage = IDLE_CFG.unlockStage) {
+    return { clearedStages: { $elemMatch: { $gte: unlockStage } } };
+  }
+  // 老玩家一次性激活：只给「还没有计时起点」的档案把起点设为现在（幂等，重复跑不会重复发奖，
+  // 也不会给任何人补发历史时长——一切从激活这一刻开始计时）
+  async function activateIdle(db, opt = {}) {
+    const col = db.collection('shanhai_profiles');
+    const stage = opt.unlockStage || IDLE_CFG.unlockStage;
+    const eligible = await col.find(eligibleIdleQuery(stage), { projection: { userId: 1, username: 1, clearedStages: 1, idleAt: 1 } }).toArray();
+    const pending = eligible.filter(p => !p.idleAt);
+    if (pending.length) {
+      await col.updateMany(
+        { _id: { $in: pending.map(p => p._id) }, $or: [{ idleAt: null }, { idleAt: { $exists: false } }] },
+        { $set: { idleAt: new Date(), idleActivatedAt: new Date(), updatedAt: new Date() } }
+      );
+    }
+    return {
+      unlockStage: stage,
+      eligible: eligible.length,
+      activated: pending.length,
+      already: eligible.length - pending.length,
+      list: eligible.map(p => ({
+        userId: String(p.userId || ''),
+        username: p.username || '',
+        top: Array.isArray(p.clearedStages) && p.clearedStages.length ? Math.max(...p.clearedStages) : 0,
+        active: !!p.idleAt,
+      })).sort((a, b) => b.top - a.top),
+    };
+  }
+  mountShanhaiGame.activateIdle = activateIdle;   // 供 server.js 启动时调用
+
   const clearedTop = p => (p && Array.isArray(p.clearedStages) && p.clearedStages.length) ? Math.max(...p.clearedStages) : 0;
   function idleCalc(p, nowMs) {
     const top = clearedTop(p);
@@ -439,8 +472,38 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         players,
         totals: agg[0] || { plays: 0, wins: 0, totalKills: 0, xianyu: 0, lingqi: 0 },
         top,
+        // 【v24.8】挂机符合条件/已激活人数
+        idle: {
+          unlockStage: IDLE_CFG.unlockStage,
+          eligible: await db.collection('shanhai_profiles').countDocuments(eligibleIdleQuery()),
+          activated: await db.collection('shanhai_profiles').countDocuments({ ...eligibleIdleQuery(), idleAt: { $ne: null } }),
+        },
       });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+  });
+
+  // 【v24.8】挂机激活：查看符合条件的玩家名单
+  app.get('/api/shanhai/admin/idle-eligible', auth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ ok: false, error: '需要管理员权限' });
+    try {
+      const db = await getDb();
+      const r = await activateIdle(db, { unlockStage: IDLE_CFG.unlockStage });
+      // 注意：activateIdle 会顺手激活未激活的档案（首次查看即完成激活）
+      res.json({ ok: true, ...r });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  // 【v24.8】挂机激活：手动对符合条件的老玩家激活计时（幂等，可从"现在"开始重新计时）
+  app.post('/api/shanhai/admin/idle-activate', auth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ ok: false, error: '需要管理员权限' });
+    try {
+      const db = await getDb();
+      const reset = req.body && req.body.reset === true;   // reset=true 时把所有人的起点设为现在
+      if (reset) await db.collection('shanhai_profiles').updateMany(eligibleIdleQuery(), { $set: { idleAt: new Date(), idleActivatedAt: new Date() } });
+      const r = await activateIdle(db, { unlockStage: IDLE_CFG.unlockStage });
+      await db.collection('shanhai_logs').insertOne({ action: 'idle_activate', detail: { reset, eligible: r.eligible, activated: r.activated }, createdAt: new Date() }).catch(() => {});
+      res.json({ ok: true, ...r });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 索引 ====================
