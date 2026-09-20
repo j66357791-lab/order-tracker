@@ -683,6 +683,8 @@
         <h3>1️⃣ 填写金额并上传转账截图</h3>
         <div class="rc-amounts" id="rcAmounts"></div>
         <input id="rcAmount" type="number" min="1" step="0.01" placeholder="充值金额（元）" style="margin-top:8px">
+        <input id="rcOrderNo" inputmode="numeric" maxlength="40" placeholder="转账订单号（截图中那串数字，填了可秒到账）" style="margin-top:8px">
+        <div class="flow-tip" style="margin-top:8px">订单号在支付宝「账单详情 / 转账成功」页里，长这样：<b>2026092020004001110074…</b>（一串 20~40 位数字）。填上且未重复使用，小额即可秒到账。</div>
         <label class="rc-upload tap" id="rcUploadBox" for="rcFile">
           <div class="rc-up-ico" id="rcUpIco">＋</div>
           <div class="rc-up-txt" id="rcUpTxt">点击选择支付宝转账截图<br><span>需包含：收款人、金额（PNG / JPG，≤6MB）</span></div>
@@ -697,6 +699,7 @@
       <div class="card">
         <h3>2️⃣ 充值规则</h3>
         <div class="kv"><span class="k">自动到账</span><span class="v" id="rcAutoRule">单笔 &lt; ¥1000 且截图识别金额一致 → 秒到账</span></div>
+        <div class="kv"><span class="k">订单号核验</span><span class="v">填了截图里的转账订单号 → 小额同样秒到账</span></div>
         <div class="kv"><span class="k">人工审核</span><span class="v">≥ ¥1000 或识别有疑问 → 管理员二审后到账</span></div>
         <div class="kv"><span class="k">到账方式</span><span class="v">直接进钱包余额，可用于提现</span></div>
         <div class="kv"><span class="k">安全说明</span><span class="v">截图仅存站内，全程留档可查流水</span></div>
@@ -1919,6 +1922,7 @@ async function rcSubmit() {
     const fd = new FormData();
     fd.append('file', RC_FILE);
     fd.append('amount', String(amt));
+    fd.append('orderNo', ($('rcOrderNo').value || '').replace(/[^0-9]/g, ''));
     const r = await fetch('/api/recharge', { method: 'POST', headers: { Authorization: 'Bearer ' + (localStorage.getItem('jdy_token') || '') }, body: fd });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || '提交失败');
@@ -1929,7 +1933,7 @@ async function rcSubmit() {
         单号：${j.no}<br>申报金额：¥${fmt(j.amount)}${j.ocrAmount != null ? '　识别金额：¥' + fmt(j.ocrAmount) : ''}<br>
         ${ok ? '钱包余额：¥' + fmt(j.balance) : esc(j.reason || '')}
       </div></div>`;
-    RC_FILE = null; $('rcPreview').hidden = true; $('rcPreview').src = ''; $('rcUpIco').style.display = ''; $('rcUpTxt').innerHTML = '点击选择支付宝转账截图<br><span>需包含：收款人、金额（PNG / JPG，≤6MB）</span>'; $('rcUploadBox').classList.remove('has');
+    RC_FILE = null; $('rcPreview').hidden = true; $('rcPreview').src = ''; $('rcUpIco').style.display = ''; $('rcUpTxt').innerHTML = '点击选择支付宝转账截图<br><span>需包含：收款人、金额（PNG / JPG，≤6MB）</span>'; $('rcUploadBox').classList.remove('has'); $('rcOrderNo').value = '';
     loadRecharge();
   } catch (e) {
     $('rcResult').innerHTML = '<div class="rc-result bad">' + esc(e.message) + '</div>';
