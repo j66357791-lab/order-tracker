@@ -88,6 +88,8 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       stageStars: {},   // 【v24.5】每关最高星级（跨设备保留，前端解锁与展示都用它）
       idleAt: new Date(),        // 【v24.7】挂机计时起点（服务端时间，不信客户端）
       idleKeyProgress: 0,        // 【v24.7】挂机累计的钥匙进度（小数；凑整后在道具合成里兑换）
+      stamina: STAMINA_CFG.init, // 【v24.9】体力（上限 10）
+      staminaAt: new Date(),     // 【v24.9】体力上次结算时间（每 2 小时 +1）
     };
     await db.collection('shanhai_profiles').updateOne(
       { userId }, { $setOnInsert: doc }, { upsert: true });
@@ -107,8 +109,61 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
           { $set: { swordInit: true, 'equip.weapon': p.equip && p.equip.weapon ? p.equip.weapon : { id: 'eq_sword_starter', slot: 'weapon', tier: 1, quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 } } });
         p = await db.collection('shanhai_profiles').findOne({ userId: req.user.id });
       }
-      res.json({ ok: true, profile: p });
+      res.json({ ok: true, profile: p, stamina: staminaCalc(p, Date.now()) });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+  });
+
+  // ==================== 体力：查询 / 挑战扣 1（v24.9） ====================
+  app.get('/api/shanhai/stamina', auth, async (req, res) => {
+    try {
+      const db = await getDb();
+      const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      const s = staminaCalc(p, Date.now());
+      // 顺手把恢复量落库（幂等：只写"应该有的值"）
+      if (s.cur !== p.stamina) await db.collection('shanhai_profiles').updateOne({ userId: req.user.id }, { $set: staminaSet(s.cur, Date.now()) });
+      res.json({ ok: true, stamina: s });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  // 挑战一局扣 1 点：前端点"出战"时调用，成功才进战斗（体力不足则前端引导等待恢复）
+  app.post('/api/shanhai/stamina/consume', auth, limit({ name: 'shanhai-stamina', max: 20, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      const now = Date.now();
+      const s = staminaCalc(p, now);
+      if (s.cur < STAMINA_CFG.cost) return res.status(400).json({ ok: false, error: '体力不足（每 2 小时恢复 1 点）', stamina: s, code: 'NO_STAMINA' });
+      const left = s.cur - STAMINA_CFG.cost;
+      // 注意：把"已恢复的量"和"本次消耗"一起落库，起点重置为现在
+      await db.collection('shanhai_profiles').updateOne({ userId: req.user.id }, { $set: staminaSet(left, now) });
+      const ns = staminaCalc({ stamina: left, staminaAt: new Date(now) }, now);
+      res.json({ ok: true, stamina: ns });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  // ==================== 装备分解（v24.9） ====================
+  // 只能分解背包里的装备（已穿戴的必须先卸下），收益 = 品质基础值（一阶 5/10/20/50/100 仙玉）
+  app.post('/api/shanhai/dismantle', auth, limit({ name: 'shanhai-dismantle', max: 30, windowMs: 60 * 1000, msg: '分解太频繁，稍等片刻' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const { itemId } = req.body || {};
+      if (!itemId) return res.status(400).json({ ok: false, error: '缺少装备参数' });
+      const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      const eq = p.equip || {};
+      if (Object.keys(eq).some(k => eq[k] && eq[k].id === itemId)) return res.status(400).json({ ok: false, error: '该装备正穿戴中，请先卸下再分解' });
+      const it = (p.bag || []).find(b => b.id === itemId);
+      if (!it) return res.status(404).json({ ok: false, error: '背包里没找到这件装备' });
+      const gain = dismantlePrice(it);
+      const out = await db.collection('shanhai_profiles').findOneAndUpdate(
+        { userId: req.user.id, 'bag.id': itemId },
+        { $pull: { bag: { id: itemId } }, $inc: { xianyu: gain }, $set: { updatedAt: new Date() } },
+        { returnDocument: 'after' }
+      );
+      const np = out && (out.value || out);
+      if (!np) return res.status(409).json({ ok: false, error: '操作冲突，请刷新后重试' });
+      await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'dismantle', detail: { itemId, name: it.name, quality: it.quality, tier: it.tier || 1, gain }, createdAt: new Date() }).catch(() => {});
+      res.json({ ok: true, gain, balance: { xianyu: np.xianyu, lingqi: np.lingqi } });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 挂机收益配置（v24.7 按定稿口径） ====================
@@ -176,6 +231,32 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       keyProgress,
       claimableKeys: Math.floor(keyProgress),
     };
+  }
+
+  // ==================== 体力（v24.9） ====================
+  // 上限 10 点，挑战一局消耗 1 点，每 2 小时恢复 1 点（服务端计时，客户端改不了）
+  const STAMINA_CFG = { cap: 10, cost: 1, recoverSec: 7200, init: 10 };
+  function staminaCalc(p, nowMs) {
+    const last = p && p.staminaAt ? new Date(p.staminaAt).getTime() : nowMs;
+    const cur0 = (p && typeof p.stamina === 'number') ? p.stamina : STAMINA_CFG.init;
+    const elapsed = Math.max(0, Math.floor((nowMs - last) / 1000));
+    const regen = Math.floor(elapsed / STAMINA_CFG.recoverSec);
+    const cur = Math.min(STAMINA_CFG.cap, cur0 + regen);
+    // 下一恢复时间：满体力则不倒计时；否则 = 距上次结算的余数时间
+    const usedSec = regen * STAMINA_CFG.recoverSec;
+    const nextInSec = cur >= STAMINA_CFG.cap ? 0 : Math.max(0, STAMINA_CFG.recoverSec - (elapsed - usedSec));
+    return { cur, cap: STAMINA_CFG.cap, cost: STAMINA_CFG.cost, nextInSec, atCap: cur >= STAMINA_CFG.cap };
+  }
+  const staminaSet = (cur, nowMs, extra = {}) => Object.assign({ stamina: cur, staminaAt: new Date(nowMs), updatedAt: new Date() }, extra);
+
+  // ==================== 装备分解（v24.9） ====================
+  // 一阶装备基础分解价：凡 5 / 良 10 / 上 20 / 仙 50 / 神 100 仙玉
+  // 高阶预留倍率（tier 每 +1 增加 50%），当前产出一阶，即基础值
+  const DISMANTLE_BASE = { white: 5, green: 10, blue: 20, purple: 50, gold: 100 };
+  function dismantlePrice(it) {
+    const base = DISMANTLE_BASE[it && it.quality] || 5;
+    const tier = Math.max(1, Math.min(9, (it && it.tier) | 0 || 1));
+    return Math.round(base * (1 + 0.5 * (tier - 1)));
   }
 
   // ==================== 战绩上报（含养成奖励结算） ====================
