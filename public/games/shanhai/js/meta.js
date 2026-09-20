@@ -69,7 +69,11 @@ const META = (() => {
   async function draw() { return shApi("/api/shanhai/draw", {}); }
   async function equip(itemId) { return shApi("/api/shanhai/equip", { itemId }); }
   async function unequip(slot) { return shApi("/api/shanhai/unequip", { slot }); }
+  // 【v24.7】挂机收益：预览 / 领取 / 凑齐整把钥匙兑换进翻翻乐
+  async function idleInfo() { return shApi("/api/shanhai/idle"); }
+  async function idleClaim() { return shApi("/api/shanhai/idle/claim", {}); }
+  async function idleCraft() { return shApi("/api/shanhai/idle/craft", {}); }
 
-  return { load, report, upgradeSkill, draw, equip, unequip, bonus, get profile() { return profile; }, set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
+  return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, bonus, get profile() { return profile; }, set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
 })();
 window.META = META;
