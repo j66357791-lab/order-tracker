@@ -62,6 +62,7 @@ export const NAV_ITEMS = [
   { key: 'dispatch', icon: '🎧', title: '派单聊天',   type: 'frame', href: '/dispatch.html?embed=1', desc: '与写手沟通 / 发派单卡' },
   { key: 'overview', icon: '📋', title: '派单总览',   type: 'panel', desc: '全部派单卡进度与审核' },
   { key: 'withdraw', icon: '💳', title: '提现审批',   type: 'panel', desc: '写手提现申请处理' },
+  { key: 'recharge', icon: '📥', title: '充值管理',   type: 'panel', desc: '收款账号配置 / 截图充值审核' },
   { key: 'recon',    icon: '💰', title: '财务对账',   type: 'panel', desc: '台账 × 派单卡交叉核对' },
   { key: 'game',     icon: '🎮', title: '游戏控制器', type: 'panel', desc: '翻翻乐配置 / 山海数据 / 道具 / 审计' },
   { key: 'mall',     icon: '🛍', title: '用户端配置', type: 'panel', desc: '套餐 / 文案馆作品 / 咨询' },
