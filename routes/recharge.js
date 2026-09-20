@@ -27,6 +27,7 @@ export default function mountRecharge(app, ctx) {
     autoMax: 1000,              // 单笔 < 此金额且识别一致 → 机器自动到账
     autoDailyCount: 3,          // 单日自动到账笔数上限（超出转人工）
     autoDailyAmount: 2000,      // 单日自动到账金额上限
+    ocrEnabled: true,           // 【v25.3】OCR 自动识别开关（后台可随时关；关了即全部转人工）
     minAmount: 1,               // 单笔最低充值
     maxAmount: 50000,           // 单笔最高充值（防误填）
     tip: '转账时请务必备注你的写手昵称，便于核对；截图需包含金额与收款人。',
@@ -63,7 +64,7 @@ export default function mountRecharge(app, ctx) {
         qrFileId: c.qrFileId || '',
         autoMax: c.autoMax, minAmount: c.minAmount, maxAmount: c.maxAmount,
         tip: c.tip,
-        ocr: ocrStatus(),
+        ocr: ocrStatus(c.ocrEnabled !== false),
       });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
@@ -118,7 +119,7 @@ export default function mountRecharge(app, ctx) {
         const shotFileId = String(up.id);
 
         // —— 机器核验：OCR 识别金额 ——
-        const ocr = await recognize(req.file.buffer, 20000);
+        const ocr = await recognize(req.file.buffer, 25000, cfg.ocrEnabled !== false);
         const picked = ocr.ok ? pickAmount(ocr.text, declared) : { amount: null, list: [] };
         const ocrAmount = picked.amount;
         const amountMatched = ocrAmount != null && Math.abs(ocrAmount - declared) < 0.011;
@@ -207,7 +208,7 @@ export default function mountRecharge(app, ctx) {
     if (!isAdmin(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
     try {
       const db = await getDb();
-      res.json({ ok: true, config: await getCfg(db), ocr: ocrStatus() });
+      res.json({ ok: true, config: await getCfg(db), ocr: ocrStatus((await getCfg(db)).ocrEnabled !== false) });
     } catch (e) { res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
@@ -218,7 +219,7 @@ export default function mountRecharge(app, ctx) {
       const cur = await getCfg(db);
       const b = req.body || {};
       const next = Object.assign({}, cur);
-      for (const k of ['enabled']) if (b[k] !== undefined) next[k] = !!b[k];
+      for (const k of ['enabled', 'ocrEnabled']) if (b[k] !== undefined) next[k] = !!b[k];
       for (const k of ['alipayAccount', 'alipayName', 'qrFileId', 'tip']) if (b[k] !== undefined) next[k] = String(b[k]).trim();
       for (const k of ['autoMax', 'autoDailyCount', 'autoDailyAmount', 'minAmount', 'maxAmount']) {
         if (b[k] !== undefined) { const v = Number(b[k]); if (Number.isFinite(v) && v >= 0) next[k] = v; }
@@ -265,7 +266,7 @@ export default function mountRecharge(app, ctx) {
         { $match: { status: { $in: ['auto_paid', 'paid'] } } },
         { $group: { _id: null, total: { $sum: '$amount' }, n: { $sum: 1 } } },
       ]).toArray();
-      res.json({ ok: true, rows, stats, total: sum[0] || { total: 0, n: 0 }, ocr: ocrStatus() });
+      res.json({ ok: true, rows, stats, total: sum[0] || { total: 0, n: 0 }, ocr: ocrStatus((await getCfg(db)).ocrEnabled !== false) });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
