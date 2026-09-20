@@ -333,6 +333,16 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .diff-btn.on { color: #3a1c02; background: linear-gradient(180deg, #ffe08a, #f7b733); border-color: #f7b733; box-shadow: 0 2px 8px rgba(247,183,51,.35); }
 .diff-btn:not(.on):hover { color: #E8DCC8; border-color: rgba(212,184,122,.6); }
 
+/* ================= 【v24.9】体力 & 装备展示页 ================= */
+.stamina-line { margin-top: 6px; text-align: center; font: 700 12.5px/1.5 "PingFang SC", sans-serif; color: #7fe89a; letter-spacing: 1px; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+.stamina-line.low { color: #ff8a70; }
+.eqd-btns.three { flex-wrap: wrap; }
+.eqd-btns.three .btn-gacha { flex: 1 1 46%; min-width: 96px; }
+.eqd-btns.three .btn-gacha i { font-size: 13px; }
+.eqd-btns.three .btn-gacha b { font-size: 10.5px; }
+.eqd-btns.three .btn-gacha:disabled, .eqd-btns .btn-gacha.lock { filter: grayscale(.55) brightness(.85); }
+.eqd-btns .btn-gacha.lock { background: linear-gradient(180deg, #4a4a46, #33332f); border-color: #6b6b63; }
+
 /* ================= 【v24.6】挂机收益入口与面板 ================= */
 #idleEntry { position: absolute; right: 12px; bottom: 104px; width: 78px; text-align: center; cursor: pointer; z-index: 5; }
 #craftEntry { position: absolute; right: 12px; bottom: 186px; width: 78px; text-align: center; cursor: pointer; z-index: 5; }
