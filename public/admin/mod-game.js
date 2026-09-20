@@ -148,6 +148,16 @@ export function mount(root) {
       <div class="inline" style="margin-top:10px"><button class="btn-ghost" id="gmDbReload">重新统计</button></div>
     </div>
     <div class="card">
+      <h2 class="serif">挂机收益 · 老玩家激活</h2>
+      <div class="sub">解锁线：通关第 <b>2</b> 关 ｜ 符合条件 <b id="gmIdleEligible">-</b> 人 · 已激活计时 <b id="gmIdleActive">-</b> 人
+        　<span class="muted">（"激活"= 把挂机计时起点设为现在，从这一刻开始累计，不补发历史时长）</span></div>
+      <div id="gmIdleList" style="margin-top:10px"><div class="empty">加载中…</div></div>
+      <div class="inline" style="margin-top:12px">
+        <button class="btn-ghost" id="gmIdleCheck">刷新名单（并自动激活未激活的）</button>
+        <button class="btn-main" id="gmIdleReset">全员重新计时（起点=现在）</button>
+      </div>
+    </div>
+    <div class="card">
       <h2 class="serif">可清理项（开发阶段清历史数据）</h2>
       <div class="sub">只显示数量，点"清理"会二次确认后删除指定天数之前的数据；活跃数据不受影响。</div>
       <div id="gmDbClean" style="margin-top:10px"><div class="empty">加载中…</div></div>
@@ -179,6 +189,8 @@ export function mount(root) {
   root.querySelectorAll('#gmNav button').forEach(b => { b.onclick = () => {
     root.querySelectorAll('#gmNav button').forEach(x => x.classList.toggle('on', x === b));
     for (const z of ['ff', 'sh', 'data']) $('gmZone-' + z).style.display = z === b.dataset.z ? '' : 'none';
+    // 【v24.8】进"数据与日志"时刷新挂机激活名单
+    if (b.dataset.z === 'data' && typeof loadIdle === 'function') loadIdle();
   }; });
   root.querySelectorAll('#gmFFNav button').forEach(b => { b.onclick = () => {
     root.querySelectorAll('#gmFFNav button').forEach(x => x.classList.toggle('on', x === b));
@@ -594,6 +606,35 @@ export function mount(root) {
   }
   const fmtB = n => n == null ? '-' : (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B');
   $('gmDbReload').onclick = loadDb;
+
+  // ==================== 【v24.8】挂机老玩家激活 ====================
+  function renderIdleList(r) {
+    $('gmIdleEligible').textContent = r.eligible;
+    $('gmIdleActive').textContent = r.eligible - (r.list || []).filter(x => !x.active).length;
+    const list = r.list || [];
+    $('gmIdleList').innerHTML = list.length
+      ? '<table><tr><th>玩家</th><th>已通关</th><th>挂机状态</th></tr>' + list.slice(0, 30).map(x =>
+        `<tr><td>${esc(x.username || x.userId.slice(-6))}</td><td class="num">第 ${x.top} 关</td>
+         <td>${x.active ? '<span style="color:var(--green2)">已激活 · 计时中</span>' : '<span style="color:#c9a227">未激活</span>'}</td></tr>`).join('') + '</table>'
+        + (list.length > 30 ? `<div class="sub" style="margin-top:6px">仅显示前 30 位，共 ${list.length} 位</div>` : '')
+      : '<div class="empty">还没有符合条件的玩家（通关第 ' + r.unlockStage + ' 关即可）</div>';
+  }
+  async function loadIdle() {
+    try {
+      const r = await api('/api/shanhai/admin/idle-eligible');
+      renderIdleList(r);
+      if (r.activated > 0) toast('已激活 ' + r.activated + ' 位玩家的挂机计时');
+    } catch (e) { $('gmIdleList').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+  }
+  $('gmIdleCheck').onclick = loadIdle;
+  $('gmIdleReset').onclick = async () => {
+    if (!confirm('把所有符合条件玩家的挂机计时起点设为"现在"？\n\n用于活动开始/回档后重新计时，不会补发历史时长。')) return;
+    try {
+      const r = await api('/api/shanhai/admin/idle-activate', { method: 'POST', body: JSON.stringify({ reset: true }) });
+      renderIdleList(r);
+      toast('已对 ' + r.eligible + ' 位玩家重新计时');
+    } catch (e) { toast(e.message); }
+  };
   $('gmDbClean').addEventListener('click', async e => {
     const btn = e.target.closest('[data-clean]');
     if (!btn) return;
@@ -611,6 +652,6 @@ export function mount(root) {
   $('gmFind').onclick = findUser;
   $('gmGrant').onclick = grant;
 
-  loadStats(); loadShanhai(); loadCfg(); loadDb();
-  return { refresh: () => { loadStats(); loadShanhai(); loadCfg(); loadDb(); } };
+  loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle();
+  return { refresh: () => { loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle(); } };
 }
