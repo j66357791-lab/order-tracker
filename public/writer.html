@@ -73,6 +73,38 @@
   .st-已驳回{background:var(--red-bg);color:var(--red)}
   .empty{text-align:center;color:var(--sub);font-size:13px;padding:36px 0}
   .flow-tip{font-size:11px;color:var(--sub);background:var(--grey-bg);border-radius:8px;padding:8px 10px;line-height:1.6;margin-bottom:12px}
+  /* ===== 【v25.0】钱包页重做 + 充值 ===== */
+  .wb-top{text-align:center;padding:8px 0 14px;border-bottom:1px dashed var(--line)}
+  .wb-label{font-size:12px;color:var(--sub)}
+  .wb-amt{font-size:32px;font-weight:800;color:var(--amber);letter-spacing:.5px;margin:4px 0 2px}
+  .wb-sub{font-size:11px;color:var(--sub)}
+  .wb-grid{display:flex;gap:8px;margin:12px 0}
+  .wb-item{flex:1;background:var(--bg);border-radius:10px;padding:9px 10px;text-align:center}
+  .wb-item span{display:block;font-size:11px;color:var(--sub);margin-bottom:3px}
+  .wb-item b{font-size:15px}
+  .wb-item b.warn{color:var(--amber)}
+  .wb-actions{display:flex;gap:9px}
+  .wb-actions .btn{flex:1}
+  .wb-sec-t{font-size:12px;color:var(--sub);margin:10px 0 4px}
+  .tag-new{font-size:10px;background:#16a34a;color:#fff;border-radius:6px;padding:1px 5px;vertical-align:middle;margin-left:4px}
+  .kv .v b.ok{color:#16a34a}
+  .kv .v b.warn{color:var(--amber)}
+  .kv .v b.bad{color:#e11d48}
+  .rc-amounts{display:flex;gap:7px;flex-wrap:wrap}
+  .rc-chip{font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);cursor:pointer}
+  .rc-chip:active{background:#e5e7eb}
+  .rc-upload{display:block;margin-top:10px;border:1.5px dashed var(--line);border-radius:12px;padding:16px;text-align:center;cursor:pointer;background:var(--bg)}
+  .rc-upload.has{border-style:solid;border-color:#16a34a}
+  .rc-up-ico{font-size:26px;color:var(--sub);line-height:1}
+  .rc-up-txt{font-size:12px;color:var(--body);margin-top:6px;line-height:1.6}
+  .rc-up-txt span{color:var(--sub);font-size:11px}
+  .rc-upload img{max-width:100%;max-height:220px;border-radius:10px;display:block;margin:0 auto}
+  .rc-qr{width:190px;height:190px;object-fit:contain;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:zoom-in}
+  .rc-result{border-radius:10px;padding:11px 12px;font-size:13px;line-height:1.6}
+  .rc-result.ok{background:#dcfce7;color:#14532d;border:1px solid #86efac}
+  .rc-result.warn{background:#fef3c7;color:#78350f;border:1px solid #fde68a}
+  .rc-result.bad{background:#ffe4e6;color:#881337;border:1px solid #fda4af}
+  .rc-pay .kv:last-child{border-bottom:none}
   .flow-tip b{color:var(--green-dk)}
 
   /* ===== 统计 ===== */
@@ -601,7 +633,19 @@
       <div class="card" id="lvBox"><div class="empty">加载中…</div></div>
     </div>
     <div class="sp-sec" id="subWallet" hidden>
+      <!-- 【v25.0】钱包页重做：余额总览 + 快捷操作（充值/提现）+ 账单 + 充值记录 + 收款方式 -->
       <div class="card" id="walletBox"><div class="empty">加载中…</div></div>
+
+      <div class="card" id="rcEntryCard">
+        <h3>📥 充值 <span class="tag-new">新</span></h3>
+        <div class="flow-tip">支付宝转账给官方账号 → 上传转账截图 → <b>系统自动识别金额</b>：小额秒到账，大额转人工审核（更安全）。</div>
+        <div class="inline" style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-g btn-sm" id="btnOpenRecharge" style="flex:1">去充值</button>
+          <button class="btn btn-ghost btn-sm" id="btnRcRefresh" style="flex:0 0 auto">刷新记录</button>
+        </div>
+        <div id="rcList" style="margin-top:10px"></div>
+      </div>
+
       <div class="card">
         <h3>🏧 提现</h3>
         <div class="wd-card tap" id="wdBonus" onclick="applyWithdraw('bonus')">
@@ -615,6 +659,7 @@
         <div class="flow-tip">点卡片提交提现申请，管理员线下打款到你的收款方式；提现记录见下方。</div>
         <div id="wdList" style="margin-top:10px"></div>
       </div>
+
       <div class="card">
         <h3>🏦 绑定收款方式（支付宝）</h3>
         <div class="flow-tip">提现和打款都会用到，请确保<b>姓名与账号一致</b>，保存后立即生效。</div>
@@ -623,6 +668,38 @@
           <input id="aliAccount" placeholder="支付宝账号（手机号或邮箱）" maxlength="60">
         </div>
         <div style="text-align:right;margin-top:10px"><button class="btn btn-g btn-sm" id="btnAli">保存收款方式</button></div>
+      </div>
+    </div>
+
+    <!-- 【v25.0】充值页（二级页内的独立子视图） -->
+    <div class="sp-sec" id="subRecharge" hidden>
+      <div class="card">
+        <h3>📥 充值 · 支付宝转账</h3>
+        <div class="flow-tip" id="rcTip">加载收款信息中…</div>
+        <div id="rcPayInfo" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h3>1️⃣ 填写金额并上传转账截图</h3>
+        <div class="rc-amounts" id="rcAmounts"></div>
+        <input id="rcAmount" type="number" min="1" step="0.01" placeholder="充值金额（元）" style="margin-top:8px">
+        <label class="rc-upload tap" id="rcUploadBox" for="rcFile">
+          <div class="rc-up-ico" id="rcUpIco">＋</div>
+          <div class="rc-up-txt" id="rcUpTxt">点击选择支付宝转账截图<br><span>需包含：收款人、金额（PNG / JPG，≤6MB）</span></div>
+          <img id="rcPreview" alt="" hidden>
+        </label>
+        <input type="file" id="rcFile" accept="image/*" style="display:none">
+        <div style="text-align:right;margin-top:10px">
+          <button class="btn btn-g" id="btnRcSubmit">提交充值</button>
+        </div>
+        <div id="rcResult" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <h3>2️⃣ 充值规则</h3>
+        <div class="kv"><span class="k">自动到账</span><span class="v" id="rcAutoRule">单笔 &lt; ¥1000 且截图识别金额一致 → 秒到账</span></div>
+        <div class="kv"><span class="k">人工审核</span><span class="v">≥ ¥1000 或识别有疑问 → 管理员二审后到账</span></div>
+        <div class="kv"><span class="k">到账方式</span><span class="v">直接进钱包余额，可用于提现</span></div>
+        <div class="kv"><span class="k">安全说明</span><span class="v">截图仅存站内，全程留档可查流水</span></div>
+        <div style="text-align:center;margin-top:12px"><button class="btn btn-ghost btn-sm" id="btnRcBack">返回钱包</button></div>
       </div>
     </div>
     <div class="sp-sec" id="subPay" hidden>
@@ -1702,6 +1779,7 @@ function openSub(secId, title) {
   $('subPage').scrollTop = 0;
   if (secId === 'subLv') loadWallet();
   if (secId === 'subWallet') { loadWallet(); loadWithdraw(); }
+  if (secId === 'subRecharge') loadRechargePage();   // 【v25.0】充值页
   if (secId === 'subPay') { if (!$('payMonth').value) $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadPay(); }
   if (secId === 'subFriends') { loadFriends(); loadFriendRequests(); }
   if (secId === 'subContract') loadContracts();
@@ -1733,19 +1811,114 @@ async function loadWallet() {
       ${j.level >= 1 ? `<div class="kv"><span class="k">本月预计奖励</span><span class="v">¥${fmt(j.estBonus)}（基于本月已到账 ¥${fmt(j.estBase)}，下月发放）</span></div>` : ''}
       ${j.grants.length ? '<div style="margin-top:10px"><div style="font-size:12px;color:var(--sub);margin-bottom:5px">发放记录</div>' + j.grants.map(g => `<div class="kv"><span class="k">${g.month}</span><span class="v">+¥${fmt(g.amount)}${g.note ? ' <span style="color:var(--sub)">（' + g.note + '）</span>' : (g.base ? ' <span style="color:var(--sub)">（基数 ¥' + fmt(g.base) + '）</span>' : '')}</span></div>`).join('') + '</div>' : ''}`;
     $('walletBox').innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;padding:6px 2px 12px">
-        <div style="font-size:13px;color:var(--sub)">👛 钱包总金额（激励奖励 + 红包）</div>
-        <div style="flex:1"></div>
-        <div style="font-size:26px;font-weight:700;color:var(--amber)">¥${fmt(j.total != null ? j.total : j.balance)}</div>
+      <div class="wb-top">
+        <div class="wb-label">👛 钱包总金额</div>
+        <div class="wb-amt">¥${fmt(j.total != null ? j.total : j.balance)}</div>
+        <div class="wb-sub">${(j.frozenAmount || 0) > 0 ? '含 ¥' + fmt(j.frozenAmount) + ' 待解冻红包' : '可提现余额'}</div>
       </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-        <div class="kv" style="flex:1;min-width:150px"><span class="k">可提余额</span><span class="v">¥${fmt(j.balance)}</span></div>
-        <div class="kv" style="flex:1;min-width:150px"><span class="k">待解冻（红包）</span><span class="v">${j.frozenAmount > 0 ? '<b style="color:var(--amber)">¥' + fmt(j.frozenAmount) + '</b>' : '¥0'}</span></div>
+      <div class="wb-grid">
+        <div class="wb-item"><span>可提余额</span><b>¥${fmt(j.balance)}</b></div>
+        <div class="wb-item"><span>待解冻</span><b class="${j.frozenAmount > 0 ? 'warn' : ''}">¥${fmt(j.frozenAmount || 0)}</b></div>
+        <div class="wb-item"><span>等级</span><b>LV${j.level}</b></div>
+      </div>
+      <div class="wb-actions">
+        <button class="btn btn-g btn-sm" id="wbRecharge">📥 充值</button>
+        <button class="btn btn-ghost btn-sm" id="wbWithdraw">🏧 提现</button>
       </div>
       ${(j.frozenAmount || 0) > 0 ? `<div class="flow-tip">其中 ¥${fmt(j.frozenAmount)} 来自现金红包，关联订单完结后自动解冻入账（冻结中 ${j.frozen.length} 笔：${j.frozen.map(f => '¥' + fmt(f.amount)).join('、')}）。</div>` : ''}
-      ${j.level >= 1 ? '' : '<div class="flow-tip">升到 LV1 初级写手后，每月自动发放等级奖励到这里。</div>'}`;
+      ${j.grants.length ? '<div style="margin-top:12px"><div class="wb-sec-t">账单明细（最近 ' + Math.min(j.grants.length, 12) + ' 条）</div>' + j.grants.slice(0, 12).map(g => `<div class="kv"><span class="k">${g.month}</span><span class="v">+¥${fmt(g.amount)}${g.note ? ' <span style="color:var(--sub)">（' + g.note + '）</span>' : (g.base ? ' <span style="color:var(--sub)">（基数 ¥' + fmt(g.base) + '）</span>' : '')}</span></div>`).join('') + '</div>' : ''}`;
+    if ($('wbRecharge')) $('wbRecharge').onclick = () => openSub('subRecharge', '📥 充值');
+    if ($('wbWithdraw')) $('wbWithdraw').onclick = () => { const el = $('wdBonus'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+    loadRecharge();
   } catch (e) { toast(e.message); }
 }
+
+/* ==================== 【v25.0】充值 ==================== */
+let RC_CFG = null, RC_FILE = null;
+async function loadRecharge() {
+  try {
+    const c = await authFetch('/api/recharge/config');
+    RC_CFG = c;
+    const j = await authFetch('/api/recharge/mine');
+    const ST = { auto_paid: ['已到账（自动）', 'ok'], paid: ['已到账', 'ok'], pending: ['待人工审核', 'warn'], rejected: ['已驳回', 'bad'] };
+    $('rcList').innerHTML = (j.rows && j.rows.length)
+      ? '<div class="wb-sec-t">充值记录</div>' + j.rows.slice(0, 8).map(r => {
+        const s = ST[r.status] || [r.status, ''];
+        return `<div class="kv"><span class="k">${new Date(new Date(r.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ').replace('-', '/')} · ${r.no || ''}</span>
+          <span class="v">¥${fmt(r.amount)} · <b class="${s[1]}">${s[0]}</b>${r.note ? ' <span style="color:var(--sub)">（' + esc(r.note) + '）</span>' : ''}</span></div>`;
+      }).join('')
+      : '<div class="empty" style="padding:10px;text-align:center">暂无充值记录</div>';
+  } catch (e) { $('rcList').innerHTML = '<div class="empty" style="padding:10px;text-align:center">' + esc(e.message) + '</div>'; }
+}
+async function loadRechargePage() {
+  try {
+    const c = RC_CFG || await authFetch('/api/recharge/config');
+    RC_CFG = c;
+    $('rcTip').innerHTML = c.enabled ? c.tip : '<b style="color:#e11d48">充值通道暂未开放</b>，请联系管理员。';
+    const qr = c.qrFileId ? `<div style="text-align:center;margin-top:6px"><img src="/api/recharge/qr?t=${Date.now()}" class="rc-qr" alt="收款二维码" onclick="window.open(this.src)"></div>` : '';
+    $('rcPayInfo').innerHTML = `
+      <div class="rc-pay">
+        <div class="kv"><span class="k">收款方式</span><span class="v">支付宝转账</span></div>
+        <div class="kv"><span class="k">收款账号</span><span class="v"><b id="rcAcc">${esc(c.alipayAccount || '未配置')}</b> <button class="btn btn-ghost btn-sm" id="rcCopy">复制</button></span></div>
+        <div class="kv"><span class="k">收款人</span><span class="v">${esc(c.alipayName || '未配置')}</span></div>
+      </div>
+      ${qr}
+      <div class="flow-tip">${c.qrFileId ? '可扫码转账，或复制账号在支付宝里转账；' : ''}转账后<b>保留转账成功截图</b>，回到本页上传。</div>`;
+    if ($('rcCopy')) $('rcCopy').onclick = () => {
+      const t = c.alipayAccount || '';
+      if (!t) return toast('管理员还没配置收款账号');
+      navigator.clipboard ? navigator.clipboard.writeText(t).then(() => toast('账号已复制'), () => toast(t)) : toast(t);
+    };
+    $('rcAmounts').innerHTML = [30, 50, 100, 300, 500, 1000].map(v => `<span class="rc-chip tap" data-v="${v}">¥${v}</span>`).join('');
+    $('rcAmounts').querySelectorAll('.rc-chip').forEach(el => el.onclick = () => { $('rcAmount').value = el.dataset.v; });
+    $('rcAutoRule').innerHTML = `单笔 &lt; ¥${fmt(c.autoMax || 1000)} 且截图识别金额一致 → 秒到账`;
+  } catch (e) { $('rcTip').innerHTML = esc(e.message); }
+}
+function rcPickFile(file) {
+  if (!file) return;
+  if (!/^image\//.test(file.type)) return toast('请选择图片');
+  if (file.size > 6 * 1024 * 1024) return toast('截图请控制在 6MB 以内');
+  RC_FILE = file;
+  const url = URL.createObjectURL(file);
+  $('rcPreview').src = url; $('rcPreview').hidden = false;
+  $('rcUpIco').style.display = 'none';
+  $('rcUpTxt').innerHTML = '<b>' + esc(file.name) + '</b><br><span>点击可重新选择</span>';
+  $('rcUploadBox').classList.add('has');
+}
+async function rcSubmit() {
+  const amt = Number($('rcAmount').value);
+  if (!RC_CFG || !RC_CFG.enabled) return toast('充值通道暂未开放');
+  if (!(amt >= (RC_CFG.minAmount || 1))) return toast('请填写充值金额');
+  if (amt > (RC_CFG.maxAmount || 50000)) return toast('单笔最高 ¥' + fmt(RC_CFG.maxAmount));
+  if (!RC_FILE) return toast('请上传支付宝转账截图');
+  const btn = $('btnRcSubmit'); btn.disabled = true; btn.textContent = '识别中…';
+  $('rcResult').innerHTML = '<div class="flow-tip">正在上传并识别截图金额，请稍候（约几秒）…</div>';
+  try {
+    const fd = new FormData();
+    fd.append('file', RC_FILE);
+    fd.append('amount', String(amt));
+    const r = await fetch('/api/recharge', { method: 'POST', headers: { Authorization: 'Bearer ' + (localStorage.getItem('jdy_token') || '') }, body: fd });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '提交失败');
+    const ok = j.status === 'auto_paid';
+    $('rcResult').innerHTML = `<div class="rc-result ${ok ? 'ok' : 'warn'}">
+      <b>${ok ? '✅ ' + j.message : '⏳ ' + j.message}</b>
+      <div style="margin-top:6px;font-size:12px;line-height:1.7">
+        单号：${j.no}<br>申报金额：¥${fmt(j.amount)}${j.ocrAmount != null ? '　识别金额：¥' + fmt(j.ocrAmount) : ''}<br>
+        ${ok ? '钱包余额：¥' + fmt(j.balance) : esc(j.reason || '')}
+      </div></div>`;
+    RC_FILE = null; $('rcPreview').hidden = true; $('rcPreview').src = ''; $('rcUpIco').style.display = ''; $('rcUpTxt').innerHTML = '点击选择支付宝转账截图<br><span>需包含：收款人、金额（PNG / JPG，≤6MB）</span>'; $('rcUploadBox').classList.remove('has');
+    loadRecharge();
+  } catch (e) {
+    $('rcResult').innerHTML = '<div class="rc-result bad">' + esc(e.message) + '</div>';
+  }
+  btn.disabled = false; btn.textContent = '提交充值';
+}
+if ($('btnOpenRecharge')) $('btnOpenRecharge').onclick = () => openSub('subRecharge', '📥 充值');
+if ($('btnRcRefresh')) $('btnRcRefresh').onclick = loadRecharge;
+if ($('btnRcBack')) $('btnRcBack').onclick = () => openSub('subWallet', '👛 钱包');
+if ($('rcFile')) $('rcFile').onchange = e => rcPickFile(e.target.files && e.target.files[0]);
+if ($('btnRcSubmit')) $('btnRcSubmit').onclick = rcSubmit;
 async function loadWithdraw() {
   try {
     const j = await authFetch('/api/withdraw');
