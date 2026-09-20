@@ -118,7 +118,7 @@ export function mount(root) {
           <td class="num">¥${(o.amount || 0).toFixed(2)}</td>
           <td class="num">${o.ocrAmount != null ? '¥' + o.ocrAmount.toFixed(2) : '<span class="sub">未识别</span>'}
             <div class="sub">${o.ocrOk ? '置信 ' + (o.ocrConfidence || 0) + (o.amountMatched ? ' · 一致' : ' · 不一致') : '识别失败'}</div></td>
-          <td>${o.shotFileId ? `<a href="/api/recharge/shot/${esc(o.shotFileId)}" target="_blank">查看截图</a>` : '<span class="sub">无</span>'}</td>
+          <td>${o.shotFileId ? `<button class="btn-ghost" style="padding:3px 9px" data-shot="${esc(o.shotFileId)}">查看截图</button>` : '<span class="sub">无</span>'}</td>
           <td><b class="${st[1]}">${st[0]}</b>${o.reason ? '<div class="sub">' + esc(o.reason) + '</div>' : ''}${o.reviewNote ? '<div class="sub">备注：' + esc(o.reviewNote) + '</div>' : ''}</td>
           <td>${(o.status === 'pending' || o.status === 'auto_paid')
             ? `<button class="btn-main" style="padding:4px 10px" data-ok="${esc(String(o._id))}">到账</button>
@@ -136,6 +136,27 @@ export function mount(root) {
   });
   $('rcReload').onclick = () => { loadCfg(); loadOrders(); };
   $('rcOrders').addEventListener('click', async e => {
+    // 【v25.2 修复】截图必须带登录头取：<a href> 直开图片会返回"未登录"
+    const sh = e.target.closest('[data-shot]');
+    if (sh) {
+      const old = document.getElementById('rcShotMask');
+      if (old) old.remove();
+      const mask = document.createElement('div');
+      mask.id = 'rcShotMask';
+      mask.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out';
+      mask.innerHTML = '<div style="color:#fff;font:14px sans-serif">截图加载中…</div>';
+      mask.onclick = () => mask.remove();
+      document.body.appendChild(mask);
+      try {
+        const r = await fetch('/api/recharge/shot/' + sh.dataset.shot, { headers: { Authorization: 'Bearer ' + (localStorage.getItem('jdy_token') || '') } });
+        if (!r.ok) throw new Error(r.status === 401 ? '登录已过期，请重新登录后台' : '加载失败（' + r.status + '）');
+        const url = URL.createObjectURL(await r.blob());
+        mask.innerHTML = `<img src="${url}" style="max-width:92vw;max-height:88vh;border-radius:10px;background:#fff;box-shadow:0 12px 40px rgba(0,0,0,.5)" alt="充值截图">`;
+      } catch (err) {
+        mask.innerHTML = '<div style="color:#ffb4a2;font:14px sans-serif">' + esc(err.message) + '</div>';
+      }
+      return;
+    }
     const ok = e.target.closest('[data-ok]'), no = e.target.closest('[data-no]');
     if (ok) {
       const amt = prompt('确认到账金额（元，默认按申报金额）：', '');
