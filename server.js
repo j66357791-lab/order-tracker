@@ -212,14 +212,21 @@ app.use((req, res) => res.status(404).json({ ok: false, error: '接口不存在'
 server.listen(CONFIG.port, () => {
   console.log(`订单统计系统V15（ES6模块化）已启动: http://localhost:${CONFIG.port}`);
   console.log(`架构: server.js 入口 + config.js + lib/{db,core,env,ratelimit}.js + routes/ 9 个业务模块 + 2 个游戏模块`);
-  // 【v25.0】充值 OCR 预热（后台进行，失败不影响服务）
-  setTimeout(async () => {
-    try {
-      const { warmup } = await import('./lib/ocr.js');
-      const st = await warmup();
-      console.log('[充值] OCR ' + (st.available ? '已就绪' : '不可用（充值将全部转人工审核）：' + st.reason));
-    } catch (e) { console.log('[充值] OCR 预热跳过：' + e.message); }
-  }, 5000);
+  // 【v25.1 事故修复】V25.0 这里在启动 5 秒后自动预热 OCR（tesseract.js + 中文语言包），
+  // 在 Render 免费实例（512MB）上直接把内存打满 → 进程被杀 → 重启 5 秒后又预热 → 崩溃循环（502/503）。
+  // 现在默认**不预热、不加载**：OCR 只在有人真的上传截图时按需初始化，且带超时与失败降级；
+  // 需要预热时用环境变量显式开启：OCR_WARMUP=1
+  if (process.env.OCR_WARMUP === '1') {
+    setTimeout(async () => {
+      try {
+        const { warmup } = await import('./lib/ocr.js');
+        const st = await warmup();
+        console.log('[充值] OCR ' + (st.available ? '已就绪' : '不可用（充值将全部转人工审核）：' + st.reason));
+      } catch (e) { console.log('[充值] OCR 预热跳过：' + e.message); }
+    }, 8000);
+  } else {
+    console.log('[充值] OCR 预热已关闭（默认）：识别按需初始化，失败自动转人工审核');
+  }
   const r = envReport();
   console.log('[自检] JWT_SECRET: ' + (r.JWT_SECRET ? '已配置 ✓' : '未配置 ⚠ 使用随机密钥，重启后需重新登录（建议在 .env 里配置）'));
   console.log('[自检] MONGO_URI : ' + (r.MONGO_URI ? '已配置 ✓' : '未配置（使用 config.js 默认值）'));
