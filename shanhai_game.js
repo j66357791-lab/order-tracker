@@ -67,7 +67,8 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
     const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
     const a = AFFIX[slot];
     const val = Math.round(a.base * q.mul * (0.9 + Math.random() * 0.25) * 10) / 10;
-    return { id: 'eq' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), slot, quality: q.id, qualityName: q.name, color: q.color, name: randName(slot, q.id), affix: a.name, val };
+    // 【v24.6】玄机宝阁九阶：一阶寻宝产出「一阶」装备；老装备无 tier 字段，前端按一阶显示
+    return { id: 'eq' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), slot, tier: 1, quality: q.id, qualityName: q.name, color: q.color, name: randName(slot, q.id), affix: a.name, val };
   };
 
   async function ensureProfile(db, userId, username) {
@@ -80,8 +81,8 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       xianyu: META_CFG.initXianyu,     // 仙玉（通关斩妖产出，抽卡/强化消耗）
       lingqi: 0,                        // 灵气（占位积累，后续版本开放用途）
       skillLv: { fireline: 0, icepick: 0, body: 0 },
-      // 【2026-09-15】初始武器：新手飞剑（白色·攻击力+3·攻速1·无附加·无技能）
-      equip: { weapon: { id: 'eq_sword_starter', slot: 'weapon', quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 }, armor: null, crown: null, belt: null, boots: null, accessory: null },
+      // 【2026-09-15】初始武器：新手飞剑（白色·攻击力+3·攻速1·无附加·无技能）【v24.6 标为一阶】
+      equip: { weapon: { id: 'eq_sword_starter', slot: 'weapon', tier: 1, quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 }, armor: null, crown: null, belt: null, boots: null, accessory: null },
       bag: [],
       clearedStages: [],
       stageStars: {},   // 【v24.5】每关最高星级（跨设备保留，前端解锁与展示都用它）
@@ -101,7 +102,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       if (!p.swordInit) {
         await db.collection('shanhai_profiles').updateOne(
           { userId: req.user.id },
-          { $set: { swordInit: true, 'equip.weapon': p.equip && p.equip.weapon ? p.equip.weapon : { id: 'eq_sword_starter', slot: 'weapon', quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 } } });
+          { $set: { swordInit: true, 'equip.weapon': p.equip && p.equip.weapon ? p.equip.weapon : { id: 'eq_sword_starter', slot: 'weapon', tier: 1, quality: 'white', qualityName: '凡品', color: '#cfd8dc', name: '新手飞剑', affix: '攻', val: 3, atkSpd: 1 } } });
         p = await db.collection('shanhai_profiles').findOne({ userId: req.user.id });
       }
       res.json({ ok: true, profile: p });
