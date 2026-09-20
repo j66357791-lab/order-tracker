@@ -86,6 +86,8 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       bag: [],
       clearedStages: [],
       stageStars: {},   // 【v24.5】每关最高星级（跨设备保留，前端解锁与展示都用它）
+      idleAt: new Date(),        // 【v24.7】挂机计时起点（服务端时间，不信客户端）
+      idleKeyProgress: 0,        // 【v24.7】挂机累计的钥匙进度（小数；凑整后在道具合成里兑换）
     };
     await db.collection('shanhai_profiles').updateOne(
       { userId }, { $setOnInsert: doc }, { upsert: true });
@@ -108,6 +110,40 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       res.json({ ok: true, profile: p });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
+
+  // ==================== 挂机收益配置（v24.7 按定稿口径） ====================
+  // 产出：① 仙玉 0.1/分钟 + 0.05/分钟×已通关最高关  ② 钥匙 0.0001/分钟 + 0.0001/分钟×已通关最高关
+  // 钥匙为小数进度累积，凑齐整把后在「道具合成」里兑换才进翻翻乐背包（避免小数道具流进翻翻乐）
+  const IDLE_CFG = {
+    unlockStage: 5,      // 通关第 5 关解锁
+    maxHours: 8,         // 累计上限 8 小时
+    xianyuBase: 0.1,
+    xianyuPerStage: 0.05,
+    keyBase: 0.0001,
+    keyPerStage: 0.0001,
+  };
+  const clearedTop = p => (p && Array.isArray(p.clearedStages) && p.clearedStages.length) ? Math.max(...p.clearedStages) : 0;
+  function idleCalc(p, nowMs) {
+    const top = clearedTop(p);
+    const unlocked = top >= IDLE_CFG.unlockStage;
+    const last = p && p.idleAt ? new Date(p.idleAt).getTime() : nowMs;
+    const raw = Math.max(0, Math.floor((nowMs - last) / 1000));
+    const capped = Math.min(raw, IDLE_CFG.maxHours * 3600);
+    const mins = capped / 60;
+    const xRate = IDLE_CFG.xianyuBase + IDLE_CFG.xianyuPerStage * top;
+    const kRate = IDLE_CFG.keyBase + IDLE_CFG.keyPerStage * top;
+    const xianyuGain = Math.floor(mins * xRate);
+    const keyGain = +(mins * kRate).toFixed(6);
+    const keyProgress = +(((p && p.idleKeyProgress) || 0) + (unlocked ? keyGain : 0)).toFixed(6);
+    return {
+      unlocked, top, elapsedSec: capped, rawSec: raw, capped: raw > capped,
+      xianyuGain: unlocked ? xianyuGain : 0,
+      xianyuRate: +xRate.toFixed(3),
+      keyRate: +kRate.toFixed(5),
+      keyProgress,
+      claimableKeys: Math.floor(keyProgress),
+    };
+  }
 
   // ==================== 战绩上报（含养成奖励结算） ====================
   // 【2026-09-17 安全加固】限流：一局至少一分钟，10次/分钟足够正常上报，脚本高频刷分会被挡下
@@ -175,6 +211,74 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         profile: { plays: p.plays, wins: p.wins, bestTimeSec: p.bestTimeSec, bestKills: p.bestKills },
       });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+  });
+
+  // ==================== 挂机收益（v24.7） ====================
+  // 预览：随时可查，不写入
+  app.get('/api/shanhai/idle', auth, async (req, res) => {
+    try {
+      const db = await getDb();
+      const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      const r = idleCalc(p, Date.now());
+      res.json({
+        ok: true,
+        unlocked: r.unlocked, unlockStage: IDLE_CFG.unlockStage, top: r.top,
+        elapsedSec: r.elapsedSec, capped: r.capped, maxHours: IDLE_CFG.maxHours,
+        xianyuGain: r.xianyuGain, xianyuRate: r.xianyuRate,
+        keyRate: r.keyRate, keyProgress: r.keyProgress, claimableKeys: r.claimableKeys,
+        totalKeys: p.keysFromIdle || 0,
+      });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  // 领取：服务端按 idleAt 计时结算（客户端时间不可信）；仙玉直接入账，钥匙进合成进度
+  app.post('/api/shanhai/idle/claim', auth, limit({ name: 'shanhai-idle', max: 12, windowMs: 60 * 1000, msg: '领取太频繁，稍等片刻' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      const r = idleCalc(p, Date.now());
+      if (!r.unlocked) return res.status(400).json({ ok: false, error: '通关第 ' + IDLE_CFG.unlockStage + ' 关后解锁挂机收益' });
+      if (r.xianyuGain <= 0 && r.elapsedSec < 60) return res.status(400).json({ ok: false, error: '挂机不足 1 分钟，再等等' });
+      const upd = {
+        $inc: { xianyu: r.xianyuGain },
+        $set: { idleAt: new Date(), idleKeyProgress: r.keyProgress, updatedAt: new Date() },
+      };
+      const out = await db.collection('shanhai_profiles').findOneAndUpdate({ userId: req.user.id }, upd, { returnDocument: 'after' });
+      const np = out && (out.value || out);
+      await db.collection('shanhai_logs').insertOne({
+        userId: req.user.id, action: 'idle_claim', detail: { sec: r.elapsedSec, xianyu: r.xianyuGain, keyGain: +(r.keyProgress - ((p.idleKeyProgress) || 0)).toFixed(6), keyRate: r.keyRate }, createdAt: new Date(),
+      }).catch(() => {});
+      res.json({ ok: true, xianyuGain: r.xianyuGain, elapsedSec: r.elapsedSec, capped: r.capped, keyProgress: r.keyProgress, claimableKeys: r.claimableKeys, balance: { xianyu: np.xianyu, lingqi: np.lingqi } });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  // 兑换：把凑齐的整把钥匙送进翻翻乐背包（小数进度留在这里，避免脏数据进翻翻乐）
+  app.post('/api/shanhai/idle/craft', auth, limit({ name: 'shanhai-craft', max: 20, windowMs: 60 * 1000, msg: '兑换太频繁，稍等片刻' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      const prog = +((p.idleKeyProgress || 0)).toFixed(6);
+      const n = Math.floor(prog);
+      if (n < 1) return res.status(400).json({ ok: false, error: '钥匙还没凑齐（当前进度 ' + prog.toFixed(4) + ' / 1）' });
+      // 1) 扣进度
+      const out = await db.collection('shanhai_profiles').findOneAndUpdate(
+        { userId: req.user.id, idleKeyProgress: { $gte: n } },
+        { $inc: { idleKeyProgress: -n, keysFromIdle: n }, $set: { updatedAt: new Date() } },
+        { returnDocument: 'after' }
+      );
+      const np = out && (out.value || out);
+      if (!np) return res.status(409).json({ ok: false, error: '请刷新后再试' });
+      // 2) 进翻翻乐背包（同一数据库，直接原子加钥匙）
+      await db.collection('game_profiles').updateOne(
+        { userId: req.user.id },
+        { $inc: { keys: n }, $set: { updatedAt: new Date() }, $setOnInsert: { balls: 0, frags: 0, revives: 0, bagS: 0, bagM: 0, bagL: 0, createdAt: new Date() } },
+        { upsert: true }
+      );
+      await db.collection('shanhai_logs').insertOne({
+        userId: req.user.id, action: 'idle_craft', detail: { keys: n, left: +((np.idleKeyProgress) || 0).toFixed(6) }, createdAt: new Date(),
+      }).catch(() => {});
+      res.json({ ok: true, keys: n, keyProgress: +((np.idleKeyProgress) || 0).toFixed(6), keysFromIdle: np.keysFromIdle || 0 });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 技能强化（此前服务端缺失，前端404修复） ====================
