@@ -90,6 +90,35 @@
           <button class="btn-stage-big" id="btnEnterBattle">出 战</button>
         </div>
         <div class="daily-tip" id="stageTip">每局皆得仙玉 · 首通另有重赏</div>
+
+        <!-- 【v24.6】挂机收益入口（UI 先行，逻辑待接）：宝箱开口图标 + 挂机时长 -->
+        <div id="idleEntry" title="挂机收益">
+          <svg class="idle-chest" viewBox="0 0 64 64" aria-hidden="true">
+            <defs>
+              <linearGradient id="chestWood" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#a9702f"/><stop offset="1" stop-color="#6b4520"/>
+              </linearGradient>
+              <linearGradient id="chestGold" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#e0a832"/>
+              </linearGradient>
+              <radialGradient id="chestGlow" cx="0.5" cy="0.42" r="0.6">
+                <stop offset="0" stop-color="#ffd76a" stop-opacity=".85"/><stop offset="1" stop-color="#ffd76a" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <ellipse cx="32" cy="26" rx="20" ry="15" fill="url(#chestGlow)" class="idle-glow"/>
+            <!-- 打开的箱盖 -->
+            <path d="M12 27 L14 13 Q32 5 50 13 L52 27 Z" fill="url(#chestWood)" stroke="#3a2712" stroke-width="1.6"/>
+            <path d="M12 27 L52 27 L50 22 Q32 15 14 22 Z" fill="#8a5a25" opacity=".85"/>
+            <path d="M20 13.5 L20 26 M32 10.5 L32 26 M44 13.5 L44 26" stroke="#3a2712" stroke-width="1.2" opacity=".7"/>
+            <!-- 箱体 -->
+            <path d="M12 29 H52 V50 Q52 54 48 54 H16 Q12 54 12 50 Z" fill="url(#chestWood)" stroke="#3a2712" stroke-width="1.6"/>
+            <rect x="12" y="36" width="40" height="4" fill="url(#chestGold)" opacity=".9"/>
+            <rect x="28" y="33" width="8" height="10" rx="1.6" fill="url(#chestGold)" stroke="#8a5a25" stroke-width="1"/>
+            <!-- 箱内金光 -->
+            <ellipse cx="32" cy="28" rx="16" ry="3.2" fill="#ffe9a8" opacity=".75"/>
+          </svg>
+          <div class="idle-time" id="idleTimeText">挂机 -- 时 -- 分</div>
+        </div>
       </div>
 
       <!-- 养成·装备页（斩妖录·贰）【v24.3 重排：左50%角色+属性 / 右50%装备格】【v24.4 去掉重复货币】 -->
@@ -126,10 +155,12 @@
         <div id="shBoard" class="board-list"></div>
       </div>
 
-      <!-- 商城（【v24.3】标准抽卡） -->
+      <!-- 商城（【v24.3】标准抽卡 ·【v24.6】玄机宝阁九阶页签） -->
       <div class="home-tab" id="tabShop">
+        <div class="tier-strip" id="tierStrip"></div>
+        <div class="tier-note" id="tierNote">一阶寻宝 · 120 仙玉一抽 · 产出一阶装备</div>
         <div class="shop-banner">
-          <div class="shop-banner-t">✦ 玄机宝阁 ✦</div>
+          <div class="shop-banner-t">✦ 玄机宝阁 · 一阶 ✦</div>
           <div class="shop-banner-s">寻宝得神装 · 槽位空缺自动穿戴</div>
         </div>
         <div class="grow-cur">
@@ -369,6 +400,9 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       const n = curStageIdx + 1;
       if (stageOpen(n)) enterBattle(n);
     };
+    // 【v24.6】挂机收益入口（UI 先行）
+    const idleEntry = document.getElementById("idleEntry");
+    if (idleEntry) idleEntry.onclick = showIdlePanel;
     // 难度页签：困难 20 关暂不开放
     document.getElementById("diffHard").onclick = () => toast("困难模式（20 关）即将开放 · 先在普通难度证道吧");
     // 养成
@@ -441,6 +475,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   function startEqAnim() { if (!eqRAF) { eqLast = 0; eqRAF = requestAnimationFrame(eqAnim); } }
   function stopEqAnim() { if (eqRAF) { cancelAnimationFrame(eqRAF); eqRAF = null; } }
   const SLOT_NAME = { weapon: "武器", armor: "衣服", crown: "发冠", belt: "腰带", boots: "鞋子", accessory: "配饰" };
+  // 【v24.6】装备阶位前缀：一阶~九阶（玄机宝阁九阶对应）。老装备没有 tier 字段 → 一律按一阶显示
+  const TIER_CN = ["", "一阶", "二阶", "三阶", "四阶", "五阶", "六阶", "七阶", "八阶", "九阶"];
+  const tierOf = it => Math.max(1, Math.min(9, (it && it.tier) | 0 || 1));
+  const tierName = it => it ? TIER_CN[tierOf(it)] + " · " + (it.name || "") : "";
   // 【v24.5】词条说明（装备详情弹窗用）
   const AFFIX_DESC = {
     weapon:  ["攻击", "提升飞剑/技能的基础攻击力（绝对数值，直接叠加在角色基础攻击 5 之上）"],
@@ -451,6 +489,38 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     accessory:["全伤害", "提升所有技能造成的伤害（含火球、冰锥、旋风刃）"],
   };
   const SLOT_ICON = { weapon: "icon_weapon", armor: "icon_armor", crown: "icon_crown", belt: "icon_belt", boots: "icon_boots", accessory: "icon_accessory" };
+
+  // 【v24.6】挂机收益面板（UI 先行，逻辑待接：产出预览 + 上限 + 领取按钮占位）
+  // 产出口径（方案）：只产翻翻乐道具（碎片/钥匙/魔法球），不产灵气、不产仙玉
+  function showIdlePanel() {
+    const old = document.getElementById("idleMask");
+    if (old) old.remove();
+    const rows = [
+      ["✦ 魔法球碎片", "—", "翻翻乐道具"],
+      ["🔑 钥匙", "—", "翻翻乐道具"],
+      ["◉ 魔法球", "—", "翻翻乐道具"],
+    ];
+    const mask = document.createElement("div");
+    mask.id = "idleMask";
+    mask.className = "eq-detail-mask";
+    mask.onclick = () => mask.remove();
+    mask.innerHTML = `<div class="eq-detail idle-panel" onclick="event.stopPropagation()">
+      <div class="eqd-title">📦 挂机收益</div>
+      <div class="eqd-sub">离线也在攒 · 最多累计 8 小时</div>
+      <div class="idle-dur" id="idleDurBig">已挂机 -- 时 -- 分</div>
+      <div class="idle-rows">
+        ${rows.map(r => `<div class="eqd-row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("")}
+      </div>
+      <div class="eqd-desc">挂机只产<b>翻翻乐</b>的碎片 / 钥匙 / 魔法球（与翻翻乐背包互通）；<b>不产灵气、不产仙玉</b>。<br>解锁：通关第 5 关；产出速率随已通关数提升。</div>
+      <div class="eqd-btns">
+        <button class="btn-gacha" id="idleClose"><i>知道了</i></button>
+        <button class="btn-gacha ten" id="idleClaim"><i>一键领取</i><b>开发中</b></button>
+      </div>
+    </div>`;
+    document.getElementById("app").appendChild(mask);
+    document.getElementById("idleClose").onclick = () => mask.remove();
+    document.getElementById("idleClaim").onclick = () => toast("挂机结算开发中 · 上线后此处一键入账翻翻乐背包");
+  }
 
   // 装备详情弹窗：查看属性 → 卸下 / 升级（占位）
   function showEquipDetail(slot) {
@@ -469,7 +539,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <div class="eqd-title">${SLOT_NAME[slot]} · 空</div>
         <div class="eqd-row"><span>当前</span><b>未穿戴</b></div>
         <div class="eqd-desc">${meta[0]}：${meta[1]}</div>
-        <div class="eqd-desc" style="color:#8ef0a0">${best ? "行囊里有一件更好的（" + best.name + " +" + best.val + "），点背包即可穿戴" : "去商城寻宝可得装备，空槽会自动穿戴"}</div>
+        <div class="eqd-desc" style="color:#8ef0a0">${best ? "行囊里有一件更好的（" + tierName(best) + " +" + best.val + "），点背包即可穿戴" : "去商城寻宝可得装备，空槽会自动穿戴"}</div>
         <div class="eqd-btns">
           <button class="btn-gacha" id="eqdClose"><i>知道了</i></button>
           <button class="btn-gacha ten" id="eqdShop"><i>去寻宝</i></button>
@@ -483,8 +553,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const cur = Number(it.val) || 0;
     const bestInBag = (p.bag || []).filter(b => b.slot === slot && (b.val || 0) > cur).sort((a, b) => b.val - a.val)[0];
     mask.innerHTML = `<div class="eq-detail" onclick="event.stopPropagation()">
-      <div class="eqd-title" style="color:${it.color || "#e8dcc8"}">${it.name}</div>
-      <div class="eqd-sub">${it.qualityName || ""} · ${SLOT_NAME[slot]}</div>
+      <div class="eqd-title" style="color:${it.color || "#e8dcc8"}">${tierName(it)}</div>
+      <div class="eqd-sub">${TIER_CN[tierOf(it)]} · ${it.qualityName || ""} · ${SLOT_NAME[slot]}</div>
       <div class="eqd-row"><span>${it.affix || meta[0]}</span><b style="color:${it.color || "#ffd76a"}">+${cur}${slot === "weapon" ? "" : "%"}</b></div>
       <div class="eqd-row"><span>对局内生效</span><b>${slot === "weapon" ? "攻击力 " + (5 + cur).toFixed(1) : (meta[0] + " " + (cur) + "%")}</b></div>
       <div class="eqd-desc">${meta[1]}</div>
@@ -516,7 +586,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         power += it.val || 0;
         ico.src = `/games/shanhai/assets/${SLOT_ICON[slot] || "icon_weapon"}.png`;
         ico.style.display = "block"; ico.style.opacity = "1";
-        v.innerHTML = `<span class="eq-name" style="color:${it.color || "#cfd8dc"}">${it.name}</span><em class="eq-affix">${it.affix || ""} +${it.val}${slot === "weapon" ? "" : "%"}</em>`;
+        v.innerHTML = `<span class="eq-name" style="color:${it.color || "#cfd8dc"}">${tierName(it)}</span><em class="eq-affix">${it.affix || ""} +${it.val}${slot === "weapon" ? "" : "%"}</em>`;
         el.classList.add("filled");
       } else { ico.src = `/games/shanhai/assets/${SLOT_ICON[slot]}.png`; ico.style.display = "block"; ico.style.opacity = ".22"; v.innerHTML = "空 · " + SLOT_NAME[slot]; el.classList.remove("filled"); }
     });
@@ -532,10 +602,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     $("bagEmpty").style.display = bag.length ? "none" : "block";
     const BAG_ICON = { weapon: "icon_weapon", armor: "icon_armor", crown: "icon_crown", belt: "icon_belt", boots: "icon_boots", accessory: "icon_accessory" };
     grid.innerHTML = bag.map(it => `
-      <div class="bag-cell q-${it.quality}" data-id="${it.id}" title="${it.name}">
+      <div class="bag-cell q-${it.quality}" data-id="${it.id}" title="${tierName(it)}">
         <img class="bag-ico" src="/games/shanhai/assets/${BAG_ICON[it.slot] || "icon_weapon"}.png" alt="">
-        <i>${SLOT_NAME[it.slot] || it.slot}</i>
-        <b style="color:${it.color || "#cfd8dc"}">${(it.name || "").slice( 4)}</b>
+        <i>${SLOT_NAME[it.slot] || it.slot} · <em class="tier-tag">${TIER_CN[tierOf(it)]}</em></i>
+        <b style="color:${it.color || "#cfd8dc"}">${it.name || ""}</b>
         <em>${it.affix || ""}+${it.val}${it.slot === "weapon" ? "" : "%"}</em>
       </div>`).join("");
     grid.querySelectorAll(".bag-cell").forEach(c => c.onclick = async () => {
@@ -550,6 +620,42 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     setTimeout(() => t.remove(), 1800);
   }
 
+  // —— 玄机宝阁 · 九阶（【v24.6】一阶开放，二~九阶占位锁定，解锁条件见方案） ——
+  const TIERS = [
+    { n: 1, unlock: 0, cost: "120 仙玉", note: "一阶寻宝 · 120 仙玉一抽 · 产出一阶装备" },
+    { n: 2, unlock: 5, cost: "150 仙玉 + 寻宝令", note: "二阶 · 通关第 5 关解锁（寻宝令由挂机与首通产出）" },
+    { n: 3, unlock: 8, cost: "8 寻宝令", note: "三阶 · 通关第 8 关解锁" },
+    { n: 4, unlock: 10, cost: "10 寻宝令", note: "四阶 · 通关第 10 关解锁" },
+    { n: 5, unlock: 12, cost: "12 寻宝令", note: "五阶 · 通关第 12 关解锁" },
+    { n: 6, unlock: 14, cost: "15 寻宝令", note: "六阶 · 通关第 14 关解锁（六阶起可出 3 词条）" },
+    { n: 7, unlock: 16, cost: "18 寻宝令", note: "七阶 · 通关第 16 关解锁" },
+    { n: 8, unlock: 18, cost: "22 寻宝令", note: "八阶 · 通关第 18 关解锁" },
+    { n: 9, unlock: 20, cost: "30 寻宝令 + 300 仙玉", note: "九阶 · 玄机宝阁·极（通关 20 关 + 八阶累计百抽）" },
+  ];
+  let curTier = 1;
+  const clearedTop = () => { let m = 0; for (let i = 1; i <= 20; i++) if (starsOf(i) > 0) m = i; return m; };
+  function renderTiers() {
+    const top = clearedTop();
+    $("tierStrip").innerHTML = TIERS.map(t => {
+      const open = t.n === 1 || top >= t.unlock;
+      return `<div class="tier-chip ${t.n === curTier ? "on" : ""} ${open ? "" : "lock"}" data-t="${t.n}">${TIER_CN[t.n]}${open ? "" : " 🔒"}</div>`;
+    }).join("");
+    $("tierStrip").querySelectorAll(".tier-chip").forEach(c => c.onclick = () => {
+      const t = TIERS[+c.dataset.t - 1];
+      const open = t.n === 1 || clearedTop() >= t.unlock;
+      if (!open) { toast("通关第 " + t.unlock + " 关后解锁" + TIER_CN[t.n] + "寻宝"); return; }
+      curTier = t.n;
+      renderTiers();
+    });
+    const cur = TIERS[curTier - 1];
+    $("tierNote").textContent = cur.note;
+    const banner = document.querySelector(".shop-banner-t");
+    if (banner) banner.textContent = "✦ 玄机宝阁 · " + TIER_CN[cur.n] + " ✦";
+    const b1 = document.getElementById("btnDraw1"), b10 = document.getElementById("btnDraw10");
+    if (b1) b1.innerHTML = `<i>寻宝 ×1</i><b>${cur.n === 1 ? "120 ◉" : cur.cost}</b>`;
+    if (b10) b10.innerHTML = `<i>寻宝 ×10</i><b>${cur.n === 1 ? "1200 ◉" : cur.cost + " ×10（待开放）"}</b>`;
+  }
+
   // —— 抽装备寻宝（【v24.3】移入商城，单抽/十连 + 逐个揭示）——
   const GACHA_RATES = [["凡品", 52, "#cfd8dc"], ["良品", 28, "#8ef0a0"], ["上品", 14, "#8ecff0"], ["仙品", 5, "#c9a0ff"], ["神品", 1, "#ffd76a"]];
   function setDrawBusy(b) {
@@ -560,12 +666,13 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     return `<div class="gacha-cell q-${g.quality} ${rare ? "rare" : ""}" style="animation-delay:${i * 90}ms">
       ${rare ? '<span class="gacha-ray"></span>' : ""}
       <img class="bag-ico" src="/games/shanhai/assets/icon_${g.slot}.png" alt="" onerror="this.style.opacity=.25">
-      <b style="color:${g.color}">${g.qualityName}</b>
+      <b style="color:${g.color}">${TIER_CN[tierOf(g)]} · ${g.qualityName}</b>
       <em>${g.name}</em>
       <i>${g.affix} +${g.val}${g.slot === "weapon" ? "" : "%"}</i>
     </div>`;
   }
   async function doDraw(n) {
+    if (curTier !== 1) { toast(TIER_CN[curTier] + "寻宝开发中 · 先在一阶寻宝攒装备吧"); return; }
     const cost = 120 * n;
     const p = META.profile || {};
     if ((p.xianyu || 0) < cost) { toast("仙玉不足（还差 " + (cost - (p.xianyu || 0)) + " ◉）· 去斩妖赚仙玉吧"); return; }
@@ -595,6 +702,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     if (n.dataset.tab === "tabBoard") loadBoard();
     if (n.dataset.tab === "tabGrow") { renderGrow(); startEqAnim(); }
     if (n.dataset.tab === "tabShanhai") renderGrow();   // 【2026-09-14】技能移入山海录
+    if (n.dataset.tab === "tabShop") renderTiers();      // 【v24.6】宝阁阶位页签
     if (n.dataset.tab !== "tabGrow") stopEqAnim();       // 【v24.3】离开装备页停动画
   });
 
