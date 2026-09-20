@@ -4,6 +4,14 @@
 const META = (() => {
   let profile = null;
   let stageStars = {};
+  let stamina = { cur: 10, cap: 10, cost: 1, nextInSec: 0, atCap: true };   // 【v24.9】体力
+  // 装备分解价（一阶基础：凡 5 / 良 10 / 上 20 / 仙 50 / 神 100 仙玉；高阶按 tier 递增）
+  const DISMANTLE_BASE = { white: 5, green: 10, blue: 20, purple: 50, gold: 100 };
+  function dismantlePrice(it) {
+    const base = DISMANTLE_BASE[(it && it.quality) || "white"] || 5;
+    const tier = Math.max(1, Math.min(9, (it && it.tier) | 0 || 1));
+    return Math.round(base * (1 + 0.5 * (tier - 1)));
+  }
 
   // —— 加成计算（战斗读这里） ——
   // 装备词条：武器=攻击% 衣服=生命% 发冠=经验% 腰带=拾取范围% 鞋子=移速% 配饰=全伤害%
@@ -43,6 +51,7 @@ const META = (() => {
   async function load() {
     const d = await shApi("/api/shanhai/profile");
     profile = d.profile;
+    if (d.stamina) stamina = d.stamina;   // 【v24.9】
     return profile;
   }
   async function report(win, stage) {
@@ -73,7 +82,13 @@ const META = (() => {
   async function idleInfo() { return shApi("/api/shanhai/idle"); }
   async function idleClaim() { return shApi("/api/shanhai/idle/claim", {}); }
   async function idleCraft() { return shApi("/api/shanhai/idle/craft", {}); }
+  // 【v24.9】体力（挑战扣 1）与装备分解
+  async function staminaInfo() { const d = await shApi("/api/shanhai/stamina"); if (d.stamina) stamina = d.stamina; return stamina; }
+  async function consumeStamina() { const d = await shApi("/api/shanhai/stamina/consume", {}); if (d.stamina) stamina = d.stamina; return d; }
+  async function dismantle(itemId) { return shApi("/api/shanhai/dismantle", { itemId }); }
 
-  return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, bonus, get profile() { return profile; }, set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
+  return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, consumeStamina, dismantle, dismantlePrice, bonus,
+    get profile() { return profile; }, get stamina() { return stamina; }, set stamina(v) { stamina = v; },
+    set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
 })();
 window.META = META;
