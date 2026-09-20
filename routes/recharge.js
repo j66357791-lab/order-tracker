@@ -28,6 +28,7 @@ export default function mountRecharge(app, ctx) {
     autoDailyCount: 3,          // 单日自动到账笔数上限（超出转人工）
     autoDailyAmount: 2000,      // 单日自动到账金额上限
     ocrEnabled: true,           // 【v25.3】OCR 自动识别开关（后台可随时关；关了即全部转人工）
+    orderNoVerify: true,        // 【v25.4】订单号核验：免 OCR 的机器核验（写入截图里的支付宝订单号，唯一且不重复即放行小额）
     minAmount: 1,               // 单笔最低充值
     maxAmount: 50000,           // 单笔最高充值（防误填）
     tip: '转账时请务必备注你的写手昵称，便于核对；截图需包含金额与收款人。',
@@ -64,6 +65,7 @@ export default function mountRecharge(app, ctx) {
         qrFileId: c.qrFileId || '',
         autoMax: c.autoMax, minAmount: c.minAmount, maxAmount: c.maxAmount,
         tip: c.tip,
+        orderNoVerify: c.orderNoVerify !== false,
         ocr: ocrStatus(c.ocrEnabled !== false),
       });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
@@ -118,7 +120,17 @@ export default function mountRecharge(app, ctx) {
         await new Promise((resolve, reject) => up.end(req.file.buffer, err => (err ? reject(err) : resolve())));
         const shotFileId = String(up.id);
 
-        // —— 机器核验：OCR 识别金额 ——
+        // —— 【v25.4】订单号核验（免 OCR 的第二条机器核验路径）——
+        // 写手从截图里抄支付宝订单号（20~40 位纯数字），唯一且未被用过 → 小额直接放行
+        const orderNoRaw = String((req.body && req.body.orderNo) || '').replace(/[^0-9]/g, '');
+        const orderNoOk = orderNoRaw.length >= 16 && orderNoRaw.length <= 40;
+        let orderNoDup = false;
+        if (orderNoOk) {
+          const dupNo = await db.collection('recharge_orders').findOne({ orderNo: orderNoRaw });
+          orderNoDup = !!dupNo;
+        }
+
+        // —— 机器核验：OCR 识别金额（可用则作为第一重信号） ——
         const ocr = await recognize(req.file.buffer, 25000, cfg.ocrEnabled !== false);
         const picked = ocr.ok ? pickAmount(ocr.text, declared) : { amount: null, list: [] };
         const ocrAmount = picked.amount;
@@ -136,22 +148,36 @@ export default function mountRecharge(app, ctx) {
 
         const no = 'RC' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase();
         const now = new Date();
-        let status, reason, balance = null;
+        let status, reason, verifyMethod = null, balance = null;
         if (ocr.ok && amountMatched && withinAuto) {
-          status = 'auto_paid'; reason = '机器核验通过（截图金额与申报一致）';
+          // 第一重：截图金额与申报一致
+          status = 'auto_paid'; verifyMethod = 'ocr'; reason = '机器核验通过（截图金额与申报一致）';
           await credit(db, req.user.id, declared, `充值到账 · ${no}（支付宝截图机器核验）`);
+        } else if (cfg.orderNoVerify !== false && orderNoOk && !orderNoDup) {
+          // 第二重：订单号核验（OCR 不可用/识别不准时兜住，小额照常秒到账）
+          if (!withinAuto) {
+            status = 'pending'; reason = '超出单日自动到账额度，转人工审核';
+          } else {
+            status = 'auto_paid'; verifyMethod = 'orderNo';
+            reason = '订单号核验通过（订单号唯一，未重复提交）';
+            await credit(db, req.user.id, declared, `充值到账 · ${no}（转账订单号核验）`);
+          }
         } else {
           status = 'pending';
-          if (!ocr.ok) reason = '机器未识别成功，转人工审核（' + (ocr.reason || 'OCR 不可用') + '）';
-          else if (!amountMatched) reason = ocrAmount == null ? '截图中未识别到金额，转人工审核' : `截图金额（¥${ocrAmount}）与申报金额（¥${declared}）不一致，转人工审核`;
+          if (orderNoDup) reason = '该订单号已提交过，转人工审核';
+          else if (!ocr.ok) {
+            reason = '机器核验未通过，转人工审核（' + (ocr.reason || '识别不可用') + '）'
+              + (orderNoRaw && !orderNoOk ? '；订单号格式不对（需 16~40 位数字）' : (orderNoRaw ? '' : '；未填写订单号'));
+          } else if (!amountMatched) reason = ocrAmount == null ? '截图中未识别到金额，转人工审核' : `截图金额（¥${ocrAmount}）与申报金额（¥${declared}）不一致，转人工审核`;
           else if (!withinAuto) reason = '超出单日自动到账额度，转人工审核';
-          else reason = '转人工审核';
+          else reason = '转人工审核（订单号缺失或格式不对）';
         }
         const doc = {
           no, userId: req.user.id, username: req.user.displayName || req.user.username || '',
           amount: declared, declared, ocrAmount: ocrAmount == null ? null : ocrAmount,
           ocrConfidence: ocr.confidence || 0, ocrText: (ocr.text || '').slice(0, 800),
           ocrOk: !!ocr.ok, amountMatched,
+          orderNo: orderNoOk ? orderNoRaw : null, verifyMethod,
           shotFileId, shotHash: hash, shotName: fileName, shotSize: req.file.size,
           status, reason, autoDay: status === 'auto_paid' ? today : null,
           createdAt: now, reviewedBy: null, reviewedAt: null,
@@ -162,9 +188,9 @@ export default function mountRecharge(app, ctx) {
         balance = Math.round(grants.reduce((s, g) => s + (g.amount || 0), 0) * 100) / 100;
         res.json({
           ok: true, no, status, reason, amount: declared, ocrAmount, ocrOk: !!ocr.ok,
-          amountMatched, ocrConfidence: ocr.confidence || 0, balance,
+          amountMatched, ocrConfidence: ocr.confidence || 0, balance, verifyMethod,
           message: status === 'auto_paid'
-            ? `充值成功，¥${declared} 已到账`
+            ? `充值成功，¥${declared} 已到账${verifyMethod === 'orderNo' ? '（订单号核验）' : ''}`
             : '已提交，等待管理员人工审核（截图与金额已留档，可在充值记录查看进度）',
         });
       } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
@@ -181,6 +207,7 @@ export default function mountRecharge(app, ctx) {
         ok: true,
         rows: rows.map(r => ({
           no: r.no, amount: r.amount, ocrAmount: r.ocrAmount, status: r.status, reason: r.reason,
+          verifyMethod: r.verifyMethod || null,
           shotFileId: r.shotFileId, createdAt: r.createdAt, reviewedAt: r.reviewedAt, note: r.reviewNote || null,
         })),
       });
@@ -219,7 +246,7 @@ export default function mountRecharge(app, ctx) {
       const cur = await getCfg(db);
       const b = req.body || {};
       const next = Object.assign({}, cur);
-      for (const k of ['enabled', 'ocrEnabled']) if (b[k] !== undefined) next[k] = !!b[k];
+      for (const k of ['enabled', 'ocrEnabled', 'orderNoVerify']) if (b[k] !== undefined) next[k] = !!b[k];
       for (const k of ['alipayAccount', 'alipayName', 'qrFileId', 'tip']) if (b[k] !== undefined) next[k] = String(b[k]).trim();
       for (const k of ['autoMax', 'autoDailyCount', 'autoDailyAmount', 'minAmount', 'maxAmount']) {
         if (b[k] !== undefined) { const v = Number(b[k]); if (Number.isFinite(v) && v >= 0) next[k] = v; }
