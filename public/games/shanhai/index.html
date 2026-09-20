@@ -597,7 +597,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   function showCraftPanel() {
     const old = document.getElementById("craftMask");
     if (old) old.remove();
-    const d = idleCache || { keyProgress: 0, claimableKeys: 0, keyRate: 0.0001, top: 0, unlockStage: 5, unlocked: false };
+    const d = idleCache || { keyProgress: 0, claimableKeys: 0, keyRate: 0.0001, top: 0, unlockStage: 2, unlocked: false };
     const prog = (d.keyProgress || 0) % 1;
     const mask = document.createElement("div");
     mask.id = "craftMask";
