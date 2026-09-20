@@ -1,4 +1,4 @@
-// server.js — 入口（ES6 模块化架构 v4 · 2026-09-14）
+﻿// server.js — 入口（ES6 模块化架构 v4 · 2026-09-14）
 // 职责只剩：装配中间件 → 挂载各业务模块 → 启动 HTTP/WebSocket
 // 业务代码全部拆分至 routes/ 与 lib/，游戏在 games.js / shanhai_game.js
 import { envReport } from './lib/env.js';   // 必须最先：先加载 .env，后面的模块才能读到配置
@@ -94,8 +94,9 @@ const DEPLOY_CHECK_FILES = [
   'public/games/shanhai/js/config.js', 'public/games/shanhai/js/meta.js',
   'public/games/shanhai/js/ui.js', 'public/games/shanhai/js/assets.js',
   'public/games/shanhai/js/audio.js', 'public/games/shanhai/js/entities.js', 'public/games/shanhai/js/effects.js', 'public/games/shanhai/js/pool.js',
-  'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js',
+  'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js', 'lib/ocr.js',
   'routes/portal.js', 'routes/authx.js', 'routes/user.js', 'routes/orders.js',
+  'routes/recharge.js', 'public/admin/mod-recharge.js',
   'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js', 'routes/dbadmin.js',
   // 【终审补充】漏列的三个后端文件：activity.js 承载红包解冻打款链路，games/shanhai 是两个游戏模块
   'routes/activity.js', 'games.js', 'shanhai_game.js',
@@ -177,6 +178,10 @@ try {
   (await import('./shanhai_game.js')).default(app, { auth, getDb });
   console.log('[游戏] 山海斩妖录模块已挂载');
 } catch (e) { console.error('[游戏] 山海加载失败:', e.message); }
+try {
+  (await import('./routes/recharge.js')).default(app, { ...ctx, GridFSBucket });
+  console.log('[钱包] 充值（截图识别 + 人工审核）模块已挂载');
+} catch (e) { console.error('[钱包] 充值模块加载失败:', e.message); }
 
 
 // —— uid 补齐迁移（旧账号无 uid 时分配）——
@@ -212,3 +217,4 @@ server.listen(CONFIG.port, () => {
   console.log('[自检] MONGO_URI : ' + (r.MONGO_URI ? '已配置 ✓' : '未配置（使用 config.js 默认值）'));
   console.log('[自检] TRUST_PROXY: ' + (r.TRUST_PROXY ? '已开启（反代后面部署）' : '关闭（直连部署）'));
 });
+
