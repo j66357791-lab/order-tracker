@@ -333,6 +333,25 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .diff-btn.on { color: #3a1c02; background: linear-gradient(180deg, #ffe08a, #f7b733); border-color: #f7b733; box-shadow: 0 2px 8px rgba(247,183,51,.35); }
 .diff-btn:not(.on):hover { color: #E8DCC8; border-color: rgba(212,184,122,.6); }
 
+/* ================= 【v24.6】挂机收益入口与面板 ================= */
+#idleEntry { position: absolute; right: 14px; bottom: 96px; width: 74px; text-align: center; cursor: pointer; z-index: 5; }
+#tabFight { position: relative; }
+/* 【v24.6】玄机宝阁九阶页签 */
+.tier-strip { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 8px; }
+.tier-chip { flex: 0 0 auto; font: 700 12px "PingFang SC", sans-serif; letter-spacing: 1px; color: #A89878; background: rgba(0,0,0,.30); border: 1px solid rgba(212,184,122,.32); border-radius: 9px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.tier-chip.on { color: #3a1c02; background: linear-gradient(180deg, #ffe08a, #f7b733); border-color: #f7b733; }
+.tier-chip.lock { opacity: .5; }
+.tier-note { font-size: 11px; color: #8f8468; text-align: center; margin-bottom: 6px; }
+.idle-chest { width: 62px; height: 62px; display: block; margin: 0 auto; filter: drop-shadow(0 4px 10px rgba(0,0,0,.5)); animation: idleFloat 2.6s ease-in-out infinite; }
+.idle-glow { animation: idleGlow 2.6s ease-in-out infinite; transform-origin: 32px 26px; }
+@keyframes idleFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes idleGlow { 0%,100% { opacity: .55; transform: scale(.92); } 50% { opacity: 1; transform: scale(1.06); } }
+.idle-time { margin-top: 2px; font: 11px/1.4 "PingFang SC", sans-serif; color: #ffd76a; letter-spacing: .5px; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+.idle-panel { max-width: 340px; }
+.idle-dur { text-align: center; font: 900 15px/1.6 "PingFang SC", sans-serif; color: #3a5a4a; letter-spacing: 1px; margin: 4px 0 10px; }
+.idle-rows { margin-bottom: 4px; }
+.bag-cell .tier-tag { font-style: normal; color: #ffd76a; }
+
 /* ================= 【v24.5】装备详情弹窗 ================= */
 .eq-detail-mask { position: fixed; inset: 0; background: rgba(0,0,0,.66); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 20px; animation: popin .2s ease; }
 .eq-detail { width: 100%; max-width: 330px; background: linear-gradient(180deg, #f6f1e2, #e6dac4); border: 1px solid rgba(212,184,122,.7); border-radius: 16px; padding: 18px 16px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
