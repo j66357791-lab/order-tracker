@@ -86,8 +86,13 @@ const META = (() => {
   async function staminaInfo() { const d = await shApi("/api/shanhai/stamina"); if (d.stamina) stamina = d.stamina; return stamina; }
   async function consumeStamina() { const d = await shApi("/api/shanhai/stamina/consume", {}); if (d.stamina) stamina = d.stamina; return d; }
   async function dismantle(itemId) { return shApi("/api/shanhai/dismantle", { itemId }); }
+  // 【v26.0】灵气交易所：行情 / 挂单 / 成交 / 撤单
+  async function exBoard() { return shApi("/api/shanhai/exchange/board"); }
+  async function exPublish(side, amount, price) { return shApi("/api/shanhai/exchange/publish", { side, amount, price }); }
+  async function exDeal(orderId, amount) { return shApi("/api/shanhai/exchange/deal", { orderId, amount }); }
+  async function exCancel(orderId) { return shApi("/api/shanhai/exchange/cancel", { orderId }); }
 
-  return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, consumeStamina, dismantle, dismantlePrice, bonus,
+  return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, consumeStamina, dismantle, dismantlePrice, bonus, exBoard, exPublish, exDeal, exCancel,
     get profile() { return profile; }, get stamina() { return stamina; }, set stamina(v) { stamina = v; },
     set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
 })();
