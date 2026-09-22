@@ -500,16 +500,23 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .ex-col.on { display: block; }
 .ex-col-head { display: flex; justify-content: space-between; align-items: center; padding: 0 2px 8px; font: 700 12px/1 sans-serif; color: #7a6030; }
 
-/* 【v26.1】交易横条：每条挂单 = 一个长方形横条组件 */
+/* 【v26.1】交易横条：每条挂单 = 一个长方形横条组件
+   【v26.2 可读性修复】文字直接压在横条底图的纹理上会发虚（尤其是 10px 的小字），
+   解法是给内容区垫一层半透明白底（::before），并把左右内边距加大，让文字不压到金边上。 */
 .ex-row {
-  position: relative; display: flex; align-items: center; gap: 8px;
-  padding: 10px 12px; margin-bottom: 8px; min-height: 58px;
+  position: relative; display: flex; align-items: center; gap: 10px;
+  padding: 12px 18px; margin-bottom: 8px; min-height: 66px;
   background: url(../assets/exchange/ex-bar.png?v=26) center/100% 100% no-repeat, #f4eede;
 }
-.ex-row .who { width: 60px; flex-shrink: 0; font: 700 12px/1.3 "PingFang SC", sans-serif; color: #3a5a4a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ex-row .who i { display: block; font-style: normal; font: 400 10px/1.4 sans-serif; color: #8a7a58; }
-.ex-row .num { flex: 1; min-width: 0; font: 900 13px/1.4 "PingFang SC", sans-serif; color: #7a5a1a; }
-.ex-row .num i { display: block; font-style: normal; font: 400 10.5px/1.4 sans-serif; color: #8a7a58; }
+.ex-row::before { content: ""; position: absolute; inset: 9px 13px; background: rgba(255,253,246,.62); border-radius: 7px; pointer-events: none; }
+.ex-row > * { position: relative; z-index: 1; }
+.ex-row .who { width: 62px; flex-shrink: 0; font: 700 13px/1.35 "PingFang SC", sans-serif; color: #23402f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-row .who i { display: block; font-style: normal; font: 400 11px/1.45 sans-serif; color: #6a5c3f; }
+.ex-row .num { flex: 1; min-width: 0; font: 900 14px/1.4 "PingFang SC", sans-serif; color: #6b4a10; }
+.ex-row .num i { display: block; font-style: normal; font: 400 11.5px/1.45 sans-serif; color: #6a5c3f; }
+/* 【v26.2】自己挂的单：左侧一条金色标记 + 名字后带「我」 */
+.ex-row.mine-own::after { content: ""; position: absolute; left: 6px; top: 12px; bottom: 12px; width: 3px; border-radius: 3px; background: linear-gradient(180deg,#dcae43,#b8842a); z-index: 2; }
+.ex-self-tag { display: inline-block; margin-left: 3px; padding: 0 4px; border-radius: 4px; background: #d9a93f; color: #fff; font-size: 9.5px; line-height: 14px; vertical-align: 1px; }
 .ex-empty { text-align: center; padding: 26px 10px; font: 12px/1.6 sans-serif; color: #9c8b6b; }
 
 /* 【v26.1】买卖按钮：文字胶囊，不再用图标 */
