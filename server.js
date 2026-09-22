@@ -104,6 +104,8 @@ const DEPLOY_CHECK_FILES = [
   'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js', 'routes/dbadmin.js',
   // 【终审补充】漏列的三个后端文件：activity.js 承载红包解冻打款链路，games/shanhai 是两个游戏模块
   'routes/activity.js', 'games.js', 'shanhai_game.js',
+  // 【v26.2】做市机器人与交易所后台（缺了它后台「山海·交易所」面板会整个打不开）
+  'routes/shanhai_market.js', 'public/admin/mod-shanhai.js',
 ];
 // 【2026-09-17 安全加固】原接口无鉴权公开返回全部文件名/大小/SHA-256 指纹，等于帮攻击者做资产测绘。
 // 现拆两级：公开版只回 version/missingCount（部署核验够用）；完整清单仅管理员可见。
@@ -182,6 +184,10 @@ try {
   (await import('./shanhai_game.js')).default(app, { auth, getDb });
   console.log('[游戏] 山海斩妖录模块已挂载');
 } catch (e) { console.error('[游戏] 山海加载失败:', e.message); }
+try {
+  // 【v26.2】交易所做市机器人（每分钟自动买卖）+ 后台管控（玩家道具查询/发放、交易所台账）
+  (await import('./routes/shanhai_market.js')).default(app, { auth, adminOnly, getDb });
+} catch (e) { console.error('[游戏] 做市机器人模块加载失败:', e.message); }
 try {
   (await import('./routes/recharge.js')).default(app, { ...ctx, GridFSBucket });
   console.log('[钱包] 充值（截图识别 + 人工审核）模块已挂载');
