@@ -65,6 +65,7 @@ export const NAV_ITEMS = [
   { key: 'recharge', icon: '📥', title: '充值管理',   type: 'panel', desc: '收款账号配置 / 截图充值审核' },
   { key: 'recon',    icon: '💰', title: '财务对账',   type: 'panel', desc: '台账 × 派单卡交叉核对' },
   { key: 'game',     icon: '🎮', title: '游戏控制器', type: 'panel', desc: '翻翻乐配置 / 山海数据 / 道具 / 审计' },
+  { key: 'shanhai',  icon: '💱', title: '山海·交易所', type: 'panel', desc: '做市机器人 / 成交台账 / 玩家道具管控' },
   { key: 'mall',     icon: '🛍', title: '用户端配置', type: 'panel', desc: '套餐 / 文案馆作品 / 咨询' },
   { key: 'ads',      icon: '📝', title: '广告管理',   type: 'panel', desc: '写手端活动中心公告' },
   { key: 'security', icon: '🛡', title: '安全与用户', type: 'panel', desc: '账号 / 密码重置 / 站内信 / 危险操作' },
