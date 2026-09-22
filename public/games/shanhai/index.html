@@ -60,7 +60,8 @@
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <div class="tb-rank" onclick="showBoard()" style="width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.3);border:1px solid rgba(212,184,122,.5);display:flex;align-items:center;justify-content:center;cursor:pointer" title="排行榜">🏆</div>
+        <!-- 【v26.2】斩妖榜暂时下架（接口与后台数据保留，把下面这一行的 display:none 去掉即可恢复） -->
+        <div class="tb-rank" onclick="showBoard()" style="display:none;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.3);border:1px solid rgba(212,184,122,.5);align-items:center;justify-content:center;cursor:pointer" title="排行榜">🏆</div>
         <div class="tb-currency"><span class="yd-ico">◉</span><b id="tbXianyu">0</b></div>
         <div class="tb-currency lingqi"><span class="lq-ico">✦</span><b id="tbLingqi">0</b></div>
       </div>
@@ -415,6 +416,14 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       </div>`;
     }
     const isBuy = o.side === "sell";   // 对方是卖单 → 我要买；对方是买单 → 我要卖
+    // 自己的单不再从列表里剔掉，而是标一个「我」并且不给成交按钮（后端也拦自成交）
+    if (o.mine) {
+      return `<div class="ex-row mine-own">
+        <div class="who">${_escHtml(o.username)}<span class="ex-self-tag">我</span><i>${isBuy ? "出售中" : "求购中"}</i></div>
+        <div class="num">${left} 灵气<i>单价 ¥${unit} · 共 ¥${total}</i></div>
+        <div class="ex-btn cancel" data-act="cancel" data-id="${o.id}">撤单</div>
+      </div>`;
+    }
     return `<div class="ex-row">
       <div class="who">${_escHtml(o.username)}<i>${isBuy ? "售" : "求"}</i></div>
       <div class="num">${left} 灵气<i>单价 ¥${unit} · 共 ¥${total}</i></div>
