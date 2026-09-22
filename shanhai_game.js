@@ -8,6 +8,7 @@
 // 【2026-09-17 安全修复】补战绩上限/关卡上限/接口限流，堵住脚本刷仙玉的口子
 import { limit } from './lib/ratelimit.js';
 import { ObjectId } from 'mongodb';
+import { createHash } from 'crypto';
 
 export default function mountShanhaiGame(app, { auth, getDb }) {
 
@@ -551,8 +552,21 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
     feeRate: 0.005,         // 【v26.1】手续费 0.5%：买家付全额，卖家实收 total×(1-0.5%)
   };
   const PLATFORM_ID = '__platform__';   // 手续费归集账户（不参与任何玩家余额，只用于统计平台收入）
+  const BOT_ID = '__market__';          // 【v26.2】做市机器人账户：手续费照收，台账里用 bot 标记区分
   const money2 = n => Math.round(Number(n) * 100) / 100;
   const EX_PROJ = { _id: 1, userId: 1, username: 1, side: 1, amount: 1, left: 1, price: 1, status: 1, createdAt: 1 };
+  // 【v26.2】交易所匿名制：玩家之间只看得到匿名代号，真实用户名只留在库里给后台查。
+  // 代号由 userId 哈希固定生成——同一个人每次都是同一个代号，便于"认得出是同一家"但认不出是谁。
+  const _anonCache = new Map();
+  function anonName(userId) {
+    const s = String(userId || '');
+    if (s === BOT_ID) return '做市灵傀';
+    if (!_anonCache.has(s)) {
+      if (_anonCache.size > 5000) _anonCache.clear();
+      _anonCache.set(s, '道友·' + createHash('sha1').update('sh:' + s).digest('hex').slice(0, 4).toUpperCase());
+    }
+    return _anonCache.get(s);
+  }
 
   async function walletBalanceOf(db, userId) {
     const rows = await db.collection('wallet_log').find({ userId }, { projection: { amount: 1 } }).toArray();
@@ -584,19 +598,24 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       const col = db.collection('shanhai_exchange');
       const [sells, buys, mine, balance] = await Promise.all([
         // 卖单按单价升序（最便宜的先给买家看）
-        col.find({ side: 'sell', status: 'open', left: { $gt: 0 }, userId: { $ne: me } })
+        // 【v26.2】不再排除自己——自己的挂单也要出现在列表里（前端加「我」标记区分）
+        col.find({ side: 'sell', status: 'open', left: { $gt: 0 } })
           .sort({ price: 1, createdAt: 1 }).limit(50).project(EX_PROJ).toArray(),
         // 买单按单价降序（出价最高的先给卖家看）
-        col.find({ side: 'buy', status: 'open', left: { $gt: 0 }, userId: { $ne: me } })
+        col.find({ side: 'buy', status: 'open', left: { $gt: 0 } })
           .sort({ price: -1, createdAt: 1 }).limit(50).project(EX_PROJ).toArray(),
         col.find({ userId: me, status: 'open' }).sort({ createdAt: -1 }).limit(40).project(EX_PROJ).toArray(),
         walletBalanceOf(db, me),
       ]);
+      // 对外一律匿名：真实用户名只在 shanhai_exchange 文档里给后台查
+      const mask = arr => arr.map(o => Object.assign({}, o, {
+        username: anonName(o.userId), mine: o.userId === me, bot: o.userId === BOT_ID,
+      }));
       res.json({
         ok: true,
         cfg: { maxOpenPerSide: EX_CFG.maxOpenPerSide, minPrice: EX_CFG.minPrice, maxPrice: EX_CFG.maxPrice, minAmount: EX_CFG.minAmount, maxAmount: EX_CFG.maxAmount, feeRate: EX_CFG.feeRate },
-        me: { lingqi: p.lingqi || 0, frozen: p.lingqiFrozen || 0, balance },
-        sells, buys, mine,
+        me: { id: me, lingqi: p.lingqi || 0, frozen: p.lingqiFrozen || 0, balance },
+        sells: mask(sells), buys: mask(buys), mine: mask(mine),
       });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
@@ -706,6 +725,14 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       await db.collection('shanhai_logs').insertOne({
         userId: me, action: 'exchange_deal',
         detail: { orderId: String(oid), side: ord.side, amount: n, price: ord.price, total, with: ord.username },
+        createdAt: new Date(),
+      }).catch(() => {});
+      // 【v26.2】统一台账：玩家成交与机器人成交都写 shanhai_ex_deals（后台一个面板查全，
+      // bot 字段一眼分清是人还是机器人）。名字这里存匿名代号，真实身份后台按 userId 关联查。
+      await db.collection('shanhai_ex_deals').insertOne({
+        orderId: String(oid), side: ord.side, amount: n, price: ord.price, total, fee,
+        buyerId, sellerId, bot: false, mode: 'player',
+        buyerName: anonName(buyerId), sellerName: anonName(sellerId),
         createdAt: new Date(),
       }).catch(() => {});
       const np = await prof.findOne({ userId: me });
