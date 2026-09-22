@@ -44,11 +44,19 @@
 
     <!-- 顶栏 -->
     <div class="topbar">
-      <div class="tb-user" onclick="showUserMenu()" style="cursor:pointer">
-        <div class="avatar" id="avChar">御</div>
-        <div class="tb-info">
-          <b id="tbName">御火行者</b>
-          <span id="tbTitle">初入山海</span>
+      <div class="tb-left">
+        <div class="tb-user" onclick="showUserMenu()" style="cursor:pointer">
+          <div class="avatar" id="avChar">御</div>
+          <div class="tb-info">
+            <b id="tbName">御火行者</b>
+            <span id="tbTitle">初入山海</span>
+          </div>
+        </div>
+        <!-- 【v26.0】交易所入口（头像正下方） -->
+        <div class="ex-entry" onclick="showExchange()" title="灵气交易所">
+          <img src="/games/shanhai/assets/exchange/ex-entry.png?v=26" alt="" onerror="this.style.display='none'">
+          <span>交易所</span>
+          <i class="ex-entry-dot" id="exEntryDot" style="display:none"></i>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
@@ -65,7 +73,7 @@
       <div class="home-tab on" id="tabFight">
         <div class="stage-visual">
           <div class="stage-title-bar">
-            <img src="/games/shanhai/assets/stage-bar-new.png?v=10" alt="">
+            <img src="/games/shanhai/assets/stage-bar-new.png?v=26" alt="">
             <span id="stageName">南山草泽</span>
           </div>
           <!-- 【v24.4】难度页签：普通 20 关 / 困难 20 关（暂不开放） -->
@@ -75,14 +83,14 @@
           </div>
           <div class="stage-main">
             <div class="stage-arrow left" id="stagePrev">‹</div>
-            <img src="/games/shanhai/assets/stage-mountain-new.png?v=9" class="stage-img" alt="">
+            <img src="/games/shanhai/assets/stage-mountain-new.png?v=26" class="stage-img" alt="">
             <div class="stage-arrow right" id="stageNext">›</div>
           </div>
           <div class="stage-level-badge" id="stageLevel">第 一 关</div>
           <div class="stage-stars" id="stageStars">
-            <img src="/games/shanhai/assets/star-transparent.png?v=9" alt="">
-            <img src="/games/shanhai/assets/star-transparent.png?v=9" alt="">
-            <img src="/games/shanhai/assets/star-transparent.png?v=9" alt="">
+            <img src="/games/shanhai/assets/star-transparent.png?v=26" alt="">
+            <img src="/games/shanhai/assets/star-transparent.png?v=26" alt="">
+            <img src="/games/shanhai/assets/star-transparent.png?v=26" alt="">
           </div>
           <div class="stage-sub" id="stageSub">15 波 · 山臊王</div>
           <div class="stamina-line" id="staminaLine">体力 10/10</div>
@@ -374,6 +382,259 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       .catch(e => { const el = document.getElementById('boardList'); if(el) el.textContent = '加载失败'; });
   }
   window.showBoard = showBoard;
+
+  /* ==================== 【v26.0】灵气交易所 ====================
+     玩法：灵气是通用货币，可与「账户余额（元）」互相结缘。
+     · 我要买 —— 看别人挂的出售单，点「买入」用账户余额付款，灵气即时到账
+     · 我要卖 —— 看别人挂的求购单，点「卖出」把灵气给他，余额即时到账
+     · 也可自己发单挂着等人来成交；单侧最多 10 条
+     挂出售单会先把灵气冻结起来（防止同一批灵气被卖两次），撤单即解冻。 */
+  const _m2 = n => Math.round(Number(n || 0) * 100) / 100;
+  const _escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let EX = { tab: "buy", data: null, busy: false, form: { a: "", p: "" } };
+
+  async function loadEx() {
+    if (!document.getElementById("exMask")) return;
+    try {
+      const d = await META.exBoard();
+      if (!d.ok) throw new Error(d.error || "加载失败");
+      EX.data = d;
+      renderEx();
+    } catch (e) {
+      toast("行情加载失败：" + (e && (e.error || e.message) || "请稍后重试"));
+    }
+  }
+
+  function exRowHTML(o, mode) {
+    const left = o.left, unit = Number(o.price).toFixed(2), total = _m2(left * o.price).toFixed(2);
+    if (mode === "mine") {
+      return `<div class="ex-row mine">
+        <div class="who">${o.side === "sell" ? "出售" : "求购"}<i>单价 ¥${unit}</i></div>
+        <div class="num">${left} / ${o.amount} 灵气<i>待成交 ¥${total}</i></div>
+        <div class="ex-btn cancel" data-act="cancel" data-id="${o.id}">撤销</div>
+      </div>`;
+    }
+    const isBuy = o.side === "sell";   // 对方是卖单 → 我要买；对方是买单 → 我要卖
+    return `<div class="ex-row">
+      <div class="who">${_escHtml(o.username)}<i>${isBuy ? "售" : "求"}</i></div>
+      <div class="num">${left} 灵气<i>单价 ¥${unit} · 共 ¥${total}</i></div>
+      <div class="ex-btn ${isBuy ? "buy" : "sell"}" data-act="deal" data-id="${o.id}" data-left="${left}" data-price="${o.price}" data-side="${o.side}">${isBuy ? "买入" : "卖出"}</div>
+    </div>`;
+  }
+
+  function exEmpty(txt) { return `<div class="ex-empty">${txt}</div>`; }
+
+  function renderEx() {
+    const d = EX.data;
+    const mask = document.getElementById("exMask");
+    if (!d || !mask) return;
+    const cfg = d.cfg || {}, me = d.me || {};
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set("exMyLq", me.lingqi || 0);
+    set("exMyFz", me.frozen || 0);
+    set("exMyBal", "¥" + (me.balance || 0).toFixed(2));
+
+    const mine = d.mine || [];
+    const mineSell = mine.filter(o => o.side === "sell").length;
+    const mineBuy = mine.filter(o => o.side === "buy").length;
+    const maxN = cfg.maxOpenPerSide || 10;
+
+    document.getElementById("colBuy").innerHTML =
+      `<div class="ex-col-head"><span>在售灵气（价低者优先）</span><span>${(d.sells || []).length} 单</span></div>` +
+      ((d.sells || []).length ? d.sells.map(o => exRowHTML(o, "market")).join("") : exEmpty("暂无出售单，换个时候再来"));
+    document.getElementById("colSell").innerHTML =
+      `<div class="ex-col-head"><span>求购灵气（价高者优先）</span><span>${(d.buys || []).length} 单</span></div>` +
+      ((d.buys || []).length ? d.buys.map(o => exRowHTML(o, "market")).join("") : exEmpty("暂无求购单，可自己挂一张"));
+    document.getElementById("colMine").innerHTML =
+      `<div class="ex-col-head"><span>我的挂单</span><span>售 ${mineSell}/${maxN} · 求 ${mineBuy}/${maxN}</span></div>` +
+      (mine.length ? mine.map(o => exRowHTML(o, "mine")).join("") : exEmpty("还没有挂单"));
+
+    ["buy", "sell", "mine"].forEach(t => {
+      const c = document.getElementById("col" + t[0].toUpperCase() + t.slice(1));
+      if (c) c.classList.toggle("on", t === EX.tab);
+    });
+
+    // —— 底部发布表单 ——
+    const form = document.getElementById("exForm");
+    if (EX.tab === "mine") { form.innerHTML = `<div class="ex-tip">挂出售单会冻结对应灵气，撤销即刻解冻</div>`; return; }
+    const isSell = EX.tab === "sell";
+    const cnt = isSell ? mineSell : mineBuy;
+    form.innerHTML = `
+      <div class="ex-form-row">
+        <label>数量</label>
+        <input class="ex-inp" id="exAmount" type="number" inputmode="numeric" min="1" step="1" value="${_escHtml(EX.form.a)}" placeholder="${isSell ? "要卖出多少灵气（可用 " + (me.lingqi || 0) + "）" : "要求购多少灵气"}">
+      </div>
+      <div class="ex-form-row">
+        <label>单价</label>
+        <input class="ex-inp" id="exPrice" type="number" inputmode="decimal" min="${cfg.minPrice || 0.01}" step="0.01" value="${_escHtml(EX.form.p)}" placeholder="每个灵气多少元">
+        <span class="ex-sum" id="exTotal">¥0.00</span>
+      </div>
+      <button class="ex-submit" id="exSubmit">${isSell ? "发 布 出 售" : "发 布 求 购"}</button>
+      <div class="ex-tip">${isSell ? "发布后灵气立即冻结，成交或撤销前不可他用" : "求购单不占用余额，成交时实时扣款"} ｜ 已挂 ${cnt}/${maxN}</div>`;
+
+    const calc = () => {
+      const a = Math.floor(Number(document.getElementById("exAmount").value) || 0);
+      const p = Number(document.getElementById("exPrice").value) || 0;
+      // 记住输入：切页签/成交后表单会重建，不记住用户就得重填一遍
+      EX.form = { a: document.getElementById("exAmount").value, p: document.getElementById("exPrice").value };
+      const el = document.getElementById("exTotal");
+      if (el) el.textContent = "¥" + _m2(a * p).toFixed(2);
+      return { a, p };
+    };
+    calc();
+    ["exAmount", "exPrice"].forEach(id => { const el = document.getElementById(id); if (el) el.oninput = calc; });
+    const btn = document.getElementById("exSubmit");
+    if (btn) btn.onclick = async () => {
+      const { a, p } = calc();
+      if (!(a >= 1)) return toast(isSell ? "请输入要出售的灵气数量" : "请输入要求购的灵气数量");
+      if (!(p > 0)) return toast("请输入单价（元/个）");
+      if (EX.busy) return;
+      EX.busy = true; btn.disabled = true;
+      try {
+        const r = await META.exPublish(isSell ? "sell" : "buy", a, p);
+        if (!r.ok) throw new Error(r.error || "发布失败");
+        EX.form = { a: "", p: "" };   // 发布成功清空输入，避免误重复发布
+        toast(isSell ? "出售单已挂出" : "求购单已挂出");
+        renderHome();
+        await loadEx();
+      } catch (e) {
+        toast((e && e.error) || e.message || "发布失败");
+      } finally { EX.busy = false; btn.disabled = false; }
+    };
+  }
+
+  // 成交确认弹层
+  function exDealSheet(o) {
+    const isBuy = o.side === "sell";       // 我是否为付款方
+    const me = (EX.data && EX.data.me) || {};
+    const sub = document.createElement("div");
+    sub.className = "ex-mask"; sub.style.zIndex = 1000;
+    sub.id = "exSheet";
+    sub.onclick = e => { if (e.target === sub) sub.remove(); };
+    const feeRate = (EX.data && EX.data.cfg && EX.data.cfg.feeRate) || 0.005;
+    const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    const calcNum = n => {
+      const total = _m2(n * o.price), fee = _m2(total * feeRate);
+      return { total, fee, net: isBuy ? total : _m2(total - fee) };   // 手续费由卖家承担：买入付全额，卖出收扣后金额
+    };
+    const c0 = calcNum(o.left);
+    sub.innerHTML = `
+      <div class="ex-wrap" style="max-width:340px">
+        <div class="ex-board" style="height:64px"></div>
+        <div class="ex-head">
+          <div class="ex-title">${isBuy ? "买入灵气" : "卖出灵气"}</div>
+          <div class="ex-sub">单价 ¥${Number(o.price).toFixed(2)} · 可成交上限 ${o.left}</div>
+          <div class="ex-close" onclick="document.getElementById('exSheet').remove()">×</div>
+        </div>
+        <div style="padding:12px 14px 6px">
+          <div class="ex-form-row">
+            <label>数量</label>
+            <input class="ex-inp" id="shAmt" type="number" inputmode="numeric" min="1" max="${o.left}" step="1" value="${o.left}">
+          </div>
+          <div class="ex-line"><span>成交金额</span><b id="shTotal">¥${c0.total.toFixed(2)}</b></div>
+          <div class="ex-line fee"><span>手续费 ${(feeRate * 100).toFixed(1)}%（卖方承担）</span><span id="shFee">¥${c0.fee.toFixed(2)}</span></div>
+          <div class="ex-line net"><span>${isBuy ? "实付" : "实收"}</span><b id="shNet">¥${c0.net.toFixed(2)}</b></div>
+          <div class="ex-line fee"><span>${isBuy ? "可用余额" : "可用灵气"}</span><span id="shAvail">${isBuy ? "¥" + (me.balance || 0).toFixed(2) : (me.lingqi || 0) + " 灵气"}</span></div>
+          <button class="ex-submit" id="shOk" style="margin-top:10px">确 认 ${isBuy ? "买入" : "卖出"}</button>
+          <div class="ex-tip">成交即时结算 · ${isBuy ? "全额从账户余额扣除" : "货款扣除手续费后到账"}</div>
+        </div>
+      </div>`;
+    document.body.appendChild(sub);
+    const amtEl = document.getElementById("shAmt");
+    const upd = () => {
+      const n = Math.min(o.left, Math.max(1, Math.floor(Number(amtEl.value) || 1)));
+      const c = calcNum(n);
+      setTxt("shTotal", "¥" + c.total.toFixed(2));
+      setTxt("shFee", "¥" + c.fee.toFixed(2));
+      setTxt("shNet", "¥" + c.net.toFixed(2));
+      return n;
+    };
+    amtEl.oninput = upd;
+    document.getElementById("shOk").onclick = async () => {
+      const n = upd();
+      if (EX.busy) return;
+      EX.busy = true;
+      try {
+        const r = await META.exDeal(o.id, n);
+        if (!r.ok) throw new Error(r.error || "交易失败");
+        sub.remove();
+        const got = Number(r.got || r.total || 0);
+        toast((r.side === "sell" ? "已买入 " : "已卖出 ") + r.amount + " 灵气 · " + (r.side === "sell" ? "实付 ¥" : "实收 ¥") + got.toFixed(2));
+        await refreshAll();
+      } catch (e) {
+        toast((e && e.error) || e.message || "交易失败");
+      } finally { EX.busy = false; }
+    };
+  }
+
+  async function refreshAll() {
+    await loadEx();
+    try { await META.load(); renderHome(); } catch (e) {}
+  }
+
+  async function showExchange() {
+    let mask = document.getElementById("exMask");
+    if (mask) mask.remove();
+    EX.tab = "buy";
+    mask = document.createElement("div");
+    mask.className = "ex-mask"; mask.id = "exMask";
+    mask.onclick = e => { if (e.target === mask) mask.remove(); };
+    mask.innerHTML = `
+      <div class="ex-wrap">
+        <div class="ex-board"></div>
+        <div class="ex-head">
+          <div class="ex-title">灵气交易所</div>
+          <div class="ex-sub">以账户余额结缘灵气 · 立单即为约</div>
+          <div class="ex-close" id="exClose">×</div>
+        </div>
+        <div class="ex-assets">
+          <div class="ex-asset"><i>可用灵气</i><b id="exMyLq">--</b></div>
+          <div class="ex-asset"><i>挂单冻结</i><b id="exMyFz">--</b></div>
+          <div class="ex-asset bal"><i>账户余额</i><b id="exMyBal">--</b></div>
+        </div>
+        <div class="ex-tabs">
+          <div class="ex-tab on"  data-t="buy">我要买</div>
+          <div class="ex-tab"     data-t="sell">我要卖</div>
+          <div class="ex-tab"     data-t="mine">我的挂单</div>
+        </div>
+        <div class="ex-body">
+          <div class="ex-col on" id="colBuy"></div>
+          <div class="ex-col"    id="colSell"></div>
+          <div class="ex-col"    id="colMine"></div>
+        </div>
+        <div class="ex-form" id="exForm"></div>
+      </div>`;
+    document.body.appendChild(mask);
+    document.getElementById("exClose").onclick = () => mask.remove();
+    mask.querySelectorAll(".ex-tab").forEach(t => {
+      t.onclick = () => {
+        mask.querySelectorAll(".ex-tab").forEach(x => x.classList.remove("on"));
+        t.classList.add("on");
+        EX.tab = t.dataset.t;
+        renderEx();
+      };
+    });
+    // 列表按钮统一走事件委托
+    mask.addEventListener("click", async e => {
+      const btn = e.target.closest(".ex-btn");
+      if (!btn || EX.busy) return;
+      const act = btn.dataset.act;
+      if (act === "deal") {
+        exDealSheet({ id: btn.dataset.id, left: +btn.dataset.left, price: +btn.dataset.price, side: btn.dataset.side });
+      } else if (act === "cancel") {
+        EX.busy = true;
+        try {
+          const r = await META.exCancel(btn.dataset.id);
+          if (!r.ok) throw new Error(r.error || "撤销失败");
+          toast("已撤单，冻结灵气已退回");
+          await refreshAll();
+        } catch (err) { toast((err && err.error) || err.message || "撤销失败"); }
+        finally { EX.busy = false; }
+      }
+    });
+    await loadEx();
+  }
+  window.showExchange = showExchange;
 
   // —— 主页渲染 ——
   // 【v24.4】第一章 · 南山草泽：普通 20 关（通关解锁下一关）+ 困难 20 关（暂不开放）
