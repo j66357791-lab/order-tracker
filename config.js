@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.1',   // 【v26.1】灵气交易所（0.5% 手续费 + 横条列表 + 背景板弹窗）+ 资源瘦身
+  appVersion: '26.2',   // 【v26.2】交易所匿名制 + 做市机器人 + 后台台账与玩家道具管控 + 斩妖榜下架
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
