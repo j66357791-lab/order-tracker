@@ -7,6 +7,7 @@
 // 【2026-09-14】养成层（斩妖录·贰）：仙玉/灵气双货币 + 6槽装备 + 背包 + 抽卡 + 技能强化
 // 【2026-09-17 安全修复】补战绩上限/关卡上限/接口限流，堵住脚本刷仙玉的口子
 import { limit } from './lib/ratelimit.js';
+import { ObjectId } from 'mongodb';
 
 export default function mountShanhaiGame(app, { auth, getDb }) {
 
@@ -532,6 +533,211 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         .project({ username: 1, bestKills: 1, bestTimeSec: 1, wins: 1 }).toArray();
       res.json({ ok: true, timeBoard, killBoard });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+  });
+
+  // ==================== 灵气交易所（v26.0） ====================
+  // 玩家之间用「账户余额（元）」买卖「灵气」的挂单市场。五条硬规则：
+  //   1) 卖单必须冻结灵气（lingqiFrozen）——不冻结就会把同一批灵气同时挂给十个人，必然超卖
+  //   2) 买单成交时才实时扣余额——不预冻结，用户的钱不会被无意义地锁住（吃单前 UI 会先算够不够）
+  //   3) 每人每侧最多 MAX_OPEN 条未成交单
+  //   4) 成交先抢余量再动资金，资金流全部写 wallet_log（余额 = sum(wallet_log.amount)，与充值/激励同一口径）
+  //   5) 任何一步失败都要把抢到的余量退回去
+  const EX_CFG = {
+    maxOpenPerSide: 10,     // 单用户一侧最多 10 条
+    minAmount: 1,
+    maxAmount: 999999,
+    minPrice: 0.01,
+    maxPrice: 9999,
+    feeRate: 0.005,         // 【v26.1】手续费 0.5%：买家付全额，卖家实收 total×(1-0.5%)
+  };
+  const PLATFORM_ID = '__platform__';   // 手续费归集账户（不参与任何玩家余额，只用于统计平台收入）
+  const money2 = n => Math.round(Number(n) * 100) / 100;
+  const EX_PROJ = { _id: 1, userId: 1, username: 1, side: 1, amount: 1, left: 1, price: 1, status: 1, createdAt: 1 };
+
+  async function walletBalanceOf(db, userId) {
+    const rows = await db.collection('wallet_log').find({ userId }, { projection: { amount: 1 } }).toArray();
+    return money2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  }
+  // 每侧未成交单数
+  async function openSides(db, userId) {
+    const a = await db.collection('shanhai_exchange').aggregate([
+      { $match: { userId, status: 'open' } },
+      { $group: { _id: '$side', n: { $sum: 1 } } },
+    ]).toArray();
+    const o = { sell: 0, buy: 0 };
+    a.forEach(x => { o[x._id] = x.n; });
+    return o;
+  }
+  // 资金流水（正=进账，负=支出）
+  async function walletLog(db, userId, amount, kind, note, orderId) {
+    await db.collection('wallet_log').insertOne({
+      userId, amount: money2(amount), kind, note: note || '', orderId: orderId || null, createdAt: new Date(),
+    });
+  }
+
+  // ---------- 行情看板 ----------
+  app.get('/api/shanhai/exchange/board', auth, async (req, res) => {
+    try {
+      const db = await getDb();
+      const me = req.user.id;
+      const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      const col = db.collection('shanhai_exchange');
+      const [sells, buys, mine, balance] = await Promise.all([
+        // 卖单按单价升序（最便宜的先给买家看）
+        col.find({ side: 'sell', status: 'open', left: { $gt: 0 }, userId: { $ne: me } })
+          .sort({ price: 1, createdAt: 1 }).limit(50).project(EX_PROJ).toArray(),
+        // 买单按单价降序（出价最高的先给卖家看）
+        col.find({ side: 'buy', status: 'open', left: { $gt: 0 }, userId: { $ne: me } })
+          .sort({ price: -1, createdAt: 1 }).limit(50).project(EX_PROJ).toArray(),
+        col.find({ userId: me, status: 'open' }).sort({ createdAt: -1 }).limit(40).project(EX_PROJ).toArray(),
+        walletBalanceOf(db, me),
+      ]);
+      res.json({
+        ok: true,
+        cfg: { maxOpenPerSide: EX_CFG.maxOpenPerSide, minPrice: EX_CFG.minPrice, maxPrice: EX_CFG.maxPrice, minAmount: EX_CFG.minAmount, maxAmount: EX_CFG.maxAmount, feeRate: EX_CFG.feeRate },
+        me: { lingqi: p.lingqi || 0, frozen: p.lingqiFrozen || 0, balance },
+        sells, buys, mine,
+      });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  // ---------- 发布挂单 ----------
+  app.post('/api/shanhai/exchange/publish', auth, limit({ name: 'ex-publish', max: 20, windowMs: 60 * 1000, msg: '挂单太频繁，歇一下' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const { side, amount, price } = req.body || {};
+      if (!['sell', 'buy'].includes(side)) return res.status(400).json({ ok: false, error: '挂单方向不对' });
+      const n = Math.floor(Number(amount));
+      const pr = money2(price);
+      if (!Number.isFinite(n) || n < EX_CFG.minAmount || n > EX_CFG.maxAmount)
+        return res.status(400).json({ ok: false, error: `数量需为 ${EX_CFG.minAmount} ~ ${EX_CFG.maxAmount} 之间的整数` });
+      if (!(pr >= EX_CFG.minPrice && pr <= EX_CFG.maxPrice))
+        return res.status(400).json({ ok: false, error: `单价需在 ¥${EX_CFG.minPrice} ~ ¥${EX_CFG.maxPrice} 之间` });
+      const me = req.user.id;
+      const open = await openSides(db, me);
+      if ((open[side] || 0) >= EX_CFG.maxOpenPerSide)
+        return res.status(400).json({ ok: false, error: `${side === 'sell' ? '出售' : '求购'}单最多同时挂 ${EX_CFG.maxOpenPerSide} 条，先撤销几张旧的` });
+      const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      // 卖单：冻结灵气（原子条件更新，余额不足就不会冻结）
+      if (side === 'sell') {
+        if ((p.lingqi || 0) < n) return res.status(400).json({ ok: false, error: `灵气不足（可用 ${p.lingqi || 0}，本次需冻结 ${n}）` });
+        const fz = await db.collection('shanhai_profiles').findOneAndUpdate(
+          { userId: me, lingqi: { $gte: n } },
+          { $inc: { lingqi: -n, lingqiFrozen: n }, $set: { updatedAt: new Date() } },
+          { returnDocument: 'after' }
+        );
+        if (!fz || !(fz.value || fz)) return res.status(409).json({ ok: false, error: '灵气不足或操作冲突，请刷新重试' });
+      }
+      const doc = {
+        userId: me, username: req.user.displayName || req.user.username || '佚名',
+        side, amount: n, left: n, price: pr, status: 'open', createdAt: new Date(), updatedAt: new Date(),
+      };
+      await db.collection('shanhai_exchange').insertOne(doc);
+      await db.collection('shanhai_logs').insertOne({ userId: me, action: 'exchange_publish', detail: { side, amount: n, price: pr }, createdAt: new Date() }).catch(() => {});
+      res.json({ ok: true, order: { id: String(doc._id), side, amount: n, left: n, price: pr } });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  // ---------- 成交（吃单） ----------
+  app.post('/api/shanhai/exchange/deal', auth, limit({ name: 'ex-deal', max: 30, windowMs: 60 * 1000, msg: '交易太频繁，歇一下' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const me = req.user.id;
+      const { orderId, amount } = req.body || {};
+      let oid;
+      try { oid = new ObjectId(String(orderId)); } catch (e) { return res.status(400).json({ ok: false, error: '挂单不存在' }); }
+      const n = Math.floor(Number(amount));
+      if (!Number.isFinite(n) || n < 1) return res.status(400).json({ ok: false, error: '成交数量至少 1' });
+      const col = db.collection('shanhai_exchange');
+      const ord = await col.findOne({ _id: oid, status: 'open' });
+      if (!ord) return res.status(404).json({ ok: false, error: '该挂单已成交或已撤销' });
+      if (ord.userId === me) return res.status(400).json({ ok: false, error: '不能和自己交易' });
+      if (n > ord.left) return res.status(400).json({ ok: false, error: `挂单剩余 ${ord.left}，无法成交 ${n}` });
+      const total = money2(n * ord.price);
+      if (total <= 0) return res.status(400).json({ ok: false, error: '金额异常' });
+
+      const prof = db.collection('shanhai_profiles');
+      // 【卖家视角】ord.side==='sell' 时：对方卖我买（我付钱收灵气）；否则对方买我卖（我出灵气收钱）
+      const iAmBuyer = ord.side === 'sell';
+      const p0 = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      // —— 成交前置校验（放在抢余量之前，失败不产生副作用）——
+      if (iAmBuyer) {
+        const bal = await walletBalanceOf(db, me);
+        if (bal < total) return res.status(400).json({ ok: false, error: `账户余额不足（需 ¥${total}，可用 ¥${bal}）`, code: 'NO_BALANCE' });
+      } else {
+        if ((p0.lingqi || 0) < n) return res.status(400).json({ ok: false, error: `灵气不足（需 ${n}，可用 ${p0.lingqi || 0}）` });
+      }
+
+      // —— 抢余量：条件更新保证并发不会超卖 ——
+      const taken = await col.findOneAndUpdate(
+        { _id: oid, status: 'open', left: { $gte: n } },
+        { $inc: { left: -n }, $set: { updatedAt: new Date() } },
+        { returnDocument: 'after' }
+      );
+      const after = taken && (taken.value || taken);
+      if (!after) return res.status(409).json({ ok: false, error: '刚被人抢走了，刷新看看' });
+
+      // 手续费：买家付 total，卖家实收 total×(1-feeRate)，差额进平台账户
+      const fee = money2(total * EX_CFG.feeRate);
+      const sellerGet = money2(total - fee);
+      const rollback = async () => { await col.updateOne({ _id: oid }, { $inc: { left: n }, $set: { updatedAt: new Date() } }).catch(() => {}); };
+      try {
+        const sellerId = iAmBuyer ? ord.userId : me;      // 出灵气的一方
+        const buyerId = iAmBuyer ? me : ord.userId;       // 出钱的一方
+        // 1) 灵气流转：卖家 -n（或解冻 -n），买家 +n
+        if (iAmBuyer) {
+          await prof.updateOne({ userId: sellerId }, { $inc: { lingqiFrozen: -n, updatedAt: new Date() } });
+        } else {
+          await prof.updateOne({ userId: sellerId, lingqi: { $gte: n } }, { $inc: { lingqi: -n, updatedAt: new Date() } });
+        }
+        await prof.updateOne({ userId: buyerId }, { $inc: { lingqi: n, updatedAt: new Date() } });
+        // 2) 资金流转：买家付全额，平台抽 0.5%，卖家收剩下的
+        //    手续费记到 PLATFORM_ID 名下——它不参与任何玩家余额计算（余额 = sum(自己 userId 的流水)）
+        await walletLog(db, buyerId, -total, 'exchange_buy', `交易所买入灵气 ${n}`, String(oid));
+        await walletLog(db, sellerId, sellerGet, 'exchange_sell', `交易所卖出灵气 ${n}（已扣手续费 ¥${fee}）`, String(oid));
+        if (fee > 0) await walletLog(db, PLATFORM_ID, fee, 'exchange_fee', `订单 ${String(oid)} 手续费 ${EX_CFG.feeRate * 100}%`, String(oid));
+      } catch (e) {
+        await rollback();
+        console.error('[exchange deal]', e);
+        return res.status(500).json({ ok: false, error: '交易未完成，挂单已还原，请重试' });
+      }
+      // 3) 余量清零则结单
+      if (after.left <= 0) await col.updateOne({ _id: oid }, { $set: { status: 'done', updatedAt: new Date() } });
+      await db.collection('shanhai_logs').insertOne({
+        userId: me, action: 'exchange_deal',
+        detail: { orderId: String(oid), side: ord.side, amount: n, price: ord.price, total, with: ord.username },
+        createdAt: new Date(),
+      }).catch(() => {});
+      const np = await prof.findOne({ userId: me });
+      res.json({
+        ok: true, amount: n, total, fee, side: ord.side,
+        got: iAmBuyer ? total : sellerGet,          // 买入=实付金额；卖出=实收金额（已扣手续费）
+        lingqi: np ? (np.lingqi || 0) : 0, balance: await walletBalanceOf(db, me),
+      });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  // ---------- 撤单 ----------
+  app.post('/api/shanhai/exchange/cancel', auth, limit({ name: 'ex-cancel', max: 30, windowMs: 60 * 1000, msg: '操作太频繁，歇一下' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const me = req.user.id;
+      let oid;
+      try { oid = new ObjectId(String((req.body || {}).orderId)); } catch (e) { return res.status(400).json({ ok: false, error: '挂单不存在' }); }
+      const col = db.collection('shanhai_exchange');
+      const o = await col.findOne({ _id: oid, userId: me, status: 'open' });
+      if (!o) return res.status(404).json({ ok: false, error: '挂单不存在或已结束' });
+      // 卖单把未成交部分的冻结灵气退回
+      if (o.side === 'sell' && o.left > 0) {
+        await db.collection('shanhai_profiles').updateOne(
+          { userId: me },
+          { $inc: { lingqi: o.left, lingqiFrozen: -o.left }, $set: { updatedAt: new Date() } });
+      }
+      await col.updateOne({ _id: oid }, { $set: { status: 'cancel', left: 0, updatedAt: new Date() } });
+      const np = await db.collection('shanhai_profiles').findOne({ userId: me });
+      await db.collection('shanhai_logs').insertOne({ userId: me, action: 'exchange_cancel', detail: { orderId: String(oid), side: o.side, left: o.left }, createdAt: new Date() }).catch(() => {});
+      res.json({ ok: true, lingqi: np ? (np.lingqi || 0) : 0, frozen: np ? (np.lingqiFrozen || 0) : 0 });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 管理端：山海数据面板（游戏工作台用） ====================
