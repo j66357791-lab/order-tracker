@@ -3,7 +3,9 @@
  * 【2026-09-17 修复】图片原为"命中缓存永不回源"的永久缓存，换图后老用户永远看到旧图；
  * 现改为后台更新式缓存，升级缓存版本号清掉历史永久缓存
  */
-const CACHE_VERSION = 'jiedan-v15-20260919';
+// 【v26.6.1】升版本号：SW 内容一变，浏览器就会拉取新脚本并在 activate 时清掉旧缓存，
+// 把此前被 stale-while-revalidate 扣住的旧页面一次性清干净。
+const CACHE_VERSION = 'jiedan-v16-20260923';
 // 【v22.0】游戏美术资源专用缓存：由游戏页的"资源包下载"显式写入，SW 对这类请求 cache-first。
 // 注意：activate 的清理逻辑必须把这个缓存列入白名单，否则每次 SW 激活都会把已下载的资源包清空。
 const GAME_CACHE = 'fanfanle-assets-v2';
@@ -48,6 +50,27 @@ self.addEventListener('fetch', (event) => {
   // API 和 socket.io：绝不缓存
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // ==================== 【v26.6.1 重要修复】HTML / JS / CSS 一律 network-first ====================
+  // 必须放在下面「图片和 /games/ 静态资源」那段**之前**！
+  // 原来 /games/shanhai/index.html 以 /games/ 开头，被下面那条规则命中 → 走
+  // stale-while-revalidate（**先回缓存、后台再拉新**）→ 用户刷新多少次看到的都是旧页面，
+  // 表现就是"代码明明改了、刷新好多次还是没生效"。若后台那次拉新被打断，缓存甚至永不更新。
+  // 页面外壳类文件（html/js/css/json）容不得这种延迟——宁可每次多等几十毫秒，也不能给旧版本。
+  if (/\.(html?|js|css|json|webmanifest)$/i.test(url.pathname)) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((cached) => cached || Response.error()))
+    );
     return;
   }
 
