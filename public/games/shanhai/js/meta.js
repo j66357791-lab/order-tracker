@@ -93,7 +93,8 @@ const META = (() => {
   async function exCancel(orderId) { return shApi("/api/shanhai/exchange/cancel", { orderId }); }
   // 【v26.4】交易所独立钱包：主站余额 ⇄ 交易所余额
   async function exDeposit(amount) { return shApi("/api/shanhai/exchange/deposit", { amount }); }
-  async function exWithdraw(amount) { return shApi("/api/shanhai/exchange/withdraw", { amount }); }
+  // all=true：全部转出（后端按分取整，不足 0.01 的零头留在交易所）
+  async function exWithdraw(amount, all) { return shApi("/api/shanhai/exchange/withdraw", { amount, all: !!all }); }
   // 【v26.4】灵气矿脉（每日产出）
   async function lingqiInfo() { return shApi("/api/shanhai/lingqi"); }
   async function lingqiClaim() { return shApi("/api/shanhai/lingqi/claim", {}); }
