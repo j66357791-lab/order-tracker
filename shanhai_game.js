@@ -704,9 +704,14 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       // 【卖家视角】ord.side==='sell' 时：对方卖我买（我付钱收灵气）；否则对方买我卖（我出灵气收钱）
       const iAmBuyer = ord.side === 'sell';
       const p0 = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      // 【v26.3.1 兼容】v26.3 之前挂出的求购单没有 locked 字段（当时不冻结余额），
+      // 这种「老单」成交时必须走实时扣款，否则买家白拿灵气不付钱。
+      const legacyBuyOrder = !iAmBuyer && !(ord.locked > 0);
+      const payerNeedsCash = iAmBuyer || legacyBuyOrder;
       // —— 成交前置校验（放在抢余量之前，失败不产生副作用）——
-      if (iAmBuyer) {
-        const bal = await walletBalanceOf(db, me);
+      if (payerNeedsCash) {
+        const payerId = iAmBuyer ? me : ord.userId;
+        const bal = await walletBalanceOf(db, payerId);
         if (bal < total) return res.status(400).json({ ok: false, error: `账户余额不足（需 ¥${total}，可用 ¥${bal}）`, code: 'NO_BALANCE' });
       } else {
         if ((p0.lingqi || 0) < n) return res.status(400).json({ ok: false, error: `灵气不足（需 ${n}，可用 ${p0.lingqi || 0}）` });
@@ -737,8 +742,8 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         await prof.updateOne({ userId: buyerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
         // 2) 资金流转：买家付全额，平台抽 0.5%，卖家收剩下的
         //    手续费记到 PLATFORM_ID 名下——它不参与任何玩家余额计算（余额 = sum(自己 userId 的流水)）
-        if (iAmBuyer) {
-          // 我是主动买家：实时扣款
+        if (payerNeedsCash) {
+          // 我是主动买家，或对手是「未冻结的老求购单」→ 实时扣款
           await walletLog(db, buyerId, -total, 'exchange_buy', `交易所买入灵气 ${n}`, String(oid));
         } else {
           // 【v26.3】买家是挂单方：他的钱在挂求购单时已经冻结扣走了，这里只冲减订单上的冻结额，
