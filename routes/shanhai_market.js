@@ -107,6 +107,14 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       // 机器人能力校验
       if (botIsBuyer && bal < total) return { skipped: 'bot_no_cash' };
       if (!botIsBuyer && (fund.lingqi || 0) < n) return { skipped: 'bot_no_lingqi' };
+      // 【v26.3.1 兼容】v26.3 之前挂出的求购单没冻结余额，机器人吃这种老单时要走实时扣款——
+      // 但得先确认那个玩家真有钱，否则扣出一笔负数余额
+      const targetLegacyBuy = !botIsBuyer && !(target.locked > 0);
+      if (targetLegacyBuy) {
+        const rows = await db.collection('wallet_log').find({ userId: target.userId }, { projection: { amount: 1 } }).toArray();
+        const pBal = money2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+        if (pBal < total) return { skipped: 'buyer_no_cash' };
+      }
 
       // 抢余量
       const taken = await col.findOneAndUpdate(
@@ -129,10 +137,16 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
           await prof.updateOne({ userId: playerId }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
           await writeLog(db, buyerId, -total, 'exchange_buy', `交易所买入灵气 ${n}（做市）`, String(target._id), { bot: true });
         } else {
-          // 机器人是卖家，对手方是玩家挂的求购单 → 用他挂单时冻结的余额，只冲减订单 locked，不重复扣款
+          // 机器人是卖家，对手方是玩家挂的求购单
           await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: -n } });
           await prof.updateOne({ userId: playerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
-          await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
+          if (targetLegacyBuy) {
+            // 老求购单（未冻结）：从玩家余额实时扣
+            await writeLog(db, playerId, -total, 'exchange_buy', `交易所买入灵气 ${n}`, String(target._id), {});
+          } else {
+            // 新求购单：用挂单时冻结的余额，只冲减订单 locked，不重复扣款
+            await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
+          }
         }
         await writeLog(db, sellerId, money2(total - fee), 'exchange_sell', `交易所卖出灵气 ${n}（已扣手续费 ¥${fee}）`, String(target._id), { bot: !botIsBuyer });
         if (fee > 0) await writeLog(db, PLATFORM_ID, fee, 'exchange_fee', `订单 ${String(target._id)} 手续费 0.5%`, String(target._id), { bot: true });
