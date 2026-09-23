@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.4.4', // 【v26.4.4】做市机器人价格精度对齐 0.0001（原被 money2 舍成 2 位、下限卡 0.01）
+  appVersion: '26.5',   // 【v26.5】做市防套利：中间价+买卖价差模型 + 吃单价格保护（机器人不再按玩家报价成交）
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
