@@ -181,7 +181,9 @@ try {
   console.log('[游戏] 魔法翻翻乐模块已挂载');
 } catch (e) { console.error('[游戏] 翻翻乐加载失败:', e.message); }
 try {
-  (await import('./shanhai_game.js')).default(app, { auth, getDb });
+  // 【v26.4.1】必须传 adminOnly：交易所总闸接口要用它做管理员校验。
+  // 少传一个依赖 → 路由注册时 undefined 回调直接抛错 → 整个山海模块挂不上（所有接口 404）
+  (await import('./shanhai_game.js')).default(app, { auth, getDb, adminOnly });
   console.log('[游戏] 山海斩妖录模块已挂载');
 } catch (e) { console.error('[游戏] 山海加载失败:', e.message); }
 try {
