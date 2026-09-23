@@ -59,25 +59,35 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     );
     return loadCfg(db);
   }
+  const EXW_COL = 'shanhai_ex_wallet';
+  const money3 = n => Math.round(Number(n) * 1000) / 1000;
+
   async function ensureFund(db, cfg) {
-    const f = await db.collection(FUND_COL).findOne({ _id: 'market' });
-    if (f) return f;
-    const doc = { _id: 'market', lingqi: cfg.fundLingqi, lingqiFrozen: 0, createdAt: new Date() };
-    await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $setOnInsert: doc }, { upsert: true });
-    // 初始余额走 wallet_log，与玩家同一口径
-    const exists = await db.collection('wallet_log').findOne({ userId: BOT_ID, kind: 'market_seed' });
-    if (!exists && cfg.fundCash > 0) {
-      await db.collection('wallet_log').insertOne({
-        userId: BOT_ID, amount: cfg.fundCash, kind: 'market_seed',
-        note: '做市机器人初始额度', createdAt: new Date(),
-      });
+    let f = await db.collection(FUND_COL).findOne({ _id: 'market' });
+    if (!f) {
+      await db.collection(FUND_COL).updateOne({ _id: 'market' },
+        { $setOnInsert: { _id: 'market', lingqi: cfg.fundLingqi, lingqiFrozen: 0, createdAt: new Date() } }, { upsert: true });
+      f = await db.collection(FUND_COL).findOne({ _id: 'market' });
     }
-    return db.collection(FUND_COL).findOne({ _id: 'market' });
+    // 【v26.4】机器人的现金额度一次性注入「交易所钱包」（幂等，靠 shanhai_logs 里的标记防重复发）
+    const seeded = await db.collection('shanhai_logs').findOne({ action: 'market_seed_ex' });
+    if (!seeded) {
+      if (cfg.fundCash > 0) {
+        await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+          { $inc: { balance: cfg.fundCash }, $set: { updatedAt: new Date() } }, { upsert: true });
+      }
+      await db.collection('shanhai_logs').insertOne({ action: 'market_seed_ex', detail: { cash: cfg.fundCash }, createdAt: new Date() }).catch(() => { });
+    }
+    return f;
   }
-  const botBalance = async db => {
-    const rows = await db.collection('wallet_log').find({ userId: BOT_ID }, { projection: { amount: 1 } }).toArray();
-    return money2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
-  };
+  // 机器人交易所钱包（余额 / 冻结 / 可用）
+  async function botWallet(db) {
+    const w = await db.collection(EXW_COL).findOne({ userId: BOT_ID });
+    const balance = money3((w || {}).balance || 0);
+    const frozen = money3((w || {}).frozen || 0);
+    return { balance, frozen, available: money3(balance - frozen) };
+  }
+  const botBalance = async db => (await botWallet(db)).balance;
 
   // ==================== 台账写入 ====================
   async function writeDeal(db, d) {
@@ -100,7 +110,9 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     for (const o of stale) {
       if (o.side === 'sell' && o.left > 0) backLingqi += o.left;
       else if (o.side === 'buy' && (o.locked || 0) > 0) {
-        await writeLog(db, BOT_ID, o.locked, 'exchange_unlock', `做市老单回收退回 ¥${o.locked}`, String(o._id), { bot: true });
+        // 【v26.4】退的是交易所钱包的冻结（钱仍在交易所，不回主站）
+        await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+          { $inc: { frozen: -o.locked }, $set: { updatedAt: new Date() } });
       }
     }
     if (backLingqi) {
@@ -122,7 +134,9 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     const price = money2(cfg.priceMin + Math.random() * (cfg.priceMax - cfg.priceMin));
     const amount = rndInt(cfg.amountMin, cfg.amountMax);
     const fund = await ensureFund(db, cfg);
-    const bal = await botBalance(db);
+    // 【v26.4】机器人花的钱来自它的「交易所钱包」可用余额（余额 − 挂单冻结）
+    const bw = await botWallet(db);
+    const bal = bw.available;
     const col = db.collection(ORD_COL);
 
     // 找对手方：机器人卖 → 吃玩家的买单；机器人买 → 吃玩家的卖单
@@ -143,9 +157,9 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       // 但得先确认那个玩家真有钱，否则扣出一笔负数余额
       const targetLegacyBuy = !botIsBuyer && !(target.locked > 0);
       if (targetLegacyBuy) {
-        const rows = await db.collection('wallet_log').find({ userId: target.userId }, { projection: { amount: 1 } }).toArray();
-        const pBal = money2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
-        if (pBal < total) return { skipped: 'buyer_no_cash' };
+        const pw = await db.collection(EXW_COL).findOne({ userId: target.userId });
+        const pAvail = money3(((pw || {}).balance || 0) - ((pw || {}).frozen || 0));
+        if (pAvail < total) return { skipped: 'buyer_no_cash' };
       }
 
       // 抢余量
@@ -163,25 +177,36 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       const buyerId = botIsBuyer ? playerId : BOT_ID;
       try {
         // 灵气流转
+        const sellerGet = money3(total - fee);
         if (botIsBuyer) {
-          // 机器人是主动买家：实时付钱；玩家的卖单是冻结状态，解冻后转出
-          await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: n } });
+          // 机器人是主动买家：从它的交易所余额扣钱；玩家的卖单是冻结状态，解冻后转出
+          await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+            { $inc: { balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
           await prof.updateOne({ userId: playerId }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
-          await writeLog(db, buyerId, -total, 'exchange_buy', `交易所买入灵气 ${n}（做市）`, String(target._id), { bot: true });
         } else {
-          // 机器人是卖家，对手方是玩家挂的求购单
-          await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: -n } });
+          // 机器人是卖家：收钱进交易所钱包；对手方是玩家挂的求购单，由他付钱
+          await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+            { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
           await prof.updateOne({ userId: playerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
           if (targetLegacyBuy) {
-            // 老求购单（未冻结）：从玩家余额实时扣
-            await writeLog(db, playerId, -total, 'exchange_buy', `交易所买入灵气 ${n}`, String(target._id), {});
+            // 从未冻结过的老求购单：从玩家的交易所余额实时扣
+            await db.collection(EXW_COL).updateOne({ userId: playerId },
+              { $inc: { balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
+          } else if (target.exLocked) {
+            // 新求购单（v26.4 起）：解冻 + 扣款，同一笔里完成
+            await db.collection(EXW_COL).updateOne({ userId: playerId },
+              { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
+            await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
           } else {
-            // 新求购单：用挂单时冻结的余额，只冲减订单 locked，不重复扣款
+            // 【v26.4 兼容】v26.4 之前挂的求购单：钱已在主站扣过，只冲减订单冻结额
             await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
           }
         }
-        await writeLog(db, sellerId, money2(total - fee), 'exchange_sell', `交易所卖出灵气 ${n}（已扣手续费 ¥${fee}）`, String(target._id), { bot: !botIsBuyer });
-        if (fee > 0) await writeLog(db, PLATFORM_ID, fee, 'exchange_fee', `订单 ${String(target._id)} 手续费 0.5%`, String(target._id), { bot: true });
+        if (botIsBuyer) {
+          await db.collection(EXW_COL).updateOne({ userId: playerId },
+            { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
+        }
+        // 手续费只落在台账（deals.fee），不进主站 wallet_log
       } catch (e) {
         await col.updateOne({ _id: target._id }, { $inc: { left: n } }).catch(() => { });
         return { skipped: 'settle_error' };
@@ -211,14 +236,15 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     // 同一价格已经有单就不再堆一张（否则同一价位挂成一排，玩家看着很假）
     const samePrice = await col.findOne({ userId: BOT_ID, side, status: 'open', price });
     if (samePrice) return { skipped: 'bot_same_price' };
-    const totalNew = money2(amount * price);
+    const totalNew = money3(amount * price);
     if (side === 'sell') {
       if ((fund.lingqi || 0) < amount) return { skipped: 'bot_no_lingqi' };
       await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: -amount, lingqiFrozen: amount } });
     } else {
-      // 【v26.3】机器人挂求购单同样冻结余额，与玩家口径一致
+      // 【v26.4】机器人挂求购单冻结的是它自己的交易所钱包（与玩家同一口径）
       if (bal < totalNew) return { skipped: 'bot_no_cash' };
-      await writeLog(db, BOT_ID, -totalNew, 'exchange_lock', `做市求购单冻结 ¥${totalNew}`, null, { bot: true });
+      await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+        { $inc: { frozen: totalNew }, $set: { updatedAt: new Date() } }, { upsert: true });
     }
     await col.insertOne({
       userId: BOT_ID, username: '做市灵傀', side, amount, left: amount, price,
@@ -287,13 +313,13 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         ]).toArray(),
       ]);
       // 解构顺序必须与下面数组一一对应（少写一个变量就会 ReferenceError，board 那次就是这么炸的）
-      const [humanAgg, botAgg, feeAgg, openCnt, botFund, platformFee, botOpenOrders, humanOpenOrders] = await Promise.all([
+      const [humanAgg, botAgg, feeAgg, openCnt, botFund, botOpenOrders, humanOpenOrders] = await Promise.all([
         db.collection(DEAL_COL).aggregate([{ $match: { bot: { $ne: true } } }, { $group: { _id: null, cnt: { $sum: 1 }, total: { $sum: '$total' }, fee: { $sum: '$fee' } } }]).toArray(),
         db.collection(DEAL_COL).aggregate([{ $match: { bot: true } }, { $group: { _id: null, cnt: { $sum: 1 }, total: { $sum: '$total' }, fee: { $sum: '$fee' } } }]).toArray(),
-        db.collection('wallet_log').aggregate([{ $match: { userId: PLATFORM_ID } }, { $group: { _id: null, fee: { $sum: '$amount' }, cnt: { $sum: 1 } } }]).toArray(),
+        // 【v26.4】手续费不再写主站 wallet_log（保持主站口径干净），直接从成交台账聚合
+        db.collection(DEAL_COL).aggregate([{ $group: { _id: null, fee: { $sum: '$fee' }, cnt: { $sum: 1 } } }]).toArray(),
         db.collection(ORD_COL).countDocuments({ status: 'open', left: { $gt: 0 } }),
         db.collection(FUND_COL).findOne({ _id: 'market' }),
-        db.collection('wallet_log').aggregate([{ $match: { userId: PLATFORM_ID } }, { $group: { _id: null, s: { $sum: '$amount' } } }]).toArray(),
         // 【v26.3.2】机器人自己挂了多少张（看它有没有被自己的旧单堵住）
         db.collection(ORD_COL).countDocuments({ userId: BOT_ID, status: 'open', left: { $gt: 0 } }),
         db.collection(ORD_COL).countDocuments({ userId: { $nin: [BOT_ID] }, status: 'open', left: { $gt: 0 } }),
@@ -328,7 +354,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
           human: (humanAgg[0] || { cnt: 0, total: 0, fee: 0 }),
           bot: (botAgg[0] || { cnt: 0, total: 0, fee: 0 }),
           feeLog: (feeAgg[0] || { cnt: 0, fee: 0 }),
-          platformFeeTotal: money2((platformFee[0] || {}).s || 0),
+          platformFeeTotal: money3((feeAgg[0] || {}).fee || 0),
           openOrders: openCnt,
           botOpenOrders, humanOpenOrders,
           botMaxPerSide: BOT_MAX_OPEN_PER_SIDE,
@@ -391,7 +417,9 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       const cash = money2(Number((req.body || {}).cash) || 0);
       if (!lingqi && !cash) return res.status(400).json({ ok: false, error: '请填写要补充的灵气或余额' });
       if (lingqi) await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi } }, { upsert: true });
-      if (cash) await writeLog(db, BOT_ID, cash, 'market_fund', '后台补充做市额度', null, {});
+      // 【v26.4】补现金是往机器人的「交易所钱包」里补
+      if (cash) await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+        { $inc: { balance: cash }, $set: { updatedAt: new Date() } }, { upsert: true });
       const fund = await db.collection(FUND_COL).findOne({ _id: 'market' });
       res.json({ ok: true, fund: { lingqi: (fund || {}).lingqi || 0, lingqiFrozen: (fund || {}).lingqiFrozen || 0 }, balance: await botBalance(db) });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
@@ -410,11 +438,17 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     try {
       const db = await getDb();
       const bots = await db.collection(ORD_COL).find({ userId: BOT_ID, status: 'open' }).toArray();
-      let back = 0;
-      for (const o of bots) if (o.side === 'sell' && o.left > 0) back += o.left;
+      let back = 0, backCash = 0;
+      for (const o of bots) {
+        if (o.side === 'sell' && o.left > 0) back += o.left;
+        else if (o.side === 'buy' && (o.locked || 0) > 0) backCash += o.locked;
+      }
       if (back) await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: back, lingqiFrozen: -back } });
-      await db.collection(ORD_COL).updateMany({ userId: BOT_ID, status: 'open' }, { $set: { status: 'cancel', left: 0, updatedAt: new Date() } });
-      res.json({ ok: true, cleared: bots.length, lingqiBack: back });
+      if (backCash) await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+        { $inc: { frozen: -backCash }, $set: { updatedAt: new Date() } });
+      await db.collection(ORD_COL).updateMany({ userId: BOT_ID, status: 'open' },
+        { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } });
+      res.json({ ok: true, cleared: bots.length, lingqiBack: back, cashBack: money3(backCash) });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
