@@ -26,8 +26,8 @@ const DEFAULT_CFG = {
   intervalSec: 60,        // 每轮间隔（秒）
   tradesMin: 1,           // 每轮最少成交笔数
   tradesMax: 5,           // 每轮最多成交笔数
-  priceMin: 0.06,         // 价格波动下限（元/灵气）
-  priceMax: 0.18,         // 价格波动上限
+  priceMin: 0.06,         // 价格波动下限（元/灵气）——后台最低可设到 0.0001，与交易所同口径
+  priceMax: 0.18,         // 价格波动上限（同样支持 4 位小数）
   amountMin: 20,          // 每笔数量下限
   amountMax: 500,         // 每笔数量上限
   fundLingqi: 200000,     // 初始灵气额度（首次建档时发放）
@@ -131,7 +131,9 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
   // 单笔：优先吃玩家挂单；没有可吃的就自己挂一单补流动性
   async function oneTrade(db, cfg) {
     const side = Math.random() < 0.5 ? 'sell' : 'buy';       // 机器人这一笔想「卖灵气」还是「买灵气」
-    const price = money2(cfg.priceMin + Math.random() * (cfg.priceMax - cfg.priceMin));
+    // 【v26.4.4】这里原来是 money2 —— 价格被舍成 2 位小数，配置里设 0.0001 / 0.001 全被抹平成 0.00，
+    // 所以机器人看起来"死守 0.01"。必须用 money4 与交易所口径一致。
+    const price = money4(cfg.priceMin + Math.random() * (cfg.priceMax - cfg.priceMin));
     const amount = rndInt(cfg.amountMin, cfg.amountMax);
     const fund = await ensureFund(db, cfg);
     // 【v26.4】机器人花的钱来自它的「交易所钱包」可用余额（余额 − 挂单冻结）
@@ -147,8 +149,8 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
 
     if (target) {
       const n = Math.min(amount, target.left);
-      const total = money2(n * target.price);
-      const fee = money2(total * 0.005);
+      const total = money4(n * target.price);   // 【v26.4.4】成交额同样按 4 位结算
+      const fee = money4(total * 0.005);
       const botIsBuyer = side === 'buy';        // 机器人买 → 机器人付钱
       // 机器人能力校验
       if (botIsBuyer && bal < total) return { skipped: 'bot_no_cash' };
@@ -381,20 +383,24 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     try {
       const db = await getDb();
       const b = req.body || {};
-      const num = (v, d, lo, hi) => {
+      // 【v26.4.4】num 支持指定小数位：原来硬编码 2 位，会把 0.0815 直接舍成 0.08。
+      // 价格必须按 4 位收，才能和交易所的 0.0001 口径对齐。
+      const num = (v, d, lo, hi, dp) => {
         const n = Number(v);
         if (!Number.isFinite(n)) return d;
-        return Math.round(Math.max(lo, Math.min(hi, n)) * 100) / 100;
+        const f = Math.pow(10, dp === undefined ? 2 : dp);
+        return Math.round(Math.max(lo, Math.min(hi, n)) * f) / f;
       };
       const patch = {
         enabled: b.enabled === undefined ? undefined : !!b.enabled,
-        intervalSec: num(b.intervalSec, 60, 15, 3600),
-        tradesMin: Math.round(num(b.tradesMin, 1, 1, 50)),
-        tradesMax: Math.round(num(b.tradesMax, 5, 1, 50)),
-        priceMin: num(b.priceMin, 0.06, 0.01, 9999),
-        priceMax: num(b.priceMax, 0.18, 0.01, 9999),
-        amountMin: Math.round(num(b.amountMin, 20, 1, 999999)),
-        amountMax: Math.round(num(b.amountMax, 500, 1, 999999)),
+        intervalSec: Math.round(num(b.intervalSec, 60, 15, 3600, 0)),
+        tradesMin: Math.round(num(b.tradesMin, 1, 1, 50, 0)),
+        tradesMax: Math.round(num(b.tradesMax, 5, 1, 50, 0)),
+        // 价格下限与交易所同口径：0.0001（不再是 0.01）
+        priceMin: num(b.priceMin, 0.06, 0.0001, 9999, 4),
+        priceMax: num(b.priceMax, 0.18, 0.0001, 9999, 4),
+        amountMin: Math.round(num(b.amountMin, 20, 1, 999999, 0)),
+        amountMax: Math.round(num(b.amountMax, 500, 1, 999999, 0)),
       };
       Object.keys(patch).forEach(k => patch[k] === undefined && delete patch[k]);
       if (patch.tradesMin && patch.tradesMax && patch.tradesMin > patch.tradesMax) {
