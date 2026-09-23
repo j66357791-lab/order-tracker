@@ -721,9 +721,9 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         col.find({ userId: me, status: 'open' }).sort({ createdAt: -1 }).limit(40).project(EX_PROJ).toArray(),
         walletBalanceOf(db, me),                    // 主站余额（只用于「转入」时判断够不够）
         exWalletOf(db, me),                         // 【v26.4】交易所独立钱包
-        // 【v26.4】我的成交记录（交易记录页签）
+        // 【v26.4】我的成交记录（交易记录页签）——【v26.5.1】只取最近 10 条
         db.collection('shanhai_ex_deals').find({ $or: [{ buyerId: me }, { sellerId: me }] })
-          .sort({ createdAt: -1 }).limit(30).toArray(),
+          .sort({ createdAt: -1 }).limit(10).toArray(),
       ]);
       // 【v26.4】列表不再暴露任何身份信息——不显示「做市灵傀」，也不显示「玩家/道友xxx」，
       // 交易所只呈现「有这么一个买卖需求」。userId/username 一律不返回给前端。
@@ -891,7 +891,17 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         }
       }
       await db.collection('shanhai_logs').insertOne({ userId: me, action: 'exchange_publish', detail: { side, amount: n, price: pr }, createdAt: new Date() }).catch(() => {});
-      res.json({ ok: true, order: { id: String(doc._id), side, amount: n, left: n, price: pr } });
+      // 【v26.5.1】同样返回最新数值，前端挂单成功后立刻更新（冻结额 / 灵气都会变）
+      const np2 = await db.collection('shanhai_profiles').findOne({ userId: me });
+      const nw2 = await exWalletOf(db, me);
+      res.json({
+        ok: true, order: { id: String(doc._id), side, amount: n, left: n, price: pr },
+        lingqi: np2 ? (np2.lingqi || 0) : 0,
+        frozen: np2 ? (np2.lingqiFrozen || 0) : 0,
+        exBalance: money4(nw2.balance || 0),
+        exFrozen: money4(nw2.frozen || 0),
+        exAvailable: money4((nw2.balance || 0) - (nw2.frozen || 0)),
+      });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
@@ -1009,11 +1019,21 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         buyerName: anonName(buyerId), sellerName: anonName(sellerId),
         createdAt: new Date(),
       }).catch(() => {});
+      // 【v26.5.1】把成交后的**全部**最新数值一并返回：
+      // 前端拿到就能立刻把界面改对，不必等下一次轮询 —— 之前要等 6 秒才刷，
+      // 用户会以为"没反应/交易没成功"，甚至关掉页面后才发现钱变了。
       const np = await prof.findOne({ userId: me });
+      const nw = await exWalletOf(db, me);
       res.json({
-        ok: true, amount: n, total, fee, side: ord.side,
+        ok: true, amount: n, total, fee, side: ord.side, price: ord.price,
         got: iAmBuyer ? total : sellerGet,          // 买入=实付金额；卖出=实收金额（已扣手续费）
-        lingqi: np ? (np.lingqi || 0) : 0, balance: await walletBalanceOf(db, me),
+        role: iAmBuyer ? 'buy' : 'sell',
+        lingqi: np ? (np.lingqi || 0) : 0,
+        frozen: np ? (np.lingqiFrozen || 0) : 0,
+        balance: await walletBalanceOf(db, me),
+        exBalance: money4(nw.balance || 0),
+        exFrozen: money4(nw.frozen || 0),
+        exAvailable: money4((nw.balance || 0) - (nw.frozen || 0)),
       });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
@@ -1046,7 +1066,15 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       await col.updateOne({ _id: oid }, { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } });
       const np = await db.collection('shanhai_profiles').findOne({ userId: me });
       await db.collection('shanhai_logs').insertOne({ userId: me, action: 'exchange_cancel', detail: { orderId: String(oid), side: o.side, left: o.left }, createdAt: new Date() }).catch(() => {});
-      res.json({ ok: true, lingqi: np ? (np.lingqi || 0) : 0, frozen: np ? (np.lingqiFrozen || 0) : 0 });
+      // 【v26.5.1】撤单后的最新数值一起回，前端立刻更新冻结与余额
+      const nwc = await exWalletOf(db, me);
+      res.json({
+        ok: true, side: o.side, backAmount: o.side === 'sell' ? o.left : (o.locked || 0),
+        lingqi: np ? (np.lingqi || 0) : 0, frozen: np ? (np.lingqiFrozen || 0) : 0,
+        exBalance: money4(nwc.balance || 0),
+        exFrozen: money4(nwc.frozen || 0),
+        exAvailable: money4((nwc.balance || 0) - (nwc.frozen || 0)),
+      });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
