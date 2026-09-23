@@ -606,15 +606,23 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
           .sort({ price: -1, createdAt: 1 }).limit(50).project(EX_PROJ).toArray(),
         col.find({ userId: me, status: 'open' }).sort({ createdAt: -1 }).limit(40).project(EX_PROJ).toArray(),
         walletBalanceOf(db, me),
+        // 【v26.3】我挂的求购单冻结了多少余额
+        col.aggregate([
+          { $match: { userId: me, side: 'buy', status: 'open' } },
+          { $group: { _id: null, s: { $sum: '$locked' } } },
+        ]).toArray(),
       ]);
+      const frozenCash = money2((frozenAgg[0] || {}).s || 0);
       // 对外一律匿名：真实用户名只在 shanhai_exchange 文档里给后台查
+      // 【v26.3 修复】必须补一个字符串 id —— 原来只返回 _id，前端读 o.id 拿到 undefined，
+      // 导致「撤销自己的挂单」和「点买入」都把 undefined 当订单号发上去，必然失败
       const mask = arr => arr.map(o => Object.assign({}, o, {
-        username: anonName(o.userId), mine: o.userId === me, bot: o.userId === BOT_ID,
+        id: String(o._id), username: anonName(o.userId), mine: o.userId === me, bot: o.userId === BOT_ID,
       }));
       res.json({
         ok: true,
         cfg: { maxOpenPerSide: EX_CFG.maxOpenPerSide, minPrice: EX_CFG.minPrice, maxPrice: EX_CFG.maxPrice, minAmount: EX_CFG.minAmount, maxAmount: EX_CFG.maxAmount, feeRate: EX_CFG.feeRate },
-        me: { id: me, lingqi: p.lingqi || 0, frozen: p.lingqiFrozen || 0, balance },
+        me: { id: me, lingqi: p.lingqi || 0, frozen: p.lingqiFrozen || 0, balance, frozenCash },
         sells: mask(sells), buys: mask(buys), mine: mask(mine),
       });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
@@ -637,7 +645,8 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       if ((open[side] || 0) >= EX_CFG.maxOpenPerSide)
         return res.status(400).json({ ok: false, error: `${side === 'sell' ? '出售' : '求购'}单最多同时挂 ${EX_CFG.maxOpenPerSide} 条，先撤销几张旧的` });
       const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
-      // 卖单：冻结灵气（原子条件更新，余额不足就不会冻结）
+      const orderTotal = money2(n * pr);
+      // 卖单：冻结灵气（原子条件更新，不足就不会冻结）
       if (side === 'sell') {
         if ((p.lingqi || 0) < n) return res.status(400).json({ ok: false, error: `灵气不足（可用 ${p.lingqi || 0}，本次需冻结 ${n}）` });
         const fz = await db.collection('shanhai_profiles').findOneAndUpdate(
@@ -646,12 +655,28 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
           { returnDocument: 'after' }
         );
         if (!fz || !(fz.value || fz)) return res.status(409).json({ ok: false, error: '灵气不足或操作冲突，请刷新重试' });
+      } else {
+        // 【v26.3】求购单同样冻结余额：挂出去的瞬间就从「可用余额」扣住，撤单或结清时退回。
+        // 不冻结的话同一个人能把一笔钱同时挂十张求购单，成交时必然付不出来（超买）。
+        const bal = await walletBalanceOf(db, me);
+        if (bal < orderTotal) return res.status(400).json({ ok: false, error: `账户余额不足（需冻结 ¥${orderTotal.toFixed(2)}，可用 ¥${bal.toFixed(2)}）`, code: 'NO_BALANCE' });
       }
       const doc = {
         userId: me, username: req.user.displayName || req.user.username || '佚名',
-        side, amount: n, left: n, price: pr, status: 'open', createdAt: new Date(), updatedAt: new Date(),
+        side, amount: n, left: n, price: pr, status: 'open',
+        locked: side === 'buy' ? orderTotal : 0,   // 【v26.3】买单已冻结的余额
+        createdAt: new Date(), updatedAt: new Date(),
       };
       await db.collection('shanhai_exchange').insertOne(doc);
+      // 买单：订单落库后再写冻结流水（万一写流水失败就把订单撤掉，不留无冻结的空单）
+      if (side === 'buy' && orderTotal > 0) {
+        try {
+          await walletLog(db, me, -orderTotal, 'exchange_lock', `求购单冻结 ¥${orderTotal.toFixed(2)}`, String(doc._id));
+        } catch (e) {
+          await db.collection('shanhai_exchange').deleteOne({ _id: doc._id }).catch(() => { });
+          throw e;
+        }
+      }
       await db.collection('shanhai_logs').insertOne({ userId: me, action: 'exchange_publish', detail: { side, amount: n, price: pr }, createdAt: new Date() }).catch(() => {});
       res.json({ ok: true, order: { id: String(doc._id), side, amount: n, left: n, price: pr } });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
@@ -705,14 +730,21 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         const buyerId = iAmBuyer ? me : ord.userId;       // 出钱的一方
         // 1) 灵气流转：卖家 -n（或解冻 -n），买家 +n
         if (iAmBuyer) {
-          await prof.updateOne({ userId: sellerId }, { $inc: { lingqiFrozen: -n, updatedAt: new Date() } });
+          await prof.updateOne({ userId: sellerId }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
         } else {
-          await prof.updateOne({ userId: sellerId, lingqi: { $gte: n } }, { $inc: { lingqi: -n, updatedAt: new Date() } });
+          await prof.updateOne({ userId: sellerId, lingqi: { $gte: n } }, { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } });
         }
-        await prof.updateOne({ userId: buyerId }, { $inc: { lingqi: n, updatedAt: new Date() } });
+        await prof.updateOne({ userId: buyerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
         // 2) 资金流转：买家付全额，平台抽 0.5%，卖家收剩下的
         //    手续费记到 PLATFORM_ID 名下——它不参与任何玩家余额计算（余额 = sum(自己 userId 的流水)）
-        await walletLog(db, buyerId, -total, 'exchange_buy', `交易所买入灵气 ${n}`, String(oid));
+        if (iAmBuyer) {
+          // 我是主动买家：实时扣款
+          await walletLog(db, buyerId, -total, 'exchange_buy', `交易所买入灵气 ${n}`, String(oid));
+        } else {
+          // 【v26.3】买家是挂单方：他的钱在挂求购单时已经冻结扣走了，这里只冲减订单上的冻结额，
+          // 绝不能再扣一次（否则同一笔钱扣两遍）
+          await col.updateOne({ _id: oid }, { $inc: { locked: -total } });
+        }
         await walletLog(db, sellerId, sellerGet, 'exchange_sell', `交易所卖出灵气 ${n}（已扣手续费 ¥${fee}）`, String(oid));
         if (fee > 0) await walletLog(db, PLATFORM_ID, fee, 'exchange_fee', `订单 ${String(oid)} 手续费 ${EX_CFG.feeRate * 100}%`, String(oid));
       } catch (e) {
@@ -720,8 +752,13 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         console.error('[exchange deal]', e);
         return res.status(500).json({ ok: false, error: '交易未完成，挂单已还原，请重试' });
       }
-      // 3) 余量清零则结单
-      if (after.left <= 0) await col.updateOne({ _id: oid }, { $set: { status: 'done', updatedAt: new Date() } });
+      // 3) 余量清零则结单；求购单把可能剩下的零头退回，不让几分钱永远冻着
+      if (after.left <= 0) {
+        const fresh = await col.findOne({ _id: oid });
+        const residual = ord.side === 'buy' ? money2((fresh || {}).locked || 0) : 0;
+        await col.updateOne({ _id: oid }, { $set: { status: 'done', locked: 0, updatedAt: new Date() } });
+        if (residual > 0) await walletLog(db, ord.userId, residual, 'exchange_unlock', `求购单结清退回 ¥${residual.toFixed(2)}`, String(oid));
+      }
       await db.collection('shanhai_logs').insertOne({
         userId: me, action: 'exchange_deal',
         detail: { orderId: String(oid), side: ord.side, amount: n, price: ord.price, total, with: ord.username },
@@ -759,8 +796,11 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         await db.collection('shanhai_profiles').updateOne(
           { userId: me },
           { $inc: { lingqi: o.left, lingqiFrozen: -o.left }, $set: { updatedAt: new Date() } });
+      } else if (o.side === 'buy' && (o.locked || 0) > 0) {
+        // 【v26.3】求购单撤单：把冻结住的余额原额退回
+        await walletLog(db, me, o.locked, 'exchange_unlock', `求购单撤单退回 ¥${o.locked.toFixed(2)}`, String(oid));
       }
-      await col.updateOne({ _id: oid }, { $set: { status: 'cancel', left: 0, updatedAt: new Date() } });
+      await col.updateOne({ _id: oid }, { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } });
       const np = await db.collection('shanhai_profiles').findOne({ userId: me });
       await db.collection('shanhai_logs').insertOne({ userId: me, action: 'exchange_cancel', detail: { orderId: String(oid), side: o.side, left: o.left }, createdAt: new Date() }).catch(() => {});
       res.json({ ok: true, lingqi: np ? (np.lingqi || 0) : 0, frozen: np ? (np.lingqiFrozen || 0) : 0 });
