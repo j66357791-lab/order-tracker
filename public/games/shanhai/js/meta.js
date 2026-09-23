@@ -98,9 +98,12 @@ const META = (() => {
   // 【v26.4】灵气矿脉（每日产出）
   async function lingqiInfo() { return shApi("/api/shanhai/lingqi"); }
   async function lingqiClaim() { return shApi("/api/shanhai/lingqi/claim", {}); }
+  // 【v26.6】灵宝商城（用灵气买道具）
+  async function shopInfo() { return shApi("/api/shanhai/shop"); }
+  async function shopBuy(itemId) { return shApi("/api/shanhai/shop/buy", { itemId }); }
 
   return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, consumeStamina, dismantle, dismantlePrice, bonus, exBoard, exPublish, exDeal, exCancel,
-    exDeposit, exWithdraw, lingqiInfo, lingqiClaim,
+    exDeposit, exWithdraw, lingqiInfo, lingqiClaim, shopInfo, shopBuy,
     get profile() { return profile; }, get stamina() { return stamina; }, set stamina(v) { stamina = v; },
     set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
 })();
