@@ -124,22 +124,29 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       try {
         // 灵气流转
         if (botIsBuyer) {
+          // 机器人是主动买家：实时付钱；玩家的卖单是冻结状态，解冻后转出
           await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: n } });
-          // 玩家的卖单是冻结状态，解冻后转出
-          await prof.updateOne({ userId: playerId }, { $inc: { lingqiFrozen: -n, updatedAt: new Date() } });
+          await prof.updateOne({ userId: playerId }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
+          await writeLog(db, buyerId, -total, 'exchange_buy', `交易所买入灵气 ${n}（做市）`, String(target._id), { bot: true });
         } else {
+          // 机器人是卖家，对手方是玩家挂的求购单 → 用他挂单时冻结的余额，只冲减订单 locked，不重复扣款
           await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: -n } });
-          await prof.updateOne({ userId: playerId }, { $inc: { lingqi: n, updatedAt: new Date() } });
+          await prof.updateOne({ userId: playerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
+          await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
         }
-        // 资金流转（与玩家成交完全一致：买家付全额，卖家收 99.5%，平台 0.5%）
-        await writeLog(db, buyerId, -total, 'exchange_buy', `交易所买入灵气 ${n}${botIsBuyer ? '（做市）' : '（做市对手）'}`, String(target._id), { bot: botIsBuyer });
         await writeLog(db, sellerId, money2(total - fee), 'exchange_sell', `交易所卖出灵气 ${n}（已扣手续费 ¥${fee}）`, String(target._id), { bot: !botIsBuyer });
         if (fee > 0) await writeLog(db, PLATFORM_ID, fee, 'exchange_fee', `订单 ${String(target._id)} 手续费 0.5%`, String(target._id), { bot: true });
       } catch (e) {
         await col.updateOne({ _id: target._id }, { $inc: { left: n } }).catch(() => { });
         return { skipped: 'settle_error' };
       }
-      if (after.left <= 0) await col.updateOne({ _id: target._id }, { $set: { status: 'done', updatedAt: new Date() } });
+      // 结单：求购单把残余零头退回（买家已冻结的钱按实际成交冲减，剩下的不该一直冻着）
+      if (after.left <= 0) {
+        const fresh = await col.findOne({ _id: target._id });
+        const residual = target.side === 'buy' ? money2((fresh || {}).locked || 0) : 0;
+        await col.updateOne({ _id: target._id }, { $set: { status: 'done', locked: 0, updatedAt: new Date() } });
+        if (residual > 0) await writeLog(db, target.userId, residual, 'exchange_unlock', `求购单结清退回 ¥${residual}`, String(target._id), {});
+      }
       const deal = {
         orderId: String(target._id), side: target.side, amount: n, price: target.price, total, fee,
         buyerId, sellerId, buyerName: botIsBuyer ? '做市灵傀' : (target.username || ''), sellerName: botIsBuyer ? (target.username || '') : '做市灵傀',
@@ -152,12 +159,18 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     // 市场上没有可吃的单 → 机器人自己挂一单（提供流动性）
     const openSame = await col.countDocuments({ userId: BOT_ID, side, status: 'open' });
     if (openSame >= 8) return { skipped: 'bot_orders_full' };
+    const totalNew = money2(amount * price);
     if (side === 'sell') {
       if ((fund.lingqi || 0) < amount) return { skipped: 'bot_no_lingqi' };
       await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: -amount, lingqiFrozen: amount } });
+    } else {
+      // 【v26.3】机器人挂求购单同样冻结余额，与玩家口径一致
+      if (bal < totalNew) return { skipped: 'bot_no_cash' };
+      await writeLog(db, BOT_ID, -totalNew, 'exchange_lock', `做市求购单冻结 ¥${totalNew}`, null, { bot: true });
     }
     await col.insertOne({
       userId: BOT_ID, username: '做市灵傀', side, amount, left: amount, price,
+      locked: side === 'buy' ? totalNew : 0,
       status: 'open', bot: true, createdAt: new Date(), updatedAt: new Date(),
     });
     return { posted: { side, amount, price } };
