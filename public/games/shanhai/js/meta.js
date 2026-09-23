@@ -91,8 +91,15 @@ const META = (() => {
   async function exPublish(side, amount, price) { return shApi("/api/shanhai/exchange/publish", { side, amount, price }); }
   async function exDeal(orderId, amount) { return shApi("/api/shanhai/exchange/deal", { orderId, amount }); }
   async function exCancel(orderId) { return shApi("/api/shanhai/exchange/cancel", { orderId }); }
+  // 【v26.4】交易所独立钱包：主站余额 ⇄ 交易所余额
+  async function exDeposit(amount) { return shApi("/api/shanhai/exchange/deposit", { amount }); }
+  async function exWithdraw(amount) { return shApi("/api/shanhai/exchange/withdraw", { amount }); }
+  // 【v26.4】灵气矿脉（每日产出）
+  async function lingqiInfo() { return shApi("/api/shanhai/lingqi"); }
+  async function lingqiClaim() { return shApi("/api/shanhai/lingqi/claim", {}); }
 
   return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, consumeStamina, dismantle, dismantlePrice, bonus, exBoard, exPublish, exDeal, exCancel,
+    exDeposit, exWithdraw, lingqiInfo, lingqiClaim,
     get profile() { return profile; }, get stamina() { return stamina; }, set stamina(v) { stamina = v; },
     set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
 })();
