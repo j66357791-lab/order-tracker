@@ -101,9 +101,12 @@ const META = (() => {
   // 【v26.6】灵宝商城（用灵气买道具）
   async function shopInfo() { return shApi("/api/shanhai/shop"); }
   async function shopBuy(itemId) { return shApi("/api/shanhai/shop/buy", { itemId }); }
+  // 【v26.8】装备升级 / 合成
+  async function equipUpgrade(itemId, stones) { return shApi("/api/shanhai/equip/upgrade", { itemId, stones }); }
+  async function equipCompose(itemIds) { return shApi("/api/shanhai/equip/compose", { itemIds }); }
 
   return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, consumeStamina, dismantle, dismantlePrice, bonus, exBoard, exPublish, exDeal, exCancel,
-    exDeposit, exWithdraw, lingqiInfo, lingqiClaim, shopInfo, shopBuy,
+    exDeposit, exWithdraw, lingqiInfo, lingqiClaim, shopInfo, shopBuy, equipUpgrade, equipCompose,
     get profile() { return profile; }, get stamina() { return stamina; }, set stamina(v) { stamina = v; },
     set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
 })();
