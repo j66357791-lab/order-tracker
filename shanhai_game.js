@@ -62,16 +62,34 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     const suf = { white: '', green: '', blue: '', purple: '·淬', gold: '·炼' }[q];
     return pre + body + suf;
   };
-  const rollItem = () => {
-    const totalW = QUALITY.reduce((s, q) => s + q.w, 0);
-    let r = Math.random() * totalW, q = QUALITY[0];
-    for (const qq of QUALITY) { if ((r -= qq.w) <= 0) { q = qq; break; } }
-    const slot = SLOTS[Math.floor(Math.random() * SLOTS.length)];
+  // 造一件装备（指定槽位与品质）——寻宝/福袋/合成共用同一套数值口径
+  const makeItem = (slot, q) => {
     const a = AFFIX[slot];
     const val = Math.round(a.base * q.mul * (0.9 + Math.random() * 0.25) * 10) / 10;
     // 【v24.6】玄机宝阁九阶：一阶寻宝产出「一阶」装备；老装备无 tier 字段，前端按一阶显示
     return { id: 'eq' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), slot, tier: 1, quality: q.id, qualityName: q.name, color: q.color, name: randName(slot, q.id), affix: a.name, val };
   };
+  const rollItem = () => {
+    const totalW = QUALITY.reduce((s, q) => s + q.w, 0);
+    let r = Math.random() * totalW, q = QUALITY[0];
+    for (const qq of QUALITY) { if ((r -= qq.w) <= 0) { q = qq; break; } }
+    return makeItem(SLOTS[Math.floor(Math.random() * SLOTS.length)], q);
+  };
+
+  // ==================== 【v26.8】装备升级 / 合成 / 灵石 ====================
+  // 升级：消耗若干件「同品质」装备，掷骰成功则目标装备获得额外攻击力（upAtk）。
+  //       无论成败，材料都销毁（用户定稿）。灵石可叠加成功率，单次最多 5 块。
+  const UPGRADE_CFG = {
+    white:  { cost: 5, rate: 60, min: 0.5, max: 3,   name: '凡品' },
+    green:  { cost: 5, rate: 50, min: 1,   max: 6,   name: '良品' },
+    blue:   { cost: 4, rate: 30, min: 3,   max: 15,  name: '上品' },
+    purple: { cost: 3, rate: 20, min: 15,  max: 50,  name: '仙品' },
+    gold:   { cost: 2, rate: 10, min: 30,  max: 100, name: '神品' },
+  };
+  const STONE_RATE = 5;     // 每块灵石 +5% 成功率
+  const STONE_MAX = 5;      // 单次升级最多用 5 块
+  const COMPOSE_RATE = 20;  // 合成基础成功率 20%
+  const Q_ORDER = ['white', 'green', 'blue', 'purple', 'gold'];   // 品质档位序（合成取下一档）
 
   async function ensureProfile(db, userId, username) {
     const doc = {
@@ -334,6 +352,16 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       currency: 'lingqi',
       currencyName: '灵气',
     },
+    {
+      id: 'upgrade_bag',
+      name: '升级福袋',
+      icon: '💎',
+      desc: '随机获得仙玉与一阶灵石，强化装备的硬通货',
+      rates: '仙玉 100~1000　一阶灵石 1~5 块',
+      price: 600,          // 单价（灵气）——如需调整改这里
+      currency: 'lingqi',
+      currencyName: '灵气',
+    },
   ];
 
   app.get('/api/shanhai/shop', auth, async (req, res) => {
@@ -384,21 +412,37 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         { returnDocument: 'after' });
       const np = pay && (pay.value || pay);
       if (!np) return res.status(409).json({ ok: false, error: '灵气不足或操作冲突，请刷新后重试' });
-      // 开福袋 + 入背包
-      const loot = rollBagItem();
-      await db.collection('shanhai_profiles').updateOne({ userId: me }, { $push: { bag: loot } });
+      // 开福袋：按商品类型分别处理
+      let loot, gained = {};
+      if (item.id === 'upgrade_bag') {
+        // 升级福袋：仙玉 100~1000 + 一阶灵石 1~5
+        const xianyu = 100 + Math.floor(Math.random() * 901);
+        const stones = 1 + Math.floor(Math.random() * 5);
+        await db.collection('shanhai_profiles').updateOne(
+          { userId: me }, { $inc: { xianyu, 'stones.1': stones } });
+        loot = { kind: 'upgrade', icon: '💎', xianyu, stones };
+        gained = { xianyu, stones };
+      } else {
+        // 装备福袋（默认）
+        loot = rollBagItem();
+        await db.collection('shanhai_profiles').updateOne({ userId: me }, { $push: { bag: loot } });
+      }
       await db.collection('shanhai_shop_orders').insertOne({
         userId: me, itemId: item.id, cost, first: useFirst, loot, createdAt: new Date(),
       }).catch(() => { });
       await db.collection('shanhai_logs').insertOne({
-        userId: me, action: 'shop_buy', detail: { itemId: item.id, cost, first: useFirst, quality: loot.quality, name: loot.name },
+        userId: me, action: 'shop_buy', detail: Object.assign({ itemId: item.id, cost, first: useFirst }, gained, loot.quality ? { quality: loot.quality, name: loot.name } : {}),
         createdAt: new Date(),
       }).catch(() => { });
+      // 重读一次最新状态（扣款后 bag/stones/xianyu 都变了）
+      const nf = await db.collection('shanhai_profiles').findOne({ userId: me });
       res.json({
         ok: true, cost, first: useFirst, loot,
-        lingqi: np.lingqi || 0,
-        bagCount: (np.bag || []).length,
-        firstUsed: true,
+        lingqi: nf ? (nf.lingqi || 0) : 0,
+        xianyu: nf ? (nf.xianyu || 0) : 0,
+        stones1: nf ? ((nf.stones || {})['1'] || 0) : 0,
+        bagCount: nf ? (nf.bag || []).length : 0,
+        firstUsed: item.id === 'tier1_bag' ? boughtCount > 0 : true,
       });
     } catch (e) {
       console.error('[api] shop/buy', e);
@@ -407,6 +451,130 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         detail: { where: 'shop/buy', msg: String((e && e.message) || e).slice(0, 200) }, createdAt: new Date(),
       }).catch(() => { });
       res.status(500).json({ ok: false, error: '购买失败，请稍后再试', debug: String((e && e.message) || e).slice(0, 90) });
+    }
+  });
+
+  // ---------- 【v26.8】装备升级：消耗同品质装备，成功得额外攻击力，失败材料销毁 ----------
+  app.post('/api/shanhai/equip/upgrade', auth, limit({ name: 'sh-upg', max: 40, windowMs: 60 * 1000, msg: '升级太频繁，歇一下' }), async (req, res) => {
+    let step = 'load';
+    try {
+      const db = await getDb();
+      const me = req.user.id;
+      const { itemId, stones: useStonesRaw } = req.body || {};
+      step = 'profile';
+      const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      const bag = p.bag || [];
+      const it = bag.find(x => x.id === itemId);
+      if (!it) return res.status(400).json({ ok: false, error: '装备不在背包里' });
+      const cfg = UPGRADE_CFG[it.quality];
+      if (!cfg) return res.status(400).json({ ok: false, error: '该品质不支持升级' });
+      const tier = it.tier || 1;
+      // 材料：同品质的其他装备（不含被升级的这件）
+      const mats = bag.filter(x => x.id !== itemId && x.quality === it.quality);
+      if (mats.length < cfg.cost)
+        return res.status(400).json({ ok: false, error: `需要 ${cfg.cost} 件${cfg.name}装备作为材料（现有 ${mats.length} 件）` });
+      // 灵石：对应品阶，单次最多 5 块，每块 +5%
+      const useStones = Math.max(0, Math.min(STONE_MAX, Math.floor(Number(useStonesRaw) || 0)));
+      const haveStones = (p.stones || {})[tier] || 0;
+      if (useStones > haveStones)
+        return res.status(400).json({ ok: false, error: `${tier} 阶灵石不足（有 ${haveStones} 块）` });
+      const rate = Math.min(95, cfg.rate + useStones * STONE_RATE);   // 封顶 95%，永远保留失败可能
+      step = 'consume';
+      // 无论成败，材料与灵石都消耗（用户定稿：失败则消耗的装备消失销毁）
+      const matIds = mats.slice(0, cfg.cost).map(x => x.id);
+      await db.collection('shanhai_profiles').updateOne(
+        { userId: me }, { $pull: { bag: { id: { $in: matIds } } } });
+      if (useStones > 0) {
+        await db.collection('shanhai_profiles').updateOne(
+          { userId: me }, { $inc: { ['stones.' + tier]: -useStones } });
+      }
+      step = 'roll';
+      const success = Math.random() * 100 < rate;
+      const gain = success ? Math.round((cfg.min + Math.random() * (cfg.max - cfg.min)) * 10) / 10 : 0;
+      if (success) {
+        // $inc 对不存在的字段会从 0 开始累加，无需预置 upAtk
+        await db.collection('shanhai_profiles').updateOne(
+          { userId: me, 'bag.id': itemId },
+          { $inc: { 'bag.$.upAtk': gain }, $set: { updatedAt: new Date() } });
+      }
+      const np = await db.collection('shanhai_profiles').findOne({ userId: me });
+      const nit = np ? (np.bag || []).find(x => x.id === itemId) : null;
+      await db.collection('shanhai_logs').insertOne({
+        userId: me, action: 'equip_upgrade',
+        detail: { itemId, quality: it.quality, cost: cfg.cost, useStones, rate, success, gain },
+        createdAt: new Date(),
+      }).catch(() => { });
+      res.json({
+        ok: true, success, gain, rate,
+        upAtk: nit ? (nit.upAtk || 0) : 0,
+        matLeft: np ? (np.bag || []).filter(x => x.quality === it.quality && x.id !== itemId).length : 0,
+        stonesLeft: np ? ((np.stones || {})[tier] || 0) : 0,
+        bagCount: np ? (np.bag || []).length : 0,
+      });
+    } catch (e) {
+      console.error('[api] equip/upgrade step=' + step, e);
+      if (db) db.collection('shanhai_logs').insertOne({
+        userId: req.user && req.user.id, action: 'exchange_error',
+        detail: { where: 'equip/upgrade', step, msg: String((e && e.message) || e).slice(0, 200) }, createdAt: new Date(),
+      }).catch(() => { });
+      res.status(500).json({ ok: false, error: '升级失败，请稍后再试', debug: 'step=' + step + ' ' + String((e && e.message) || e).slice(0, 80) });
+    }
+  });
+
+  // ---------- 【v26.8】装备合成：5 件同品阶同品质 → 1 件高一档品质，成功率 20%，失败全毁 ----------
+  app.post('/api/shanhai/equip/compose', auth, limit({ name: 'sh-compose', max: 30, windowMs: 60 * 1000, msg: '合成太频繁，歇一下' }), async (req, res) => {
+    let step = 'load';
+    try {
+      const db = await getDb();
+      const me = req.user.id;
+      const itemIds = (req.body || {}).itemIds || [];
+      if (!Array.isArray(itemIds) || itemIds.length !== 5)
+        return res.status(400).json({ ok: false, error: '需要恰好 5 件装备参与合成' });
+      step = 'profile';
+      const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      const bag = p.bag || [];
+      const picked = itemIds.map(id => bag.find(x => x.id === id));
+      if (picked.some(x => !x))
+        return res.status(400).json({ ok: false, error: '有装备已不在背包里，请刷新后重选' });
+      const tier = picked[0].tier || 1;
+      const qid = picked[0].quality;
+      if (!picked.every(x => (x.tier || 1) === tier && x.quality === qid))
+        return res.status(400).json({ ok: false, error: '5 件装备必须同品阶、同品质' });
+      const qi = Q_ORDER.indexOf(qid);
+      if (qi < 0) return res.status(400).json({ ok: false, error: '未知品质' });
+      if (qi >= Q_ORDER.length - 1)
+        return res.status(400).json({ ok: false, error: '神品已是最高品质，无法再合成' });
+      const nextQ = QUALITY.find(x => x.id === Q_ORDER[qi + 1]);
+      step = 'consume';
+      // 无论成败，5 件材料都消耗
+      await db.collection('shanhai_profiles').updateOne(
+        { userId: me }, { $pull: { bag: { id: { $in: itemIds } } } });
+      step = 'roll';
+      const success = Math.random() * 100 < COMPOSE_RATE;
+      let loot = null;
+      if (success) {
+        // 槽位取第一件（玩家的选择意图），品质升一档
+        loot = makeItem(picked[0].slot, nextQ);
+        await db.collection('shanhai_profiles').updateOne({ userId: me }, { $push: { bag: loot } });
+      }
+      const np = await db.collection('shanhai_profiles').findOne({ userId: me });
+      await db.collection('shanhai_logs').insertOne({
+        userId: me, action: 'equip_compose',
+        detail: { count: itemIds.length, quality: qid, slot: picked[0].slot, success, loot: loot ? loot.name : null },
+        createdAt: new Date(),
+      }).catch(() => { });
+      res.json({
+        ok: true, success, loot: loot || null,
+        nextQualityName: nextQ.name, nextColor: nextQ.color,
+        bagCount: np ? (np.bag || []).length : 0,
+      });
+    } catch (e) {
+      console.error('[api] equip/compose step=' + step, e);
+      if (db) db.collection('shanhai_logs').insertOne({
+        userId: req.user && req.user.id, action: 'exchange_error',
+        detail: { where: 'equip/compose', step, msg: String((e && e.message) || e).slice(0, 200) }, createdAt: new Date(),
+      }).catch(() => { });
+      res.status(500).json({ ok: false, error: '合成失败，请稍后再试', debug: 'step=' + step + ' ' + String((e && e.message) || e).slice(0, 80) });
     }
   });
 
