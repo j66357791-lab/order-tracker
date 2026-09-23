@@ -391,8 +391,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
        ② 去身份——列表不显示任何人的名字（既不显示机器人、也不显示玩家），
           只呈现「有这么一个买卖需求」。
        ③ 明确反馈——买入/卖出/挂单/转入转出都有「处理中」动画 + 明确结果提示。 */
-  const _m3 = n => Math.round(Number(n || 0) * 1000) / 1000;
-  const _fmt3 = n => _m3(n).toFixed(3);
+  const _m4 = n => Math.round(Number(n || 0) * 10000) / 10000;   // 【v26.4.1】交易所内部 4 位小数
+  const _fmt4 = n => _m4(n).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');   // 去掉多余的 0，0.0800 显示成 0.08
   const _escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let EX = { tab: "buy", data: null, busy: false, form: { a: "", p: "" }, timer: null };
 
@@ -410,7 +410,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
 
   /* 一条挂单。v26.4 起不再显示任何身份信息——只有数量、单价、总额与操作。 */
   function exRowHTML(o) {
-    const left = o.left, unit = _m3(o.price).toFixed(3), total = _fmt3(left * o.price);
+    const left = o.left, unit = _m4(o.price).toFixed(3), total = _fmt4(left * o.price);
     if (o.mine) {
       return `<div class="ex-row mine-own">
         <div class="num"><b>${left}</b> 灵气<span class="ex-tag-me">我的</span><i>单价 ¥${unit} · 共 ¥${total}</i></div>
@@ -430,7 +430,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const mine = d.role === "buy";
     return `<div class="ex-row ex-deal-row">
       <div class="num"><b>${d.amount}</b> 灵气<span class="ex-tag-${mine ? "buy" : "sell"}">${mine ? "买入" : "卖出"}</span>
-        <i>单价 ¥${_m3(d.price).toFixed(3)} · 共 ¥${_fmt3(d.total)} · 手续费 ¥${_fmt3(d.fee)}</i></div>
+        <i>单价 ¥${_m4(d.price).toFixed(3)} · 共 ¥${_fmt4(d.total)} · 手续费 ¥${_fmt4(d.fee)}</i></div>
       <div class="ex-deal-time">${new Date(d.at).toLocaleString("zh-CN", { hour12: false }).slice(5, 16)}</div>
     </div>`;
   }
@@ -443,8 +443,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
     // —— 钱包区（v26.4：交易所独立余额）——
-    set("exExAvail", "¥" + _m3(me.exAvailable || 0).toFixed(3));
-    set("exExFrozen", "¥" + _m3(me.exFrozen || 0).toFixed(3));
+    set("exExAvail", "¥" + _m4(me.exAvailable || 0).toFixed(3));
+    set("exExFrozen", "¥" + _m4(me.exFrozen || 0).toFixed(3));
     set("exMainBal", "主站余额 ¥" + (me.balance || 0).toFixed(2) + "（不参与交易，需先转入）");
     set("exMyLq", me.lingqi || 0);
     set("exMyLqFz", me.frozen || 0);
@@ -512,7 +512,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     }
     const isSell = EX.tab === "sell";
     const cnt = isSell ? mineSell : mineBuy;
-    const cap = isSell ? `${me.lingqi || 0} 灵气` : `¥${_m3(me.exAvailable || 0).toFixed(3)}（交易所可用）`;
+    const cap = isSell ? `${me.lingqi || 0} 灵气` : `¥${_m4(me.exAvailable || 0).toFixed(3)}（交易所可用）`;
     form.innerHTML = `
       <div class="ex-form-row">
         <label>数量</label>
@@ -521,8 +521,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       </div>
       <div class="ex-form-row">
         <label>单价</label>
-        <input class="ex-inp" id="exPrice" type="number" inputmode="decimal" min="${cfg.minPrice || 0.001}" step="0.001"
-          value="${_escHtml(EX.form.p)}" placeholder="每个灵气多少元（可到 0.001）">
+        <input class="ex-inp" id="exPrice" type="number" inputmode="decimal" min="${cfg.minPrice || 0.001}" step="0.0001"
+          value="${_escHtml(EX.form.p)}" placeholder="每个灵气多少元（可到 0.0001）">
         <span class="ex-sum" id="exTotal">¥0.000</span>
       </div>
       <button class="ex-submit" id="exSubmit">${isSell ? "发 布 出 售" : "发 布 求 购"}</button>
@@ -532,7 +532,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       const p = Number(document.getElementById("exPrice").value) || 0;
       EX.form = { a: document.getElementById("exAmount").value, p: document.getElementById("exPrice").value };
       const el = document.getElementById("exTotal");
-      if (el) el.textContent = "¥" + _fmt3(a * p);
+      if (el) el.textContent = "¥" + _fmt4(a * p);
       return { a, p };
     };
     ["exAmount", "exPrice"].forEach(id => { const el = document.getElementById(id); if (el) el.oninput = calc; });
@@ -548,7 +548,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         const r = await META.exPublish(isSell ? "sell" : "buy", a, p);
         if (!r.ok) throw new Error(r.error || "发布失败");
         EX.form = { a: "", p: "" };
-        toast((isSell ? "出售单已挂出：" : "求购单已挂出：") + a + " 灵气 × ¥" + _m3(p).toFixed(3));
+        toast((isSell ? "出售单已挂出：" : "求购单已挂出：") + a + " 灵气 × ¥" + _m4(p).toFixed(3));
         renderHome();
         await loadEx();
       } catch (e) {
@@ -567,7 +567,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const cfg = (EX.data && EX.data.cfg) || {};
     const min = cfg.minTransfer || 0.01;
     const maxIn = Math.floor((me.balance || 0) * 100) / 100;
-    const maxOut = Math.floor(_m3(me.exAvailable || 0) * 100) / 100;
+    const maxOut = Math.floor(_m4(me.exAvailable || 0) * 100) / 100;
     const sub = document.createElement("div");
     sub.className = "ex-mask"; sub.style.zIndex = 1000; sub.id = "exSheet";
     sub.onclick = e => { if (e.target === sub) sub.remove(); };
@@ -583,22 +583,29 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           <div class="ex-form-row">
             <label>金额</label>
             <input class="ex-inp" id="trAmt" type="number" inputmode="decimal" min="${min}" step="0.01" value="${isIn ? maxIn : maxOut}">
+            ${isIn ? "" : '<button class="exw-btn out" id="trAll" style="height:34px;flex-shrink:0">全部</button>'}
           </div>
           <div class="ex-line"><span>${isIn ? "主站可用" : "交易所可用"}</span><b>¥${(isIn ? maxIn : maxOut).toFixed(2)}</b></div>
-          <div class="ex-line fee"><span>最低</span><span>¥${min}</span></div>
+          <div class="ex-line fee"><span>金额步进</span><span>¥${min}（人民币最小单位）</span></div>
           <button class="ex-submit" id="trOk" style="margin-top:10px">确 认 ${isIn ? "转 入" : "转 出"}</button>
-          <div class="ex-tip">${isIn ? "转入后这笔钱只用于交易，不再计入主站可提现余额" : "挂单冻结中的金额不可转出，先撤单"}</div>
+          <div class="ex-tip">${isIn ? "转入后这笔钱只用于交易，不再计入主站可提现余额" : "挂单冻结中的部分不能转出；不足 ¥0.01 的零头会留在交易所继续使用"}</div>
         </div>
       </div>`;
     document.body.appendChild(sub);
+    let trAll = false;
+    const amtInput = document.getElementById("trAmt");
+    const allBtn = document.getElementById("trAll");
+    if (allBtn) allBtn.onclick = () => { amtInput.value = maxOut; trAll = true; };
+    amtInput.oninput = () => { trAll = false; };
     const btn = document.getElementById("trOk");
     btn.onclick = async () => {
-      const amt = Math.round((Number(document.getElementById("trAmt").value) || 0) * 100) / 100;
+      const amt = Math.round((Number(amtInput.value) || 0) * 100) / 100;
       if (!(amt >= min)) return toast("最低 ¥" + min);
       if (EX.busy) return;
       EX.busy = true; btn.disabled = true; btn.classList.add("loading"); btn.textContent = (isIn ? "转入中" : "转出中");
       try {
-        const r = isIn ? await META.exDeposit(amt) : await META.exWithdraw(amt);
+        // 「全部转出」时把 all 带给后端：交易所是 4 位小数、主站只认分，后端按分取整
+        const r = isIn ? await META.exDeposit(amt) : await META.exWithdraw(amt, trAll);
         if (!r.ok) throw new Error(r.error || "操作失败");
         sub.remove();
         toast((isIn ? "已转入 ¥" : "已转出 ¥") + amt.toFixed(2));
@@ -617,8 +624,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const feeRate = (EX.data && EX.data.cfg && EX.data.cfg.feeRate) || 0.005;
     const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     const calcNum = n => {
-      const total = _m3(n * o.price), fee = _m3(total * feeRate);
-      return { total, fee, net: isBuy ? total : _m3(total - fee) };
+      const total = _m4(n * o.price), fee = _m4(total * feeRate);
+      return { total, fee, net: isBuy ? total : _m4(total - fee) };
     };
     const c0 = calcNum(o.left);
     const sub = document.createElement("div");
@@ -629,7 +636,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <div class="ex-board" style="height:62px"></div>
         <div class="ex-head">
           <div class="ex-title">${isBuy ? "买入灵气" : "卖出灵气"}</div>
-          <div class="ex-sub">单价 ¥${_m3(o.price).toFixed(3)} · 最多 ${o.left}</div>
+          <div class="ex-sub">单价 ¥${_m4(o.price).toFixed(3)} · 最多 ${o.left}</div>
           <div class="ex-close" onclick="document.getElementById('exSheet').remove()">×</div>
         </div>
         <div style="padding:12px 14px 6px">
@@ -637,10 +644,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
             <label>数量</label>
             <input class="ex-inp" id="shAmt" type="number" inputmode="numeric" min="1" max="${o.left}" step="1" value="${o.left}">
           </div>
-          <div class="ex-line"><span>成交金额</span><b id="shTotal">¥${_fmt3(c0.total)}</b></div>
-          <div class="ex-line fee"><span>手续费 ${(feeRate * 100).toFixed(1)}%（卖方承担）</span><span id="shFee">¥${_fmt3(c0.fee)}</span></div>
-          <div class="ex-line net"><span>${isBuy ? "实付" : "实收"}</span><b id="shNet">¥${_fmt3(c0.net)}</b></div>
-          <div class="ex-line fee"><span>${isBuy ? "交易所可用" : "可用灵气"}</span><span id="shAvail">${isBuy ? "¥" + _m3(me.exAvailable || 0).toFixed(3) : (me.lingqi || 0) + " 灵气"}</span></div>
+          <div class="ex-line"><span>成交金额</span><b id="shTotal">¥${_fmt4(c0.total)}</b></div>
+          <div class="ex-line fee"><span>手续费 ${(feeRate * 100).toFixed(1)}%（卖方承担）</span><span id="shFee">¥${_fmt4(c0.fee)}</span></div>
+          <div class="ex-line net"><span>${isBuy ? "实付" : "实收"}</span><b id="shNet">¥${_fmt4(c0.net)}</b></div>
+          <div class="ex-line fee"><span>${isBuy ? "交易所可用" : "可用灵气"}</span><span id="shAvail">${isBuy ? "¥" + _m4(me.exAvailable || 0).toFixed(3) : (me.lingqi || 0) + " 灵气"}</span></div>
           <button class="ex-submit" id="shOk" style="margin-top:10px">确 认 ${isBuy ? "买 入" : "卖 出"}</button>
           <div class="ex-tip">${isBuy ? "从交易所余额扣款" : "扣手续费后进你的交易所余额"}</div>
         </div>
@@ -650,9 +657,9 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const upd = () => {
       const n = Math.min(o.left, Math.max(1, Math.floor(Number(amtEl.value) || 1)));
       const c = calcNum(n);
-      setTxt("shTotal", "¥" + _fmt3(c.total));
-      setTxt("shFee", "¥" + _fmt3(c.fee));
-      setTxt("shNet", "¥" + _fmt3(c.net));
+      setTxt("shTotal", "¥" + _fmt4(c.total));
+      setTxt("shFee", "¥" + _fmt4(c.fee));
+      setTxt("shNet", "¥" + _fmt4(c.net));
       return n;
     };
     amtEl.oninput = upd;
@@ -668,7 +675,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         sub.remove();
         const got = Number(r.got || r.total || 0);
         toast((r.side === "sell" ? "已买入 " : "已卖出 ") + r.amount + " 灵气 · "
-          + (r.side === "sell" ? "实付 ¥" : "实收 ¥") + _fmt3(got));
+          + (r.side === "sell" ? "实付 ¥" : "实收 ¥") + _fmt4(got));
         await refreshAll();
       } catch (e) {
         toast((e && e.error) || e.message || "交易失败");
