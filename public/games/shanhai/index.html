@@ -409,6 +409,24 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     renderEx(true);   // 只刷资产条（不动用户正在填的表单）
   }
 
+  /* 【v26.5.2】支付成功效果：绿色对勾 + 金额，像微信支付那样一眼就懂。
+     默认 2.2 秒后自动消失，点一下也能立刻关掉。 */
+  function showPaySuccess(opts) {
+    const d = document.createElement("div");
+    d.className = "ex-mask"; d.style.zIndex = 1200;
+    d.innerHTML = `
+      <div class="pay-ok">
+        <div class="pay-ok-ring"><div class="pay-ok-tick">✓</div></div>
+        <div class="pay-ok-title">${_escHtml(opts.title || "交易成功")}</div>
+        <div class="pay-ok-amt">${_escHtml(opts.amount || "")}</div>
+        <div class="pay-ok-sub">${_escHtml(opts.sub || "")}</div>
+        ${opts.bal ? `<div class="pay-ok-bal">${_escHtml(opts.bal)}</div>` : ""}
+      </div>`;
+    document.body.appendChild(d);
+    const t = setTimeout(() => d.remove(), 2200);
+    d.onclick = () => { clearTimeout(t); d.remove(); };
+  }
+
   /* 【v26.5.1】结果确认层：交易成功/失败都明确告知，停留到用户点「知道了」，
      不再只靠 2.6 秒就消失的 toast。 */
   function showExResult(opts) {
@@ -600,17 +618,18 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         const r = await META.exPublish(isSell ? "sell" : "buy", a, p);
         if (!r.ok) throw new Error(r.error || "发布失败");
         applyMe(r);                          // 立即更新冻结额与余额
-        EX.form = { a: "", p: "" };
-        showExResult({
-          ok: true,
-          lines: [
-            isSell ? "出售单已挂出" : "求购单已挂出",
-            a + " 灵气 × ¥" + _fmt4(p) + " = ¥" + _fmt4(a * p),
-            isSell ? "已冻结灵气 " + a + "（撤销即刻解冻）" : "已冻结交易所余额 ¥" + _fmt4(a * p),
-          ],
-        });
-        await loadEx();
+        await loadEx();                      // 等数据同步完成（转圈持续到这里）
         try { await META.load(); renderHome(); } catch (e) { }
+        EX.form = { a: "", p: "" };
+        stopExPoll();
+        const exMask = document.getElementById("exMask");
+        if (exMask) exMask.remove();
+        showPaySuccess({
+          title: "挂单成功",
+          amount: a + " 灵气",
+          sub: "单价 ¥" + _fmt4(p) + "　合计 ¥" + _fmt4(a * p),
+          bal: isSell ? ("已冻结灵气 " + a + " 点") : ("已冻结余额 ¥" + _fmt4(a * p)),
+        });
       } catch (e) {
         const msg = (e && (e.error || e.message)) || "发布失败";
         if (fErr) { fErr.style.display = "block"; fErr.textContent = "⚠️ " + msg; }
@@ -735,30 +754,38 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       btn.disabled = true; btn.classList.add("loading"); btn.textContent = isBuy ? "买入中" : "卖出中";
       const errEl = document.getElementById("shErr");
       if (errEl) errEl.style.display = "none";
+      // 【v26.5.2】网络慢时给一句安抚，别让用户以为卡死了（Render 免费实例冷启动会慢）
+      const slowTip = setTimeout(() => {
+        if (btn.classList.contains("loading")) btn.textContent = "网络较慢，仍在处理";
+      }, 8000);
       try {
         const r = await META.exDeal(o.id, n);
         if (!r.ok) throw new Error(r.error || "交易失败");
-        applyMe(r);            // ① 立刻按后端返回值把数字改对（不等轮询）
-        sub.remove();          // ② 关掉确认层
-        EX.form = { a: "", p: "" };
-        showExResult({         // ③ 明确告知结果，停留到用户点「知道了」
-          ok: true,
-          lines: [
-            (r.role === "buy" ? "买入" : "卖出") + " " + r.amount + " 灵气",
-            "单价 ¥" + _fmt4(r.price) + "　总额 ¥" + _fmt4(r.total),
-            (r.role === "buy" ? "实付" : "实收") + " ¥" + _fmt4(r.got) + "（手续费 ¥" + _fmt4(r.fee) + "）",
-            "灵气余额 " + r.lingqi + "　交易所可用 ¥" + _fmt4(r.exAvailable),
-          ],
-        });
+        // ① 先按后端返回值把数字改对
+        applyMe(r);
+        // ② 再等数据真正同步完成（成交列表、灵气、余额都拉到最新）——转圈持续到这里
         await loadEx();
         try { await META.load(); renderHome(); } catch (e) { }
+        // ③ 数据同步好了，才关掉成交确认层与整个交易所窗口
+        sub.remove();
+        EX.form = { a: "", p: "" };
+        if (typeof stopExPoll === "function") stopExPoll();
+        const exMask = document.getElementById("exMask");
+        if (exMask) exMask.remove();
+        // ④ 绿色支付成功提示（2.2 秒自动消失，点一下也能关）
+        showPaySuccess({
+          title: r.role === "buy" ? "买入成功" : "卖出成功",
+          amount: (r.role === "buy" ? "−¥" : "+¥") + _fmt4(r.got),
+          sub: r.amount + " 灵气 × ¥" + _fmt4(r.price) + "　手续费 ¥" + _fmt4(r.fee),
+          bal: "灵气 " + r.lingqi + "　交易所可用 ¥" + _fmt4(r.exAvailable),
+        });
       } catch (e) {
         // 失败时**保留弹层**并把原因写在上面，用户可以改数量直接重试
         const msg = (e && (e.error || e.message)) || "交易失败";
         if (errEl) { errEl.style.display = "block"; errEl.textContent = "⚠️ " + msg; }
         toast(msg);
         btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "确 认 " + (isBuy ? "买 入" : "卖 出");
-      } finally { EX.busy = false; }
+      } finally { clearTimeout(slowTip); EX.busy = false; }
     };
   }
 
@@ -769,7 +796,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
 
   /* 【v26.3】实时刷新：弹窗开着时每 6 秒静默拉一次最新行情。
      输入框聚焦 / 成交确认层开着 / 页面切后台 / 正在提交时自动跳过，不打扰操作。 */
-  const EX_POLL_MS = 6000;
+  // 【v26.5.2】从 6 秒提到 2.5 秒 —— 你说的"数据要刷新才有用"，主要是刷新太慢造成的错觉。
+  // 这里不用 WebSocket/SSE：游戏页本没有长连接，为一个弹窗引入长连接在 Render 免费实例上
+  // 容易被代理掐断、还会让实例无法休眠；2.5 秒轮询在体感上已经等同实时，且不会断线卡死。
+  const EX_POLL_MS = 2500;
   function startExPoll() {
     stopExPoll();
     EX.timer = setInterval(() => {
@@ -854,15 +884,13 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           const r = await META.exCancel(btn.dataset.id);
           if (!r.ok) throw new Error(r.error || "撤销失败");
           applyMe(r);
-          showExResult({
-            ok: true,
-            lines: [
-              "已撤销挂单",
-              r.side === "sell" ? ("退回冻结灵气 " + r.backAmount) : ("退回冻结余额 ¥" + _fmt4(r.backAmount)),
-              "灵气余额 " + r.lingqi + "　交易所可用 ¥" + _fmt4(r.exAvailable),
-            ],
+          await loadEx();                // 等数据同步完成再提示
+          showPaySuccess({
+            title: "已撤单",
+            amount: r.side === "sell" ? ("+" + r.backAmount + " 灵气") : ("+¥" + _fmt4(r.backAmount)),
+            sub: "冻结已退回",
+            bal: "灵气 " + r.lingqi + "　交易所可用 ¥" + _fmt4(r.exAvailable),
           });
-          await loadEx();
         } catch (err) {
           toast((err && err.error) || err.message || "撤销失败");
           btn.classList.remove("loading"); btn.textContent = "撤单";
