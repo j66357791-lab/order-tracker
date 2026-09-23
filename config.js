@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.3.1',   // 【v26.3】修 settle_error（$inc 混 Date）+ 撤单/买入拿到 id + 求购单冻结余额 + 实时行情 + 弹窗加大
+  appVersion: '26.3.2',   // 修 board 解构 500 + 机器人挂单自愈回收   // 【v26.3】修 settle_error（$inc 混 Date）+ 撤单/买入拿到 id + 求购单冻结余额 + 实时行情 + 弹窗加大
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
