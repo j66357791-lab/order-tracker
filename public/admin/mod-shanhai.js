@@ -16,6 +16,9 @@ const SKIP_LABEL = {
   bot_no_lingqi: '机器人灵气不足（去「补充额度」）',
   bot_orders_full: '机器人挂单已满（等旧单被吃掉，30 分钟后自动回收）',
   bot_same_price: '同价位已有单（正常，避免重复堆叠）',
+  // 【v26.5】这两条就是防套利的护栏在起作用：玩家挂了机器人不愿意接受的价格，直接不碰
+  ask_too_high: '有卖单报价高于机器人买价上限（正常，防被套利）',
+  bid_too_low: '有买单报价低于机器人卖价下限（正常，防被套利）',
   race: '被抢先成交（正常）',
   settle_error: '结算异常（需排查）',
   buyer_no_cash: '对手方余额不足（正常）',
@@ -55,6 +58,11 @@ export function mount(root) {
         <div class="inline"><input id="mkPriceMin" type="number" min="0.0001" step="0.0001" style="width:92px">
         <span class="sub">~</span><input id="mkPriceMax" type="number" min="0.0001" step="0.0001" style="width:92px"></div>
         <div class="sub" style="margin-top:2px">最低可到 0.0001，与交易所同口径</div></div>
+      <div><label class="lab">买卖最小价差（元/灵气）</label>
+        <input id="mkSpread" type="number" min="0.0001" step="0.0001" placeholder="默认 0.001">
+        <div class="sub" style="margin-top:2px">卖单最低价 − 买单最高价。<b>必须盖住双向手续费</b>，否则玩家能低买高卖刷钱</div></div>
+      <div><label class="lab">机器人当前实际报价</label>
+        <div class="sub" id="mkPrices" style="padding-top:6px">加载中…</div></div>
       <div><label class="lab">每笔数量区间（灵气）</label>
         <div class="inline"><input id="mkAmountMin" type="number" min="1" style="width:80px">
         <span class="sub">~</span><input id="mkAmountMax" type="number" min="1" style="width:80px"></div></div>
@@ -155,6 +163,16 @@ export function mount(root) {
       $('mkTradesMin').value = c.tradesMin; $('mkTradesMax').value = c.tradesMax;
       $('mkPriceMin').value = c.priceMin; $('mkPriceMax').value = c.priceMax;
       $('mkAmountMin').value = c.amountMin; $('mkAmountMax').value = c.amountMax;
+      $('mkSpread').value = c.spreadMin === undefined ? 0.001 : c.spreadMin;
+      // 机器人实际报价：让管理员一眼看出买卖盘有没有被劈开
+      const pz = d.prices || {};
+      if (pz.askMin !== undefined) {
+        const gain = pz.spread > 0 ? ((pz.spread / (pz.bidMax || 1)) * 100).toFixed(1) : '0';
+        $('mkPrices').innerHTML = `卖单最低 <b>¥${pz.askMin}</b> ｜ 买单最高 <b>¥${pz.bidMax}</b> ｜ 价差 <b>¥${pz.spread}</b>（${gain}%）`
+          + `<br><span style="color:#8a8272">中间价 ¥${pz.mid} · 玩家低买高卖一轮必亏，无法套利</span>`;
+      } else {
+        $('mkPrices').textContent = '—';
+      }
       $('mkFund').innerHTML = `灵气 <b>${(d.fund.lingqi || 0).toLocaleString()}</b>`
         + `（挂单冻结 ${(d.fund.lingqiFrozen || 0).toLocaleString()}）· 余额 <b>¥${(d.balance || 0).toFixed(2)}</b>`;
       const sum = c.lastSummary;
@@ -174,6 +192,7 @@ export function mount(root) {
         intervalSec: +$('mkInterval').value,
         tradesMin: +$('mkTradesMin').value, tradesMax: +$('mkTradesMax').value,
         priceMin: +$('mkPriceMin').value, priceMax: +$('mkPriceMax').value,
+        spreadMin: +$('mkSpread').value || 0.001,
         amountMin: +$('mkAmountMin').value, amountMax: +$('mkAmountMax').value,
       };
       const d = await api('/api/shanhai/admin/market/config', { method: 'POST', body: JSON.stringify(body) });
