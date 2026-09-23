@@ -392,19 +392,38 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
      挂出售单会先把灵气冻结起来（防止同一批灵气被卖两次），撤单即解冻。 */
   const _m2 = n => Math.round(Number(n || 0) * 100) / 100;
   const _escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  let EX = { tab: "buy", data: null, busy: false, form: { a: "", p: "" } };
+  let EX = { tab: "buy", data: null, busy: false, form: { a: "", p: "" }, timer: null };
 
-  async function loadEx() {
+  async function loadEx(onlyLists) {
     if (!document.getElementById("exMask")) return;
     try {
       const d = await META.exBoard();
       if (!d.ok) throw new Error(d.error || "加载失败");
       EX.data = d;
-      renderEx();
+      renderEx(onlyLists);
     } catch (e) {
-      toast("行情加载失败：" + (e && (e.error || e.message) || "请稍后重试"));
+      if (!onlyLists) toast("行情加载失败：" + (e && (e.error || e.message) || "请稍后重试"));
     }
   }
+
+  /* 【v26.3】实时刷新：弹窗开着时每 6 秒静默拉一次最新挂单与成交。
+     为什么用轮询而不是 WebSocket——游戏页目前没有长连接，为一个弹窗引入 socket.io
+     客户端（约 50KB）与"资源瘦身"的目标相冲；6 秒轮询在体验上已经等价于实时，
+     而且不会因为断线卡住。页面切到后台、或正在操作/输入时自动跳过，不干扰用户。 */
+  const EX_POLL_MS = 6000;
+  function startExPoll() {
+    stopExPoll();
+    EX.timer = setInterval(() => {
+      if (!document.getElementById("exMask")) return stopExPoll();   // 弹窗已关
+      if (document.hidden) return;                                    // 页面在后台
+      if (EX.busy) return;                                            // 正在提交
+      if (document.getElementById("exSheet")) return;                 // 成交确认层开着
+      const ae = document.activeElement;
+      if (ae && ae.classList && ae.classList.contains("ex-inp")) return;  // 正在输入
+      loadEx(true);
+    }, EX_POLL_MS);
+  }
+  function stopExPoll() { if (EX.timer) { clearInterval(EX.timer); EX.timer = null; } }
 
   function exRowHTML(o, mode) {
     const left = o.left, unit = Number(o.price).toFixed(2), total = _m2(left * o.price).toFixed(2);
@@ -433,7 +452,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
 
   function exEmpty(txt) { return `<div class="ex-empty">${txt}</div>`; }
 
-  function renderEx() {
+  // onlyLists=true 时只刷新资产条与列表，不动底部表单（实时轮询用，避免打断正在输入的数量/单价）
+  function renderEx(onlyLists) {
     const d = EX.data;
     const mask = document.getElementById("exMask");
     if (!d || !mask) return;
@@ -442,6 +462,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     set("exMyLq", me.lingqi || 0);
     set("exMyFz", me.frozen || 0);
     set("exMyBal", "¥" + (me.balance || 0).toFixed(2));
+    set("exMyFzCash", "¥" + (me.frozenCash || 0).toFixed(2));
 
     const mine = d.mine || [];
     const mineSell = mine.filter(o => o.side === "sell").length;
@@ -463,9 +484,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       if (c) c.classList.toggle("on", t === EX.tab);
     });
 
-    // —— 底部发布表单 ——
+    // —— 底部发布表单（轮询刷新时跳过，避免打断用户正在输入的内容）——
+    if (onlyLists) return;
     const form = document.getElementById("exForm");
-    if (EX.tab === "mine") { form.innerHTML = `<div class="ex-tip">挂出售单会冻结对应灵气，撤销即刻解冻</div>`; return; }
+    if (EX.tab === "mine") { form.innerHTML = `<div class="ex-tip">挂出售单冻结灵气·挂求购单冻结余额，撤销即刻解冻退回</div>`; return; }
     const isSell = EX.tab === "sell";
     const cnt = isSell ? mineSell : mineBuy;
     form.innerHTML = `
@@ -587,19 +609,20 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     EX.tab = "buy";
     mask = document.createElement("div");
     mask.className = "ex-mask"; mask.id = "exMask";
-    mask.onclick = e => { if (e.target === mask) mask.remove(); };
+    mask.onclick = e => { if (e.target === mask) { stopExPoll(); mask.remove(); } };
     mask.innerHTML = `
       <div class="ex-wrap">
         <div class="ex-board"></div>
         <div class="ex-head">
           <div class="ex-title">灵气交易所</div>
-          <div class="ex-sub">以账户余额结缘灵气 · 立单即为约</div>
+          <div class="ex-sub">实时行情 · 每 6 秒自动刷新</div>
           <div class="ex-close" id="exClose">×</div>
         </div>
         <div class="ex-assets">
           <div class="ex-asset"><i>可用灵气</i><b id="exMyLq">--</b></div>
-          <div class="ex-asset"><i>挂单冻结</i><b id="exMyFz">--</b></div>
-          <div class="ex-asset bal"><i>账户余额</i><b id="exMyBal">--</b></div>
+          <div class="ex-asset frz"><i>灵气冻结</i><b id="exMyFz">--</b></div>
+          <div class="ex-asset bal"><i>可用余额</i><b id="exMyBal">--</b></div>
+          <div class="ex-asset frz"><i>余额冻结</i><b id="exMyFzCash">--</b></div>
         </div>
         <div class="ex-tabs">
           <div class="ex-tab on"  data-t="buy">我要买</div>
@@ -614,7 +637,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <div class="ex-form" id="exForm"></div>
       </div>`;
     document.body.appendChild(mask);
-    document.getElementById("exClose").onclick = () => mask.remove();
+    document.getElementById("exClose").onclick = () => { stopExPoll(); mask.remove(); };
     mask.querySelectorAll(".ex-tab").forEach(t => {
       t.onclick = () => {
         mask.querySelectorAll(".ex-tab").forEach(x => x.classList.remove("on"));
@@ -642,6 +665,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       }
     });
     await loadEx();
+    startExPoll();   // 【v26.3】实时行情
   }
   window.showExchange = showExchange;
 
