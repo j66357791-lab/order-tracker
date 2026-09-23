@@ -632,6 +632,27 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   const EXW_COL = 'shanhai_ex_wallet';
   const EX_MIN_TRANSFER = 0.01;   // 转入/转出最低 0.01 元
 
+  // ==================== 【v26.4.1】交易所总闸 ====================
+  // 后台一键停用：所有交易所接口返回"维护中"。真出事时能立刻止血，不用等重新部署。
+  // ⚠️ 这两个必须定义在**所有使用点之前**：它们是 const/箭头函数，在模块加载阶段就被引用，
+  //    放到后面会命中 TDZ（Cannot access before initialization），
+  //    而抛错发生在路由注册过程中 —— 结果是"前半截路由注册成功、后半截全部 404"。
+  async function exEnabled(db) {
+    try {
+      const c = await db.collection('shanhai_config').findOne({ _id: 'exchange' });
+      return !c || c.enabled !== false;   // 配置不存在视为开启
+    } catch (e) { return true; }
+  }
+  const exGuard = async (req, res, next) => {
+    try {
+      const db = await getDb();
+      if (!(await exEnabled(db))) {
+        return res.status(503).json({ ok: false, error: '交易所正在维护，请稍后再来', code: 'EX_CLOSED' });
+      }
+      next();
+    } catch (e) { next(); }
+  };
+
   async function exWalletOf(db, userId) {
     let w = await db.collection(EXW_COL).findOne({ userId });
     if (!w) {
@@ -738,26 +759,8 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
-  // ==================== 【v26.4.1】交易所总闸 ====================
-  // 后台一键停用：入口隐藏、所有交易所接口返回"维护中"。
-  // 出现在这里的理由是"怕出问题"——真出事时能立刻止血，不用等一次重新部署。
-  // 默认开启（配置不存在视为开启），开关状态存 shanhai_config。
-  async function exEnabled(db) {
-    try {
-      const c = await db.collection('shanhai_config').findOne({ _id: 'exchange' });
-      return !c || c.enabled !== false;
-    } catch (e) { return true; }
-  }
-  const exGuard = async (req, res, next) => {
-    try {
-      const db = await getDb();
-      if (!(await exEnabled(db))) {
-        return res.status(503).json({ ok: false, error: '交易所正在维护，请稍后再来', code: 'EX_CLOSED' });
-      }
-      next();
-    } catch (e) { next(); }
-  };
-
+  // ==================== 【v26.4.1】交易所总闸 · 管理接口 ====================
+  // （exEnabled / exGuard 的定义在文件前部——它们必须早于所有使用点，否则命中 TDZ）
   app.get('/api/shanhai/admin/exchange/switch', auth, adminOnly, async (req, res) => {
     try {
       const db = await getDb();
