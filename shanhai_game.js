@@ -612,14 +612,14 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
     maxOpenPerSide: 10,     // 单用户一侧最多 10 条
     minAmount: 1,
     maxAmount: 999999,
-    minPrice: 0.001,        // 【v26.4】价格支持到 0.001（方便你细调档位）
+    minPrice: 0.0001,       // 【v26.4.1】价格支持到 0.0001（交易所内部定价，与主站人民币无关）
     maxPrice: 9999,
     feeRate: 0.005,         // 【v26.1】手续费 0.5%：买家付全额，卖家实收 total×(1-0.5%)
   };
   const PLATFORM_ID = '__platform__';   // 手续费归集账户（不参与任何玩家余额，只用于统计平台收入）
   const BOT_ID = '__market__';          // 【v26.2】做市机器人账户：手续费照收，台账里用 bot 标记区分
   const money2 = n => Math.round(Number(n) * 100) / 100;      // 主站余额口径：2 位小数（元）
-  const money3 = n => Math.round(Number(n) * 1000) / 1000;    // 【v26.4】交易所内部口径：3 位小数，支持 0.001 级价格
+  const money4 = n => Math.round(Number(n) * 10000) / 10000;  // 【v26.4.1】交易所内部口径：4 位小数，支持 0.0001 级定价
   const EX_PROJ = { _id: 1, userId: 1, username: 1, side: 1, amount: 1, left: 1, price: 1, status: 1, createdAt: 1 };
 
   // ==================== 【v26.4】交易所独立钱包 ====================
@@ -644,7 +644,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
   // 交易所可用余额（扣除挂单冻结）
   async function exAvailable(db, userId) {
     const w = await db.collection(EXW_COL).findOne({ userId });
-    return money3(((w || {}).balance || 0) - ((w || {}).frozen || 0));
+    return money4(((w || {}).balance || 0) - ((w || {}).frozen || 0));
   }
   // 【v26.2】交易所匿名制：玩家之间只看得到匿名代号，真实用户名只留在库里给后台查。
   // 代号由 userId 哈希固定生成——同一个人每次都是同一个代号，便于"认得出是同一家"但认不出是谁。
@@ -681,7 +681,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
   }
 
   // ---------- 行情看板 ----------
-  app.get('/api/shanhai/exchange/board', auth, async (req, res) => {
+  app.get('/api/shanhai/exchange/board', auth, exGuard, async (req, res) => {
     try {
       const db = await getDb();
       const me = req.user.id;
@@ -721,15 +721,15 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         cfg: {
           maxOpenPerSide: EX_CFG.maxOpenPerSide, minPrice: EX_CFG.minPrice, maxPrice: EX_CFG.maxPrice,
           minAmount: EX_CFG.minAmount, maxAmount: EX_CFG.maxAmount, feeRate: EX_CFG.feeRate,
-          minTransfer: EX_MIN_TRANSFER, priceStep: 0.001,
+          minTransfer: EX_MIN_TRANSFER, priceStep: 0.0001,
         },
         me: {
           id: me,
           lingqi: p.lingqi || 0, frozen: p.lingqiFrozen || 0,
           balance,                                                   // 主站余额
-          exBalance: money3(exw.balance || 0),                       // 交易所余额
-          exFrozen: money3(exw.frozen || 0),                         // 交易所冻结（挂买单）
-          exAvailable: money3((exw.balance || 0) - (exw.frozen || 0)),
+          exBalance: money4(exw.balance || 0),                       // 交易所余额
+          exFrozen: money4(exw.frozen || 0),                         // 交易所冻结（挂买单）
+          exAvailable: money4((exw.balance || 0) - (exw.frozen || 0)),
         },
         sells: mask(sells), buys: mask(buys), mine: mask(mine),
         deals: myDealList,
@@ -738,11 +738,53 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
+  // ==================== 【v26.4.1】交易所总闸 ====================
+  // 后台一键停用：入口隐藏、所有交易所接口返回"维护中"。
+  // 出现在这里的理由是"怕出问题"——真出事时能立刻止血，不用等一次重新部署。
+  // 默认开启（配置不存在视为开启），开关状态存 shanhai_config。
+  async function exEnabled(db) {
+    try {
+      const c = await db.collection('shanhai_config').findOne({ _id: 'exchange' });
+      return !c || c.enabled !== false;
+    } catch (e) { return true; }
+  }
+  const exGuard = async (req, res, next) => {
+    try {
+      const db = await getDb();
+      if (!(await exEnabled(db))) {
+        return res.status(503).json({ ok: false, error: '交易所正在维护，请稍后再来', code: 'EX_CLOSED' });
+      }
+      next();
+    } catch (e) { next(); }
+  };
+
+  app.get('/api/shanhai/admin/exchange/switch', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      res.json({ ok: true, enabled: await exEnabled(db) });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  app.post('/api/shanhai/admin/exchange/switch', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const enabled = !!(req.body || {}).enabled;
+      await db.collection('shanhai_config').updateOne(
+        { _id: 'exchange' },
+        { $set: { enabled, updatedAt: new Date(), by: req.user.id } },
+        { upsert: true });
+      await db.collection('shanhai_logs').insertOne({
+        action: 'exchange_switch', detail: { enabled, by: req.user.id }, createdAt: new Date(),
+      }).catch(() => { });
+      res.json({ ok: true, enabled });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
   // ==================== 【v26.4】主站余额 ⇄ 交易所钱包 ====================
   // 转入：主站余额 -X（主站记一条 ex_deposit 流水），交易所余额 +X
   // 转出：交易所可用余额 -X（冻结中的转不走），主站余额 +X
   // 两侧各记各的账，主站余额永远只反映充值/激励/提现/转入转出，不受交易波动影响。
-  app.post('/api/shanhai/exchange/deposit', auth, limit({ name: 'ex-deposit', max: 20, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
+  app.post('/api/shanhai/exchange/deposit', auth, exGuard, limit({ name: 'ex-deposit', max: 20, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
     try {
       const db = await getDb();
       const me = req.user.id;
@@ -755,15 +797,22 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
         { userId: me }, { $inc: { balance: amt }, $set: { updatedAt: new Date() } }, { upsert: true });
       await db.collection('shanhai_logs').insertOne({ userId: me, action: 'ex_deposit', detail: { amount: amt }, createdAt: new Date() }).catch(() => { });
       const w = await exWalletOf(db, me);
-      res.json({ ok: true, amount: amt, exBalance: money3(w.balance || 0), exFrozen: money3(w.frozen || 0), balance: await walletBalanceOf(db, me) });
+      res.json({ ok: true, amount: amt, exBalance: money4(w.balance || 0), exFrozen: money4(w.frozen || 0), balance: await walletBalanceOf(db, me) });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
-  app.post('/api/shanhai/exchange/withdraw', auth, limit({ name: 'ex-withdraw', max: 20, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
+  app.post('/api/shanhai/exchange/withdraw', auth, exGuard, limit({ name: 'ex-withdraw', max: 20, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
     try {
       const db = await getDb();
       const me = req.user.id;
-      const amt = money2((req.body || {}).amount);
+      const body = req.body || {};
+      // 【v26.4.1】「全部转出」：交易所余额是 4 位小数，主站只认分（2 位），
+      // 所以按分向下取整 —— 不足 0.01 的零头留在交易所继续使用，不会凭空消失。
+      const amt = body.all
+        ? Math.floor((await exAvailable(db, me)) * 100) / 100
+        : money2(body.amount);
+      if (body.all && !(amt >= EX_MIN_TRANSFER))
+        return res.status(400).json({ ok: false, error: `可转出金额不足 ¥${EX_MIN_TRANSFER}（零头留在交易所，攒够 0.01 再转）` });
       if (!(amt >= EX_MIN_TRANSFER)) return res.status(400).json({ ok: false, error: `最低转出 ¥${EX_MIN_TRANSFER}` });
       const avail = await exAvailable(db, me);
       if (avail < amt) return res.status(400).json({ ok: false, error: `交易所可用余额不足（可用 ¥${avail.toFixed(3)}，挂单冻结中的部分不能转出）`, code: 'NO_EX_BALANCE' });
@@ -777,28 +826,28 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       if (!nw) return res.status(409).json({ ok: false, error: '可用余额不足或操作冲突，请刷新后重试' });
       await walletLog(db, me, amt, 'ex_withdraw', `从交易所转出 ¥${amt.toFixed(2)}`);
       await db.collection('shanhai_logs').insertOne({ userId: me, action: 'ex_withdraw', detail: { amount: amt }, createdAt: new Date() }).catch(() => { });
-      res.json({ ok: true, amount: amt, exBalance: money3(nw.balance || 0), exFrozen: money3(nw.frozen || 0), balance: await walletBalanceOf(db, me) });
+      res.json({ ok: true, amount: amt, exBalance: money4(nw.balance || 0), exFrozen: money4(nw.frozen || 0), balance: await walletBalanceOf(db, me) });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
   // ---------- 发布挂单 ----------
-  app.post('/api/shanhai/exchange/publish', auth, limit({ name: 'ex-publish', max: 20, windowMs: 60 * 1000, msg: '挂单太频繁，歇一下' }), async (req, res) => {
+  app.post('/api/shanhai/exchange/publish', auth, exGuard, limit({ name: 'ex-publish', max: 20, windowMs: 60 * 1000, msg: '挂单太频繁，歇一下' }), async (req, res) => {
     try {
       const db = await getDb();
       const { side, amount, price } = req.body || {};
       if (!['sell', 'buy'].includes(side)) return res.status(400).json({ ok: false, error: '挂单方向不对' });
       const n = Math.floor(Number(amount));
-      const pr = money3(price);   // 【v26.4】3 位小数，支持 0.001 级定价
+      const pr = money4(price);   // 【v26.4】3 位小数，支持 0.001 级定价
       if (!Number.isFinite(n) || n < EX_CFG.minAmount || n > EX_CFG.maxAmount)
         return res.status(400).json({ ok: false, error: `数量需为 ${EX_CFG.minAmount} ~ ${EX_CFG.maxAmount} 之间的整数` });
       if (!(pr >= EX_CFG.minPrice && pr <= EX_CFG.maxPrice))
-        return res.status(400).json({ ok: false, error: `单价需在 ¥${EX_CFG.minPrice} ~ ¥${EX_CFG.maxPrice} 之间（可精确到 0.001）` });
+        return res.status(400).json({ ok: false, error: `单价需在 ¥${EX_CFG.minPrice} ~ ¥${EX_CFG.maxPrice} 之间（可精确到 0.0001）` });
       const me = req.user.id;
       const open = await openSides(db, me);
       if ((open[side] || 0) >= EX_CFG.maxOpenPerSide)
         return res.status(400).json({ ok: false, error: `${side === 'sell' ? '出售' : '求购'}单最多同时挂 ${EX_CFG.maxOpenPerSide} 条，先撤销几张旧的` });
       const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
-      const orderTotal = money3(n * pr);
+      const orderTotal = money4(n * pr);
       // 卖单：冻结灵气（原子条件更新，不足就不会冻结）
       if (side === 'sell') {
         if ((p.lingqi || 0) < n) return res.status(400).json({ ok: false, error: `灵气不足（可用 ${p.lingqi || 0}，本次需冻结 ${n}）` });
@@ -844,7 +893,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
   });
 
   // ---------- 成交（吃单） ----------
-  app.post('/api/shanhai/exchange/deal', auth, limit({ name: 'ex-deal', max: 30, windowMs: 60 * 1000, msg: '交易太频繁，歇一下' }), async (req, res) => {
+  app.post('/api/shanhai/exchange/deal', auth, exGuard, limit({ name: 'ex-deal', max: 30, windowMs: 60 * 1000, msg: '交易太频繁，歇一下' }), async (req, res) => {
     try {
       const db = await getDb();
       const me = req.user.id;
@@ -858,7 +907,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       if (!ord) return res.status(404).json({ ok: false, error: '该挂单已成交或已撤销' });
       if (ord.userId === me) return res.status(400).json({ ok: false, error: '不能和自己交易' });
       if (n > ord.left) return res.status(400).json({ ok: false, error: `挂单剩余 ${ord.left}，无法成交 ${n}` });
-      const total = money3(n * ord.price);   // 【v26.4】3 位小数口径
+      const total = money4(n * ord.price);   // 【v26.4】3 位小数口径
       if (total <= 0) return res.status(400).json({ ok: false, error: '金额异常' });
 
       const prof = db.collection('shanhai_profiles');
@@ -889,8 +938,8 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       if (!after) return res.status(409).json({ ok: false, error: '刚被人抢走了，刷新看看' });
 
       // 手续费：买家付 total，卖家实收 total×(1-feeRate)，差额进平台账户
-      const fee = money3(total * EX_CFG.feeRate);
-      const sellerGet = money3(total - fee);
+      const fee = money4(total * EX_CFG.feeRate);
+      const sellerGet = money4(total - fee);
       const rollback = async () => { await col.updateOne({ _id: oid }, { $inc: { left: n }, $set: { updatedAt: new Date() } }).catch(() => {}); };
       try {
         const sellerId = iAmBuyer ? ord.userId : me;      // 出灵气的一方
@@ -967,7 +1016,7 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
   });
 
   // ---------- 撤单 ----------
-  app.post('/api/shanhai/exchange/cancel', auth, limit({ name: 'ex-cancel', max: 30, windowMs: 60 * 1000, msg: '操作太频繁，歇一下' }), async (req, res) => {
+  app.post('/api/shanhai/exchange/cancel', auth, exGuard, limit({ name: 'ex-cancel', max: 30, windowMs: 60 * 1000, msg: '操作太频繁，歇一下' }), async (req, res) => {
     try {
       const db = await getDb();
       const me = req.user.id;
