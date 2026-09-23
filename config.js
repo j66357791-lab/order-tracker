@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.4',   // 【v26.4】交易所独立钱包（转入/转出）+ 去身份 + 交易记录 + 灵气矿脉 + 0.001 精度
+  appVersion: '26.4.1', // 【v26.4.1】交易所总闸（一键停用）+ 精度提升到 0.0001 + 全部转出
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
