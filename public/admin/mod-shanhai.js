@@ -10,6 +10,18 @@ const fmtT = t => {
   catch (e) { return String(t || ''); }
 };
 
+// 【v26.3.2】跳过原因写成人话，不然看到 bot_orders_full 会以为机器人坏了
+const SKIP_LABEL = {
+  bot_no_cash: '机器人余额不足（去「补充额度」）',
+  bot_no_lingqi: '机器人灵气不足（去「补充额度」）',
+  bot_orders_full: '机器人挂单已满（等旧单被吃掉，30 分钟后自动回收）',
+  bot_same_price: '同价位已有单（正常，避免重复堆叠）',
+  race: '被抢先成交（正常）',
+  settle_error: '结算异常（需排查）',
+  buyer_no_cash: '对手方余额不足（正常）',
+  disabled: '做市已暂停',
+};
+
 export function mount(root) {
   const $ = id => root.querySelector('#' + id);
   root.innerHTML = `
@@ -110,9 +122,11 @@ export function mount(root) {
         + `（挂单冻结 ${(d.fund.lingqiFrozen || 0).toLocaleString()}）· 余额 <b>¥${(d.balance || 0).toFixed(2)}</b>`;
       const sum = c.lastSummary;
       $('mkState').textContent = c.enabled ? '● 运行中' : '○ 已暂停';
+      const skipTxt = (sum && sum.skips && sum.skips.length)
+        ? '，跳过 ' + sum.skips.map(x => SKIP_LABEL[x] || x).join('；')
+        : '';
       $('mkLast').textContent = c.lastRunAt
-        ? `上轮（${fmtT(c.lastRunAt)}）：尝试 ${sum ? sum.tried : '-'} 笔，成交 ${sum ? sum.deals : '-'} 笔，挂单 ${sum ? sum.posts : '-'} 笔`
-          + (sum && sum.skips && sum.skips.length ? `，跳过 ${sum.skips.join('/')}` : '')
+        ? `上轮（${fmtT(c.lastRunAt)}）：尝试 ${sum ? sum.tried : '-'} 笔，成交 ${sum ? sum.deals : '-'} 笔，挂单 ${sum ? sum.posts : '-'} 笔` + skipTxt
         : '还没有跑过';
     } catch (e) { toast('做市配置加载失败：' + (e.message || e)); }
   }
@@ -179,7 +193,8 @@ export function mount(root) {
         + card('玩家之间', `${hu.cnt || 0} 笔`, `金额 ¥${(hu.total || 0).toFixed(2)} · 手续费 ¥${(hu.fee || 0).toFixed(2)}`)
         + card('做市机器人', `${bo.cnt || 0} 笔`, `金额 ¥${(bo.total || 0).toFixed(2)} · 手续费 ¥${(bo.fee || 0).toFixed(2)}`)
         + card('平台手续费累计', `¥${(s.platformFeeTotal || 0).toFixed(2)}`, `${s.feeLog ? s.feeLog.cnt : 0} 笔 · 费率 0.5%`)
-        + card('市场挂单', `${s.openOrders || 0} 张`, `机器人可用 ` + (s.botFund ? `${(s.botFund.lingqi || 0).toLocaleString()} 灵气 / ¥${(s.botFund.balance || 0).toFixed(2)}` : '-'));
+        + card('市场挂单', `${s.openOrders || 0} 张`, `玩家 ${s.humanOpenOrders || 0} 张 · 机器人 ${s.botOpenOrders || 0}/${s.botMaxPerSide || 20} 张`,)
+        + card('机器人额度', s.botFund ? `${(s.botFund.lingqi || 0).toLocaleString()} 灵气` : '-', s.botFund ? `余额 ¥${(s.botFund.balance || 0).toFixed(2)} · 冻结灵气 ${(s.botFund.lingqiFrozen || 0).toLocaleString()}` : '');
 
       const rows = d.rows || [];
       let h = `<tr>${th('时间')}${th('类型')}${th('买家')}${th('卖家')}${th('方向')}${th('数量')}${th('单价')}${th('金额')}${th('手续费')}</tr>`;
