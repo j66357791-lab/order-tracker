@@ -38,6 +38,12 @@ const DEFAULT_CFG = {
 const money2 = n => Math.round(Number(n) * 100) / 100;
 const rndInt = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
 
+// 【v26.3.2】机器人挂单的两个自愈参数。
+// 原来每侧上限只有 8 张，且不回收——挂出去没人吃就一直堆着，很快撞上限，
+// 于是每轮都返回 bot_orders_full（看起来像"机器人坏了"，其实是被自己的旧单堵住了）。
+const BOT_MAX_OPEN_PER_SIDE = 20;              // 单侧最多同时挂 20 张
+const BOT_ORDER_TTL_MS = 30 * 60 * 1000;       // 挂满 30 分钟还没成交 → 撤掉重挂（价格可能已过时）
+
 export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
 
   // ==================== 配置 / 额度 ====================
@@ -82,6 +88,32 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       userId, amount: money2(amount), kind, note: note || '', orderId: orderId || null, createdAt: new Date(),
     }, extra || {}));
   }
+
+  // 【v26.3.2】回收机器人自己挂了太久没成交的单：卖单退冻结灵气、买单退冻结余额，
+  // 撤掉后腾出的价格档位与额度可以重新挂，避免"被自己的旧单堵死"。
+  async function recycleStaleBotOrders(db) {
+    const deadline = new Date(Date.now() - BOT_ORDER_TTL_MS);
+    const stale = await db.collection(ORD_COL)
+      .find({ userId: BOT_ID, status: 'open', createdAt: { $lt: deadline } }).limit(30).toArray();
+    if (!stale.length) return { recycled: 0 };
+    let backLingqi = 0;
+    for (const o of stale) {
+      if (o.side === 'sell' && o.left > 0) backLingqi += o.left;
+      else if (o.side === 'buy' && (o.locked || 0) > 0) {
+        await writeLog(db, BOT_ID, o.locked, 'exchange_unlock', `做市老单回收退回 ¥${o.locked}`, String(o._id), { bot: true });
+      }
+    }
+    if (backLingqi) {
+      await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: backLingqi, lingqiFrozen: -backLingqi } });
+    }
+    await db.collection(ORD_COL).updateMany(
+      { _id: { $in: stale.map(o => o._id) } },
+      { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } }
+    );
+    console.log('[market] 回收老挂单 %d 张，退回灵气 %d', stale.length, backLingqi);
+    return { recycled: stale.length, lingqiBack: backLingqi };
+  }
+  mountShanhaiMarket.recycleStaleBotOrders = recycleStaleBotOrders;
 
   // ==================== 一轮做市 ====================
   // 单笔：优先吃玩家挂单；没有可吃的就自己挂一单补流动性
@@ -170,9 +202,15 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       return { dealt: deal };
     }
 
+    // 挂单前先自愈：把挂了太久没成交的老单收回来（释放资金与价格档位）
+    await recycleStaleBotOrders(db);
+
     // 市场上没有可吃的单 → 机器人自己挂一单（提供流动性）
     const openSame = await col.countDocuments({ userId: BOT_ID, side, status: 'open' });
-    if (openSame >= 8) return { skipped: 'bot_orders_full' };
+    if (openSame >= BOT_MAX_OPEN_PER_SIDE) return { skipped: 'bot_orders_full' };
+    // 同一价格已经有单就不再堆一张（否则同一价位挂成一排，玩家看着很假）
+    const samePrice = await col.findOne({ userId: BOT_ID, side, status: 'open', price });
+    if (samePrice) return { skipped: 'bot_same_price' };
     const totalNew = money2(amount * price);
     if (side === 'sell') {
       if ((fund.lingqi || 0) < amount) return { skipped: 'bot_no_lingqi' };
@@ -248,13 +286,17 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
           { $group: { _id: null, total: { $sum: '$total' }, fee: { $sum: '$fee' }, cnt: { $sum: 1 }, lingqi: { $sum: '$amount' } } }
         ]).toArray(),
       ]);
-      const [humanAgg, botAgg, feeAgg, openCnt, botFund, platformFee] = await Promise.all([
+      // 解构顺序必须与下面数组一一对应（少写一个变量就会 ReferenceError，board 那次就是这么炸的）
+      const [humanAgg, botAgg, feeAgg, openCnt, botFund, platformFee, botOpenOrders, humanOpenOrders] = await Promise.all([
         db.collection(DEAL_COL).aggregate([{ $match: { bot: { $ne: true } } }, { $group: { _id: null, cnt: { $sum: 1 }, total: { $sum: '$total' }, fee: { $sum: '$fee' } } }]).toArray(),
         db.collection(DEAL_COL).aggregate([{ $match: { bot: true } }, { $group: { _id: null, cnt: { $sum: 1 }, total: { $sum: '$total' }, fee: { $sum: '$fee' } } }]).toArray(),
         db.collection('wallet_log').aggregate([{ $match: { userId: PLATFORM_ID } }, { $group: { _id: null, fee: { $sum: '$amount' }, cnt: { $sum: 1 } } }]).toArray(),
         db.collection(ORD_COL).countDocuments({ status: 'open', left: { $gt: 0 } }),
         db.collection(FUND_COL).findOne({ _id: 'market' }),
         db.collection('wallet_log').aggregate([{ $match: { userId: PLATFORM_ID } }, { $group: { _id: null, s: { $sum: '$amount' } } }]).toArray(),
+        // 【v26.3.2】机器人自己挂了多少张（看它有没有被自己的旧单堵住）
+        db.collection(ORD_COL).countDocuments({ userId: BOT_ID, status: 'open', left: { $gt: 0 } }),
+        db.collection(ORD_COL).countDocuments({ userId: { $nin: [BOT_ID] }, status: 'open', left: { $gt: 0 } }),
       ]);
       // 补真实身份：后台台账要能认人（玩家侧永远只看得到匿名代号）。
       // 真实名从 users（写手账号）优先取，取不到再退回 shanhai_profiles.username。
@@ -288,6 +330,8 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
           feeLog: (feeAgg[0] || { cnt: 0, fee: 0 }),
           platformFeeTotal: money2((platformFee[0] || {}).s || 0),
           openOrders: openCnt,
+          botOpenOrders, humanOpenOrders,
+          botMaxPerSide: BOT_MAX_OPEN_PER_SIDE,
           botFund: { lingqi: botFund ? botFund.lingqi : 0, lingqiFrozen: botFund ? botFund.lingqiFrozen : 0, balance: await botBalance(db) },
         },
       });
