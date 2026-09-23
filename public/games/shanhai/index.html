@@ -394,7 +394,44 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   const _m4 = n => Math.round(Number(n || 0) * 10000) / 10000;   // 【v26.4.1】交易所内部 4 位小数
   const _fmt4 = n => _m4(n).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');   // 去掉多余的 0，0.0800 显示成 0.08
   const _escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  let EX = { tab: "buy", data: null, busy: false, form: { a: "", p: "" }, timer: null };
+  let EX = { tab: "buy", data: null, busy: false, form: { a: "", p: "" }, timer: null, recOpen: false };
+
+  /* 【v26.5.1】用接口返回的最新数值**立即**刷新界面。
+     以前成交后要等下一次轮询（最多 6 秒）才看到变化，用户会以为"没反应"，
+     甚至关掉页面后才发现钱变了 —— 这是最伤的体验。现在接口把成交后的余额、
+     灵气、冻结额一起返回，拿到就立刻改数字，轮询只作为兜底。 */
+  function applyMe(r) {
+    if (!EX.data || !EX.data.me || !r) return;
+    const me = EX.data.me;
+    ['lingqi', 'frozen', 'balance', 'exBalance', 'exFrozen', 'exAvailable'].forEach(k => {
+      if (r[k] !== undefined && r[k] !== null) me[k] = r[k];
+    });
+    renderEx(true);   // 只刷资产条（不动用户正在填的表单）
+  }
+
+  /* 【v26.5.1】结果确认层：交易成功/失败都明确告知，停留到用户点「知道了」，
+     不再只靠 2.6 秒就消失的 toast。 */
+  function showExResult(opts) {
+    const ok = !!opts.ok;
+    const d = document.createElement('div');
+    d.className = "ex-mask"; d.style.zIndex = 1100;
+    d.innerHTML = `
+      <div class="ex-wrap" style="max-width:310px">
+        <div class="ex-board" style="height:54px"></div>
+        <div class="ex-head" style="padding-top:11px">
+          <div class="ex-title" style="font-size:16px;color:${ok ? "#EBD9A8" : "#FFC9B8"}">${ok ? "交易成功" : "交易失败"}</div>
+        </div>
+        <div style="padding:12px 16px 16px">
+          ${(opts.lines || []).map(l => `<div class="ex-line"><span>${_escHtml(String(l))}</span></div>`).join("")}
+          <button class="ex-submit" id="exResOk" style="margin-top:12px">知 道 了</button>
+        </div>
+      </div>`;
+    document.body.appendChild(d);
+    const close = () => d.remove();
+    d.querySelector("#exResOk").onclick = close;
+    d.onclick = e => { if (e.target === d) close(); };
+    return close;
+  }
 
   async function loadEx(onlyLists) {
     if (!document.getElementById("exMask")) return;
@@ -491,9 +528,21 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     if (colMine) colMine.innerHTML =
       `<div class="ex-col-head"><span>我的挂单</span><span>售 ${mineSell}/${maxN} · 求 ${mineBuy}/${maxN}</span></div>` +
       (mine.length ? mine.map(exRowHTML).join("") : exEmpty("还没有挂单"));
-    if (colRec) colRec.innerHTML =
-      `<div class="ex-col-head"><span>我的成交记录</span><span>${(d.deals || []).length} 笔</span></div>` +
-      ((d.deals || []).length ? d.deals.map(exDealRowHTML).join("") : exEmpty("还没有成交记录"));
+    // 【v26.5.1】成交记录做成折叠的：默认收起，只留最近 10 条（后端也只取 10 条）
+    if (colRec) {
+      // 后端已 limit 10，这里再兜一层，防止以后改接口时把列表撑长
+      const recs = (d.deals || []).slice(0, 10);
+      colRec.innerHTML =
+        `<div class="ex-col-head ex-fold-head" id="exRecHead">
+           <span>我的成交记录 · 最近 10 条</span>
+           <span>${recs.length} 笔 ${recs.length ? (EX.recOpen ? "▲" : "▼") : ""}</span>
+         </div>` +
+        (!recs.length
+          ? exEmpty("还没有成交记录")
+          : (EX.recOpen ? recs.map(exDealRowHTML).join("") : `<div class="ex-empty" style="padding:16px">点击标题展开查看</div>`));
+      const rh = document.getElementById("exRecHead");
+      if (rh) rh.onclick = () => { EX.recOpen = !EX.recOpen; renderEx(true); };
+    }
 
     ["buy", "sell", "mine", "rec"].forEach(t => {
       const c = document.getElementById("col" + t[0].toUpperCase() + t.slice(1));
@@ -525,6 +574,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           value="${_escHtml(EX.form.p)}" placeholder="每个灵气多少元（可到 0.0001）">
         <span class="ex-sum" id="exTotal">¥0.000</span>
       </div>
+      <div class="ex-err" id="exFormErr" style="display:none"></div>
       <button class="ex-submit" id="exSubmit">${isSell ? "发 布 出 售" : "发 布 求 购"}</button>
       <div class="ex-tip">${isSell ? "发布后灵气立即冻结" : "发布后按总额冻结交易所余额"} ｜ 已挂 ${cnt}/${maxN}</div>`;
     const calc = () => {
@@ -544,15 +594,27 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       if (!(p >= (cfg.minPrice || 0.001))) return toast("单价太低，最低 ¥" + (cfg.minPrice || 0.001));
       if (EX.busy) return;
       EX.busy = true; btn.disabled = true; btn.classList.add("loading"); btn.textContent = "发布中";
+      const fErr = document.getElementById("exFormErr");
+      if (fErr) fErr.style.display = "none";
       try {
         const r = await META.exPublish(isSell ? "sell" : "buy", a, p);
         if (!r.ok) throw new Error(r.error || "发布失败");
+        applyMe(r);                          // 立即更新冻结额与余额
         EX.form = { a: "", p: "" };
-        toast((isSell ? "出售单已挂出：" : "求购单已挂出：") + a + " 灵气 × ¥" + _m4(p).toFixed(3));
-        renderHome();
+        showExResult({
+          ok: true,
+          lines: [
+            isSell ? "出售单已挂出" : "求购单已挂出",
+            a + " 灵气 × ¥" + _fmt4(p) + " = ¥" + _fmt4(a * p),
+            isSell ? "已冻结灵气 " + a + "（撤销即刻解冻）" : "已冻结交易所余额 ¥" + _fmt4(a * p),
+          ],
+        });
         await loadEx();
+        try { await META.load(); renderHome(); } catch (e) { }
       } catch (e) {
-        toast((e && e.error) || e.message || "发布失败");
+        const msg = (e && (e.error || e.message)) || "发布失败";
+        if (fErr) { fErr.style.display = "block"; fErr.textContent = "⚠️ " + msg; }
+        toast(msg);
       } finally {
         EX.busy = false; btn.disabled = false; btn.classList.remove("loading");
         btn.textContent = isSell ? "发 布 出 售" : "发 布 求 购";
@@ -648,8 +710,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           <div class="ex-line fee"><span>手续费 ${(feeRate * 100).toFixed(1)}%（卖方承担）</span><span id="shFee">¥${_fmt4(c0.fee)}</span></div>
           <div class="ex-line net"><span>${isBuy ? "实付" : "实收"}</span><b id="shNet">¥${_fmt4(c0.net)}</b></div>
           <div class="ex-line fee"><span>${isBuy ? "交易所可用" : "可用灵气"}</span><span id="shAvail">${isBuy ? "¥" + _m4(me.exAvailable || 0).toFixed(3) : (me.lingqi || 0) + " 灵气"}</span></div>
+          <div class="ex-err" id="shErr" style="display:none"></div>
           <button class="ex-submit" id="shOk" style="margin-top:10px">确 认 ${isBuy ? "买 入" : "卖 出"}</button>
           <div class="ex-tip">${isBuy ? "从交易所余额扣款" : "扣手续费后进你的交易所余额"}</div>
+          <div class="ex-tip" style="color:#a08a5a">点确认后请稍候，出结果会自动提示</div>
         </div>
       </div>`;
     document.body.appendChild(sub);
@@ -669,16 +733,30 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       if (EX.busy) return;
       EX.busy = true;
       btn.disabled = true; btn.classList.add("loading"); btn.textContent = isBuy ? "买入中" : "卖出中";
+      const errEl = document.getElementById("shErr");
+      if (errEl) errEl.style.display = "none";
       try {
         const r = await META.exDeal(o.id, n);
         if (!r.ok) throw new Error(r.error || "交易失败");
-        sub.remove();
-        const got = Number(r.got || r.total || 0);
-        toast((r.side === "sell" ? "已买入 " : "已卖出 ") + r.amount + " 灵气 · "
-          + (r.side === "sell" ? "实付 ¥" : "实收 ¥") + _fmt4(got));
-        await refreshAll();
+        applyMe(r);            // ① 立刻按后端返回值把数字改对（不等轮询）
+        sub.remove();          // ② 关掉确认层
+        EX.form = { a: "", p: "" };
+        showExResult({         // ③ 明确告知结果，停留到用户点「知道了」
+          ok: true,
+          lines: [
+            (r.role === "buy" ? "买入" : "卖出") + " " + r.amount + " 灵气",
+            "单价 ¥" + _fmt4(r.price) + "　总额 ¥" + _fmt4(r.total),
+            (r.role === "buy" ? "实付" : "实收") + " ¥" + _fmt4(r.got) + "（手续费 ¥" + _fmt4(r.fee) + "）",
+            "灵气余额 " + r.lingqi + "　交易所可用 ¥" + _fmt4(r.exAvailable),
+          ],
+        });
+        await loadEx();
+        try { await META.load(); renderHome(); } catch (e) { }
       } catch (e) {
-        toast((e && e.error) || e.message || "交易失败");
+        // 失败时**保留弹层**并把原因写在上面，用户可以改数量直接重试
+        const msg = (e && (e.error || e.message)) || "交易失败";
+        if (errEl) { errEl.style.display = "block"; errEl.textContent = "⚠️ " + msg; }
+        toast(msg);
         btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "确 认 " + (isBuy ? "买 入" : "卖 出");
       } finally { EX.busy = false; }
     };
@@ -775,8 +853,16 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         try {
           const r = await META.exCancel(btn.dataset.id);
           if (!r.ok) throw new Error(r.error || "撤销失败");
-          toast("已撤单，冻结已退回");
-          await refreshAll();
+          applyMe(r);
+          showExResult({
+            ok: true,
+            lines: [
+              "已撤销挂单",
+              r.side === "sell" ? ("退回冻结灵气 " + r.backAmount) : ("退回冻结余额 ¥" + _fmt4(r.backAmount)),
+              "灵气余额 " + r.lingqi + "　交易所可用 ¥" + _fmt4(r.exAvailable),
+            ],
+          });
+          await loadEx();
         } catch (err) {
           toast((err && err.error) || err.message || "撤销失败");
           btn.classList.remove("loading"); btn.textContent = "撤单";
