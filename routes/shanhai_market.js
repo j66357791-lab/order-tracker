@@ -28,6 +28,9 @@ const DEFAULT_CFG = {
   tradesMax: 5,           // 每轮最多成交笔数
   priceMin: 0.06,         // 价格波动下限（元/灵气）——后台最低可设到 0.0001，与交易所同口径
   priceMax: 0.18,         // 价格波动上限（同样支持 4 位小数）
+  // 【v26.5】买卖最小价差：卖单最低价 − 买单最高价。
+  // 这是防套利的核心参数 —— 价差必须盖住「双向手续费」，否则玩家能低买高卖刷钱。
+  spreadMin: 0.001,
   amountMin: 20,          // 每笔数量下限
   amountMax: 500,         // 每笔数量上限
   fundLingqi: 200000,     // 初始灵气额度（首次建档时发放）
@@ -43,6 +46,29 @@ const rndInt = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
 // 于是每轮都返回 bot_orders_full（看起来像"机器人坏了"，其实是被自己的旧单堵住了）。
 const BOT_MAX_OPEN_PER_SIDE = 20;              // 单侧最多同时挂 20 张
 const BOT_ORDER_TTL_MS = 30 * 60 * 1000;       // 挂满 30 分钟还没成交 → 撤掉重挂（价格可能已过时）
+
+const money4 = n => Math.round(Number(n) * 10000) / 10000;   // 交易所内部 4 位小数
+
+// ==================== 【v26.5】做市定价模型：中间价 + 买卖价差 ====================
+// 【为什么必须改】原来机器人的卖价和买价各自独立随机、取值范围完全重叠 → 玩家可以
+//   「从机器人低价买进 → 转手稍高价卖回给机器人」反复套利，等于印钱。
+// 现在用中间价 mid 把买卖盘劈开：
+//     机器人卖单价 ≥ mid + half          机器人买单价 ≤ mid - half
+//     买卖价差 ≥ spreadMin（默认 0.001，且不小于双向手续费 + 缓冲）
+// 玩家套利一轮的收益 = 买价×(1−手续费) − 卖价，在价差覆盖手续费后必然为负 —— 必亏。
+function marketPrices(cfg) {
+  const min = Number(cfg.priceMin) || 0.0001;
+  const max = Number(cfg.priceMax) || 0.18;
+  const mid = money4((min + max) / 2);
+  const feeBuffer = money4(mid * 0.015);                      // 双向手续费约 1% + 缓冲
+  const spread = Math.max(Number(cfg.spreadMin) || 0.001, feeBuffer, 0.0002);
+  const half = money4(spread / 2);
+  let askMin = money4(mid + half);                            // 机器人卖：不得低于此价
+  let bidMax = money4(mid - half);                            // 机器人买：不得高于此价
+  if (bidMax < 0.0001) bidMax = 0.0001;                       // 兜到交易所允许的最低价
+  if (askMin <= bidMax) askMin = money4(bidMax + Math.max(0.0001, half));
+  return { mid, askMin, bidMax, spread: money4(askMin - bidMax) };
+}
 
 export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
 
@@ -60,7 +86,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     return loadCfg(db);
   }
   const EXW_COL = 'shanhai_ex_wallet';
-  const money4 = n => Math.round(Number(n) * 10000) / 10000;  // 交易所内部 4 位小数（0.0001 精度）
+  // money4 已提到模块级（做市定价模型 marketPrices 也要用）  // 交易所内部 4 位小数（0.0001 精度）
 
   async function ensureFund(db, cfg) {
     let f = await db.collection(FUND_COL).findOne({ _id: 'market' });
@@ -131,9 +157,13 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
   // 单笔：优先吃玩家挂单；没有可吃的就自己挂一单补流动性
   async function oneTrade(db, cfg) {
     const side = Math.random() < 0.5 ? 'sell' : 'buy';       // 机器人这一笔想「卖灵气」还是「买灵气」
-    // 【v26.4.4】这里原来是 money2 —— 价格被舍成 2 位小数，配置里设 0.0001 / 0.001 全被抹平成 0.00，
-    // 所以机器人看起来"死守 0.01"。必须用 money4 与交易所口径一致。
-    const price = money4(cfg.priceMin + Math.random() * (cfg.priceMax - cfg.priceMin));
+    // 【v26.5】价格不再在整段区间里乱撒，而是按「中间价 ± 半个价差」分别生成：
+    //   机器人卖 → [askMin, askMin×1.35]      机器人买 → [bidMax×0.65, bidMax]
+    // 这样无论随机到多少，卖价永远高于买价，玩家无法低买高卖套利。
+    const pr = marketPrices(cfg);
+    const price = side === 'sell'
+      ? money4(pr.askMin * (1 + Math.random() * 0.35))
+      : money4(pr.bidMax * (1 - Math.random() * 0.35));
     const amount = rndInt(cfg.amountMin, cfg.amountMax);
     const fund = await ensureFund(db, cfg);
     // 【v26.4】机器人花的钱来自它的「交易所钱包」可用余额（余额 − 挂单冻结）
@@ -152,6 +182,13 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       const total = money4(n * target.price);   // 【v26.4.4】成交额同样按 4 位结算
       const fee = money4(total * 0.005);
       const botIsBuyer = side === 'buy';        // 机器人买 → 机器人付钱
+      // 【v26.5 关键保护】成交价用的是「玩家的挂单价」，所以必须先用机器人自己的定价模型
+      // 校验这张单值不值得吃：
+      //   机器人买 → 只吃单价 ≤ bidMax 的卖单；机器人卖 → 只吃单价 ≥ askMin 的买单。
+      // 没有这道校验，玩家只要挂一张离谱高价（比如 0.99）的卖单、而市场上恰好只有他这一张，
+      // 机器人就会真的按 0.99 买走 —— 等于把定价权交给挂单人。
+      if (botIsBuyer && target.price > pr.bidMax) return { skipped: 'ask_too_high' };
+      if (!botIsBuyer && target.price < pr.askMin) return { skipped: 'bid_too_low' };
       // 机器人能力校验
       if (botIsBuyer && bal < total) return { skipped: 'bot_no_cash' };
       if (!botIsBuyer && (fund.lingqi || 0) < n) return { skipped: 'bot_no_lingqi' };
@@ -296,6 +333,14 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     timer = setTimeout(tick, 20000);
     if (timer.unref) timer.unref();
     console.log('[shanhai_market] 做市机器人已启动（默认 60 秒一轮，可在后台配置）');
+    // 【v26.5】启动时把报价模型打出来：线上日志能直接确认「卖价 > 买价」的护栏生效
+    try {
+      const db0 = await getDb();
+      const c0 = await loadCfg(db0);
+      const p0 = marketPrices(c0);
+      console.log('[shanhai_market] 报价模型：卖单 ≥ ¥%s ｜ 买单 ≤ ¥%s ｜ 价差 ¥%s（防套利）',
+        p0.askMin, p0.bidMax, p0.spread);
+    } catch (e) { }
   }
   try { startTimer(); } catch (e) { console.error('[shanhai_market] 定时器启动失败', e); }
 
@@ -375,7 +420,12 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       const db = await getDb();
       const cfg = await loadCfg(db);
       const fund = await ensureFund(db, cfg);
-      res.json({ ok: true, cfg, fund: { lingqi: fund.lingqi || 0, lingqiFrozen: fund.lingqiFrozen || 0 }, balance: await botBalance(db), defaults: DEFAULT_CFG });
+      res.json({
+        ok: true, cfg,
+        prices: marketPrices(cfg),   // 【v26.5】机器人当前实际的「卖单最低价 / 买单最高价 / 价差」
+        fund: { lingqi: fund.lingqi || 0, lingqiFrozen: fund.lingqiFrozen || 0 },
+        balance: await botBalance(db), defaults: DEFAULT_CFG,
+      });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
@@ -399,6 +449,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         // 价格下限与交易所同口径：0.0001（不再是 0.01）
         priceMin: num(b.priceMin, 0.06, 0.0001, 9999, 4),
         priceMax: num(b.priceMax, 0.18, 0.0001, 9999, 4),
+        spreadMin: num(b.spreadMin, 0.001, 0.0001, 9999, 4),
         amountMin: Math.round(num(b.amountMin, 20, 1, 999999, 0)),
         amountMax: Math.round(num(b.amountMax, 500, 1, 999999, 0)),
       };
@@ -406,8 +457,18 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       if (patch.tradesMin && patch.tradesMax && patch.tradesMin > patch.tradesMax) {
         return res.status(400).json({ ok: false, error: '每轮最少笔数不能大于最多笔数' });
       }
-      if (patch.priceMin && patch.priceMax && patch.priceMin > patch.priceMax) {
-        return res.status(400).json({ ok: false, error: '价格下限不能大于上限' });
+      if (patch.priceMin && patch.priceMax && patch.priceMin >= patch.priceMax) {
+        return res.status(400).json({ ok: false, error: '价格下限必须小于上限（否则算不出中间价，买卖盘会重叠）' });
+      }
+      // 区间太窄时中间价 ± 半个价差会越界，实际价差达不到要求 —— 提前拦下来
+      if (patch.priceMin && patch.priceMax && patch.spreadMin) {
+        const span = money4(patch.priceMax - patch.priceMin);
+        if (span < money4(patch.spreadMin * 2)) {
+          return res.status(400).json({
+            ok: false,
+            error: `价格区间太窄（跨度 ${span}）无法容纳价差 ${patch.spreadMin}，请把上下限拉开到至少 ${money4(patch.spreadMin * 2)} 的跨度`,
+          });
+        }
       }
       if (patch.amountMin && patch.amountMax && patch.amountMin > patch.amountMax) {
         return res.status(400).json({ ok: false, error: '数量下限不能大于上限' });
