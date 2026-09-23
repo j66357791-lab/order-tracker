@@ -957,33 +957,35 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       try {
         const sellerId = iAmBuyer ? ord.userId : me;      // 出灵气的一方
         const buyerId = iAmBuyer ? me : ord.userId;       // 出钱的一方
+        // 【v26.5.2 提速】原来这里是 4~5 次串行 await，在 Render 免费实例上每次往返都要
+        // 几十到几百毫秒，叠起来足以让用户以为"卡住了"。买卖双方操作的是不同文档，
+        // 完全可以并行发出去，一次往返搞定。
+        const jobs = [];
         // 1) 灵气流转：卖家 -n（或解冻 -n），买家 +n
-        if (iAmBuyer) {
-          await prof.updateOne({ userId: sellerId }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
-        } else {
-          await prof.updateOne({ userId: sellerId, lingqi: { $gte: n } }, { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } });
-        }
-        await prof.updateOne({ userId: buyerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
+        jobs.push(iAmBuyer
+          ? prof.updateOne({ userId: sellerId }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } })
+          : prof.updateOne({ userId: sellerId, lingqi: { $gte: n } }, { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } }));
+        jobs.push(prof.updateOne({ userId: buyerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } }));
         // 2) 资金流转：买家付全额，平台抽 0.5%，卖家收剩下的
-        //    手续费记到 PLATFORM_ID 名下——它不参与任何玩家余额计算（余额 = sum(自己 userId 的流水)）
         if (payerNeedsCash) {
           // 主动买家 / 从未冻结过的老买单：从交易所余额实时扣
-          await db.collection(EXW_COL).updateOne(
-            { userId: buyerId }, { $inc: { balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
+          jobs.push(db.collection(EXW_COL).updateOne(
+            { userId: buyerId }, { $inc: { balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true }));
         } else if (ord.exLocked) {
           // 新买单（v26.4 起）：钱冻在交易所钱包里 → 同一笔里「解冻」+「扣掉」
-          await db.collection(EXW_COL).updateOne(
+          jobs.push(db.collection(EXW_COL).updateOne(
             { userId: buyerId },
-            { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
-          await col.updateOne({ _id: oid }, { $inc: { locked: -total } });
+            { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true }));
+          jobs.push(col.updateOne({ _id: oid }, { $inc: { locked: -total } }));
         } else {
           // 【v26.4 兼容】v26.4 之前挂的买单：钱当时就从「主站余额」扣走了（在 wallet_log 里），
           // 交易所钱包里根本没有这笔钱。这里只冲减订单冻结额，绝不能再动任何钱包。
-          await col.updateOne({ _id: oid }, { $inc: { locked: -total } });
+          jobs.push(col.updateOne({ _id: oid }, { $inc: { locked: -total } }));
         }
         // 卖家：货款（已扣手续费）进他的交易所余额
-        await db.collection(EXW_COL).updateOne(
-          { userId: sellerId }, { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
+        jobs.push(db.collection(EXW_COL).updateOne(
+          { userId: sellerId }, { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true }));
+        await Promise.all(jobs);
         // 【v26.4】手续费只在台账里记一笔（shanghai_ex_deals.fee），不再往主站 wallet_log 塞流水，
         // 这样主站余额永远只反映充值/激励/提现/转入转出，口径干净
       } catch (e) {
@@ -1006,31 +1008,37 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
           }
         }
       }
-      await db.collection('shanhai_logs').insertOne({
-        userId: me, action: 'exchange_deal',
-        detail: { orderId: String(oid), side: ord.side, amount: n, price: ord.price, total, with: ord.username },
-        createdAt: new Date(),
-      }).catch(() => {});
-      // 【v26.2】统一台账：玩家成交与机器人成交都写 shanhai_ex_deals（后台一个面板查全，
-      // bot 字段一眼分清是人还是机器人）。名字这里存匿名代号，真实身份后台按 userId 关联查。
-      await db.collection('shanhai_ex_deals').insertOne({
-        orderId: String(oid), side: ord.side, amount: n, price: ord.price, total, fee,
-        buyerId, sellerId, bot: false, mode: 'player',
-        buyerName: anonName(buyerId), sellerName: anonName(sellerId),
-        createdAt: new Date(),
-      }).catch(() => {});
+      // 【v26.5.2 提速】两条日志并行写（原来串行，白等一个往返）
+      await Promise.all([
+        db.collection('shanhai_logs').insertOne({
+          userId: me, action: 'exchange_deal',
+          detail: { orderId: String(oid), side: ord.side, amount: n, price: ord.price, total, with: ord.username },
+          createdAt: new Date(),
+        }).catch(() => { }),
+        // 【v26.2】统一台账：玩家成交与机器人成交都写 shanhai_ex_deals（后台一个面板查全，
+        // bot 字段一眼分清是人还是机器人）。名字这里存匿名代号，真实身份后台按 userId 关联查。
+        db.collection('shanhai_ex_deals').insertOne({
+          orderId: String(oid), side: ord.side, amount: n, price: ord.price, total, fee,
+          buyerId, sellerId, bot: false, mode: 'player',
+          buyerName: anonName(buyerId), sellerName: anonName(sellerId),
+          createdAt: new Date(),
+        }).catch(() => { }),
+      ]);
       // 【v26.5.1】把成交后的**全部**最新数值一并返回：
       // 前端拿到就能立刻把界面改对，不必等下一次轮询 —— 之前要等 6 秒才刷，
       // 用户会以为"没反应/交易没成功"，甚至关掉页面后才发现钱变了。
-      const np = await prof.findOne({ userId: me });
-      const nw = await exWalletOf(db, me);
+      // 【v26.5.2 提速】两个读操作并行；并且**不再返回主站余额** —— 成交不影响它，
+      // 而算它要聚合整张 wallet_log 表，是整个接口里最慢的一步。
+      const [np, nw] = await Promise.all([
+        prof.findOne({ userId: me }),
+        exWalletOf(db, me),
+      ]);
       res.json({
         ok: true, amount: n, total, fee, side: ord.side, price: ord.price,
         got: iAmBuyer ? total : sellerGet,          // 买入=实付金额；卖出=实收金额（已扣手续费）
         role: iAmBuyer ? 'buy' : 'sell',
         lingqi: np ? (np.lingqi || 0) : 0,
         frozen: np ? (np.lingqiFrozen || 0) : 0,
-        balance: await walletBalanceOf(db, me),
         exBalance: money4(nw.balance || 0),
         exFrozen: money4(nw.frozen || 0),
         exAvailable: money4((nw.balance || 0) - (nw.frozen || 0)),
