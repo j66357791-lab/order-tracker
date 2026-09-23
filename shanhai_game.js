@@ -596,7 +596,9 @@ export default function mountShanhaiGame(app, { auth, getDb }) {
       const me = req.user.id;
       const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
       const col = db.collection('shanhai_exchange');
-      const [sells, buys, mine, balance] = await Promise.all([
+      // 注意：解构必须与下面的查询一一对应——v26.3 曾漏写 frozenAgg，
+      // 导致 board 直接 ReferenceError 500（表现就是"一进交易所就报服务器开小差"）
+      const [sells, buys, mine, balance, frozenAgg] = await Promise.all([
         // 卖单按单价升序（最便宜的先给买家看）
         // 【v26.2】不再排除自己——自己的挂单也要出现在列表里（前端加「我」标记区分）
         col.find({ side: 'sell', status: 'open', left: { $gt: 0 } })
