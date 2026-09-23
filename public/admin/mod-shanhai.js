@@ -20,11 +20,26 @@ const SKIP_LABEL = {
   settle_error: '结算异常（需排查）',
   buyer_no_cash: '对手方余额不足（正常）',
   disabled: '做市已暂停',
+  exchange_closed: '交易所总闸已关闭',
 };
 
 export function mount(root) {
   const $ = id => root.querySelector('#' + id);
   root.innerHTML = `
+  <div class="card">
+    <h2 class="serif">交易所总闸</h2>
+    <div class="sub">万一觉得不对劲，一键停用整个交易所——玩家入口还在，但挂单 / 成交 / 转入 / 转出全部被拒（提示"正在维护"）。
+      <b>不影响主站余额、提现、充值</b>，随时可以再开。</div>
+    <div class="inline" style="margin-top:10px">
+      <select id="exSw" style="width:160px">
+        <option value="1">开放使用</option>
+        <option value="0">停用维护</option>
+      </select>
+      <button class="btn-main" id="exSwSave">保存</button>
+      <span class="sub" id="exSwState" style="margin-left:auto"></span>
+    </div>
+  </div>
+
   <div class="card">
     <h2 class="serif">做市机器人</h2>
     <div class="sub">按你设定的价格区间与节奏自动买卖，优先吃玩家挂的单——<b>保证任何时候都有人接盘</b>，玩家不会挂上去没人理。
@@ -104,6 +119,27 @@ export function mount(root) {
 
   const th = (t) => `<th style="text-align:left;padding:7px 8px;border-bottom:1px solid #e6e1d6;color:#8a8272;font-weight:600;white-space:nowrap">${t}</th>`;
   const td = (t, st) => `<td style="padding:7px 8px;border-bottom:1px solid #f2eee5;${st || ''}">${t}</td>`;
+
+  // ==================== ⓪ 交易所总闸 ====================
+  async function loadSwitch() {
+    try {
+      const d = await api('/api/shanhai/admin/exchange/switch');
+      if (!d.ok) throw new Error(d.error || '加载失败');
+      $('exSw').value = d.enabled ? '1' : '0';
+      $('exSwState').textContent = d.enabled ? '● 交易所正常开放' : '○ 交易所已停用（玩家侧显示维护中）';
+      $('exSwState').style.color = d.enabled ? '' : '#b3452f';
+    } catch (e) { toast('总闸状态加载失败：' + (e.message || e)); }
+  }
+  $('exSwSave').onclick = async () => {
+    const enabled = $('exSw').value === '1';
+    if (!enabled && !confirm('确认停用交易所？玩家将无法挂单、成交、转入转出（已成交的记录与余额都保留）。')) return;
+    try {
+      const d = await api('/api/shanhai/admin/exchange/switch', { method: 'POST', body: JSON.stringify({ enabled }) });
+      if (!d.ok) throw new Error(d.error || '保存失败');
+      toast(enabled ? '交易所已开放' : '交易所已停用');
+      await loadSwitch();
+    } catch (e) { toast('保存失败：' + (e.message || e)); }
+  };
 
   // ==================== ① 做市配置 ====================
   let MK = null;
@@ -311,9 +347,10 @@ export function mount(root) {
   };
 
   // 初始化
+  loadSwitch();
   loadMarket();
   loadLedger();
   searchPlayers();
 
-  return { refresh: () => { loadMarket(); loadLedger(); } };
+  return { refresh: () => { loadSwitch(); loadMarket(); loadLedger(); } };
 }
