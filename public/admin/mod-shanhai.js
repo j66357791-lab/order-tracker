@@ -52,8 +52,9 @@ export function mount(root) {
         <div class="inline"><input id="mkTradesMin" type="number" min="1" max="50" style="width:70px">
         <span class="sub">~</span><input id="mkTradesMax" type="number" min="1" max="50" style="width:70px"></div></div>
       <div><label class="lab">价格波动区间（元/灵气）</label>
-        <div class="inline"><input id="mkPriceMin" type="number" min="0.01" step="0.01" style="width:80px">
-        <span class="sub">~</span><input id="mkPriceMax" type="number" min="0.01" step="0.01" style="width:80px"></div></div>
+        <div class="inline"><input id="mkPriceMin" type="number" min="0.0001" step="0.0001" style="width:92px">
+        <span class="sub">~</span><input id="mkPriceMax" type="number" min="0.0001" step="0.0001" style="width:92px"></div>
+        <div class="sub" style="margin-top:2px">最低可到 0.0001，与交易所同口径</div></div>
       <div><label class="lab">每笔数量区间（灵气）</label>
         <div class="inline"><input id="mkAmountMin" type="number" min="1" style="width:80px">
         <span class="sub">~</span><input id="mkAmountMax" type="number" min="1" style="width:80px"></div></div>
