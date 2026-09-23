@@ -10,7 +10,7 @@ import { limit } from './lib/ratelimit.js';
 import { ObjectId } from 'mongodb';
 import { createHash } from 'crypto';
 
-export default function mountShanhaiGame(app, { auth, getDb }) {
+export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
 
   // ==================== 反作弊阈值 ====================
   // 【v24.4】第一章 · 南山草泽扩为普通 20 关：上限与击杀密度随关卡放大
