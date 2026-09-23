@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.7',   // 【v26.7】修 Service Worker 缓存导致的'改了不生效'；福袋并入商城页；成交接口串行化修500
+  appVersion: '26.8',   // 【v26.8】装备升级(灵石加成)+装备合成(5合1升品质)+升级福袋；交易失败自动核实真实结果
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
