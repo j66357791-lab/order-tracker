@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.5.2', // 【v26.5.2】成交转圈到数据同步完成→绿色支付成功卡→自动关窗；后端成交接口并行提速；轮询2.5秒
+  appVersion: '26.6',   // 【v26.6】灵宝商城（随机一阶装备福袋 600灵气/首单188）+ 成交接口回归串行修500 + 失败可定位
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
