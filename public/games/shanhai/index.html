@@ -52,17 +52,11 @@
             <span id="tbTitle">初入山海</span>
           </div>
         </div>
-        <!-- 【v26.0】交易所入口 / 【v26.6】商城入口（头像正下方） -->
-        <div class="ex-entries">
-          <div class="ex-entry" onclick="showExchange()" title="灵气交易所">
-            <img src="/games/shanhai/assets/exchange/ex-entry.png?v=26" alt="" onerror="this.style.display='none'">
-            <span>交易所</span>
-            <i class="ex-entry-dot" id="exEntryDot" style="display:none"></i>
-          </div>
-          <div class="ex-entry mall" onclick="showShop()" title="灵宝商城">
-            <span class="ex-entry-ico">🛒</span>
-            <span>商城</span>
-          </div>
+        <!-- 【v26.0】交易所入口（头像正下方）。福袋商品放在底部导航的「商城」页里，不在这里开第二个入口 -->
+        <div class="ex-entry" onclick="showExchange()" title="灵气交易所">
+          <img src="/games/shanhai/assets/exchange/ex-entry.png?v=26" alt="" onerror="this.style.display='none'">
+          <span>交易所</span>
+          <i class="ex-entry-dot" id="exEntryDot" style="display:none"></i>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
@@ -215,6 +209,11 @@
           <button class="btn-gacha ten" id="btnDraw10"><i>寻宝 ×10</i><b>1200 ◉</b></button>
         </div>
         <div class="gacha-rates">概率公示：凡品 52% · 良品 28% · 上品 14% · 仙品 5% · 神品 1%</div>
+        <!-- 【v26.7】灵宝特惠：用灵气购买的限量商品（福袋） -->
+        <div class="bag-shop">
+          <div class="bag-shop-t">◈ 灵 宝 特 惠 ◈</div>
+          <div id="bagShopBody">加载中…</div>
+        </div>
         <div class="gacha-grid" id="drawGrid"></div>
         <div class="empty-tip" id="drawEmpty">九霄玄机，一抽定缘</div>
       </div>
@@ -923,10 +922,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   function renderShop() {
     const d = SHOP.data;
     if (!d) return;
-    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-    set("shopLq", d.lingqi || 0);
-    set("shopBag", (d.bagCount || 0) + " / " + (d.bagMax || 50));
-    const body = document.getElementById("shopBody");
+    // 与商城页顶部货币条联动（那里本来就有「灵气」显示）
+    const lqEl = document.getElementById("shopLingqi");
+    if (lqEl) lqEl.textContent = d.lingqi || 0;
+    const body = document.getElementById("bagShopBody");
     if (!body) return;
     const cards = (d.items || []).map(it => {
       const useFirst = !d.firstUsed && it.firstPrice;
@@ -960,7 +959,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
 
   async function loadShop() {
-    const body = document.getElementById("shopBody");
+    const body = document.getElementById("bagShopBody");
     if (!body) return;
     try {
       const d = await META.shopInfo();
@@ -1013,33 +1012,26 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     d.onclick = e => { if (e.target === d) close(); };
   }
 
-  async function showShop() {
-    let mask = document.getElementById("shopMask");
-    if (mask) mask.remove();
-    SHOP.open = false;
-    mask = document.createElement("div");
-    mask.className = "ex-mask"; mask.id = "shopMask";
-    mask.onclick = e => { if (e.target === mask) mask.remove(); };
-    mask.innerHTML = `
-      <div class="ex-wrap" style="max-width:420px">
-        <div class="ex-board" style="height:62px"></div>
-        <div class="ex-head" style="padding-top:12px">
-          <div class="ex-title">灵宝商城</div>
-          <div class="ex-sub">用灵气兑换珍稀道具</div>
-          <div class="ex-close" id="shopClose">×</div>
-        </div>
-        <div class="shop-meter">
-          <span>我的灵气 <b id="shopLq">--</b></span>
-          <span>背包 <b id="shopBag">--</b></span>
-        </div>
-        <div class="shop-body" id="shopBody">加载中…</div>
-        <div class="ex-err" id="shopErr" style="display:none;margin:0 12px 10px"></div>
-      </div>`;
-    document.body.appendChild(mask);
-    document.getElementById("shopClose").onclick = () => mask.remove();
-    await loadShop();
+  // 【v26.7】福袋直接长在「商城」页里（不再单独开弹窗、也不再在主页加第二个入口）
+
+  /* ==================== 【v26.6.1】Service Worker 更新自愈 ====================
+     背景：此前游戏页被 portal 注册的 Service Worker 接管，而 SW 对 /games/ 下的请求
+     走的是"先回缓存、后台再拉新"，导致**部署新版本后用户刷新多少次都是旧页面**。
+     现在 SW 已改成页面外壳类文件（html/js/css）network-first；
+     这里再补一道自愈：注册后主动 update()，一旦新 SW 接管就自动重载一次，
+     用户只需正常刷新，不必再"刷好几次"或清缓存。 */
+  if ("serviceWorker" in navigator) {
+    try {
+      navigator.serviceWorker.register("/service-worker.js").then(reg => reg.update()).catch(() => { });
+      let swReloaded = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (swReloaded) return;
+        swReloaded = true;
+        // 只在页面空闲时重载，避免打断正在进行的交易操作
+        if (document.visibilityState === "visible") location.reload();
+      });
+    } catch (e) { }
   }
-  window.showShop = showShop;
 
   // —— 主页渲染 ——
   // 【v24.4】第一章 · 南山草泽：普通 20 关（通关解锁下一关）+ 困难 20 关（暂不开放）
@@ -1588,7 +1580,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     if (n.dataset.tab === "tabBoard") loadBoard();
     if (n.dataset.tab === "tabGrow") { renderGrow(); startEqAnim(); }
     if (n.dataset.tab === "tabShanhai") renderGrow();   // 【2026-09-14】技能移入山海录
-    if (n.dataset.tab === "tabShop") renderTiers();      // 【v24.6】宝阁阶位页签
+    if (n.dataset.tab === "tabShop") { renderTiers(); loadShop(); }   // 【v24.6】宝阁阶位页签 / 【v26.7】灵宝特惠（灵气福袋）
     if (n.dataset.tab === "tabFight") refreshIdle();     // 【v24.7】回战斗页刷新挂机/合成状态
     if (n.dataset.tab !== "tabGrow") stopEqAnim();       // 【v24.3】离开装备页停动画
   });
