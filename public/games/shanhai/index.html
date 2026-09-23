@@ -52,11 +52,17 @@
             <span id="tbTitle">初入山海</span>
           </div>
         </div>
-        <!-- 【v26.0】交易所入口（头像正下方） -->
-        <div class="ex-entry" onclick="showExchange()" title="灵气交易所">
-          <img src="/games/shanhai/assets/exchange/ex-entry.png?v=26" alt="" onerror="this.style.display='none'">
-          <span>交易所</span>
-          <i class="ex-entry-dot" id="exEntryDot" style="display:none"></i>
+        <!-- 【v26.0】交易所入口 / 【v26.6】商城入口（头像正下方） -->
+        <div class="ex-entries">
+          <div class="ex-entry" onclick="showExchange()" title="灵气交易所">
+            <img src="/games/shanhai/assets/exchange/ex-entry.png?v=26" alt="" onerror="this.style.display='none'">
+            <span>交易所</span>
+            <i class="ex-entry-dot" id="exEntryDot" style="display:none"></i>
+          </div>
+          <div class="ex-entry mall" onclick="showShop()" title="灵宝商城">
+            <span class="ex-entry-ico">🛒</span>
+            <span>商城</span>
+          </div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
@@ -632,7 +638,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         });
       } catch (e) {
         const msg = (e && (e.error || e.message)) || "发布失败";
-        if (fErr) { fErr.style.display = "block"; fErr.textContent = "⚠️ " + msg; }
+        const dbg = (e && e.debug) ? "　[" + e.debug + "]" : "";
+        if (fErr) { fErr.style.display = "block"; fErr.textContent = "⚠️ " + msg + dbg; }
         toast(msg);
       } finally {
         EX.busy = false; btn.disabled = false; btn.classList.remove("loading");
@@ -782,7 +789,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       } catch (e) {
         // 失败时**保留弹层**并把原因写在上面，用户可以改数量直接重试
         const msg = (e && (e.error || e.message)) || "交易失败";
-        if (errEl) { errEl.style.display = "block"; errEl.textContent = "⚠️ " + msg; }
+        const dbg = (e && e.debug) ? "　[" + e.debug + "]" : "";
+        if (errEl) { errEl.style.display = "block"; errEl.textContent = "⚠️ " + msg + dbg; }
         toast(msg);
         btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "确 认 " + (isBuy ? "买 入" : "卖 出");
       } finally { clearTimeout(slowTip); EX.busy = false; }
@@ -901,6 +909,137 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     startExPoll();
   }
   window.showExchange = showExchange;
+
+  /* ==================== 【v26.6】灵宝商城 ====================
+     用灵气兑换道具。首个商品：随机一阶装备福袋
+     品质概率：上品 70% / 仙品 20% / 神品 10%　价格 600 灵气（首单 188，每人一次） */
+  let SHOP = { data: null, busy: false, open: false };
+
+  function showShopErr(msg) {
+    const el = document.getElementById("shopErr");
+    if (el) { el.style.display = "block"; el.textContent = "⚠️ " + msg; }
+  }
+
+  function renderShop() {
+    const d = SHOP.data;
+    if (!d) return;
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set("shopLq", d.lingqi || 0);
+    set("shopBag", (d.bagCount || 0) + " / " + (d.bagMax || 50));
+    const body = document.getElementById("shopBody");
+    if (!body) return;
+    const cards = (d.items || []).map(it => {
+      const useFirst = !d.firstUsed && it.firstPrice;
+      const price = useFirst ? it.firstPrice : it.price;
+      const poor = (d.lingqi || 0) < price;
+      return `<div class="shop-card">
+        <div class="shop-ico">${it.icon || "🎁"}</div>
+        <div class="shop-main">
+          <div class="shop-name">${_escHtml(it.name)}${useFirst ? '<span class="shop-tag">首单特惠</span>' : ""}</div>
+          <div class="shop-desc">${_escHtml(it.desc)}</div>
+          <div class="shop-rate">${_escHtml(it.rates || "")}</div>
+        </div>
+        <div class="shop-act">
+          <div class="shop-price">${price}<i>灵气</i></div>
+          ${useFirst ? `<div class="shop-old">原价 ${it.price}</div>` : ""}
+          <button class="shop-buy" data-id="${it.id}" ${poor ? "disabled" : ""}>${poor ? "灵气不足" : (useFirst ? "特惠购买" : "购买")}</button>
+        </div>
+      </div>`;
+    }).join("");
+    const his = (d.history || []).length
+      ? `<div class="ex-col-head ex-fold-head" id="shopHisHead"><span>我的购买记录</span><span>${d.history.length} 条 ${SHOP.open ? "▲" : "▼"}</span></div>`
+        + (SHOP.open ? d.history.map(h => `<div class="ex-row">
+            <div class="num"><b>${_escHtml(h.name || "")}</b><i>${_escHtml(h.qualityName || "")} · ${h.cost} 灵气${h.first ? " · 首单特惠" : ""}</i></div>
+            <div class="ex-deal-time">${new Date(h.at).toLocaleString("zh-CN", { hour12: false }).slice(5, 16)}</div>
+          </div>`).join("") : "")
+      : "";
+    body.innerHTML = cards + his;
+    const hh = document.getElementById("shopHisHead");
+    if (hh) hh.onclick = () => { SHOP.open = !SHOP.open; renderShop(); };
+    body.querySelectorAll(".shop-buy").forEach(b => { b.onclick = () => buyBag(b.dataset.id, b); });
+  }
+
+  async function loadShop() {
+    const body = document.getElementById("shopBody");
+    if (!body) return;
+    try {
+      const d = await META.shopInfo();
+      if (!d.ok) throw new Error(d.error || "加载失败");
+      SHOP.data = d;
+      renderShop();
+    } catch (e) {
+      body.innerHTML = `<div class="ex-empty">加载失败：${_escHtml((e && (e.error || e.message)) || "请稍后重试")}</div>`;
+    }
+  }
+
+  async function buyBag(itemId, btn) {
+    if (SHOP.busy) return;
+    SHOP.busy = true;
+    btn.disabled = true; btn.classList.add("loading"); btn.textContent = "购买中";
+    try {
+      const r = await META.shopBuy(itemId);
+      if (!r.ok) throw new Error(r.error || "购买失败");
+      await loadShop();                       // 等数据同步完成再报结果
+      try { await META.load(); renderHome(); } catch (e) { }
+      showBagResult(r);
+    } catch (e) {
+      const msg = (e && (e.error || e.message)) || "购买失败";
+      showShopErr(msg + ((e && e.debug) ? "　[" + e.debug + "]" : ""));
+      toast(msg);
+      btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "购买";
+    } finally { SHOP.busy = false; }
+  }
+
+  // 开袋结果：按装备品质上色，一眼看出抽到了什么
+  function showBagResult(r) {
+    const loot = r.loot || {};
+    const d = document.createElement("div");
+    d.className = "ex-mask"; d.style.zIndex = 1200;
+    d.innerHTML = `
+      <div class="bag-open">
+        <div class="bag-open-t">🎁 福袋开启</div>
+        <div class="bag-item" style="border-color:${loot.color || "#cfd8dc"}">
+          <div class="bag-q" style="color:${loot.color || "#666"}">${_escHtml(loot.qualityName || "")}</div>
+          <div class="bag-n">${_escHtml(loot.name || "")}</div>
+          <div class="bag-a">${_escHtml(loot.affix || "")} +${loot.val}%</div>
+        </div>
+        <div class="bag-sub">${r.first ? "首单特惠 " : "花费 "}<b>${r.cost}</b> 灵气　剩余 <b>${r.lingqi}</b></div>
+        <div class="bag-sub2">已放入背包（${r.bagCount} 件），可在「装备」页穿上</div>
+        <button class="ex-submit" id="bagOk" style="margin-top:12px">知 道 了</button>
+      </div>`;
+    document.body.appendChild(d);
+    const close = () => d.remove();
+    d.querySelector("#bagOk").onclick = close;
+    d.onclick = e => { if (e.target === d) close(); };
+  }
+
+  async function showShop() {
+    let mask = document.getElementById("shopMask");
+    if (mask) mask.remove();
+    SHOP.open = false;
+    mask = document.createElement("div");
+    mask.className = "ex-mask"; mask.id = "shopMask";
+    mask.onclick = e => { if (e.target === mask) mask.remove(); };
+    mask.innerHTML = `
+      <div class="ex-wrap" style="max-width:420px">
+        <div class="ex-board" style="height:62px"></div>
+        <div class="ex-head" style="padding-top:12px">
+          <div class="ex-title">灵宝商城</div>
+          <div class="ex-sub">用灵气兑换珍稀道具</div>
+          <div class="ex-close" id="shopClose">×</div>
+        </div>
+        <div class="shop-meter">
+          <span>我的灵气 <b id="shopLq">--</b></span>
+          <span>背包 <b id="shopBag">--</b></span>
+        </div>
+        <div class="shop-body" id="shopBody">加载中…</div>
+        <div class="ex-err" id="shopErr" style="display:none;margin:0 12px 10px"></div>
+      </div>`;
+    document.body.appendChild(mask);
+    document.getElementById("shopClose").onclick = () => mask.remove();
+    await loadShop();
+  }
+  window.showShop = showShop;
 
   // —— 主页渲染 ——
   // 【v24.4】第一章 · 南山草泽：普通 20 关（通关解锁下一关）+ 困难 20 关（暂不开放）
