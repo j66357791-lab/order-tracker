@@ -160,7 +160,10 @@
 
       <!-- 养成·装备页（斩妖录·贰）【v24.3 重排：左50%角色+属性 / 右50%装备格】【v24.4 去掉重复货币】 -->
       <div class="home-tab" id="tabGrow">
-        <div class="grow-sec">◆ 神行装束（点击装备查看属性 · 可卸下）</div>
+        <div class="grow-sec" style="display:flex;align-items:center;gap:8px">
+          <span style="flex:1">◆ 神行装束（点击装备查看属性 · 可卸下）</span>
+          <button class="btn-compose" onclick="showComposePanel()">⚒ 装备合成</button>
+        </div>
         <div class="equip-layout">
           <!-- 左 50%：角色（与局内同一序列帧形象）+ 统一属性 -->
           <div class="eq-left">
@@ -760,6 +763,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       btn.disabled = true; btn.classList.add("loading"); btn.textContent = isBuy ? "买入中" : "卖出中";
       const errEl = document.getElementById("shErr");
       if (errEl) errEl.style.display = "none";
+      // 交易前的资产快照：万一响应丢了，用它来判断"到底成没成"
+      const meBefore = JSON.parse(JSON.stringify((EX.data && EX.data.me) || {}));
       // 【v26.5.2】网络慢时给一句安抚，别让用户以为卡死了（Render 免费实例冷启动会慢）
       const slowTip = setTimeout(() => {
         if (btn.classList.contains("loading")) btn.textContent = "网络较慢，仍在处理";
@@ -786,12 +791,41 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           bal: "灵气 " + r.lingqi + "　交易所可用 ¥" + _fmt4(r.exAvailable),
         });
       } catch (e) {
-        // 失败时**保留弹层**并把原因写在上面，用户可以改数量直接重试
-        const msg = (e && (e.error || e.message)) || "交易失败";
-        const dbg = (e && e.debug) ? "　[" + e.debug + "]" : "";
-        if (errEl) { errEl.style.display = "block"; errEl.textContent = "⚠️ " + msg + dbg; }
-        toast(msg);
-        btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "确 认 " + (isBuy ? "买 入" : "卖 出");
+        // 【v26.8 关键】网络异常 ≠ 交易失败！响应在回程丢了（切后台/锁屏/断网），
+        // 但后端可能已经成交。直接报"失败"会让用户以为钱白花了。
+        // 这里回查一次行情做核实：目标挂单余量是否减少、我的资产是否增加——据此判定真实结果。
+        let realok = false, chk = null;
+        try {
+          chk = await META.exBoard();
+          if (chk && chk.ok) {
+            const still = [].concat(chk.sells || [], chk.buys || [], chk.mine || []).find(x => x.id === o.id);
+            const leftNow = still ? still.left : 0;
+            const meNow = chk.me || {};
+            const lqUp = (meNow.lingqi || 0) - (meBefore.lingqi || 0);
+            const exUp = _m4((meNow.exAvailable || 0) - (meBefore.exAvailable || 0));
+            // 买入 → 灵气增加；卖出 → 交易所余额增加；挂单余量减少也算
+            realok = (still !== undefined && leftNow < o.left) || (isBuy ? lqUp >= n : exUp > 0);
+          }
+        } catch (_) { }
+        if (realok && chk) {
+          EX.data = chk;
+          renderEx(true);
+          sub.remove();
+          showPaySuccess({
+            title: "交易已成功",
+            amount: (isBuy ? "−¥" : "+¥") + _fmt4(_m4(n * o.price)),
+            sub: n + " 灵气 × ¥" + _m4(o.price).toFixed(3),
+            bal: "网络波动导致提示延迟，实际已成交并同步",
+          });
+          try { await META.load(); renderHome(); } catch (_) { }
+        } else {
+          // 真失败（或核实不了）：保留弹层 + 原因 + 一句"刷新自查"的兜底提示
+          const msg = (e && (e.error || e.message)) || "交易失败";
+          const dbg = (e && e.debug) ? "　[" + e.debug + "]" : "";
+          if (errEl) { errEl.style.display = "block"; errEl.textContent = "⚠️ " + msg + dbg + "　（网络不稳时，请刷新查看是否已成交）"; }
+          toast(msg);
+          btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "确 认 " + (isBuy ? "买 入" : "卖 出");
+        }
       } finally { clearTimeout(slowTip); EX.busy = false; }
     };
   }
@@ -980,13 +1014,36 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       if (!r.ok) throw new Error(r.error || "购买失败");
       await loadShop();                       // 等数据同步完成再报结果
       try { await META.load(); renderHome(); } catch (e) { }
-      showBagResult(r);
+      if (r.loot && r.loot.kind === "upgrade") showUpgradeBagResult(r);
+      else showBagResult(r);
     } catch (e) {
       const msg = (e && (e.error || e.message)) || "购买失败";
       showShopErr(msg + ((e && e.debug) ? "　[" + e.debug + "]" : ""));
       toast(msg);
       btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "购买";
     } finally { SHOP.busy = false; }
+  }
+
+  // 【v26.8】升级福袋结果：仙玉 + 一阶灵石
+  function showUpgradeBagResult(r) {
+    const loot = r.loot || {};
+    const d = document.createElement("div");
+    d.className = "ex-mask"; d.style.zIndex = 1200;
+    d.innerHTML = `
+      <div class="bag-open">
+        <div class="bag-open-t">💎 升级福袋开启</div>
+        <div class="bag-item" style="border-color:#c9a0ff">
+          <div class="bag-n">◉ 仙玉 +${loot.xianyu || 0}</div>
+          <div class="bag-a">✦ 一阶灵石 +${loot.stones || 0} 块</div>
+        </div>
+        <div class="bag-sub">${r.first ? "首单特惠 " : "花费 "}<b>${r.cost}</b> 灵气　剩余 <b>${r.lingqi}</b></div>
+        <div class="bag-sub2">灵石在「装备 → 强化」时每块 +5% 成功率，单次最多用 5 块</div>
+        <button class="ex-submit" id="bagOk" style="margin-top:12px">知 道 了</button>
+      </div>`;
+    document.body.appendChild(d);
+    const close = () => d.remove();
+    d.querySelector("#bagOk").onclick = close;
+    d.onclick = e => { if (e.target === d) close(); };
   }
 
   // 开袋结果：按装备品质上色，一眼看出抽到了什么
@@ -1013,6 +1070,197 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
 
   // 【v26.7】福袋直接长在「商城」页里（不再单独开弹窗、也不再在主页加第二个入口）
+
+  /* ==================== 【v26.8】装备升级 / 装备合成 ====================
+     升级：消耗若干件同品质装备，成功给目标装备加额外攻击力（upAtk）；
+           灵石可叠加成功率（每块 +5%，单次最多 5 块）；无论成败材料都销毁。
+     合成：同品阶同品质 5 件 → 1 件高一档品质（成功率 20%，失败全毁）。
+     数值表必须与后端 UPGRADE_CFG 保持一致。 */
+  const UP_CFG = {
+    white: { cost: 5, rate: 60, min: 0.5, max: 3, name: "凡品" },
+    green: { cost: 5, rate: 50, min: 1, max: 6, name: "良品" },
+    blue: { cost: 4, rate: 30, min: 3, max: 15, name: "上品" },
+    purple: { cost: 3, rate: 20, min: 15, max: 50, name: "仙品" },
+    gold: { cost: 2, rate: 10, min: 30, max: 100, name: "神品" },
+  };
+  const Q_ORDER = ["white", "green", "blue", "purple", "gold"];
+  const QN = { white: "凡品", green: "良品", blue: "上品", purple: "仙品", gold: "神品" };
+  const QC = { white: "#cfd8dc", green: "#8ef0a0", blue: "#8ecff0", purple: "#c9a0ff", gold: "#ffd76a" };
+  let UP_STONES = 0;
+
+  function showUpgradePanel(it) {
+    const p = META.profile || {};
+    if (!it) return toast("先选择装备");
+    const slot = it.slot;
+    const cfg = UP_CFG[it.quality] || UP_CFG.white;
+    const tier = it.tier || 1;
+    const haveStones = ((p.stones || {})[tier]) || 0;
+    const mats = (p.bag || []).filter(x => x.quality === it.quality).length;
+    UP_STONES = 0;
+    const d = document.createElement("div");
+    d.className = "ex-mask"; d.style.zIndex = 1100; d.id = "upPanel";
+    d.onclick = e => { if (e.target === d) d.remove(); };
+    d.innerHTML = `
+      <div class="ex-wrap" style="max-width:360px">
+        <div class="ex-board" style="height:56px"></div>
+        <div class="ex-head" style="padding-top:11px">
+          <div class="ex-title">装备强化</div>
+          <div class="ex-close" id="upClose">×</div>
+        </div>
+        <div style="padding:10px 14px 14px">
+          <div class="up-eq" style="border-color:${it.color || "#ccc"}">
+            <b style="color:${it.color}">${_escHtml(it.name || cfg.name + SLOT_NAME[slot])}</b>
+            <i>${cfg.name} · ${SLOT_NAME[slot]} · ${it.affix || ""} +${it.val || 0}${it.upAtk ? "（已强化 +" + it.upAtk + "）" : ""}</i>
+          </div>
+          <div class="up-row">消耗 <b>${cfg.cost}</b> 件${cfg.name}装备（背包有 <b id="upMats">${mats}</b> 件）</div>
+          <div class="up-row">成功率 <b id="upRate">${cfg.rate}%</b>　成功得攻击 <b>${cfg.min}~${cfg.max}</b></div>
+          <div class="up-row">${tier} 阶灵石 <b id="upStN">0</b>/5 块（持有 ${haveStones}）　每块 +5%</div>
+          <div class="up-stones" id="upStBtns"></div>
+          <div class="ex-err" id="upErr" style="display:none"></div>
+          <button class="ex-submit" id="upGo" style="margin-top:10px">开始强化</button>
+          <div class="ex-tip">无论成功与否，材料与灵石都会消耗</div>
+        </div>
+      </div>`;
+    document.body.appendChild(d);
+    document.getElementById("upClose").onclick = () => d.remove();
+    const paint = () => {
+      document.getElementById("upRate").textContent = Math.min(95, cfg.rate + UP_STONES * 5) + "%";
+      document.getElementById("upStN").textContent = UP_STONES;
+      document.getElementById("upStBtns").innerHTML = Array.from({ length: 6 }, (_, i) =>
+        `<button class="up-st${i === UP_STONES ? " on" : ""}" data-n="${i}" ${i > haveStones ? "disabled" : ""}>${i}</button>`).join("");
+      d.querySelectorAll(".up-st").forEach(b => b.onclick = () => { UP_STONES = +b.dataset.n; paint(); });
+    };
+    paint();
+    document.getElementById("upGo").onclick = async () => {
+      if (SHOP.busy) return;
+      SHOP.busy = true;
+      const go = document.getElementById("upGo");
+      go.disabled = true; go.classList.add("loading"); go.textContent = "强化中";
+      const err = document.getElementById("upErr");
+      if (err) err.style.display = "none";
+      try {
+        const r = await META.equipUpgrade(it.id, UP_STONES);
+        if (!r.ok) throw new Error(r.error || "升级失败");
+        try { await META.load(); renderGrow(); renderHome(); } catch (e) { }
+        d.remove();
+        showUpgradeResult(r);
+      } catch (e) {
+        const msg = (e && (e.error || e.message)) || "升级失败";
+        const dbg = (e && e.debug) ? "　[" + e.debug + "]" : "";
+        if (err) { err.style.display = "block"; err.textContent = "⚠️ " + msg + dbg; }
+        go.disabled = false; go.classList.remove("loading"); go.textContent = "开始强化";
+      } finally { SHOP.busy = false; }
+    };
+  }
+
+  function showUpgradeResult(r) {
+    const ok = !!r.success;
+    const d = document.createElement("div");
+    d.className = "ex-mask"; d.style.zIndex = 1200;
+    d.innerHTML = `
+      <div class="bag-open"${ok ? "" : ' style="background:linear-gradient(180deg,#fdf3f0,#f8e3dc);border-color:#e5b7a8"'}>
+        <div class="pay-ok-ring"${ok ? "" : ' style="background:linear-gradient(180deg,#d3705a,#b3452f)"'}><div class="pay-ok-tick">${ok ? "✓" : "✕"}</div></div>
+        <div class="pay-ok-title" style="color:${ok ? "#2f7a54" : "#a83a1e"}">${ok ? "强化成功" : "强化失败"}</div>
+        <div class="bag-sub">${ok ? ("攻击力 <b>+" + r.gain + "</b>") : "材料已销毁，再接再厉"}</div>
+        ${ok ? `<div class="bag-sub2">当前强化加成 +${r.upAtk}</div>` : ""}
+        <div class="bag-sub2">成功率 ${r.rate}%（含灵石加成）　剩余灵石 ${r.stonesLeft} 块</div>
+        <button class="ex-submit" id="upResOk" style="margin-top:12px">知 道 了</button>
+      </div>`;
+    document.body.appendChild(d);
+    const close = () => d.remove();
+    d.querySelector("#upResOk").onclick = close;
+    d.onclick = e => { if (e.target === d) close(); };
+  }
+
+  function showComposePanel() {
+    const p = META.profile || {};
+    const bag = p.bag || [];
+    const groups = {};
+    bag.forEach(x => { (groups[x.quality] = groups[x.quality] || []).push(x); });
+    const cand = Object.keys(groups).filter(k => groups[k].length >= 5 && k !== "gold");
+    let picked = [];
+    const d = document.createElement("div");
+    d.className = "ex-mask"; d.style.zIndex = 1100; d.id = "cpPanel";
+    d.onclick = e => { if (e.target === d) d.remove(); };
+    d.innerHTML = `
+      <div class="ex-wrap" style="max-width:380px">
+        <div class="ex-board" style="height:56px"></div>
+        <div class="ex-head" style="padding-top:11px">
+          <div class="ex-title">装备合成</div>
+          <div class="ex-close" id="cpClose">×</div>
+        </div>
+        <div style="padding:10px 14px 14px">
+          <div class="up-row">同品质 5 件 → <b>高一档品质</b> 1 件（同槽位）　成功率 <b>20%</b>　失败全毁</div>
+          <div id="cpGroups"></div>
+          <div class="ex-err" id="cpErr" style="display:none"></div>
+          <button class="ex-submit" id="cpGo" style="margin-top:10px" disabled>选满 5 件同品质</button>
+        </div>
+      </div>`;
+    document.body.appendChild(d);
+    document.getElementById("cpClose").onclick = () => d.remove();
+    const gEl = document.getElementById("cpGroups");
+    const paint = () => {
+      gEl.innerHTML = cand.length ? cand.map(k => {
+        const ni = Q_ORDER.indexOf(k) + 1;
+        return `<div class="cp-group${picked.length && picked[0].quality === k ? " on" : ""}" data-q="${k}">
+          <b style="color:${QC[k]}">${QN[k]} ×${groups[k].length}</b>
+          <span>选 5 件 → ${ni < Q_ORDER.length ? QN[Q_ORDER[ni]] : "—"}（同槽位）</span>
+        </div>`;
+      }).join("") : `<div class="ex-empty">背包里还没有凑齐 5 件同品质的装备（商城福袋可以补货）</div>`;
+      gEl.querySelectorAll(".cp-group").forEach(el => el.onclick = () => {
+        const k = el.dataset.q;
+        picked = (picked.length && picked[0].quality === k) ? [] : groups[k].slice(0, 5);
+        paint();
+      });
+      const go = document.getElementById("cpGo");
+      go.disabled = picked.length !== 5;
+      go.textContent = picked.length === 5 ? "开始合成（成功率 20%）" : "选满 5 件同品质";
+    };
+    paint();
+    document.getElementById("cpGo").onclick = async () => {
+      if (SHOP.busy || picked.length !== 5) return;
+      SHOP.busy = true;
+      const go = document.getElementById("cpGo");
+      go.disabled = true; go.classList.add("loading"); go.textContent = "合成中";
+      const err = document.getElementById("cpErr");
+      if (err) err.style.display = "none";
+      try {
+        const r = await META.equipCompose(picked.map(x => x.id));
+        if (!r.ok) throw new Error(r.error || "合成失败");
+        try { await META.load(); renderGrow(); renderHome(); } catch (e) { }
+        d.remove();
+        showComposeResult(r);
+      } catch (e) {
+        const msg = (e && (e.error || e.message)) || "合成失败";
+        const dbg = (e && e.debug) ? "　[" + e.debug + "]" : "";
+        if (err) { err.style.display = "block"; err.textContent = "⚠️ " + msg + dbg; }
+        go.disabled = false; go.classList.remove("loading"); go.textContent = "开始合成";
+      } finally { SHOP.busy = false; }
+    };
+  }
+  function showComposeResult(r) {
+    const ok = !!r.success;
+    const loot = r.loot || {};
+    const d = document.createElement("div");
+    d.className = "ex-mask"; d.style.zIndex = 1200;
+    d.innerHTML = `
+      <div class="bag-open"${ok ? "" : ' style="background:linear-gradient(180deg,#fdf3f0,#f8e3dc);border-color:#e5b7a8"'}>
+        <div class="pay-ok-ring"${ok ? "" : ' style="background:linear-gradient(180deg,#d3705a,#b3452f)"'}><div class="pay-ok-tick">${ok ? "✓" : "✕"}</div></div>
+        <div class="pay-ok-title" style="color:${ok ? "#2f7a54" : "#a83a1e"}">${ok ? "合成成功" : "合成失败"}</div>
+        ${ok ? `<div class="bag-item" style="border-color:${loot.color || "#ccc"}">
+            <div class="bag-q" style="color:${loot.color}">${_escHtml(loot.qualityName || "")}</div>
+            <div class="bag-n">${_escHtml(loot.name || "")}</div>
+            <div class="bag-a">${_escHtml(loot.affix || "")} +${loot.val}%</div>
+          </div>` : `<div class="bag-sub">5 件材料已销毁，再接再厉</div>`}
+        <div class="bag-sub2">背包现有 ${r.bagCount} 件装备</div>
+        <button class="ex-submit" id="cpResOk" style="margin-top:12px">知 道 了</button>
+      </div>`;
+    document.body.appendChild(d);
+    const close = () => d.remove();
+    d.querySelector("#cpResOk").onclick = close;
+    d.onclick = e => { if (e.target === d) close(); };
+  }
+  window.showComposePanel = showComposePanel;
 
   /* ==================== 【v26.6.1】Service Worker 更新自愈 ====================
      背景：此前游戏页被 portal 注册的 Service Worker 接管，而 SW 对 /games/ 下的请求
@@ -1363,7 +1611,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         ${from === "bag"
           ? `<button class="btn-gacha" id="itemEquip"><i>替换装备</i><b>${onBody ? "换下当前" : "穿戴"}</b></button>`
           : `<button class="btn-gacha" id="itemUnequip"><i>卸 下</i><b>放回背包</b></button>`}
-        <button class="btn-gacha lock" id="itemUpgrade"><i>升级装备</i><b>本版不开放</b></button>
+        <button class="btn-gacha" id="itemUpgrade"><i>升级装备</i><b>吃同品质 · 上灵石</b></button>
         <button class="btn-gacha ten" id="itemBreak"><i>分 解</i><b>+${price} ◉</b></button>
       </div>
     </div>`;
@@ -1381,7 +1629,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       try { await META.unequip(slot); await META.load(); renderGrow(); renderHome(); close(); toast("已卸下，放回背包"); }
       catch (e) { unBtn.disabled = false; toast(e.error || "卸下失败"); }
     };
-    document.getElementById("itemUpgrade").onclick = () => toast("装备升级下个版本开放");
+    document.getElementById("itemUpgrade").onclick = () => { close(); showUpgradePanel(it); };
     document.getElementById("itemBreak").onclick = async (ev) => {
       const b = ev.currentTarget;
       if (from === "equipped") { toast("穿戴中的装备请先卸下再分解"); return; }
@@ -1442,7 +1690,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       try { await META.unequip(slot); await META.load(); renderGrow(); renderHome(); mask.remove(); toast("已卸下" + SLOT_NAME[slot] + "，放回背包"); }
       catch (e) { toast(e.error || "卸下失败"); }
     };
-    document.getElementById("eqdUpgrade").onclick = () => toast("装备升级（消耗灵气强化词条）即将开放");
+    document.getElementById("eqdUpgrade").onclick = () => { mask.remove(); showUpgradePanel(slot); };
   }
   function renderEquip() {
     const p = META.profile || {};
