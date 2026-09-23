@@ -541,6 +541,15 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .ex-deal-row { justify-content: space-between; }
 .ex-deal-time { flex-shrink: 0; font: 10.5px/1.4 sans-serif; color: #9c8b6b; text-align: right; }
 
+/* 【v26.5.1】收集头可点（成交记录折叠） */
+.ex-fold-head { cursor: pointer; user-select: none; }
+/* 【v26.5.1】失败原因就地显示（不关弹层，用户能改数字直接重试） */
+.ex-err {
+  margin: 8px 0 2px; padding: 8px 10px; border-radius: 8px;
+  background: #fdeee9; border: 1px solid #efc4b6; color: #a83a1e;
+  font: 12px/1.5 "PingFang SC", sans-serif; word-break: break-all;
+}
+
 /* 【v26.4】处理中：按钮转圈（买/卖/发布/转入转出统一反馈） */
 .ex-submit.loading, .ex-btn.loading { position: relative; color: transparent !important; }
 .ex-submit.loading::after, .ex-btn.loading::after {
