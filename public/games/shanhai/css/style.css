@@ -541,6 +541,37 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .ex-deal-row { justify-content: space-between; }
 .ex-deal-time { flex-shrink: 0; font: 10.5px/1.4 sans-serif; color: #9c8b6b; text-align: right; }
 
+/* ==================== 【v26.8】装备强化 / 合成 ==================== */
+.btn-compose {
+  padding: 4px 10px; border: 1px solid rgba(122,96,48,.4); border-radius: 12px; cursor: pointer;
+  font: 900 11px/1.4 "PingFang SC", sans-serif; color: #6b4a10;
+  background: linear-gradient(180deg, #f3ecd8, #e8dcc0);
+}
+.btn-compose:active { transform: scale(.95); }
+.up-eq {
+  padding: 9px 10px; border-radius: 10px; margin-bottom: 9px;
+  border: 2px solid #ccc; background: rgba(255,255,255,.55); text-align: center;
+}
+.up-eq b { display: block; font: 900 14px/1.5 "PingFang SC", sans-serif; }
+.up-eq i { display: block; font-style: normal; font: 11px/1.5 sans-serif; color: #6a5c3f; }
+.up-row { font: 12px/1.8 "PingFang SC", sans-serif; color: #4a3f28; }
+.up-row b { color: #b8641a; }
+.up-stones { display: flex; gap: 6px; margin: 8px 0 4px; }
+.up-st {
+  flex: 1; height: 34px; border-radius: 8px; border: 1px solid rgba(122,96,48,.35); cursor: pointer;
+  font: 900 14px/1 "PingFang SC", sans-serif; color: #6b5f45; background: #f5efe0;
+}
+.up-st.on { color: #fff; background: linear-gradient(180deg, #4a9a6e, #2f6b4c); border-color: #2f6b4c; }
+.up-st:disabled { opacity: .4; cursor: default; }
+.cp-group {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 8px;
+  border-radius: 10px; cursor: pointer;
+  background: rgba(255,255,255,.55); border: 1px solid rgba(122,96,48,.28);
+}
+.cp-group.on { border-color: #2f7a5a; background: #eef8f1; }
+.cp-group b { font: 900 13px/1.4 "PingFang SC", sans-serif; min-width: 64px; }
+.cp-group span { flex: 1; font: 11px/1.5 sans-serif; color: #6a5c3f; }
+
 /* ==================== 【v26.6 / v26.7】灵宝特惠（长在商城页里） ==================== */
 /* 说明：福袋不做成独立弹窗，直接放在底部导航「商城」页内，与玄机宝阁并列——
    玩家买东西的地方本来就该只有一个。 */
