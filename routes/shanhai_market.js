@@ -293,6 +293,35 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     return { posted: { side, amount, price } };
   }
 
+  // ==================== 【v26.5.1】数据自动清理 ====================
+  // 交易所是持续产数据的（机器人每分钟 1~5 笔），免费 MongoDB 容量有限，必须定期收口。
+  //   ① 机器人**已结束**的订单（成交完/已撤销）只留最近 50 条
+  //   ② 玩家已结束的订单留最近 200 条（在挂的 open 单一条都不动）
+  //   ③ 成交台账留最近 3000 条（后台对账够用），另外把 90 天前的彻底清掉
+  // 注意：只删「已结束」的订单，open 状态的挂单永远不碰。
+  let lastCleanupAt = 0;   // 上次清理时间戳（每小时最多清一次）
+  async function trimCollection(db, colName, filter, keepCount, sortField) {
+    const col = db.collection(colName);
+    const total = await col.countDocuments(filter);
+    if (total <= keepCount) return 0;
+    const keep = await col.find(filter, { projection: { _id: 1 } })
+      .sort({ [sortField]: -1 }).limit(keepCount).toArray();
+    const keepIds = keep.map(x => x._id);
+    const r = await col.deleteMany(Object.assign({}, filter, { _id: { $nin: keepIds } }));
+    return r.deletedCount || 0;
+  }
+  async function cleanupOldData(db) {
+    const report = {};
+    report.botOrders = await trimCollection(db, ORD_COL, { userId: BOT_ID, status: { $ne: 'open' } }, 50, 'createdAt');
+    report.playerOrders = await trimCollection(db, ORD_COL, { userId: { $ne: BOT_ID }, status: { $ne: 'open' } }, 200, 'createdAt');
+    report.deals = await trimCollection(db, DEAL_COL, {}, 3000, 'createdAt');
+    const cutoff = new Date(Date.now() - 90 * 86400000);
+    const rd = await db.collection(DEAL_COL).deleteMany({ createdAt: { $lt: cutoff } }).catch(() => ({ deletedCount: 0 }));
+    report.dealsOlderThan90d = rd.deletedCount || 0;
+    return report;
+  }
+  mountShanhaiMarket.cleanupOldData = cleanupOldData;
+
   async function runRound() {
     try {
       const db = await getDb();
@@ -311,6 +340,15 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       const deals = res.filter(r => r.dealt).length;
       const posts = res.filter(r => r.posted).length;
       await db.collection(CFG_COL).updateOne({ _id: 'market' }, { $set: { lastRunAt: new Date(), lastSummary: { tried: n, deals, posts, skips: res.filter(r => r.skipped).map(r => r.skipped) } } }, { upsert: true }).catch(() => { });
+      // 【v26.5.1】每小时顺手清一次历史数据（只清已结束的订单与过老的台账）
+      if (Date.now() - lastCleanupAt > 3600000) {
+        lastCleanupAt = Date.now();
+        const cp = await cleanupOldData(db).catch(() => null);
+        if (cp && (cp.botOrders || cp.playerOrders || cp.deals || cp.dealsOlderThan90d)) {
+          console.log('[market] 数据清理：机器人订单 -%d / 玩家订单 -%d / 台账 -%d（90天前 -%d）',
+            cp.botOrders, cp.playerOrders, cp.deals, cp.dealsOlderThan90d);
+        }
+      }
       return { ok: true, tried: n, deals, posts, detail: res };
     } catch (e) {
       console.error('[market] round error', e);
