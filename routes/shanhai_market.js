@@ -60,7 +60,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     return loadCfg(db);
   }
   const EXW_COL = 'shanhai_ex_wallet';
-  const money3 = n => Math.round(Number(n) * 1000) / 1000;
+  const money4 = n => Math.round(Number(n) * 10000) / 10000;  // 交易所内部 4 位小数（0.0001 精度）
 
   async function ensureFund(db, cfg) {
     let f = await db.collection(FUND_COL).findOne({ _id: 'market' });
@@ -83,9 +83,9 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
   // 机器人交易所钱包（余额 / 冻结 / 可用）
   async function botWallet(db) {
     const w = await db.collection(EXW_COL).findOne({ userId: BOT_ID });
-    const balance = money3((w || {}).balance || 0);
-    const frozen = money3((w || {}).frozen || 0);
-    return { balance, frozen, available: money3(balance - frozen) };
+    const balance = money4((w || {}).balance || 0);
+    const frozen = money4((w || {}).frozen || 0);
+    return { balance, frozen, available: money4(balance - frozen) };
   }
   const botBalance = async db => (await botWallet(db)).balance;
 
@@ -158,7 +158,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       const targetLegacyBuy = !botIsBuyer && !(target.locked > 0);
       if (targetLegacyBuy) {
         const pw = await db.collection(EXW_COL).findOne({ userId: target.userId });
-        const pAvail = money3(((pw || {}).balance || 0) - ((pw || {}).frozen || 0));
+        const pAvail = money4(((pw || {}).balance || 0) - ((pw || {}).frozen || 0));
         if (pAvail < total) return { skipped: 'buyer_no_cash' };
       }
 
@@ -177,7 +177,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       const buyerId = botIsBuyer ? playerId : BOT_ID;
       try {
         // 灵气流转
-        const sellerGet = money3(total - fee);
+        const sellerGet = money4(total - fee);
         if (botIsBuyer) {
           // 机器人是主动买家：从它的交易所余额扣钱；玩家的卖单是冻结状态，解冻后转出
           await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
@@ -236,7 +236,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     // 同一价格已经有单就不再堆一张（否则同一价位挂成一排，玩家看着很假）
     const samePrice = await col.findOne({ userId: BOT_ID, side, status: 'open', price });
     if (samePrice) return { skipped: 'bot_same_price' };
-    const totalNew = money3(amount * price);
+    const totalNew = money4(amount * price);
     if (side === 'sell') {
       if ((fund.lingqi || 0) < amount) return { skipped: 'bot_no_lingqi' };
       await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: -amount, lingqiFrozen: amount } });
@@ -257,6 +257,9 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
   async function runRound() {
     try {
       const db = await getDb();
+      // 【v26.4.1】总闸关闭时机器人也停：维护中不该继续产生成交
+      const sw = await db.collection(CFG_COL).findOne({ _id: 'exchange' });
+      if (sw && sw.enabled === false) return { skipped: 'exchange_closed' };
       const cfg = await loadCfg(db);
       if (!cfg.enabled) return { skipped: 'disabled' };
       await ensureFund(db, cfg);
@@ -354,7 +357,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
           human: (humanAgg[0] || { cnt: 0, total: 0, fee: 0 }),
           bot: (botAgg[0] || { cnt: 0, total: 0, fee: 0 }),
           feeLog: (feeAgg[0] || { cnt: 0, fee: 0 }),
-          platformFeeTotal: money3((feeAgg[0] || {}).fee || 0),
+          platformFeeTotal: money4((feeAgg[0] || {}).fee || 0),
           openOrders: openCnt,
           botOpenOrders, humanOpenOrders,
           botMaxPerSide: BOT_MAX_OPEN_PER_SIDE,
@@ -448,7 +451,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         { $inc: { frozen: -backCash }, $set: { updatedAt: new Date() } });
       await db.collection(ORD_COL).updateMany({ userId: BOT_ID, status: 'open' },
         { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } });
-      res.json({ ok: true, cleared: bots.length, lingqiBack: back, cashBack: money3(backCash) });
+      res.json({ ok: true, cleared: bots.length, lingqiBack: back, cashBack: money4(backCash) });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
