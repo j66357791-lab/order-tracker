@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.4.2', // 【v26.4.2】修复山海模块整块挂载失败（server.js 漏传 adminOnly）；总闸 + 0.0001 精度 + 全部转出
+  appVersion: '26.4.3', // 【v26.4.3】修复 exGuard 定义晚于使用导致的 TDZ（board/deposit/switch 路由没注册上）
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
