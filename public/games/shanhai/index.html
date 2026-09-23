@@ -384,13 +384,15 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
   window.showBoard = showBoard;
 
-  /* ==================== 【v26.0】灵气交易所 ====================
-     玩法：灵气是通用货币，可与「账户余额（元）」互相结缘。
-     · 我要买 —— 看别人挂的出售单，点「买入」用账户余额付款，灵气即时到账
-     · 我要卖 —— 看别人挂的求购单，点「卖出」把灵气给他，余额即时到账
-     · 也可自己发单挂着等人来成交；单侧最多 10 条
-     挂出售单会先把灵气冻结起来（防止同一批灵气被卖两次），撤单即解冻。 */
-  const _m2 = n => Math.round(Number(n || 0) * 100) / 100;
+  /* ==================== 【v26.0 ~ v26.4】灵气交易所 ====================
+     v26.4 三条主线变化：
+       ① 独立钱包——主站余额不再参与交易。要先「转入」交易所才能挂单/买入，
+          卖出所得留在交易所，想拿回主站得「转出」。主站余额永不受交易影响。
+       ② 去身份——列表不显示任何人的名字（既不显示机器人、也不显示玩家），
+          只呈现「有这么一个买卖需求」。
+       ③ 明确反馈——买入/卖出/挂单/转入转出都有「处理中」动画 + 明确结果提示。 */
+  const _m3 = n => Math.round(Number(n || 0) * 1000) / 1000;
+  const _fmt3 = n => _m3(n).toFixed(3);
   const _escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let EX = { tab: "buy", data: null, busy: false, form: { a: "", p: "" }, timer: null };
 
@@ -402,159 +404,232 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       EX.data = d;
       renderEx(onlyLists);
     } catch (e) {
-      if (!onlyLists) toast("行情加载失败：" + (e && (e.error || e.message) || "请稍后重试"));
+      if (!onlyLists) toast("行情加载失败：" + ((e && (e.error || e.message)) || "请稍后重试"));
     }
   }
 
-  /* 【v26.3】实时刷新：弹窗开着时每 6 秒静默拉一次最新挂单与成交。
-     为什么用轮询而不是 WebSocket——游戏页目前没有长连接，为一个弹窗引入 socket.io
-     客户端（约 50KB）与"资源瘦身"的目标相冲；6 秒轮询在体验上已经等价于实时，
-     而且不会因为断线卡住。页面切到后台、或正在操作/输入时自动跳过，不干扰用户。 */
-  const EX_POLL_MS = 6000;
-  function startExPoll() {
-    stopExPoll();
-    EX.timer = setInterval(() => {
-      if (!document.getElementById("exMask")) return stopExPoll();   // 弹窗已关
-      if (document.hidden) return;                                    // 页面在后台
-      if (EX.busy) return;                                            // 正在提交
-      if (document.getElementById("exSheet")) return;                 // 成交确认层开着
-      const ae = document.activeElement;
-      if (ae && ae.classList && ae.classList.contains("ex-inp")) return;  // 正在输入
-      loadEx(true);
-    }, EX_POLL_MS);
-  }
-  function stopExPoll() { if (EX.timer) { clearInterval(EX.timer); EX.timer = null; } }
-
-  function exRowHTML(o, mode) {
-    const left = o.left, unit = Number(o.price).toFixed(2), total = _m2(left * o.price).toFixed(2);
-    if (mode === "mine") {
-      return `<div class="ex-row mine">
-        <div class="who">${o.side === "sell" ? "出售" : "求购"}<i>单价 ¥${unit}</i></div>
-        <div class="num">${left} / ${o.amount} 灵气<i>待成交 ¥${total}</i></div>
-        <div class="ex-btn cancel" data-act="cancel" data-id="${o.id}">撤销</div>
-      </div>`;
-    }
-    const isBuy = o.side === "sell";   // 对方是卖单 → 我要买；对方是买单 → 我要卖
-    // 自己的单不再从列表里剔掉，而是标一个「我」并且不给成交按钮（后端也拦自成交）
+  /* 一条挂单。v26.4 起不再显示任何身份信息——只有数量、单价、总额与操作。 */
+  function exRowHTML(o) {
+    const left = o.left, unit = _m3(o.price).toFixed(3), total = _fmt3(left * o.price);
     if (o.mine) {
       return `<div class="ex-row mine-own">
-        <div class="who">${_escHtml(o.username)}<span class="ex-self-tag">我</span><i>${isBuy ? "出售中" : "求购中"}</i></div>
-        <div class="num">${left} 灵气<i>单价 ¥${unit} · 共 ¥${total}</i></div>
+        <div class="num"><b>${left}</b> 灵气<span class="ex-tag-me">我的</span><i>单价 ¥${unit} · 共 ¥${total}</i></div>
         <div class="ex-btn cancel" data-act="cancel" data-id="${o.id}">撤单</div>
       </div>`;
     }
+    const isBuy = o.side === "sell";   // 对方挂卖 → 我要买
     return `<div class="ex-row">
-      <div class="who">${_escHtml(o.username)}<i>${isBuy ? "售" : "求"}</i></div>
-      <div class="num">${left} 灵气<i>单价 ¥${unit} · 共 ¥${total}</i></div>
+      <div class="num"><b>${left}</b> 灵气<i>单价 ¥${unit} · 共 ¥${total}</i></div>
       <div class="ex-btn ${isBuy ? "buy" : "sell"}" data-act="deal" data-id="${o.id}" data-left="${left}" data-price="${o.price}" data-side="${o.side}">${isBuy ? "买入" : "卖出"}</div>
     </div>`;
   }
 
   function exEmpty(txt) { return `<div class="ex-empty">${txt}</div>`; }
 
-  // onlyLists=true 时只刷新资产条与列表，不动底部表单（实时轮询用，避免打断正在输入的数量/单价）
+  function exDealRowHTML(d) {
+    const mine = d.role === "buy";
+    return `<div class="ex-row ex-deal-row">
+      <div class="num"><b>${d.amount}</b> 灵气<span class="ex-tag-${mine ? "buy" : "sell"}">${mine ? "买入" : "卖出"}</span>
+        <i>单价 ¥${_m3(d.price).toFixed(3)} · 共 ¥${_fmt3(d.total)} · 手续费 ¥${_fmt3(d.fee)}</i></div>
+      <div class="ex-deal-time">${new Date(d.at).toLocaleString("zh-CN", { hour12: false }).slice(5, 16)}</div>
+    </div>`;
+  }
+
+  // onlyLists=true（轮询）只刷资产条与列表，不动底部表单与矿脉条，避免打断输入
   function renderEx(onlyLists) {
-    const d = EX.data;
-    const mask = document.getElementById("exMask");
+    const d = EX.data, mask = document.getElementById("exMask");
     if (!d || !mask) return;
     const cfg = d.cfg || {}, me = d.me || {};
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    set("exMyLq", me.lingqi || 0);
-    set("exMyFz", me.frozen || 0);
-    set("exMyBal", "¥" + (me.balance || 0).toFixed(2));
-    set("exMyFzCash", "¥" + (me.frozenCash || 0).toFixed(2));
 
+    // —— 钱包区（v26.4：交易所独立余额）——
+    set("exExAvail", "¥" + _m3(me.exAvailable || 0).toFixed(3));
+    set("exExFrozen", "¥" + _m3(me.exFrozen || 0).toFixed(3));
+    set("exMainBal", "主站余额 ¥" + (me.balance || 0).toFixed(2) + "（不参与交易，需先转入）");
+    set("exMyLq", me.lingqi || 0);
+    set("exMyLqFz", me.frozen || 0);
+
+    // —— 灵气矿脉 ——
+    const lm = d.lingqiMine || {};
+    const mineBar = document.getElementById("exMineBar");
+    if (mineBar) {
+      if (!lm.unlocked) {
+        mineBar.innerHTML = `<span class="exm-ico">⛏</span>通关第 ${lm.unlockStage || 5} 关解锁「灵气矿脉」（每日自动产出灵气）`;
+      } else {
+        mineBar.innerHTML = `<span class="exm-ico">⛏</span>灵气矿脉 <b>${lm.rate}</b> 点/天 · 已攒 <b>${lm.days || 0}</b> 天
+          <button class="exm-btn" id="exMineClaim" ${(lm.gain || 0) < 1 ? "disabled" : ""}>${(lm.gain || 0) >= 1 ? "领取 " + lm.gain + " 点" : "未满 1 天"}</button>`;
+        const mb = document.getElementById("exMineClaim");
+        if (mb) mb.onclick = async () => {
+          if (EX.busy) return;
+          EX.busy = true; mb.disabled = true; mb.textContent = "领取中…";
+          try {
+            const r = await META.lingqiClaim();
+            if (!r.ok) throw new Error(r.error || "领取失败");
+            toast("已领取 " + r.gain + " 点灵气");
+            await refreshAll();
+          } catch (e) { toast((e && e.error) || e.message || "领取失败"); mb.disabled = false; }
+          finally { EX.busy = false; }
+        };
+      }
+    }
+
+    // —— 列表 ——
     const mine = d.mine || [];
     const mineSell = mine.filter(o => o.side === "sell").length;
     const mineBuy = mine.filter(o => o.side === "buy").length;
     const maxN = cfg.maxOpenPerSide || 10;
-
-    document.getElementById("colBuy").innerHTML =
-      `<div class="ex-col-head"><span>在售灵气（价低者优先）</span><span>${(d.sells || []).length} 单</span></div>` +
-      ((d.sells || []).length ? d.sells.map(o => exRowHTML(o, "market")).join("") : exEmpty("暂无出售单，换个时候再来"));
-    document.getElementById("colSell").innerHTML =
-      `<div class="ex-col-head"><span>求购灵气（价高者优先）</span><span>${(d.buys || []).length} 单</span></div>` +
-      ((d.buys || []).length ? d.buys.map(o => exRowHTML(o, "market")).join("") : exEmpty("暂无求购单，可自己挂一张"));
-    document.getElementById("colMine").innerHTML =
+    const colBuy = document.getElementById("colBuy");
+    const colSell = document.getElementById("colSell");
+    const colMine = document.getElementById("colMine");
+    const colRec = document.getElementById("colRec");
+    if (colBuy) colBuy.innerHTML =
+      `<div class="ex-col-head"><span>在售灵气（价低优先）</span><span>${(d.sells || []).length} 单</span></div>` +
+      ((d.sells || []).length ? d.sells.map(exRowHTML).join("") : exEmpty("暂无出售单，稍后再看"));
+    if (colSell) colSell.innerHTML =
+      `<div class="ex-col-head"><span>求购灵气（价高优先）</span><span>${(d.buys || []).length} 单</span></div>` +
+      ((d.buys || []).length ? d.buys.map(exRowHTML).join("") : exEmpty("暂无求购单，可自己挂一张"));
+    if (colMine) colMine.innerHTML =
       `<div class="ex-col-head"><span>我的挂单</span><span>售 ${mineSell}/${maxN} · 求 ${mineBuy}/${maxN}</span></div>` +
-      (mine.length ? mine.map(o => exRowHTML(o, "mine")).join("") : exEmpty("还没有挂单"));
+      (mine.length ? mine.map(exRowHTML).join("") : exEmpty("还没有挂单"));
+    if (colRec) colRec.innerHTML =
+      `<div class="ex-col-head"><span>我的成交记录</span><span>${(d.deals || []).length} 笔</span></div>` +
+      ((d.deals || []).length ? d.deals.map(exDealRowHTML).join("") : exEmpty("还没有成交记录"));
 
-    ["buy", "sell", "mine"].forEach(t => {
+    ["buy", "sell", "mine", "rec"].forEach(t => {
       const c = document.getElementById("col" + t[0].toUpperCase() + t.slice(1));
       if (c) c.classList.toggle("on", t === EX.tab);
     });
+    mask.querySelectorAll(".ex-tab").forEach(x => x.classList.toggle("on", x.dataset.t === EX.tab));
 
-    // —— 底部发布表单（轮询刷新时跳过，避免打断用户正在输入的内容）——
     if (onlyLists) return;
+
+    // —— 底部表单 ——
     const form = document.getElementById("exForm");
-    if (EX.tab === "mine") { form.innerHTML = `<div class="ex-tip">挂出售单冻结灵气·挂求购单冻结余额，撤销即刻解冻退回</div>`; return; }
+    if (!form) return;
+    if (EX.tab === "mine" || EX.tab === "rec") {
+      form.innerHTML = `<div class="ex-tip">挂出售单冻结灵气 · 挂求购单冻结交易所余额；撤销即刻解冻</div>`;
+      return;
+    }
     const isSell = EX.tab === "sell";
     const cnt = isSell ? mineSell : mineBuy;
+    const cap = isSell ? `${me.lingqi || 0} 灵气` : `¥${_m3(me.exAvailable || 0).toFixed(3)}（交易所可用）`;
     form.innerHTML = `
       <div class="ex-form-row">
         <label>数量</label>
-        <input class="ex-inp" id="exAmount" type="number" inputmode="numeric" min="1" step="1" value="${_escHtml(EX.form.a)}" placeholder="${isSell ? "要卖出多少灵气（可用 " + (me.lingqi || 0) + "）" : "要求购多少灵气"}">
+        <input class="ex-inp" id="exAmount" type="number" inputmode="numeric" min="1" step="1"
+          value="${_escHtml(EX.form.a)}" placeholder="要${isSell ? "卖" : "买"}多少灵气（可用 ${cap}）">
       </div>
       <div class="ex-form-row">
         <label>单价</label>
-        <input class="ex-inp" id="exPrice" type="number" inputmode="decimal" min="${cfg.minPrice || 0.01}" step="0.01" value="${_escHtml(EX.form.p)}" placeholder="每个灵气多少元">
-        <span class="ex-sum" id="exTotal">¥0.00</span>
+        <input class="ex-inp" id="exPrice" type="number" inputmode="decimal" min="${cfg.minPrice || 0.001}" step="0.001"
+          value="${_escHtml(EX.form.p)}" placeholder="每个灵气多少元（可到 0.001）">
+        <span class="ex-sum" id="exTotal">¥0.000</span>
       </div>
       <button class="ex-submit" id="exSubmit">${isSell ? "发 布 出 售" : "发 布 求 购"}</button>
-      <div class="ex-tip">${isSell ? "发布后灵气立即冻结，成交或撤销前不可他用" : "求购单不占用余额，成交时实时扣款"} ｜ 已挂 ${cnt}/${maxN}</div>`;
-
+      <div class="ex-tip">${isSell ? "发布后灵气立即冻结" : "发布后按总额冻结交易所余额"} ｜ 已挂 ${cnt}/${maxN}</div>`;
     const calc = () => {
       const a = Math.floor(Number(document.getElementById("exAmount").value) || 0);
       const p = Number(document.getElementById("exPrice").value) || 0;
-      // 记住输入：切页签/成交后表单会重建，不记住用户就得重填一遍
       EX.form = { a: document.getElementById("exAmount").value, p: document.getElementById("exPrice").value };
       const el = document.getElementById("exTotal");
-      if (el) el.textContent = "¥" + _m2(a * p).toFixed(2);
+      if (el) el.textContent = "¥" + _fmt3(a * p);
       return { a, p };
     };
-    calc();
     ["exAmount", "exPrice"].forEach(id => { const el = document.getElementById(id); if (el) el.oninput = calc; });
+    calc();
     const btn = document.getElementById("exSubmit");
     if (btn) btn.onclick = async () => {
       const { a, p } = calc();
       if (!(a >= 1)) return toast(isSell ? "请输入要出售的灵气数量" : "请输入要求购的灵气数量");
-      if (!(p > 0)) return toast("请输入单价（元/个）");
+      if (!(p >= (cfg.minPrice || 0.001))) return toast("单价太低，最低 ¥" + (cfg.minPrice || 0.001));
       if (EX.busy) return;
-      EX.busy = true; btn.disabled = true;
+      EX.busy = true; btn.disabled = true; btn.classList.add("loading"); btn.textContent = "发布中";
       try {
         const r = await META.exPublish(isSell ? "sell" : "buy", a, p);
         if (!r.ok) throw new Error(r.error || "发布失败");
-        EX.form = { a: "", p: "" };   // 发布成功清空输入，避免误重复发布
-        toast(isSell ? "出售单已挂出" : "求购单已挂出");
+        EX.form = { a: "", p: "" };
+        toast((isSell ? "出售单已挂出：" : "求购单已挂出：") + a + " 灵气 × ¥" + _m3(p).toFixed(3));
         renderHome();
         await loadEx();
       } catch (e) {
         toast((e && e.error) || e.message || "发布失败");
-      } finally { EX.busy = false; btn.disabled = false; }
+      } finally {
+        EX.busy = false; btn.disabled = false; btn.classList.remove("loading");
+        btn.textContent = isSell ? "发 布 出 售" : "发 布 求 购";
+      }
     };
   }
 
-  // 成交确认弹层
-  function exDealSheet(o) {
-    const isBuy = o.side === "sell";       // 我是否为付款方
+  /* ============ 转入 / 转出 ============ */
+  function exTransferSheet(kind) {
+    const isIn = kind === "in";
     const me = (EX.data && EX.data.me) || {};
+    const cfg = (EX.data && EX.data.cfg) || {};
+    const min = cfg.minTransfer || 0.01;
+    const maxIn = Math.floor((me.balance || 0) * 100) / 100;
+    const maxOut = Math.floor(_m3(me.exAvailable || 0) * 100) / 100;
     const sub = document.createElement("div");
-    sub.className = "ex-mask"; sub.style.zIndex = 1000;
-    sub.id = "exSheet";
+    sub.className = "ex-mask"; sub.style.zIndex = 1000; sub.id = "exSheet";
     sub.onclick = e => { if (e.target === sub) sub.remove(); };
+    sub.innerHTML = `
+      <div class="ex-wrap" style="max-width:340px">
+        <div class="ex-board" style="height:62px"></div>
+        <div class="ex-head">
+          <div class="ex-title">${isIn ? "转入交易所" : "转出到主站"}</div>
+          <div class="ex-sub">${isIn ? "从主站余额划入交易所专用资金" : "把交易所可用余额划回主站"}</div>
+          <div class="ex-close" onclick="document.getElementById('exSheet').remove()">×</div>
+        </div>
+        <div style="padding:12px 14px 6px">
+          <div class="ex-form-row">
+            <label>金额</label>
+            <input class="ex-inp" id="trAmt" type="number" inputmode="decimal" min="${min}" step="0.01" value="${isIn ? maxIn : maxOut}">
+          </div>
+          <div class="ex-line"><span>${isIn ? "主站可用" : "交易所可用"}</span><b>¥${(isIn ? maxIn : maxOut).toFixed(2)}</b></div>
+          <div class="ex-line fee"><span>最低</span><span>¥${min}</span></div>
+          <button class="ex-submit" id="trOk" style="margin-top:10px">确 认 ${isIn ? "转 入" : "转 出"}</button>
+          <div class="ex-tip">${isIn ? "转入后这笔钱只用于交易，不再计入主站可提现余额" : "挂单冻结中的金额不可转出，先撤单"}</div>
+        </div>
+      </div>`;
+    document.body.appendChild(sub);
+    const btn = document.getElementById("trOk");
+    btn.onclick = async () => {
+      const amt = Math.round((Number(document.getElementById("trAmt").value) || 0) * 100) / 100;
+      if (!(amt >= min)) return toast("最低 ¥" + min);
+      if (EX.busy) return;
+      EX.busy = true; btn.disabled = true; btn.classList.add("loading"); btn.textContent = (isIn ? "转入中" : "转出中");
+      try {
+        const r = isIn ? await META.exDeposit(amt) : await META.exWithdraw(amt);
+        if (!r.ok) throw new Error(r.error || "操作失败");
+        sub.remove();
+        toast((isIn ? "已转入 ¥" : "已转出 ¥") + amt.toFixed(2));
+        await refreshAll();
+      } catch (e) {
+        toast((e && e.error) || e.message || "操作失败");
+        btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "确 认 " + (isIn ? "转 入" : "转 出");
+      } finally { EX.busy = false; }
+    };
+  }
+
+  /* ============ 成交确认（带处理中反馈） ============ */
+  function exDealSheet(o) {
+    const isBuy = o.side === "sell";
+    const me = (EX.data && EX.data.me) || {};
     const feeRate = (EX.data && EX.data.cfg && EX.data.cfg.feeRate) || 0.005;
     const setTxt = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     const calcNum = n => {
-      const total = _m2(n * o.price), fee = _m2(total * feeRate);
-      return { total, fee, net: isBuy ? total : _m2(total - fee) };   // 手续费由卖家承担：买入付全额，卖出收扣后金额
+      const total = _m3(n * o.price), fee = _m3(total * feeRate);
+      return { total, fee, net: isBuy ? total : _m3(total - fee) };
     };
     const c0 = calcNum(o.left);
+    const sub = document.createElement("div");
+    sub.className = "ex-mask"; sub.style.zIndex = 1000; sub.id = "exSheet";
+    sub.onclick = e => { if (e.target === sub) sub.remove(); };
     sub.innerHTML = `
       <div class="ex-wrap" style="max-width:340px">
-        <div class="ex-board" style="height:64px"></div>
+        <div class="ex-board" style="height:62px"></div>
         <div class="ex-head">
           <div class="ex-title">${isBuy ? "买入灵气" : "卖出灵气"}</div>
-          <div class="ex-sub">单价 ¥${Number(o.price).toFixed(2)} · 可成交上限 ${o.left}</div>
+          <div class="ex-sub">单价 ¥${_m3(o.price).toFixed(3)} · 最多 ${o.left}</div>
           <div class="ex-close" onclick="document.getElementById('exSheet').remove()">×</div>
         </div>
         <div style="padding:12px 14px 6px">
@@ -562,12 +637,12 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
             <label>数量</label>
             <input class="ex-inp" id="shAmt" type="number" inputmode="numeric" min="1" max="${o.left}" step="1" value="${o.left}">
           </div>
-          <div class="ex-line"><span>成交金额</span><b id="shTotal">¥${c0.total.toFixed(2)}</b></div>
-          <div class="ex-line fee"><span>手续费 ${(feeRate * 100).toFixed(1)}%（卖方承担）</span><span id="shFee">¥${c0.fee.toFixed(2)}</span></div>
-          <div class="ex-line net"><span>${isBuy ? "实付" : "实收"}</span><b id="shNet">¥${c0.net.toFixed(2)}</b></div>
-          <div class="ex-line fee"><span>${isBuy ? "可用余额" : "可用灵气"}</span><span id="shAvail">${isBuy ? "¥" + (me.balance || 0).toFixed(2) : (me.lingqi || 0) + " 灵气"}</span></div>
-          <button class="ex-submit" id="shOk" style="margin-top:10px">确 认 ${isBuy ? "买入" : "卖出"}</button>
-          <div class="ex-tip">成交即时结算 · ${isBuy ? "全额从账户余额扣除" : "货款扣除手续费后到账"}</div>
+          <div class="ex-line"><span>成交金额</span><b id="shTotal">¥${_fmt3(c0.total)}</b></div>
+          <div class="ex-line fee"><span>手续费 ${(feeRate * 100).toFixed(1)}%（卖方承担）</span><span id="shFee">¥${_fmt3(c0.fee)}</span></div>
+          <div class="ex-line net"><span>${isBuy ? "实付" : "实收"}</span><b id="shNet">¥${_fmt3(c0.net)}</b></div>
+          <div class="ex-line fee"><span>${isBuy ? "交易所可用" : "可用灵气"}</span><span id="shAvail">${isBuy ? "¥" + _m3(me.exAvailable || 0).toFixed(3) : (me.lingqi || 0) + " 灵气"}</span></div>
+          <button class="ex-submit" id="shOk" style="margin-top:10px">确 认 ${isBuy ? "买 入" : "卖 出"}</button>
+          <div class="ex-tip">${isBuy ? "从交易所余额扣款" : "扣手续费后进你的交易所余额"}</div>
         </div>
       </div>`;
     document.body.appendChild(sub);
@@ -575,33 +650,53 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const upd = () => {
       const n = Math.min(o.left, Math.max(1, Math.floor(Number(amtEl.value) || 1)));
       const c = calcNum(n);
-      setTxt("shTotal", "¥" + c.total.toFixed(2));
-      setTxt("shFee", "¥" + c.fee.toFixed(2));
-      setTxt("shNet", "¥" + c.net.toFixed(2));
+      setTxt("shTotal", "¥" + _fmt3(c.total));
+      setTxt("shFee", "¥" + _fmt3(c.fee));
+      setTxt("shNet", "¥" + _fmt3(c.net));
       return n;
     };
     amtEl.oninput = upd;
-    document.getElementById("shOk").onclick = async () => {
+    const btn = document.getElementById("shOk");
+    btn.onclick = async () => {
       const n = upd();
       if (EX.busy) return;
       EX.busy = true;
+      btn.disabled = true; btn.classList.add("loading"); btn.textContent = isBuy ? "买入中" : "卖出中";
       try {
         const r = await META.exDeal(o.id, n);
         if (!r.ok) throw new Error(r.error || "交易失败");
         sub.remove();
         const got = Number(r.got || r.total || 0);
-        toast((r.side === "sell" ? "已买入 " : "已卖出 ") + r.amount + " 灵气 · " + (r.side === "sell" ? "实付 ¥" : "实收 ¥") + got.toFixed(2));
+        toast((r.side === "sell" ? "已买入 " : "已卖出 ") + r.amount + " 灵气 · "
+          + (r.side === "sell" ? "实付 ¥" : "实收 ¥") + _fmt3(got));
         await refreshAll();
       } catch (e) {
         toast((e && e.error) || e.message || "交易失败");
+        btn.disabled = false; btn.classList.remove("loading"); btn.textContent = "确 认 " + (isBuy ? "买 入" : "卖 出");
       } finally { EX.busy = false; }
     };
   }
 
   async function refreshAll() {
     await loadEx();
-    try { await META.load(); renderHome(); } catch (e) {}
+    try { await META.load(); renderHome(); } catch (e) { }
   }
+
+  /* 【v26.3】实时刷新：弹窗开着时每 6 秒静默拉一次最新行情。
+     输入框聚焦 / 成交确认层开着 / 页面切后台 / 正在提交时自动跳过，不打扰操作。 */
+  const EX_POLL_MS = 6000;
+  function startExPoll() {
+    stopExPoll();
+    EX.timer = setInterval(() => {
+      if (!document.getElementById("exMask")) return stopExPoll();
+      if (document.hidden || EX.busy) return;
+      if (document.getElementById("exSheet")) return;
+      const ae = document.activeElement;
+      if (ae && ae.classList && ae.classList.contains("ex-inp")) return;
+      loadEx(true);
+    }, EX_POLL_MS);
+  }
+  function stopExPoll() { if (EX.timer) { clearInterval(EX.timer); EX.timer = null; } }
 
   async function showExchange() {
     let mask = document.getElementById("exMask");
@@ -615,36 +710,50 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <div class="ex-board"></div>
         <div class="ex-head">
           <div class="ex-title">灵气交易所</div>
-          <div class="ex-sub">实时行情 · 每 6 秒自动刷新</div>
+          <div class="ex-sub">独立资金 · 实时行情（每 6 秒刷新）</div>
           <div class="ex-close" id="exClose">×</div>
         </div>
-        <div class="ex-assets">
-          <div class="ex-asset"><i>可用灵气</i><b id="exMyLq">--</b></div>
-          <div class="ex-asset frz"><i>灵气冻结</i><b id="exMyFz">--</b></div>
-          <div class="ex-asset bal"><i>可用余额</i><b id="exMyBal">--</b></div>
-          <div class="ex-asset frz"><i>余额冻结</i><b id="exMyFzCash">--</b></div>
+
+        <div class="ex-wallet">
+          <div class="exw-box">
+            <i>交易所可用</i><b id="exExAvail">--</b>
+          </div>
+          <div class="exw-box frz">
+            <i>挂单冻结</i><b id="exExFrozen">--</b>
+          </div>
+          <div class="exw-act">
+            <button class="exw-btn in" id="exDepBtn">转入</button>
+            <button class="exw-btn out" id="exWitBtn">转出</button>
+          </div>
+          <div class="exw-sub" id="exMainBal">主站余额 --</div>
         </div>
+
+        <div class="ex-resline">
+          <span class="exr-item"><i>灵气</i><b id="exMyLq">--</b></span>
+          <span class="exr-item"><i>灵气冻结</i><b id="exMyLqFz">--</b></span>
+          <span class="exr-mine" id="exMineBar"></span>
+        </div>
+
         <div class="ex-tabs">
-          <div class="ex-tab on"  data-t="buy">我要买</div>
-          <div class="ex-tab"     data-t="sell">我要卖</div>
-          <div class="ex-tab"     data-t="mine">我的挂单</div>
+          <div class="ex-tab on" data-t="buy">我要买</div>
+          <div class="ex-tab" data-t="sell">我要卖</div>
+          <div class="ex-tab" data-t="mine">我的挂单</div>
+          <div class="ex-tab" data-t="rec">交易记录</div>
         </div>
         <div class="ex-body">
           <div class="ex-col on" id="colBuy"></div>
-          <div class="ex-col"    id="colSell"></div>
-          <div class="ex-col"    id="colMine"></div>
+          <div class="ex-col" id="colSell"></div>
+          <div class="ex-col" id="colMine"></div>
+          <div class="ex-col" id="colRec"></div>
         </div>
         <div class="ex-form" id="exForm"></div>
       </div>`;
     document.body.appendChild(mask);
     document.getElementById("exClose").onclick = () => { stopExPoll(); mask.remove(); };
+    document.getElementById("exDepBtn").onclick = () => exTransferSheet("in");
+    document.getElementById("exWitBtn").onclick = () => exTransferSheet("out");
     mask.querySelectorAll(".ex-tab").forEach(t => {
-      t.onclick = () => {
-        mask.querySelectorAll(".ex-tab").forEach(x => x.classList.remove("on"));
-        t.classList.add("on");
-        EX.tab = t.dataset.t;
-        renderEx();
-      };
+      t.onclick = () => { EX.tab = t.dataset.t; renderEx(); };
     });
     // 列表按钮统一走事件委托
     mask.addEventListener("click", async e => {
@@ -655,17 +764,20 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         exDealSheet({ id: btn.dataset.id, left: +btn.dataset.left, price: +btn.dataset.price, side: btn.dataset.side });
       } else if (act === "cancel") {
         EX.busy = true;
+        btn.classList.add("loading"); btn.textContent = "撤销中";
         try {
           const r = await META.exCancel(btn.dataset.id);
           if (!r.ok) throw new Error(r.error || "撤销失败");
-          toast("已撤单，冻结灵气已退回");
+          toast("已撤单，冻结已退回");
           await refreshAll();
-        } catch (err) { toast((err && err.error) || err.message || "撤销失败"); }
-        finally { EX.busy = false; }
+        } catch (err) {
+          toast((err && err.error) || err.message || "撤销失败");
+          btn.classList.remove("loading"); btn.textContent = "撤单";
+        } finally { EX.busy = false; }
       }
     });
     await loadEx();
-    startExPoll();   // 【v26.3】实时行情
+    startExPoll();
   }
   window.showExchange = showExchange;
 
