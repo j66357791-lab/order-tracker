@@ -218,10 +218,17 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
       const v = (doc && doc.value) || {};
       if (v.start) ACTIVITY.start = v.start;
       if (v.end) ACTIVITY.end = v.end;
-      if (v.dailyFreeKey > 0) ACTIVITY.dailyFreeKey = v.dailyFreeKey;
+      // 【2026-09-24 修复】dailyFreeKey 允许设 0（后台 0~10 可配，设 0 = 关闭每日免费钥匙；
+      // 原先 >0 判断导致设 0 永远不生效）
+      if (v.dailyFreeKey >= 0) ACTIVITY.dailyFreeKey = v.dailyFreeKey;
       if (v.maxRevivesPerGame >= 0) ACTIVITY.maxRevivesPerGame = v.maxRevivesPerGame;
       if (v.composeFragCost > 0) ACTIVITY.composeFragCost = v.composeFragCost;
-      for (const k of ['bagS', 'bagM', 'bagL']) if (Array.isArray(v[k]) && v[k].length === 2) BAG_RANGE[k] = v[k];
+      // 【2026-09-24 修复】BAG_RANGE 校验数值型——原先只校验数组长度，
+      // 后台存入非数后 rnd2(lo + Math.random()*(hi-lo)) 产出 NaN 直接写进 wallet_log，污染主站余额账本
+      for (const k of ['bagS', 'bagM', 'bagL']) {
+        if (Array.isArray(v[k]) && v[k].length === 2
+          && v[k].every(x => Number.isFinite(x))) BAG_RANGE[k] = v[k];
+      }
       // 【v22.0】商铺 / 任务专区 / 掉落概率：后台可整体覆盖，读库失败用代码内默认值
       if (Array.isArray(v.shop) && v.shop.length) { const s = normShop(v.shop); if (s.length) SHOP = s; }
       if (Array.isArray(v.tasks)) { const t = normTasks(v.tasks); if (t.length) TASKS = t; }
