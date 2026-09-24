@@ -541,6 +541,72 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .ex-deal-row { justify-content: space-between; }
 .ex-deal-time { flex-shrink: 0; font: 10.5px/1.4 sans-serif; color: #9c8b6b; text-align: right; }
 
+/* ==================== 【v26.9】商城：礼包方形卡牌 + 装备阁楼入口 ==================== */
+.pack-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pack-card {
+  position: relative; padding: 13px 10px 12px; border-radius: 14px; text-align: center;
+  background: url(../assets/exchange/ex-frame.png?v=26) center/100% 100% no-repeat, #f7f2e4;
+  border: 1px solid rgba(122, 96, 48, .34);
+  box-shadow: 0 3px 10px rgba(60, 40, 10, .18);
+}
+.pack-flag {
+  position: absolute; top: -1px; left: -1px; padding: 2px 8px; border-radius: 12px 0 12px 0;
+  font: 700 9.5px/1.5 "PingFang SC", sans-serif; color: #fff;
+  background: linear-gradient(180deg, #e0603a, #c2401c);
+}
+.pack-ico { font-size: 38px; line-height: 1.1; }
+.pack-name { margin-top: 4px; font: 900 13px/1.4 "PingFang SC", sans-serif; color: #3a2f1c; }
+.pack-desc { margin-top: 3px; font: 10.5px/1.45 sans-serif; color: #6a5c3f; min-height: 30px; }
+.pack-rate { margin-top: 3px; font: 10px/1.45 sans-serif; color: #8a6a2a; min-height: 26px; }
+.pack-price { margin-top: 6px; font: 900 16px/1.3 "PingFang SC", sans-serif; color: #b8641a; }
+.pack-price i { font-style: normal; font-size: 10px; color: #8a7a58; margin-left: 2px; }
+.pack-price em { display: block; font: 400 9.5px/1.4 sans-serif; color: #a09480; text-decoration: line-through; }
+.pack-buy {
+  margin-top: 7px; width: 100%; padding: 6px 0; border: none; border-radius: 14px; cursor: pointer;
+  font: 900 12px/1 "PingFang SC", sans-serif; color: #fff;
+  background: linear-gradient(180deg, #4a9a6e, #2f6b4c);
+}
+.pack-buy:disabled { background: #d7cfbe; color: #9c8b6b; cursor: default; }
+
+/* 装备阁楼入口横条（可点） */
+.shop-banner.hall { cursor: pointer; position: relative; transition: transform .12s; }
+.shop-banner.hall:active { transform: scale(.985); }
+.shop-banner-go {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  font: 900 12px/1 "PingFang SC", sans-serif; color: #F0E8D0;
+}
+/* 抽卡大厅弹窗 */
+.gacha-hall { max-width: 420px; }
+.gacha-hall-body { padding: 6px 12px 14px; overflow-y: auto; flex: 1; }
+.gacha-hall-cur { display: flex; justify-content: center; gap: 10px; margin-bottom: 8px; }
+.cur-chip.stone { display: inline-flex; align-items: center; gap: 3px; }
+.stone-ico { width: 18px; height: 18px; display: block; }
+
+/* ==================== 【v26.9】灵气行情走势（股票式） ==================== */
+.ex-chart {
+  margin: 0 11px 6px; border-radius: 10px; overflow: hidden;
+  background: rgba(122, 96, 48, .08); border: 1px solid rgba(122, 96, 48, .22);
+}
+.ex-chart-head {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer;
+  font: 11.5px/1.4 "PingFang SC", sans-serif; color: #6b5f45; user-select: none;
+}
+.ex-chart-head b { font: 900 13px/1 "PingFang SC", sans-serif; color: #3a2f1c; }
+.ex-chart-head i { margin-left: auto; font-style: normal; color: #9c8b6b; font-size: 10px; }
+/* 涨红跌绿（中国市场习惯，别搞反） */
+.chg { font: 700 11px/1 "PingFang SC", sans-serif; padding: 2px 5px; border-radius: 4px; font-style: normal; }
+.chg.up { color: #d0452c; background: rgba(208, 69, 44, .13); }
+.chg.down { color: #2f9a63; background: rgba(47, 154, 99, .13); }
+.ex-chart-body { padding: 0 8px 8px; }
+.ex-chart-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
+.ex-chart-tabs button {
+  flex: 1; padding: 4px 0; border-radius: 7px; cursor: pointer;
+  border: 1px solid rgba(122, 96, 48, .24); background: rgba(255, 255, 255, .5);
+  font: 700 10.5px/1.4 "PingFang SC", sans-serif; color: #6b5f45;
+}
+.ex-chart-tabs button.on { color: #F7F0DE; background: linear-gradient(180deg, #3f6b57, #2e5443); border-color: #2e5443; }
+.ex-chart-info { font: 10px/1.5 sans-serif; color: #9c8b6b; text-align: center; margin-top: 2px; }
+
 /* ==================== 【v26.8】装备强化 / 合成 ==================== */
 .btn-compose {
   padding: 4px 10px; border: 1px solid rgba(122,96,48,.4); border-radius: 12px; cursor: pointer;
