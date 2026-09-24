@@ -621,6 +621,48 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     }
   }
 
+  // ==================== 【v26.19】双面挂单：保证买卖两侧始终有机器人挂单 ====================
+  // 原先一轮只随机选一个方向，市场经常只有单边挂单（甚至空一侧），看起来冷清。
+  // 现在每轮做市结束后检查两侧：哪侧没有机器人挂单就补挂一张——
+  // 买卖盘始终都有"灵傀"托底，市场深度与繁荣度一目了然。
+  async function ensureBothSides(db, cfg, center) {
+    const col = db.collection(ORD_COL);
+    const pr = marketPrices(cfg, center);
+    const rangeMin = Number(cfg.priceMin) || 0.0001;
+    const rangeMax = Number(cfg.priceMax) || 0.18;
+    const fund = (await db.collection(FUND_COL).findOne({ _id: 'market' })) || {};
+    const bw = await botWallet(db);
+    const out = {};
+    for (const side of ['sell', 'buy']) {
+      try {
+        const open = await col.countDocuments({ userId: BOT_ID, side, status: 'open' });
+        if (open > 0) { out[side] = 'has'; continue; }
+        const amount = rndInt(cfg.amountMin, cfg.amountMax);
+        const price = side === 'sell'
+          ? money4(Math.min(rangeMax, Math.max(pr.askMin, pr.askMin * (1 + Math.random() * 0.35))))
+          : money4(Math.max(rangeMin, Math.min(pr.bidMax, pr.bidMax * (1 - Math.random() * 0.35))));
+        const total = money4(amount * price);
+        if (side === 'sell') {
+          if ((fund.lingqi || 0) < amount) { out[side] = 'no_lingqi'; continue; }
+          await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: -amount, lingqiFrozen: amount } });
+        } else {
+          if (bw.available < total) { out[side] = 'no_cash'; continue; }
+          await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+            { $inc: { frozen: total }, $set: { updatedAt: new Date() } }, { upsert: true });
+        }
+        await col.insertOne({
+          userId: BOT_ID, username: '做市灵傀', side, amount, left: amount, price,
+          locked: side === 'buy' ? total : 0,
+          status: 'open', bot: true, createdAt: new Date(), updatedAt: new Date(),
+        });
+        out[side] = 'posted';
+      } catch (e) {
+        out[side] = 'error';
+      }
+    }
+    return out;
+  }
+
   async function runRound() {
     try {
       const db = await getDb();
@@ -646,9 +688,11 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       }
       // 【v26.15】每轮顺手撤掉价格越出当前区间的自家旧单（改了区间立刻统一口径）
       await cancelOutOfRange(db, cfg).catch(() => { });
+      // 【v26.19】双面挂单：补齐空缺的一侧，买卖盘始终有做市托底
+      const both = await ensureBothSides(db, cfg, center).catch(() => null);
       const deals = res.filter(r => r.dealt).length;
-      const posts = res.filter(r => r.posted).length;
-      await db.collection(CFG_COL).updateOne({ _id: 'market' }, { $set: { lastRunAt: new Date(), lastSummary: { tried: n, deals, posts, skips: res.filter(r => r.skipped).map(r => r.skipped) } } }, { upsert: true }).catch(() => { });
+      const posts = res.filter(r => r.posted).length + (both ? Object.values(both).filter(v => v === 'posted').length : 0);
+      await db.collection(CFG_COL).updateOne({ _id: 'market' }, { $set: { lastRunAt: new Date(), lastSummary: { tried: n, deals, posts, both, skips: res.filter(r => r.skipped).map(r => r.skipped) } } }, { upsert: true }).catch(() => { });
       // 【v26.5.1】每小时顺手清一次历史数据（只清已结束的订单与过老的台账）
       if (Date.now() - lastCleanupAt > 3600000) {
         lastCleanupAt = Date.now();
