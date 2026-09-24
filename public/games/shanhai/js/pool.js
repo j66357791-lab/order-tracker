@@ -3,14 +3,20 @@
 
 // —— 通用对象池 ——
 class Pool {
-  constructor(factory, reset, prealloc = 0) {
+  // max：池内同时存活对象上限（0=不限制）。
+  // 【2026-09-24 性能优化】战斗高负载（L20 召唤翻倍 + 全屏弹幕）下对象数会一路涨，
+  // 每帧绘制/更新成本随之线性涨，低端机表现为"打多了越来越卡"甚至内存触顶闪退。
+  // 超限时 spawn 返回 null（调用方均不依赖返回值），宁可少刷一个也不拖垮帧率。
+  constructor(factory, reset, prealloc = 0, max = 0) {
     this.factory = factory;
     this.reset = reset;
+    this.max = max || 0;
     this.free = [];
     this.active = [];
     for (let i = 0; i < prealloc; i++) this.free.push(factory());
   }
   spawn(...args) {
+    if (this.max && this.active.length >= this.max) return null;
     const o = this.free.pop() || this.factory();
     this.reset(o, ...args);
     this.active.push(o);
