@@ -65,6 +65,15 @@ const Game = (() => {
         hero.speed = CONFIG.hero.speed * B.moveMul;                    // 鞋子：移速
         hero.pickupRadius = CONFIG.hero.pickupRadius * B.pickupMul;    // 腰带：拾取范围
         hero.expMul = B.expMul;                                        // 发冠：经验获取
+        // 【v26.23】天赋被动接线：crit/dodge/shield/atkSpd 此前只汇总进 facRaw、对局从未消费——
+        // 学了也没效果。现在接入英雄属性（闪避/护盾的判定在 Hero.hurt，攻速在武器冷却）。
+        const fr = B.facRaw || {};
+        hero.critBonus = (hero.critBonus || 0) + (fr.crit || 0) / 100;
+        hero.dodgeBonus = (hero.dodgeBonus || 0) + (fr.dodge || 0) / 100;
+        hero.shieldHp = (hero.shieldHp || 0) + (fr.shield || 0);
+        hero.atkSpdBuff = (hero.atkSpdBuff || 0) + (fr.atkSpd || 0) / 100;
+        hero.onDodge = (x, y) => { dmgTextPool.spawn(x, y - 20, "闪避", "#9fd8ff", true); };
+        hero.onShield = (a) => { dmgTextPool.spawn(hero.x, hero.y - 30, `盾-${Math.round(a)}`, "#9fb8d8", true); };
       }
     } catch (e) { console.warn("meta bonus fail", e); }
     weapons = new WeaponSystem(hero);
