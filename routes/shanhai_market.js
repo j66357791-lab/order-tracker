@@ -101,9 +101,16 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         { $setOnInsert: { _id: 'market', lingqi: cfg.fundLingqi, lingqiFrozen: 0, createdAt: new Date() } }, { upsert: true });
       f = await db.collection(FUND_COL).findOne({ _id: 'market' });
     }
-    // 【v26.4】机器人的现金额度一次性注入「交易所钱包」（幂等，靠 shanhai_logs 里的标记防重复发）
-    const seeded = await db.collection('shanhai_logs').findOne({ action: 'market_seed_ex' });
-    if (!seeded) {
+    // 【v26.4】机器人的现金额度一次性注入「交易所钱包」（幂等）
+    // 【2026-09-24 修复】标记改为 FUND_COL 里 _id 唯一的占位文档，原子抢占——
+    // 原先"查 shanhai_logs 标记再注入"是读-判-写，冷启动并发（定时器+管理页同时触发）会双倍注资
+    const seeded = await db.collection(FUND_COL).findOneAndUpdate(
+      { _id: 'market_seed_ex' },
+      { $setOnInsert: { _id: 'market_seed_ex', cash: cfg.fundCash, at: new Date() } },
+      { upsert: true, returnDocument: 'before' }
+    );
+    if (!seeded || !(seeded.value || seeded)) {
+      // 抢到占位文档（此前无标记）→ 本次由我注入
       if (cfg.fundCash > 0) {
         await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
           { $inc: { balance: cfg.fundCash }, $set: { updatedAt: new Date() } }, { upsert: true });
@@ -311,7 +318,17 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         const fresh = await col.findOne({ _id: target._id });
         const residual = target.side === 'buy' ? money2((fresh || {}).locked || 0) : 0;
         await col.updateOne({ _id: target._id }, { $set: { status: 'done', locked: 0, updatedAt: new Date() } });
-        if (residual > 0) await writeLog(db, target.userId, residual, 'exchange_unlock', `求购单结清退回 ¥${residual}`, String(target._id), {});
+        // 【2026-09-24 修复】残余退款按订单冻结位置退——
+        // v26.4+ 的求购单（exLocked）钱冻在交易所钱包 frozen 里，应解冻退回交易所；
+        // 原先一律 writeLog 写进主站 wallet_log：既没解冻（玩家的钱永远冻死）又给主站余额凭空加钱
+        if (residual > 0) {
+          if (target.exLocked) {
+            await db.collection(EXW_COL).updateOne(
+              { userId: target.userId }, { $inc: { frozen: -residual }, $set: { updatedAt: new Date() } });
+          } else {
+            await writeLog(db, target.userId, residual, 'exchange_unlock', `求购单结清退回 ¥${residual}`, String(target._id), {});
+          }
+        }
       }
       const deal = {
         orderId: String(target._id), side: target.side, amount: n, price: target.price, total, fee,
@@ -706,20 +723,21 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         const f = Math.pow(10, dp === undefined ? 2 : dp);
         return Math.round(Math.max(lo, Math.min(hi, n)) * f) / f;
       };
-      const patch = {
-        enabled: b.enabled === undefined ? undefined : !!b.enabled,
-        intervalSec: Math.round(num(b.intervalSec, 60, 15, 3600, 0)),
-        tradesMin: Math.round(num(b.tradesMin, 1, 1, 50, 0)),
-        tradesMax: Math.round(num(b.tradesMax, 5, 1, 50, 0)),
-        // 价格下限与交易所同口径：0.0001（不再是 0.01）
-        priceMin: num(b.priceMin, 0.06, 0.0001, 9999, 4),
-        priceMax: num(b.priceMax, 0.18, 0.0001, 9999, 4),
-        spreadMin: num(b.spreadMin, 0.001, 0.0001, 9999, 4),
-        volatility: num(b.volatility, 3, 0.1, 30, 1),
-        amountMin: Math.round(num(b.amountMin, 20, 1, 999999, 0)),
-        amountMax: Math.round(num(b.amountMax, 500, 1, 999999, 0)),
-      };
-      Object.keys(patch).forEach(k => patch[k] === undefined && delete patch[k]);
+      // 【2026-09-24 修复】只处理请求里显式出现的字段——
+      // 原先每个字段都用 num(v, 默认值) 生成，只传 volatility 一个字段时
+      // 其余字段会被全部冲回默认值（管理员改一个参数、其他配置全丢）
+      const patch = {};
+      if (b.enabled !== undefined) patch.enabled = !!b.enabled;
+      if (b.intervalSec !== undefined) patch.intervalSec = Math.round(num(b.intervalSec, 60, 15, 3600, 0));
+      if (b.tradesMin !== undefined) patch.tradesMin = Math.round(num(b.tradesMin, 1, 1, 50, 0));
+      if (b.tradesMax !== undefined) patch.tradesMax = Math.round(num(b.tradesMax, 5, 1, 50, 0));
+      // 价格下限与交易所同口径：0.0001（不再是 0.01）
+      if (b.priceMin !== undefined) patch.priceMin = num(b.priceMin, 0.06, 0.0001, 9999, 4);
+      if (b.priceMax !== undefined) patch.priceMax = num(b.priceMax, 0.18, 0.0001, 9999, 4);
+      if (b.spreadMin !== undefined) patch.spreadMin = num(b.spreadMin, 0.001, 0.0001, 9999, 4);
+      if (b.volatility !== undefined) patch.volatility = num(b.volatility, 3, 0.1, 30, 1);
+      if (b.amountMin !== undefined) patch.amountMin = Math.round(num(b.amountMin, 20, 1, 999999, 0));
+      if (b.amountMax !== undefined) patch.amountMax = Math.round(num(b.amountMax, 500, 1, 999999, 0));
       if (patch.tradesMin && patch.tradesMax && patch.tradesMin > patch.tradesMax) {
         return res.status(400).json({ ok: false, error: '每轮最少笔数不能大于最多笔数' });
       }
