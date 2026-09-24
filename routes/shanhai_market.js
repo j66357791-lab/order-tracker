@@ -193,6 +193,14 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         { sort: oppSort });
       selfDeal = !!target;
     }
+    // 【v26.14】玩家挂价不在机器人模型区间 → 不吃这一口，但**不放弃本轮**：
+    // 清掉 target 让流程自然落到挂单分支，正常补自己的单。原来直接 skipped 一轮白跑，
+    // 玩家挂得高机器人就傻等——市场流通不起来（用户原话"让机器人灵活一点"）。
+    if (target && !selfDeal) {
+      const b = side === 'buy';
+      if (b && target.price > pr.bidMax) target = null;
+      else if (!b && target.price < pr.askMin) target = null;
+    }
 
     if (target) {
       const n = Math.min(amount, target.left);
@@ -206,10 +214,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       // 机器人就会真的按 0.99 买走 —— 等于把定价权交给挂单人。
       // 【v26.11】护盘自成交不受"买价上限/卖价下限"约束——那是防玩家套利的护栏，
       // 机器人吃自己的单不存在套利问题（钱和灵气都在自己账上转一圈）。
-      if (!selfDeal) {
-        if (botIsBuyer && target.price > pr.bidMax) return { skipped: 'ask_too_high' };
-        if (!botIsBuyer && target.price < pr.askMin) return { skipped: 'bid_too_low' };
-      }
+      // （价格校验已在查询后提前做过，不合适的单走不到这里）
       if (selfDeal) return await selfDealTrade(db, cfg, target, amount, side);
       // 机器人能力校验
       if (botIsBuyer && bal < total) return { skipped: 'bot_no_cash' };
@@ -409,6 +414,21 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       if (Math.random() < 0.05) {                                            // ③ 脉冲
         c = money4(c * (1 + (Math.random() * 2 - 1) * (vol / 100) * 3));
       }
+      // 【v26.14】买卖压力驱动：最近 10 分钟买单量 > 卖单量 → 中枢被顶着微涨，反之微跌。
+      // 你说的"涨跌幅根据买卖单进行"——走势不只靠随机，也真实反映市场买卖力量。
+      try {
+        const since = new Date(Date.now() - 600000);
+        const agg = await db.collection(DEAL_COL).aggregate([
+          { $match: { createdAt: { $gte: since } } },
+          { $group: { _id: '$side', q: { $sum: '$amount' } } }
+        ]).toArray();
+        const buy = (agg.find(x => x._id === 'buy') || {}).q || 0;
+        const sell = (agg.find(x => x._id === 'sell') || {}).q || 0;
+        if (buy + sell > 0) {
+          const pressure = (buy - sell) / (buy + sell);                      // -1 ~ 1
+          c = money4(c * (1 + pressure * 0.02));                             // 最大 ±2% 偏移
+        }
+      } catch (e) { }
     }
     c = money4(Math.max(min, Math.min(max, c)));                           // ④ 夹逼
     patch.priceCenter = c;
