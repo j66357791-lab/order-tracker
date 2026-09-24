@@ -629,8 +629,8 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .fac-main b { display: block; font: 900 13px/1.5 "PingFang SC", sans-serif; color: #3a2f1c; }
 .fac-main i { display: block; font: 10.5px/1.4 sans-serif; color: #8a7a58; font-style: normal; }
 .fac-go { font: 900 11px/1 "PingFang SC", sans-serif; color: #8a6a2a; }
-/* 【v26.18 重构】天赋树纵向布局：流派核心在顶部居中，分支从上到下延伸 */
-.fac-map { display: flex; flex-direction: column; align-items: center; gap: 10px; transform-origin: top center; will-change: transform; }
+/* 【v26.20 重构】天赋树：核心在上居中 → 横向汇集轨 → 五列分支左右平齐、各自向下生长 */
+.fac-map { display: flex; flex-direction: column; align-items: stretch; gap: 0; transform-origin: top center; will-change: transform; }
 .fac-trunk { width: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .fac-core {
   width: 56px; height: 56px; border-radius: 50%;
@@ -640,13 +640,19 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 }
 .fac-core i { font-style: normal; font-size: 18px; line-height: 1.1; }
 .fac-core b { font: 900 10px/1.2 "STKaiti", serif; color: #5a3f14; }
-.fac-branches { display: flex; flex-direction: column; gap: 10px; min-width: 0; width: 100%; }
-.fac-branch-row { display: block; }
+/* 横向汇集轨：从核心下垂后横向铺开，对齐五列分支的中点 */
+.fac-rail { height: 2px; background: rgba(122, 96, 48, .4); border-radius: 1px; margin: 0 10%; }
+.fac-branches { display: flex; flex-direction: row; align-items: stretch; gap: 6px; min-width: 0; width: 100%; }
+/* 每列：轨道垂下一根短竖线 → 分支标签 → 节点链向下 */
+.fac-branch-row { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.fac-branch-row::before { content: ""; width: 2px; height: 10px; margin: 0 auto 4px; background: rgba(122, 96, 48, .4); }
 .fac-blabel {
-  width: auto; padding: 5px 10px; border-radius: 9px; text-align: left;
-  display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px;
+  width: auto; padding: 4px 2px; border-radius: 8px; text-align: center;
+  display: block; margin-bottom: 6px;
   background: rgba(217, 176, 97, .18); border: 1px solid rgba(122, 96, 48, .3);
 }
+.fac-blabel b { display: block; font: 900 10.5px/1.3 "PingFang SC", sans-serif; color: #6b4a10; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fac-blabel i { display: block; font: 8.5px/1.3 sans-serif; color: #9c8b6b; font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 树画布：缩放/拖拽视口与工具条（touch-action:none 保证触屏拖拽/双指缩放不被浏览器接管） */
 .fac-viewport { overflow: hidden; touch-action: none; cursor: grab; }
 /* 【v26.19】恢复核心→分支的连接竖线（原思维导图设计的视觉痕迹） */
