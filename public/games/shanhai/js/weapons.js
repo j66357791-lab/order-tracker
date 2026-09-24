@@ -98,7 +98,7 @@ class WeaponSystem {
     if (sslot && sslot.t <= 0) {
       const targets = nearestEnemies(cand, this.hero, Math.max(sp.count, 1));
       if (targets.length) {
-        sslot.t = sp.cd;
+        sslot.t = sp.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】天赋/基础能力的攻速加成生效
         for (const tgt of targets) {
           const dx = tgt.x - this.hero.x, dy = tgt.y - this.hero.y;
           const d = Math.hypot(dx, dy) || 1;
@@ -125,7 +125,7 @@ class WeaponSystem {
     if (slot && slot.t <= 0) {
       const targets = nearestEnemies(cand, this.hero, fp.count);
       if (targets.length) {
-        slot.t = fp.cd;
+        slot.t = fp.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】攻速加成生效
         for (const tgt of targets) {
           const dx = tgt.x - this.hero.x, dy = tgt.y - this.hero.y;
           const d = Math.hypot(dx, dy) || 1;
@@ -139,7 +139,7 @@ class WeaponSystem {
     if (ip && islot && islot.t <= 0) {
       const targets = nearestEnemies(cand, this.hero, ip.count);
       if (targets.length) {
-        islot.t = ip.cd;
+        islot.t = ip.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】攻速加成生效
         for (const tgt of targets) {
           const dx = tgt.x - this.hero.x, dy = tgt.y - this.hero.y;
           const d = Math.hypot(dx, dy) || 1;
@@ -151,7 +151,7 @@ class WeaponSystem {
     const gp = this.galeParams();
     const gslot = this.slots.galeorb;
     if (gp && gslot && gslot.t <= 0) {
-      gslot.t = gp.cd;
+      gslot.t = gp.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】攻速加成生效
       for (let i = 0; i < gp.blades; i++) {
         fire("gale", this.hero.x, this.hero.y, 0, 0, {
           ...gp, hero: this.hero, ang: (i / gp.blades) * Math.PI * 2,
