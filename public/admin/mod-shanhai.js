@@ -63,6 +63,17 @@ export function mount(root) {
         <div class="sub" style="margin-top:2px">卖单最低价 − 买单最高价。<b>必须盖住双向手续费</b>，否则玩家能低买高卖刷钱</div></div>
       <div><label class="lab">机器人当前实际报价</label>
         <div class="sub" id="mkPrices" style="padding-top:6px">加载中…</div></div>
+      <!-- 【v26.10】行情导演：让管理员直接编排价格走势，不再是纯随机 -->
+      <div><label class="lab">价格波动率（%）</label>
+        <input id="mkVol" type="number" min="0.1" max="30" step="0.1" placeholder="默认 3">
+        <div class="sub" style="margin-top:2px">每轮中枢游走幅度。太小 → 走势是平线；太大 → 价格乱跳</div></div>
+      <div><label class="lab">行情剧本（先涨后跌，可选）</label>
+        <input id="mkScript" placeholder='例：[{"pct":20,"rounds":8},{"pct":-15,"rounds":6}]'>
+        <div class="sub" style="margin-top:2px">按顺序循环执行：<b>pct</b> 相对基准价的涨跌幅，<b>rounds</b> 该段持续轮数。留空则纯随机</div></div>
+      <div><label class="lab">插针（瞬拉/瞬砸，可选）</label>
+        <div class="inline"><input id="mkSpikePct" type="number" step="1" placeholder="幅度% 例 -30" style="width:110px">
+        <input id="mkSpikeRounds" type="number" min="0" max="100" placeholder="持续轮数" style="width:90px"></div>
+        <div class="sub" style="margin-top:2px">填了就立刻把中枢钉在 ±幅度%，持续指定轮数后自动恢复</div></div>
       <div><label class="lab">每笔数量区间（灵气）</label>
         <div class="inline"><input id="mkAmountMin" type="number" min="1" style="width:80px">
         <span class="sub">~</span><input id="mkAmountMax" type="number" min="1" style="width:80px"></div></div>
@@ -164,6 +175,10 @@ export function mount(root) {
       $('mkPriceMin').value = c.priceMin; $('mkPriceMax').value = c.priceMax;
       $('mkAmountMin').value = c.amountMin; $('mkAmountMax').value = c.amountMax;
       $('mkSpread').value = c.spreadMin === undefined ? 0.001 : c.spreadMin;
+      $('mkVol').value = c.volatility === undefined ? 3 : c.volatility;
+      $('mkScript').value = Array.isArray(c.script) && c.script.length ? JSON.stringify(c.script) : '';
+      $('mkSpikePct').value = c.spikePct || '';
+      $('mkSpikeRounds').value = c.spikeRounds || '';
       // 机器人实际报价：让管理员一眼看出买卖盘有没有被劈开
       const pz = d.prices || {};
       if (pz.askMin !== undefined) {
@@ -193,6 +208,16 @@ export function mount(root) {
         tradesMin: +$('mkTradesMin').value, tradesMax: +$('mkTradesMax').value,
         priceMin: +$('mkPriceMin').value, priceMax: +$('mkPriceMax').value,
         spreadMin: +$('mkSpread').value || 0.001,
+        volatility: +$('mkVol').value || 3,
+        // 剧本：解析失败就不写（避免把坏 JSON 塞进配置里让机器人每轮报错）
+        ...(function () {
+          const raw = ($('mkScript').value || '').trim();
+          if (!raw) return { script: [] };
+          try { const arr = JSON.parse(raw); return Array.isArray(arr) ? { script: arr } : {}; }
+          catch (e) { toast('行情剧本不是合法 JSON，已忽略'); return {}; }
+        })(),
+        spikePct: $('mkSpikePct').value === '' ? 0 : (+$('mkSpikePct').value || 0),
+        spikeRounds: $('mkSpikeRounds').value === '' ? 0 : (+$('mkSpikeRounds').value || 0),
         amountMin: +$('mkAmountMin').value, amountMax: +$('mkAmountMax').value,
       };
       const d = await api('/api/shanhai/admin/market/config', { method: 'POST', body: JSON.stringify(body) });
