@@ -48,6 +48,20 @@ class Hero {
 
   hurt(dmg) {
     if (this.iframe > 0 || this.godMode) return false;
+    // 【v26.23】闪避判定：dodgeBonus 生效（上限 50% 防极限堆叠闪成无敌）
+    if ((this.dodgeBonus || 0) > 0 && Math.random() < Math.min(0.5, this.dodgeBonus)) {
+      this.iframe = 0.3;   // 短无敌防同帧连续判定
+      if (this.onDodge) this.onDodge(this.x, this.y);
+      return false;
+    }
+    // 【v26.23】护盾：先扣盾值，盾没破就不掉血
+    if ((this.shieldHp || 0) > 0) {
+      const absorbed = Math.min(this.shieldHp, dmg);
+      this.shieldHp -= absorbed;
+      if (absorbed > 0 && this.onShield) this.onShield(absorbed);
+      dmg -= absorbed;
+      if (dmg <= 0) { this.iframe = CONFIG.hero.iframe; return false; }
+    }
     this.hp = Math.max(0, this.hp - dmg);
     this.dmgTaken += dmg;
     this.iframe = CONFIG.hero.iframe;
