@@ -9,7 +9,22 @@ const UI = (() => {
     $("overlay").style.display = "none";
   }
 
+  let _lastHudT = 0;
   function updateHud(hero, waveIdx, boss) {
+    // 【2026-09-24 性能修复】HUD 降到 10Hz：原先每帧（60Hz）全量改 DOM——
+    // 其中 renderSkills 还每帧 innerHTML="" 重建技能栏，等于每秒强制 60 次重排，
+    // 这是战斗中掉帧卡顿的最大单点。血条/计时 10Hz 人眼完全无感。
+    const now = performance.now();
+    if (now - _lastHudT < 100) {
+      // 血条与 Boss 血条保持实时（受击/打 Boss 的即时反馈重要），其余 10Hz
+      $("hpFill").style.width = Math.max(0, hero.hp / hero.maxHp * 100) + "%";
+      if (boss && boss.alive) {
+        $("bossBar").style.display = "block";
+        $("bossFill").style.width = Math.max(0, boss.hp / boss.maxHp * 100) + "%";
+      }
+      return;
+    }
+    _lastHudT = now;
     // 血条
     const hpPct = Math.max(0, hero.hp / hero.maxHp * 100);
     $("hpFill").style.width = hpPct + "%";
@@ -25,9 +40,7 @@ const UI = (() => {
     $("timeText").textContent = `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
     // 击杀
     $("killText").textContent = `斩妖 ${hero.kills}`;
-    // 技能栏
-    const skills = [];
-    if (hero && window.__weapons) {}
+    // 技能栏（内部有签名缓存，无变化不重建）
     renderSkills(hero);
     // Boss 血条
     if (boss && boss.alive) {
@@ -39,11 +52,18 @@ const UI = (() => {
     }
   }
 
+  let _skillSig = "";
   function renderSkills(hero) {
     const bar = $("skillBar");
     const ws = window.Game && Game.__weapons;
-    bar.innerHTML = "";
     if (!ws) return;
+    // 签名缓存：武器/等级没变就不动 DOM（原先每帧 innerHTML="" 全量重建）
+    let sig = "";
+    for (const [key, s] of Object.entries(ws.slots)) sig += key + s.lv;
+    if (ws.swordSkill) { const S = ws.swordSkill; sig += "|sw" + S.count + S.atk + S.spd + S.lock + S.burst; }
+    if (sig === _skillSig) return;
+    _skillSig = sig;
+    bar.innerHTML = "";
     const icons = { sword: "剑", fireline: "火", icepick: "冰", body: "体", galeorb: "风" };
     const names = { sword: "御剑术", fireline: "火球术", icepick: "寒冰锥", body: "修身体质", galeorb: "旋风刃" };
     for (const [key, s] of Object.entries(ws.slots)) {
