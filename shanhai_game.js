@@ -580,6 +580,209 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     }
   });
 
+  // ==================== 【v26.11】流派 + 天赋树 ====================
+  // 默认配置：万剑是新手流派（starter），五个发展方向按用户定稿给全；
+  // 其余三个流派只给骨架，具体节点由管理员在后台「游戏控制器 → 流派天赋」里改。
+  // 节点四类：minor 小属性 / special 特殊加成 / play 特殊玩法 / ultimate 大技能。
+  // eff 里的字段由对局读取（前端按 key 生效），后台可自由增删。
+  const DEFAULT_FACTIONS = [
+    {
+      id: 'wanjian', name: '万剑流派', icon: '⚔', starter: true,
+      desc: '新手流派 · 飞剑齐发，攻守兼备',
+      branches: [
+        { id: 'gz', name: '万剑归宗', role: '群体攻击', nodes: [
+          { id: 'gz1', name: '剑意', type: 'minor', cost: 1, max: 5, eff: { atk: 1 }, desc: '攻击力 +1' },
+          { id: 'gz2', name: '剑芒', type: 'special', cost: 2, max: 3, eff: { crit: 2 }, desc: '暴击率 +2%' },
+          { id: 'gz3', name: '剑雨', type: 'play', cost: 3, max: 3, eff: { multiChance: 15, multiCnt: 2 }, desc: '射出飞剑时 15% 概率额外射出 2 把' },
+          { id: 'gz4', name: '万剑归宗', type: 'ultimate', cost: 5, max: 1, eff: { summon: 12 }, desc: '主动：蓄力召唤 12 把飞剑横扫' },
+        ] },
+        { id: 'cx', name: '一箭穿心', role: '单体攻击', nodes: [
+          { id: 'cx1', name: '锐锋', type: 'minor', cost: 1, max: 5, eff: { atk: 2 }, desc: '攻击力 +2' },
+          { id: 'cx2', name: '破甲', type: 'special', cost: 2, max: 3, eff: { pierce: 3 }, desc: '无视护甲 +3%' },
+          { id: 'cx3', name: '穿心', type: 'play', cost: 3, max: 3, eff: { executeChance: 10 }, desc: '对残血敌人 10% 概率必杀' },
+          { id: 'cx4', name: '一箭穿心', type: 'ultimate', cost: 5, max: 1, eff: { burst: 300 }, desc: '主动：下一击造成 300% 伤害' },
+        ] },
+        { id: 'ws', name: '无声之剑', role: '刺客玩法', nodes: [
+          { id: 'ws1', name: '潜行', type: 'minor', cost: 1, max: 5, eff: { moveSpd: 2 }, desc: '移速 +2%' },
+          { id: 'ws2', name: '影袭', type: 'special', cost: 2, max: 3, eff: { crit: 3 }, desc: '暴击率 +3%' },
+          { id: 'ws3', name: '背刺', type: 'play', cost: 3, max: 3, eff: { backstab: 50 }, desc: '背后攻击伤害 +50%' },
+          { id: 'ws4', name: '无声之剑', type: 'ultimate', cost: 5, max: 1, eff: { invis: 3 }, desc: '主动：隐身 3 秒并强化首击' },
+        ] },
+        { id: 'ct', name: '淬体之剑', role: '炼体玩法', nodes: [
+          { id: 'ct1', name: '强躯', type: 'minor', cost: 1, max: 5, eff: { hp: 3 }, desc: '生命值 +3%' },
+          { id: 'ct2', name: '护盾', type: 'special', cost: 2, max: 3, eff: { shield: 20 }, desc: '护盾血量 +20' },
+          { id: 'ct3', name: '反震', type: 'play', cost: 3, max: 3, eff: { thorns: 15 }, desc: '受击反弹 15% 伤害' },
+          { id: 'ct4', name: '淬体之剑', type: 'ultimate', cost: 5, max: 1, eff: { ironBody: 5 }, desc: '主动：5 秒减伤 60%' },
+        ] },
+        { id: 'lm', name: '灵敏之剑', role: '敏捷玩法', nodes: [
+          { id: 'lm1', name: '疾步', type: 'minor', cost: 1, max: 5, eff: { moveSpd: 3 }, desc: '移速 +3%' },
+          { id: 'lm2', name: '灵巧', type: 'special', cost: 2, max: 3, eff: { dodge: 3 }, desc: '闪避率 +3%' },
+          { id: 'lm3', name: '连刺', type: 'play', cost: 3, max: 3, eff: { atkSpd: 8 }, desc: '攻击速度 +8%' },
+          { id: 'lm4', name: '灵敏之剑', type: 'ultimate', cost: 5, max: 1, eff: { haste: 6 }, desc: '主动：6 秒内攻速翻倍' },
+        ] },
+      ],
+    },
+    { id: 'huohuo', name: '御火流派', icon: '🔥', desc: '焚天煮海 · 持续灼烧', branches: [
+      { id: 'hh_main', name: '御火诀', role: '火焰玩法', nodes: [
+        { id: 'hh1', name: '火种', type: 'minor', cost: 1, max: 5, eff: { atk: 2 }, desc: '攻击力 +2' },
+        { id: 'hh2', name: '灼烧', type: 'play', cost: 3, max: 3, eff: { burn: 5 }, desc: '攻击附加灼烧伤害' },
+        { id: 'hh3', name: '焚天', type: 'ultimate', cost: 5, max: 1, eff: { meteor: 1 }, desc: '主动：天降陨火' },
+      ] },
+    ] },
+    { id: 'hanbing', name: '寒冰流派', icon: '❄', desc: '冰封千里 · 控场减速', branches: [
+      { id: 'hb_main', name: '寒冰诀', role: '冰霜玩法', nodes: [
+        { id: 'hb1', name: '冰心', type: 'minor', cost: 1, max: 5, eff: { hp: 2 }, desc: '生命值 +2%' },
+        { id: 'hb2', name: '冻结', type: 'play', cost: 3, max: 3, eff: { slow: 20 }, desc: '攻击使敌人减速 20%' },
+        { id: 'hb3', name: '冰封千里', type: 'ultimate', cost: 5, max: 1, eff: { freeze: 2 }, desc: '主动：冻结全场 2 秒' },
+      ] },
+    ] },
+    { id: 'leifa', name: '雷法流派', icon: '⚡', desc: '雷霆万钧 · 连锁爆发', branches: [
+      { id: 'lf_main', name: '雷法诀', role: '雷电玩法', nodes: [
+        { id: 'lf1', name: '引雷', type: 'minor', cost: 1, max: 5, eff: { atk: 2 }, desc: '攻击力 +2' },
+        { id: 'lf2', name: '连锁', type: 'play', cost: 3, max: 3, eff: { chain: 2 }, desc: '攻击连锁 2 个目标' },
+        { id: 'lf3', name: '雷霆万钧', type: 'ultimate', cost: 5, max: 1, eff: { thunder: 8 }, desc: '主动：召唤 8 道雷霆' },
+      ] },
+    ] },
+  ];
+
+  // 局内基础能力池（用户定稿：局内不再选技能，只选这些基础加成）
+  const INBORN_POOL = {
+    white: { w: 50, name: '白色', color: '#cfd8dc', mods: [
+      { k: 'atk', v: 5, t: '攻击力 +5%' }, { k: 'moveSpd', v: 10, t: '移动速度 +10%' },
+      { k: 'hp', v: 5, t: '生命值 +5%' }, { k: 'atkSpd', v: 10, t: '攻击速度 +10%' },
+      { k: 'crit', v: 5, t: '暴击率 +5%' }, { k: 'dodge', v: 5, t: '闪避率 +5%' },
+      { k: 'shield', v: 20, t: '护盾血量 +20' }, { k: 'pickRange', v: 10, t: '经验拾取范围 +10%' },
+      { k: 'expRate', v: 10, t: '经验加成 +10%' }] },
+    blue: { w: 25, name: '蓝色', color: '#8ecff0', mods: [
+      { k: 'atk', v: 10, t: '攻击力 +10%' }, { k: 'moveSpd', v: 15, t: '移动速度 +15%' },
+      { k: 'hp', v: 10, t: '生命值 +10%' }, { k: 'atkSpd', v: 20, t: '攻击速度 +20%' },
+      { k: 'crit', v: 8, t: '暴击率 +8%' }, { k: 'dodge', v: 8, t: '闪避率 +8%' },
+      { k: 'shield', v: 40, t: '护盾血量 +40' }, { k: 'pickRange', v: 20, t: '经验拾取范围 +20%' },
+      { k: 'expRate', v: 15, t: '经验加成 +15%' }] },
+    purple: { w: 15, name: '紫色', color: '#c9a0ff', mods: [
+      { k: 'atk', v: 20, t: '攻击力 +20%' }, { k: 'moveSpd', v: 30, t: '移动速度 +30%' },
+      { k: 'hp', v: 20, t: '生命值 +20%' }, { k: 'atkSpd', v: 30, t: '攻击速度 +30%' },
+      { k: 'crit', v: 15, t: '暴击率 +15%' }, { k: 'dodge', v: 15, t: '闪避率 +15%' },
+      { k: 'shield', v: 80, t: '护盾血量 +80' }, { k: 'pickRange', v: 30, t: '经验拾取范围 +30%' },
+      { k: 'expRate', v: 20, t: '经验加成 +20%' }] },
+    gold: { w: 8, name: '金色', color: '#ffd76a', mods: [
+      { k: 'atk', v: 40, t: '攻击力 +40%' }, { k: 'moveSpd', v: 40, t: '移动速度 +40%' },
+      { k: 'hp', v: 40, t: '生命值 +40%' }, { k: 'atkSpd', v: 40, t: '攻击速度 +40%' },
+      { k: 'crit', v: 20, t: '暴击率 +20%' }, { k: 'dodge', v: 20, t: '闪避率 +20%' },
+      { k: 'shield', v: 180, t: '护盾血量 +180' }, { k: 'pickRange', v: 40, t: '经验拾取范围 +40%' },
+      { k: 'expRate', v: 30, t: '经验加成 +30%' }] },
+    myth: { w: 2, name: '神话', color: '#ff7a5c', mods: [
+      { k: 'atk', v: 60, t: '攻击力 +60%' }, { k: 'moveSpd', v: 60, t: '移动速度 +60%' },
+      { k: 'hp', v: 60, t: '生命值 +60%' }, { k: 'atkSpd', v: 60, t: '攻击速度 +60%' }] },
+  };
+
+  async function loadFactions(db) {
+    try {
+      const doc = await db.collection('shanhai_config').findOne({ _id: 'factions' });
+      if (doc && Array.isArray(doc.value) && doc.value.length) return doc.value;
+    } catch (e) { }
+    return DEFAULT_FACTIONS;
+  }
+  // 天赋点：三星通关每关 1 点（含补发老玩家已三星的关卡）
+  async function syncTalent(db, p) {
+    const stars = p.stageStars || {};
+    const three = Object.keys(stars).filter(k => (+stars[k] || 0) >= 3).length;
+    const spent = Object.values(p.talents || {}).reduce((s, f) =>
+      s + Object.values(f || {}).reduce((a, lv) => a + (+lv || 0), 0), 0);
+    const cur = p.talentPoints || 0;
+    const total = three + (p.talentBonus || 0);
+    const want = Math.max(0, total - spent - (p.talentUsed || 0));
+    // 【补发】老玩家已有三星关卡但点数没给够 → 一次性补齐（幂等：只写差额）
+    if (want !== cur) {
+      await db.collection('shanhai_profiles').updateOne(
+        { userId: p.userId }, { $set: { talentPoints: want } });
+      p.talentPoints = want;
+    }
+    return { points: want, earned: total, spent };
+  }
+
+  app.get('/api/shanhai/faction', auth, async (req, res) => {
+    try {
+      const db = await getDb();
+      const me = req.user.id;
+      const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      const tp = await syncTalent(db, p);
+      const factions = await loadFactions(db);
+      res.json({
+        ok: true,
+        current: p.faction || 'wanjian',
+        points: tp.points, earned: tp.earned,
+        talents: p.talents || {},
+        factions: factions.map(f => ({
+          id: f.id, name: f.name, icon: f.icon, desc: f.desc, starter: !!f.starter,
+          branches: (f.branches || []).map(b => ({
+            id: b.id, name: b.name, role: b.role || '',
+            nodes: (b.nodes || []).map(n => ({
+              id: n.id, name: n.name, type: n.type, cost: n.cost, max: n.max,
+              desc: n.desc || '', eff: n.eff || {},
+            })),
+          })),
+        })),
+        // 局内加成池（概率与条目都给前端，对局按这个抽）
+        inborn: INBORN_POOL,
+      });
+    } catch (e) { console.error('[api] faction', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  app.post('/api/shanhai/faction/select', auth, async (req, res) => {
+    try {
+      const db = await getDb();
+      const me = req.user.id;
+      const { id } = req.body || {};
+      const factions = await loadFactions(db);
+      if (!factions.some(f => f.id === id)) return res.status(400).json({ ok: false, error: '流派不存在' });
+      const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      if (p.faction === id) return res.json({ ok: true, current: id, changed: false });
+      await db.collection('shanhai_profiles').updateOne(
+        { userId: me }, { $set: { faction: id, updatedAt: new Date() } });
+      await db.collection('shanhai_logs').insertOne({
+        userId: me, action: 'faction_select', detail: { from: p.faction || 'wanjian', to: id }, createdAt: new Date(),
+      }).catch(() => { });
+      res.json({ ok: true, current: id, changed: true });
+    } catch (e) { console.error('[api] faction/select', e); res.status(500).json({ ok: false, error: '切换失败，请稍后再试' }); }
+  });
+
+  app.post('/api/shanhai/talent/learn', auth, limit({ name: 'sh-talent', max: 60, windowMs: 60 * 1000, msg: '点得太快了' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const me = req.user.id;
+      const { factionId, nodeId } = req.body || {};
+      const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      const factions = await loadFactions(db);
+      const f = factions.find(x => x.id === factionId);
+      if (!f) return res.status(400).json({ ok: false, error: '流派不存在' });
+      let node = null;
+      for (const b of (f.branches || [])) { const n = (b.nodes || []).find(x => x.id === nodeId); if (n) { node = n; break; } }
+      if (!node) return res.status(400).json({ ok: false, error: '天赋节点不存在' });
+      const talents = p.talents || {};
+      const ft = Object.assign({}, talents[factionId] || {});
+      const lv = +ft[nodeId] || 0;
+      const max = Math.max(1, +node.max || 1);
+      if (lv >= max) return res.status(400).json({ ok: false, error: '该天赋已满级' });
+      const cost = Math.max(0, +node.cost || 1);
+      const tp = await syncTalent(db, p);
+      if (tp.points < cost) return res.status(400).json({ ok: false, error: `天赋点不足（需 ${cost}，剩 ${tp.points}）`, code: 'NO_POINT' });
+      ft[nodeId] = lv + 1;
+      const nt = Object.assign({}, talents, { [factionId]: ft });
+      // 原子：点数够才扣，避免连点超扣
+      const r = await db.collection('shanhai_profiles').findOneAndUpdate(
+        { userId: me, talentPoints: { $gte: cost } },
+        { $inc: { talentPoints: -cost }, $set: { talents: nt, updatedAt: new Date() } },
+        { returnDocument: 'after' });
+      const np = r && (r.value || r);
+      if (!np) return res.status(409).json({ ok: false, error: '天赋点不足或操作冲突，请刷新' });
+      await db.collection('shanhai_logs').insertOne({
+        userId: me, action: 'talent_learn', detail: { factionId, nodeId, lv: lv + 1, cost }, createdAt: new Date(),
+      }).catch(() => { });
+      res.json({ ok: true, points: np.talentPoints || 0, talents: np.talents || {}, level: lv + 1 });
+    } catch (e) { console.error('[api] talent/learn', e); res.status(500).json({ ok: false, error: '学习失败，请稍后再试' }); }
+  });
+
   // ==================== 体力（v24.9） ====================
   // 上限 10 点，挑战一局消耗 1 点，每 2 小时恢复 1 点（服务端计时，客户端改不了）
   const STAMINA_CFG = { cap: 10, cost: 1, recoverSec: 7200, init: 10 };
@@ -1019,10 +1222,18 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         if (p < cur.lo) cur.lo = p;
         buckets.set(b, cur);
       }
-      // 补空桶：没有成交的时段沿用上一个价格，曲线才连续（否则断成几截）
+      // 【v26.11 修 24 小时画不出来】原来 startB 从"第一条成交"开始：
+      // 若近 1 小时才有成交，24 小时视图就只有 1 个点（甚至点太少画不成线）。
+      // 现在固定区间时从 since 起算，保证 24 小时就是 24 个点。
+      // 起始价取区间内第一笔成交价，前面没成交的时段沿用它（画成平线，而不是空白）。
       let last = 0;
+      const sortedB = [...buckets.entries()].sort((a, b) => a[0] - b[0]);
+      for (const [, c] of sortedB) { if (c.q > 0) { last = money4(c.v / c.q); break; } }
+      if (!last && rows.length) last = money4(Number(rows[rows.length - 1].price) || 0);
       const pts = [];
-      const startB = rows.length ? Math.floor(new Date(rows[0].createdAt).getTime() / bucketMs) * bucketMs : (now - DAY);
+      const startB = (range === 'all')
+        ? (rows.length ? Math.floor(new Date(rows[0].createdAt).getTime() / bucketMs) * bucketMs : now)
+        : Math.floor(since / bucketMs) * bucketMs;
       for (let b = startB; b <= now; b += bucketMs) {
         const c = buckets.get(b);
         if (c && c.q > 0) {
