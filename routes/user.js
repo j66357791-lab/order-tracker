@@ -204,8 +204,12 @@ app.post('/api/friends', auth, async (req, res) => {
     const db = await getDb();
     const q = String(req.body?.query || '').trim();
     if (!q) return res.status(400).json({ ok: false, error: '请输入对方的ID或用户名' });
+    // 【2026-09-24 修复】用户名注册允许大写且按原文存储、登录也大小写敏感，
+    // 原写死 toLowerCase() 导致含大写字母的用户名永远搜不到。改为大小写不敏感的精确匹配
+    // （锚定 ^$ 防止部分匹配，q 已转义正则元字符防注入）
+    const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const target = await db.collection('users').findOne(
-      /^\d{7}$/.test(q) ? { uid: q } : { username: q.toLowerCase() });
+      /^\d{7}$/.test(q) ? { uid: q } : { username: { $regex: '^' + esc + '$', $options: 'i' } });
     if (!target) return res.status(404).json({ ok: false, error: '找不到该用户，确认ID（7位数）或用户名没输错' });
     if (target._id.toString() === req.user.id) return res.status(400).json({ ok: false, error: '不能添加自己' });
     const tid = target._id.toString();
@@ -242,9 +246,20 @@ app.post('/api/withdraw', auth, async (req, res) => {
       createdAt: new Date(),
     };
     if (type === 'bonus') {
-      const grants = await db.collection('wallet_log').find({ userId: req.user.id }).toArray();
-      const withdrawn = await db.collection('withdrawals').find({ userId: req.user.id, type: 'bonus', status: { $in: ['待处理', '已打款'] } }).toArray();
-      const balance = Math.round((grants.reduce((s, g) => s + (g.amount || 0), 0) - withdrawn.reduce((s, w) => s + (w.amount || 0), 0)) * 100) / 100;
+      // 【2026-09-24 性能优化】两个全量拉取求和改为库端聚合（wallet_log 流水多时明显变快）
+      const [grantsAgg, withdrawnAgg] = await Promise.all([
+        db.collection('wallet_log').aggregate([
+          { $match: { userId: req.user.id } },
+          { $group: { _id: null, sum: { $sum: { $cond: [{ $isNumber: '$amount' }, '$amount', 0] } } } },
+        ]).toArray(),
+        db.collection('withdrawals').aggregate([
+          { $match: { userId: req.user.id, type: 'bonus', status: { $in: ['待处理', '已打款'] } } },
+          { $group: { _id: null, sum: { $sum: '$amount' } } },
+        ]).toArray(),
+      ]);
+      const grantsSum = (grantsAgg[0] && grantsAgg[0].sum) || 0;
+      const withdrawnSum = (withdrawnAgg[0] && withdrawnAgg[0].sum) || 0;
+      const balance = Math.round((grantsSum - withdrawnSum) * 100) / 100;
       if (balance <= 0) return res.status(400).json({ ok: false, error: '激励奖励暂无可提现余额' });
       doc.amount = balance;
     } else {
@@ -315,11 +330,17 @@ app.post('/api/admin/withdrawals/:id/pay', auth, adminOnly, async (req, res) => 
     if (!w) return res.status(404).json({ ok: false, error: '提现申请不存在' });
     if (w.status !== '待处理') return res.status(400).json({ ok: false, error: '该申请已处理过（' + w.status + '）' });
     const note = String(req.body?.note || '').slice(0, 120);
-    let paidCards = 0;
+    let paidCards = 0, paidAmount = null;
     if (w.type === 'order') {
       // 快照对应的派单卡 → 逐张结清（仍处于待打款的才结）
       const ids = (w.cardIds || []).filter(x => ObjectId.isValid(x)).map(x => new ObjectId(x));
       const cards = ids.length ? await db.collection('cards').find({ _id: { $in: ids }, status: '待打款' }).toArray() : [];
+      // 【2026-09-24 资金安全修复】打款前按"当前仍待打款"的卡重算实际金额。
+      // 申请后管理员可能驳回了部分卡，若仍按申请快照 w.amount 全额打款会多付；
+      // 实际结清金额记入 paidAmount 供对账，响应里带回差额提醒。
+      const actual = Math.round(cards.reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
+      if (!cards.length) return res.status(400).json({ ok: false, error: '快照内的派单卡已全部不在待打款状态（可能已被驳回），请直接驳回该提现单' });
+      paidAmount = actual;
       for (const c of cards) {
         await db.collection('cards').updateOne(
           { _id: c._id, status: '待打款' },
@@ -344,12 +365,15 @@ app.post('/api/admin/withdrawals/:id/pay', auth, adminOnly, async (req, res) => 
     const r = await db.collection('withdrawals').findOneAndUpdate(
       { _id: w._id, status: '待处理' },
       { $set: { status: '已打款', paidAt: new Date(), note, paidCards,
+        paidAmount: paidAmount == null ? w.amount : paidAmount,
         // 【v24.0】打款工作台：记录打款凭证号（支付宝流水号）与渠道，便于对账
         voucherNo: String(req.body?.voucherNo || '').slice(0, 64), paidVia: 'alipay' } },
       { returnDocument: 'after' });
     // 【二次复核补充】并发双击时条件更新落空要明确报错，不能返回 ok:true + withdrawal:null
     if (!r) return res.status(409).json({ ok: false, error: '该申请已被处理，请刷新列表' });
-    res.json({ ok: true, withdrawal: r, paidCards });
+    res.json({ ok: true, withdrawal: r, paidCards,
+      // 【2026-09-24】实际结清金额与申请金额不一致时明确提示（如申请后有卡被驳回）
+      amountDiff: paidAmount != null && Math.abs(paidAmount - w.amount) > 0.009 ? { applied: w.amount, actual: paidAmount } : null });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 驳回：写明原因（写手端可见），激励型余额随之释放可再次发起
