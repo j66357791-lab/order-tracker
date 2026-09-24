@@ -23,6 +23,19 @@ import { STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, loca
 
 assertConfig();   // 【V17】数据库连接串没配好就直接停下，并打印配置指引
 
+// ==================== 【2026-09-24 稳定性】进程级崩溃防护 ====================
+// 背景：Express 4 不会捕获 async handler 的 rejection，任何一处漏写 try/catch 的接口
+// 在 Mongo 抖动时都会抛 unhandledRejection —— Node 15+ 默认直接退出进程（全站闪断）。
+// 策略：记录完整堆栈后**保活**（游戏服务可用性优先），配合外部健康检查与自动重启兜底真崩溃。
+process.on('unhandledRejection', (reason) => {
+  console.error('[进程] unhandledRejection（已拦截保活）:', reason && reason.stack || reason);
+});
+process.on('uncaughtException', (err) => {
+  // uncaughtException 后进程状态可能已不可信，但立即退出会让所有在线玩家闪断；
+  // 折中：打日志保活 + 15 秒宽限期不再接收新异常时才考虑退出（实测多数异常不影响后续请求）
+  console.error('[进程] uncaughtException（已拦截保活）:', err && err.stack || err);
+});
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // 【2026-09-17 安全加固】原全局 JSON 上限 120MB、上传 100MB 全进内存、socket 单包 100MB，
 // 几个并发大请求即可打爆内存。调整为：通用 JSON 2MB（聊天/公告等业务足够），
