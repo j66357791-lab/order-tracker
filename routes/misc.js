@@ -51,7 +51,9 @@ app.get('/api/contract', auth, async (req, res) => {
     res.json({
       ok: true, title: CONTRACT_TITLE, version: CONTRACT_VERSION, text: CONTRACT_TEXT,
       signed: rows.some(r => r.version === CONTRACT_VERSION),
-      realname: req.user.realname || null,
+      // 【2026-09-24 安全修复】脱敏返回：原先原样返回完整 realname 对象（含 idHash），
+      // 与 selfUser 的裁剪口径不一致
+      realname: req.user.realname ? { name: req.user.realname.name, idMask: req.user.realname.idMask, verifiedAt: req.user.realname.verifiedAt } : null,
       contracts: rows.map(r => ({ _id: r._id.toString(), name: r.name, version: r.version, signedAt: r.signedAt })),
     });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
@@ -82,7 +84,16 @@ app.put('/api/me/realname', auth, async (req, res) => {
     const idCard = String(req.body?.idCard || '').trim().toUpperCase();
     if (!/^[\u4e00-\u9fa5·]{2,30}$/.test(name)) return res.status(400).json({ ok: false, error: '请输入真实中文姓名' });
     if (!/^\d{17}[\dX]$/.test(idCard)) return res.status(400).json({ ok: false, error: '身份证号应为18位（最后一位可为X）' });
-    const idHash = sha256hex(idCard);
+    // 【2026-09-24 安全修复】身份证号输入空间高度结构化，无盐 SHA-256 可被离线彩虹表枚举。
+    // 配置了 REALNAME_HASH_KEY（32 位以上随机串）时改用 HMAC-SHA256（密钥仅在服务端）；
+    // 未配置时保持原 sha256hex，保证与存量数据、realname.idHash 唯一索引的兼容性。
+    let idHash;
+    const rnKey = String(process.env.REALNAME_HASH_KEY || '').trim();
+    if (rnKey.length >= 16) {
+      idHash = crypto.createHmac('sha256', rnKey).update(idCard).digest('hex');
+    } else {
+      idHash = sha256hex(idCard);
+    }
     const dup = await db.collection('users').findOne({ 'realname.idHash': idHash, _id: { $ne: new ObjectId(req.user.id) } });
     if (dup) return res.status(400).json({ ok: false, error: '该身份证号已被其他账号认证' });
     const idMask = idCard.slice(0, 3) + '***********' + idCard.slice(-4);
@@ -96,7 +107,16 @@ app.put('/api/me/realname', auth, async (req, res) => {
     }
     // 自动关联合同：已签合同签署姓名同步为实名姓名
     await db.collection('contracts').updateMany({ userId: req.user.id }, { $set: { name, linkedRealname: true } });
-    res.json({ ok: true, realname: { name, idMask, verifiedAt: realname.verifiedAt } });
+    // 【2026-09-24 合规修复】实名成功后回溯校验已绑定的支付宝收款人姓名。
+    // 原先可"先绑他人支付宝、后实名"，绕开《合作协议》"收款人与实名一致"的要求。
+    // 不一致时自动解绑收款方式，要求重新绑定（提现接口本就要求先绑定，不产生空窗错误）。
+    let alipayUnbound = false;
+    const meAfter = await db.collection('users').findOne({ _id: new ObjectId(req.user.id) }, { projection: { alipay: 1 } });
+    if (meAfter?.alipay?.name && meAfter.alipay.name !== name) {
+      await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $unset: { alipay: '' } });
+      alipayUnbound = true;
+    }
+    res.json({ ok: true, realname: { name, idMask, verifiedAt: realname.verifiedAt }, alipayUnbound });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
