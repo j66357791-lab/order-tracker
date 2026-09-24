@@ -1449,16 +1449,18 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
      首页只放四个入口图标（技能 / 法宝 / 图鉴 / 洞府），点「技能」才把技能正文
      搬进弹窗——同样用搬 DOM，原有的强化按钮绑定全部保留。 */
   const SH_ENTRY = { skill: "技 能", fabao: "法 宝", tujian: "图 鉴", dongfu: "洞 府" };
-  function openShanhai(kind) {
+  /* ==================== 【v26.11】技能阁 = 流派 + 天赋树 ====================
+     进入先看流派（四选一，装备后对局生效），点流派进天赋树加点。
+     天赋点：三星通关每关 1 点（老玩家已三星的自动补发，服务端幂等计算）。 */
+  let FAC = { data: null, view: "list", cur: null };
+
+  async function openShanhai(kind) {
     if (kind !== "skill") {
       const n = SH_ENTRY[kind] || "该功能";
       toast(n.replace(/\s/g, "") + "正在炼制中，敬请期待");
       return;
     }
-    const inner = document.getElementById("shSkillInner");
-    const holder = document.getElementById("shHolder");
-    if (!inner || !holder) return;
-    if (document.getElementById("shMask")) { closeShanhai(); return; }
+    if (document.getElementById("shMask")) return;
     const mask = document.createElement("div");
     mask.className = "ex-mask"; mask.id = "shMask";
     mask.onclick = e => { if (e.target === mask) closeShanhai(); };
@@ -1466,26 +1468,112 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       <div class="ex-wrap" style="max-width:420px">
         <div class="ex-board" style="height:60px"></div>
         <div class="ex-head" style="padding-top:11px">
-          <div class="ex-title">技能阁</div>
-          <div class="ex-sub">永久强化 · 对局外生效</div>
+          <div class="ex-title" id="shTitle">技能阁 · 流派</div>
+          <div class="ex-sub" id="shSub">选择流派装备后，对局内生效</div>
           <div class="ex-close" id="shClose">×</div>
         </div>
-        <div class="sh-hall-body" id="shHallBody"></div>
+        <div class="sh-hall-body" id="facBody">加载中…</div>
       </div>`;
     document.body.appendChild(mask);
     document.getElementById("shClose").onclick = closeShanhai;
-    document.getElementById("shHallBody").appendChild(inner);
-    inner.style.display = "";
-    if (typeof renderGrow === "function") renderGrow();
+    FAC.view = "list"; FAC.cur = null;
+    try {
+      const d = await META.factionInfo();
+      if (!d.ok) throw new Error(d.error || "加载失败");
+      FAC.data = d;
+      renderFaction();
+    } catch (e) {
+      document.getElementById("facBody").innerHTML = `<div class="ex-empty">加载失败：${_escHtml((e && (e.error || e.message)) || "")}</div>`;
+    }
   }
   function closeShanhai() {
     const mask = document.getElementById("shMask");
-    const inner = document.getElementById("shSkillInner");
-    const holder = document.getElementById("shHolder");
-    if (inner && holder) { holder.appendChild(inner); inner.style.display = "none"; }
     if (mask) mask.remove();
   }
   window.openShanhai = openShanhai;
+
+  function renderFaction() {
+    const d = FAC.data;
+    const body = document.getElementById("facBody");
+    if (!d || !body) return;
+    const set2 = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    if (FAC.view === "list") {
+      set2("shTitle", "技能阁 · 流派");
+      set2("shSub", "选择流派装备后，对局内生效（新人默认万剑）");
+      body.innerHTML = `
+        <div class="fac-point">可用天赋点 <b>${d.points}</b>（三星通关每关 +1）</div>
+        <div class="fac-list">${(d.factions || []).map(f => `
+          <div class="fac-card${f.id === d.current ? " on" : ""}" data-id="${f.id}">
+            <span class="fac-ico">${f.icon || "⚔"}</span>
+            <div class="fac-main">
+              <b>${_escHtml(f.name)}${f.id === d.current ? '<em class="fac-on">装备中</em>' : ""}${f.starter ? '<em class="fac-new">新手</em>' : ""}</b>
+              <i>${_escHtml(f.desc || "")}</i>
+            </div>
+            <div class="fac-go">${f.id === d.current ? "强化 ›" : "装备 ›"}</div>
+          </div>`).join("")}</div>
+        <div class="ex-tip">天赋树走「小属性 → 特殊加成 → 特殊玩法 → 大技能」四层，在流派页内加点</div>`;
+      body.querySelectorAll(".fac-card").forEach(c => c.onclick = () => {
+        FAC.cur = c.dataset.id;
+        FAC.view = "tree";
+        renderFaction();
+      });
+      return;
+    }
+    // ---- 天赋树视图 ----
+    const f = (d.factions || []).find(x => x.id === FAC.cur) || d.factions[0];
+    set2("shTitle", f.name);
+    set2("shSub", (f.desc || "") + "　·　天赋点 " + d.points);
+    const my = (d.talents || {})[f.id] || {};
+    body.innerHTML = `
+      <div class="fac-point" style="margin-bottom:8px">
+        <span>天赋点 <b>${d.points}</b></span>
+        ${f.id === d.current ? '<em class="fac-on">装备中</em>' : `<button class="fac-equip" id="facEquip">装备此流派</button>`}
+      </div>
+      ${(f.branches || []).map(b => `
+        <div class="fac-branch">
+          <div class="fac-bh"><b>${_escHtml(b.name)}</b><i>${_escHtml(b.role || "")}</i></div>
+          <div class="fac-nodes">${(b.nodes || []).map((n, i) => {
+            const lv = +my[n.id] || 0;
+            const max = +n.max || 1;
+            const full = lv >= max;
+            const can = !full && d.points >= (+n.cost || 1);
+            const TYPENAME = { minor: "属性", special: "特殊", play: "玩法", ultimate: "主动" };
+            return `<div class="fac-node${full ? " full" : can ? " can" : ""}${i > 0 ? " linked" : ""}" data-n="${n.id}" data-c="${n.cost || 1}" title="${_escHtml(n.desc || "")}">
+              <div class="fn-lv">${lv}/${max}</div>
+              <b>${_escHtml(n.name)}</b>
+              <i>${TYPENAME[n.type] || n.type || ""}</i>
+              <span>${_escHtml(n.desc || "")}</span>
+              ${full ? '<em>已满</em>' : `<em>耗${n.cost}点</em>`}
+            </div>`;
+          }).join("")}</div>
+        </div>`).join("")}`;
+    const eqBtn = document.getElementById("facEquip");
+    if (eqBtn) eqBtn.onclick = async () => {
+      eqBtn.disabled = true; eqBtn.textContent = "切换中";
+      try {
+        const r = await META.factionSelect(f.id);
+        if (!r.ok) throw new Error(r.error || "切换失败");
+        const dd = await META.factionInfo();
+        FAC.data = dd;
+        FAC.view = "tree";
+        renderFaction();
+        toast("已装备 " + f.name);
+      } catch (e) { toast((e && e.error) || "切换失败"); eqBtn.disabled = false; eqBtn.textContent = "装备此流派"; }
+    };
+    body.querySelectorAll(".fac-node").forEach(nd => nd.onclick = async () => {
+      if (nd.classList.contains("full")) return toast("该天赋已满级");
+      const fid = f.id, nid = nd.dataset.n, cost = +nd.dataset.c || 1;
+      if (d.points < cost) return toast("天赋点不足（还差 " + (cost - d.points) + " 点）");
+      try {
+        const r = await META.talentLearn(fid, nid);
+        if (!r.ok) throw new Error(r.error || "学习失败");
+        d.points = r.points;
+        d.talents = r.talents;
+        renderFaction();
+        toast("学习成功 Lv." + r.level);
+      } catch (e) { toast((e && e.error) || "学习失败"); }
+    });
+  }
 
   /* ==================== 【v26.6.1】Service Worker 更新自愈 ====================
      背景：此前游戏页被 portal 注册的 Service Worker 接管，而 SW 对 /games/ 下的请求
