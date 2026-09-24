@@ -108,11 +108,17 @@ const UI = (() => {
       // 【v24.3】旋风刃
       galeorb: { name: "旋风刃", icon: "风", desc: lv => `灵刃绕体旋飞，绞碎近身之敌<br>${W.galeorb.blades + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0)} 柄 · ${W.galeorb.baseDmg + W.galeorb.dmgPerLv * (lv - 1)} 伤害/击` },
     };
+    const IBNAME = { white: "白色", blue: "蓝色", purple: "紫色", gold: "金色", myth: "神话" };
     for (const c of choices) {
       const card = document.createElement("div");
       card.className = "choice-card";
       let title, icon, desc, tag;
-      if (c.kind === "stat" || c.kind === "sword") {
+      // 【v26.15 修】基础能力卡：原来走 else 分支去 meta[c.key] 查技能名，查不到直接抛错，
+      // 整个三选一的卡牌渲染中断——这就是"选属性的卡牌不出现"的原因。
+      if (c.kind === "inborn") {
+        title = c.name; icon = c.icon; desc = c.desc || "基础能力加成";
+        tag = IBNAME[c.q] ? IBNAME[c.q] + "品质" : "基础";
+      } else if (c.kind === "stat" || c.kind === "sword") {
         title = c.name; icon = c.icon; desc = c.desc; tag = c.kind === "sword" ? "剑诀" : "辅修";
       } else {
         const m = meta[c.key];
@@ -121,8 +127,10 @@ const UI = (() => {
         desc = m.desc(curLv + 1);
         tag = c.kind === "new" ? "习得" : `升 至 ${curLv + 1} 层`;
       }
+      // 品质上色：先定品质再定内容，卡牌边框/标签直接用品质色
+      if (c.color) card.style.borderColor = c.color;
       card.innerHTML = `
-        <div class="ch-tag ${c.kind === "new" ? "new" : c.kind === "up" ? "up" : ""}">${tag}</div>
+        <div class="ch-tag ${c.kind === "inborn" ? "inborn" : c.kind === "new" ? "new" : c.kind === "up" ? "up" : ""}" ${c.color ? `style="background:${c.color};color:#fff"` : ""}>${tag}</div>
         <div class="ch-icon">${icon}</div>
         <div class="ch-name">${title}</div>
         <div class="ch-desc">${desc}</div>`;
