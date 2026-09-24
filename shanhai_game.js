@@ -1749,7 +1749,23 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         const exw = db.collection(EXW_COL);
         // 1) 资金流转：先扣钱（条件更新，失败即中止，不产生任何副作用）
         step = 'cash';
-        if (payerNeedsCash) {
+        if (buyerId === BOT_ID) {
+          // 【v26.18】玩家把灵气卖给机器人的求购单：货款从机器人钱包冻结里划走
+          // （挂单时已冻结），灵气进做市额度。原先钱只冲减订单 locked、冻结永不释放、
+          // 玩家交出的灵气也无处落地 → 双向漏账
+          const FUND = 'shanhai_market_fund';
+          const r = await exw.findOneAndUpdate(
+            { userId: BOT_ID, frozen: { $gte: total } },
+            { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } });
+          if (!r || !(r.value || r)) throw new Error('机器人冻结资金不足');
+          undo.push(() => exw.updateOne({ userId: BOT_ID }, { $inc: { frozen: total, balance: total }, $set: { updatedAt: new Date() } }));
+          const rl = await col.updateOne({ _id: oid }, { $inc: { locked: -total } });
+          if (rl.modifiedCount) undo.push(() => col.updateOne({ _id: oid }, { $inc: { locked: total } }));
+          const rf = await db.collection(FUND).updateOne({ _id: 'market' }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
+          if (rf.modifiedCount || rf.upsertedCount) {
+            undo.push(() => db.collection(FUND).updateOne({ _id: 'market' }, { $inc: { lingqi: -n } }));
+          }
+        } else if (payerNeedsCash) {
           // 主动买家 / 从未冻结过的老买单：从交易所余额实时扣（可用 = balance - frozen >= total）
           const r = await exw.findOneAndUpdate(
             { userId: buyerId, $expr: { $gte: [{ $subtract: [{ $ifNull: ['$balance', 0] }, { $ifNull: ['$frozen', 0] }] }, total] } },
@@ -1775,7 +1791,17 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         }
         // 2) 灵气流转：卖家 -n（或解冻 -n），条件更新并检查结果
         step = 'lingqi-seller';
-        if (iAmBuyer) {
+        if (sellerId === BOT_ID) {
+          // 【v26.18】机器人卖单被玩家吃：灵气在机器人挂单时已从做市额度冻结，
+          // 这里只解冻额度（原先去机器人不存在的 shanhai_profiles 扣冻结 → 必然失败，
+          // 玩家永远买不了机器人的卖单）
+          const FUND = 'shanhai_market_fund';
+          const r = await db.collection(FUND).findOneAndUpdate(
+            { _id: 'market', lingqiFrozen: { $gte: n } },
+            { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
+          if (!r || !(r.value || r)) throw new Error('机器人冻结灵气不足');
+          undo.push(() => db.collection(FUND).updateOne({ _id: 'market' }, { $inc: { lingqiFrozen: n } }));
+        } else if (iAmBuyer) {
           const r = await prof.findOneAndUpdate(
             { userId: sellerId, lingqiFrozen: { $gte: n } },
             { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
