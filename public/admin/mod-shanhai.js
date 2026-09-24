@@ -256,16 +256,20 @@ export function mount(root) {
       let h = `<tr>${th('时间')}${th('类型')}${th('买家')}${th('卖家')}${th('方向')}${th('数量')}${th('单价')}${th('金额')}${th('手续费')}</tr>`;
       if (!rows.length) h += `<tr><td colspan="9" style="padding:22px;text-align:center;color:#a09884">还没有成交记录</td></tr>`;
       for (const r of rows) {
-        const bot = !!r.bot;
-        const tag = bot
-          ? `<span style="display:inline-block;padding:0 6px;border-radius:5px;background:#efe6d2;color:#8a6a2a;font-size:11px">做市</span>`
-          : `<span style="display:inline-block;padding:0 6px;border-radius:5px;background:#e3f0e8;color:#2f6b4c;font-size:11px">玩家</span>`;
+        // 【v26.10】三种来源要分清：真实玩家成交 / 机器人与玩家成交 / 做市撮合（演习，不转移资产）
+        const tag = r.sim
+          ? `<span style="display:inline-block;padding:0 6px;border-radius:5px;background:#eef1f6;color:#5a6a88;font-size:11px">撮合</span>`
+          : (r.bot
+            ? `<span style="display:inline-block;padding:0 6px;border-radius:5px;background:#efe6d2;color:#8a6a2a;font-size:11px">做市</span>`
+            : `<span style="display:inline-block;padding:0 6px;border-radius:5px;background:#e3f0e8;color:#2f6b4c;font-size:11px">玩家</span>`);
         const name = (n, id) => bot && (id === '__market__')
           ? `<b style="color:#8a6a2a">灵傀</b>`
           : `${esc(n || '-')}`;
+        // 【v26.10】单价改 4 位：交易所允许 0.0001 级定价，toFixed(2) 会把 0.0810 显示成 ¥0.08、
+        // 0.0001 直接显示成 ¥0.00 —— 台账看着像全场免费成交。
         h += `<tr>${td(fmtT(r.createdAt), 'white-space:nowrap')}${td(tag)}${td(name(r.buyerReal, r.buyerId))}${td(name(r.sellerReal, r.sellerId))}
-          ${td(r.side === 'sell' ? '买入' : '卖出')}${td((r.amount || 0).toLocaleString())}${td('¥' + (r.price || 0).toFixed(2))}
-          ${td('¥' + (r.total || 0).toFixed(2), 'font-weight:700')}${td('¥' + (r.fee || 0).toFixed(2), 'color:#8a6a2a')}</tr>`;
+          ${td(r.side === 'sell' ? '买入' : '卖出')}${td((r.amount || 0).toLocaleString())}${td('¥' + (r.price || 0).toFixed(4))}
+          ${td('¥' + (r.total || 0).toFixed(4), 'font-weight:700')}${td('¥' + (r.fee || 0).toFixed(4), 'color:#8a6a2a')}</tr>`;
       }
       $('exTable').innerHTML = h;
       $('exPage').textContent = `第 ${page + 1} 页 · 共 ${d.total || 0} 笔`;
