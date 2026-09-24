@@ -68,8 +68,11 @@ app.post('/api/cards/:id/accept', auth, async (req, res) => {
     const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
     if (!card || card.to !== req.user.id) return res.status(404).json({ ok: false, error: '派单卡不存在' });
     if (card.status !== '待接单') return res.status(400).json({ ok: false, error: '该卡片当前状态不可接单' });
+    // 【2026-09-24 修复】状态条件压进更新：并发双击/与拒绝竞态时条件更新落空即报 409，
+    // 原先无条件 $set 可把已拒绝的卡覆盖回"已接单"
     const r = await db.collection('cards').findOneAndUpdate(
-      { _id: card._id }, { $set: { status: '已接单', acceptedAt: new Date() } }, { returnDocument: 'after' });
+      { _id: card._id, status: '待接单' }, { $set: { status: '已接单', acceptedAt: new Date() } }, { returnDocument: 'after' });
+    if (!r) return res.status(409).json({ ok: false, error: '该卡片状态已变化，请刷新' });
     notify(card.from, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
@@ -81,8 +84,10 @@ app.post('/api/cards/:id/decline', auth, async (req, res) => {
     const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
     if (!card || card.to !== req.user.id) return res.status(404).json({ ok: false, error: '派单卡不存在' });
     if (card.status !== '待接单') return res.status(400).json({ ok: false, error: '该卡片当前状态不可拒绝' });
+    // 【2026-09-24 修复】状态条件压进更新，防与接单竞态互相覆盖
     const r = await db.collection('cards').findOneAndUpdate(
-      { _id: card._id }, { $set: { status: '已拒绝' } }, { returnDocument: 'after' });
+      { _id: card._id, status: '待接单' }, { $set: { status: '已拒绝' } }, { returnDocument: 'after' });
+    if (!r) return res.status(409).json({ ok: false, error: '该卡片状态已变化，请刷新' });
     notify(card.from, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
@@ -95,10 +100,12 @@ async function submitHandler(req, res) {
     if (!card || card.to !== req.user.id) return res.status(404).json({ ok: false, error: '派单卡不存在' });
     if (card.status !== '已接单') return res.status(400).json({ ok: false, error: '只有做单中的卡片才能提交审核' });
     const note = String(req.body?.note || '').slice(0, 500).trim();
+    // 【2026-09-24 修复】状态条件压进更新：迟到的提交不能把已驳回的卡覆盖回"待审核"
     const r = await db.collection('cards').findOneAndUpdate(
-      { _id: card._id },
+      { _id: card._id, status: '已接单' },
       { $set: { status: '待审核', submittedAt: new Date(), submitNote: note, rejectReason: null } },
       { returnDocument: 'after' });
+    if (!r) return res.status(409).json({ ok: false, error: '该卡片状态已变化，请刷新' });
     notify(card.from, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
@@ -112,8 +119,10 @@ app.post('/api/cards/:id/redo', auth, async (req, res) => {
     const card = await db.collection('cards').findOne({ _id: new ObjectId(req.params.id) });
     if (!card || card.to !== req.user.id) return res.status(404).json({ ok: false, error: '派单卡不存在' });
     if (card.status !== '已驳回') return res.status(400).json({ ok: false, error: '只有被驳回的卡片才能重新做单' });
+    // 【2026-09-24 修复】状态条件压进更新，防与其他操作竞态覆盖
     const r = await db.collection('cards').findOneAndUpdate(
-      { _id: card._id }, { $set: { status: '已接单', rejectReason: null } }, { returnDocument: 'after' });
+      { _id: card._id, status: '已驳回' }, { $set: { status: '已接单', rejectReason: null } }, { returnDocument: 'after' });
+    if (!r) return res.status(409).json({ ok: false, error: '该卡片状态已变化，请刷新' });
     notify(card.from, 'card', r); notify(req.user.id, 'card', r);
     res.json({ ok: true, card: r });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
@@ -128,7 +137,8 @@ app.post('/api/cards/:id/approve', auth, adminOnly, async (req, res) => {
       return res.status(400).json({ ok: false, error: '只有待审核的卡片才能审核通过' });
     }
     const r = await db.collection('cards').findOneAndUpdate(
-      { _id: card._id }, { $set: { status: '待打款', approvedAt: new Date() } }, { returnDocument: 'after' });
+      { _id: card._id, status: { $in: ['待审核', '已交付'] } }, { $set: { status: '待打款', approvedAt: new Date() } }, { returnDocument: 'after' });
+    if (!r) return res.status(409).json({ ok: false, error: '该卡片状态已变化，请刷新' });
     let syncedOrder = null;
     if (card.orderId && ObjectId.isValid(card.orderId)) {
       syncedOrder = await db.collection(CONFIG.collection).findOneAndUpdate(
