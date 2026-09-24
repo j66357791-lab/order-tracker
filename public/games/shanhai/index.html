@@ -199,23 +199,37 @@
       <div class="home-tab" id="tabShop">
         <div class="tier-strip" id="tierStrip"></div>
         <div class="tier-note" id="tierNote">一阶寻宝 · 120 仙玉一抽 · 产出一阶装备</div>
-        <div class="shop-banner">
-          <div class="shop-banner-t">✦ 玄机宝阁 · 一阶 ✦</div>
-          <div class="shop-banner-s">寻宝得神装 · 槽位空缺自动穿戴</div>
+        <!-- 【v26.9】横条改成「装备阁楼」入口，点开是居中的抽卡大厅 -->
+        <div class="shop-banner hall" id="shopBanner" onclick="showGachaHall()">
+          <div class="shop-banner-t">✦ 玄机宝阁 · 装备阁楼 ✦</div>
+          <div class="shop-banner-s">点击进入 · 寻宝得神装 · 槽位空缺自动穿戴</div>
+          <div class="shop-banner-go">进入 ›</div>
+        </div>
+        <!-- 抽卡区块平时折叠在这里，打开大厅时整块搬进弹窗（搬 DOM，事件绑定不丢） -->
+        <div id="gachaHolder">
+          <div id="gachaInner" style="display:none">
+            <div class="gacha-hall-cur">
+              <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="gachaXianyu">0</b></span>
+              <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="gachaLingqi">0</b></span>
+            </div>
+            <div class="gacha-btns">
+              <button class="btn-gacha" id="btnDraw1"><i>寻宝 ×1</i><b>120 ◉</b></button>
+              <button class="btn-gacha ten" id="btnDraw10"><i>寻宝 ×10</i><b>1200 ◉</b></button>
+            </div>
+            <div class="gacha-rates">概率公示：凡品 52% · 良品 28% · 上品 14% · 仙品 5% · 神品 1%</div>
+            <div class="gacha-grid" id="drawGrid"></div>
+            <div class="empty-tip" id="drawEmpty">九霄玄机，一抽定缘</div>
+          </div>
         </div>
         <div class="grow-cur">
           <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="shopXianyu">0</b></span>
           <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="shopLingqi">0</b></span>
+          <span class="cur-chip stone"><img class="stone-ico" src="/games/shanhai/assets/item/lingstone_t1.png" alt=""><b id="shopStone">0</b></span>
         </div>
-        <div class="gacha-btns">
-          <button class="btn-gacha" id="btnDraw1"><i>寻宝 ×1</i><b>120 ◉</b></button>
-          <button class="btn-gacha ten" id="btnDraw10"><i>寻宝 ×10</i><b>1200 ◉</b></button>
-        </div>
-        <div class="gacha-rates">概率公示：凡品 52% · 良品 28% · 上品 14% · 仙品 5% · 神品 1%</div>
         <!-- 【v26.7】灵宝特惠：用灵气购买的限量商品（福袋） -->
         <div class="bag-shop">
           <div class="bag-shop-t">◈ 灵 宝 特 惠 ◈</div>
-          <div id="bagShopBody">加载中…</div>
+          <div id="bagShopBody" class="pack-grid">加载中…</div>
         </div>
         <div class="gacha-grid" id="drawGrid"></div>
         <div class="empty-tip" id="drawEmpty">九霄玄机，一抽定缘</div>
@@ -400,7 +414,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           只呈现「有这么一个买卖需求」。
        ③ 明确反馈——买入/卖出/挂单/转入转出都有「处理中」动画 + 明确结果提示。 */
   const _m4 = n => Math.round(Number(n || 0) * 10000) / 10000;   // 【v26.4.1】交易所内部 4 位小数
-  const _fmt4 = n => _m4(n).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');   // 去掉多余的 0，0.0800 显示成 0.08
+  // 【v26.9】固定 4 位小数，不裁剪尾部 0。
+  // 原来用 replace(/0+$/,'') 把 0.0010 裁成 0.001、0.0800 裁成 0.08，
+  // 用户看到"少了位"，尤其在 0.0001 级定价下会显示成 0.000 —— 价格看着像不要钱。
+  const _fmt4 = n => _m4(n).toFixed(4);
   const _escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let EX = { tab: "buy", data: null, busy: false, form: { a: "", p: "" }, timer: null, recOpen: false };
 
@@ -459,6 +476,89 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     return close;
   }
 
+  /* ==================== 【v26.9】灵气行情走势（股票式折线） ====================
+     数据源：统一成交台账，按成交量加权均价（算术均价会被小单拽歪）。
+     配色遵循中国市场习惯：**涨红跌绿**。默认只占一行，点开才画完整图，不挤占列表。 */
+  let CHART = { range: "1d", data: null, open: false };
+  const fmtT = ms => {
+    const dt = new Date(ms);
+    return (dt.getMonth() + 1) + "/" + dt.getDate() + " " + String(dt.getHours()).padStart(2, "0") + ":00";
+  };
+
+  async function loadExChart() {
+    if (!document.getElementById("exChartHead")) return;
+    try {
+      const d = await META.exChart(CHART.range);
+      if (d && d.ok) { CHART.data = d; renderExChart(); }
+    } catch (e) { }
+  }
+
+  function renderExChart() {
+    const d = CHART.data;
+    if (!d || !document.getElementById("exChartHead")) return;
+    const set2 = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set2("exChartNow", "¥" + _fmt4(d.cur || 0));
+    const chg = document.getElementById("exChartChg");
+    if (chg) {
+      const up = (d.change || 0) >= 0;
+      chg.textContent = (up ? "+" : "") + (d.change || 0) + "%";
+      chg.className = "chg " + (up ? "up" : "down");
+    }
+    set2("exChartArrow", CHART.open ? "▲" : "▼");
+    const body = document.getElementById("exChartBody");
+    if (body) body.style.display = CHART.open ? "" : "none";
+    if (!CHART.open) return;
+    const box = document.getElementById("exChartSvg");
+    const pts = d.points || [];
+    if (!box) return;
+    if (pts.length < 2) {
+      box.innerHTML = '<div class="ex-empty">这段时间还没有成交，做几笔就有行情了</div>';
+      set2("exChartInfo", "—"); return;
+    }
+    const W = 380, H = 112, PL = 4, PR = 4, PT = 10, PB = 14;
+    const prices = pts.map(p => p.price);
+    const hi = Math.max.apply(null, prices), lo = Math.min.apply(null, prices);
+    const span = (hi - lo) || ((hi || 0.001) * 0.2) || 0.0001;   // 全平时给个虚拟跨度，避免除 0
+    const X = i => PL + (W - PL - PR) * (i / (pts.length - 1));
+    const Y = v => PT + (H - PT - PB) * (1 - (v - lo) / span);
+    const line = pts.map((p, i) => (i ? "L" : "M") + X(i).toFixed(1) + "," + Y(p.price).toFixed(1)).join(" ");
+    const area = line + " L" + X(pts.length - 1).toFixed(1) + "," + (H - PB) + " L" + X(0).toFixed(1) + "," + (H - PB) + " Z";
+    const up = (d.change || 0) >= 0;
+    const color = up ? "#d0452c" : "#2f9a63";
+    const lastX = X(pts.length - 1).toFixed(1);
+    const lastY = Y(d.cur !== undefined ? d.cur : prices[prices.length - 1]).toFixed(1);
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:112px;display:block">
+      <defs><linearGradient id="exAreaG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${color}" stop-opacity=".30"/>
+        <stop offset="1" stop-color="${color}" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="${area}" fill="url(#exAreaG)"/>
+      <path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${lastX}" cy="${lastY}" r="3.2" fill="${color}"/>
+      <text x="${PL}" y="${H - 3}" fill="#9c8b6b" font-size="8.5">${fmtT(pts[0].t)}</text>
+      <text x="${W - PR}" y="${H - 3}" fill="#9c8b6b" font-size="8.5" text-anchor="end">${fmtT(pts[pts.length - 1].t)}</text>
+    </svg>`;
+    set2("exChartInfo", d.label + "　高 ¥" + _fmt4(hi) + "　低 ¥" + _fmt4(lo) + "　成交 " + (d.vol || 0) + " 灵气");
+  }
+
+  function bindExChart() {
+    const head = document.getElementById("exChartHead");
+    const tabs = document.getElementById("exChartTabs");
+    if (head) head.onclick = () => {
+      CHART.open = !CHART.open;
+      renderExChart();
+      if (CHART.open) loadExChart();
+    };
+    if (tabs) tabs.querySelectorAll("button").forEach(b => {
+      b.onclick = ev => {
+        ev.stopPropagation();
+        CHART.range = b.dataset.r;
+        tabs.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+        loadExChart();
+      };
+    });
+  }
+
   async function loadEx(onlyLists) {
     if (!document.getElementById("exMask")) return;
     try {
@@ -466,6 +566,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       if (!d.ok) throw new Error(d.error || "加载失败");
       EX.data = d;
       renderEx(onlyLists);
+      loadExChart();          // 【v26.9】顺带刷新行情走势
     } catch (e) {
       if (!onlyLists) toast("行情加载失败：" + ((e && (e.error || e.message)) || "请稍后重试"));
     }
@@ -473,7 +574,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
 
   /* 一条挂单。v26.4 起不再显示任何身份信息——只有数量、单价、总额与操作。 */
   function exRowHTML(o) {
-    const left = o.left, unit = _m4(o.price).toFixed(3), total = _fmt4(left * o.price);
+    const left = o.left, unit = _m4(o.price).toFixed(4), total = _fmt4(left * o.price);
     if (o.mine) {
       return `<div class="ex-row mine-own">
         <div class="num"><b>${left}</b> 灵气<span class="ex-tag-me">我的</span><i>单价 ¥${unit} · 共 ¥${total}</i></div>
@@ -493,7 +594,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const mine = d.role === "buy";
     return `<div class="ex-row ex-deal-row">
       <div class="num"><b>${d.amount}</b> 灵气<span class="ex-tag-${mine ? "buy" : "sell"}">${mine ? "买入" : "卖出"}</span>
-        <i>单价 ¥${_m4(d.price).toFixed(3)} · 共 ¥${_fmt4(d.total)} · 手续费 ¥${_fmt4(d.fee)}</i></div>
+        <i>单价 ¥${_m4(d.price).toFixed(4)} · 共 ¥${_fmt4(d.total)} · 手续费 ¥${_fmt4(d.fee)}</i></div>
       <div class="ex-deal-time">${new Date(d.at).toLocaleString("zh-CN", { hour12: false }).slice(5, 16)}</div>
     </div>`;
   }
@@ -506,8 +607,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
     // —— 钱包区（v26.4：交易所独立余额）——
-    set("exExAvail", "¥" + _m4(me.exAvailable || 0).toFixed(3));
-    set("exExFrozen", "¥" + _m4(me.exFrozen || 0).toFixed(3));
+    set("exExAvail", "¥" + _m4(me.exAvailable || 0).toFixed(4));
+    set("exExFrozen", "¥" + _m4(me.exFrozen || 0).toFixed(4));
     set("exMainBal", "主站余额 ¥" + (me.balance || 0).toFixed(2) + "（不参与交易，需先转入）");
     set("exMyLq", me.lingqi || 0);
     set("exMyLqFz", me.frozen || 0);
@@ -587,7 +688,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     }
     const isSell = EX.tab === "sell";
     const cnt = isSell ? mineSell : mineBuy;
-    const cap = isSell ? `${me.lingqi || 0} 灵气` : `¥${_m4(me.exAvailable || 0).toFixed(3)}（交易所可用）`;
+    const cap = isSell ? `${me.lingqi || 0} 灵气` : `¥${_m4(me.exAvailable || 0).toFixed(4)}（交易所可用）`;
     form.innerHTML = `
       <div class="ex-form-row">
         <label>数量</label>
@@ -726,7 +827,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <div class="ex-board" style="height:62px"></div>
         <div class="ex-head">
           <div class="ex-title">${isBuy ? "买入灵气" : "卖出灵气"}</div>
-          <div class="ex-sub">单价 ¥${_m4(o.price).toFixed(3)} · 最多 ${o.left}</div>
+          <div class="ex-sub">单价 ¥${_m4(o.price).toFixed(4)} · 最多 ${o.left}</div>
           <div class="ex-close" onclick="document.getElementById('exSheet').remove()">×</div>
         </div>
         <div style="padding:12px 14px 6px">
@@ -737,7 +838,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           <div class="ex-line"><span>成交金额</span><b id="shTotal">¥${_fmt4(c0.total)}</b></div>
           <div class="ex-line fee"><span>手续费 ${(feeRate * 100).toFixed(1)}%（卖方承担）</span><span id="shFee">¥${_fmt4(c0.fee)}</span></div>
           <div class="ex-line net"><span>${isBuy ? "实付" : "实收"}</span><b id="shNet">¥${_fmt4(c0.net)}</b></div>
-          <div class="ex-line fee"><span>${isBuy ? "交易所可用" : "可用灵气"}</span><span id="shAvail">${isBuy ? "¥" + _m4(me.exAvailable || 0).toFixed(3) : (me.lingqi || 0) + " 灵气"}</span></div>
+          <div class="ex-line fee"><span>${isBuy ? "交易所可用" : "可用灵气"}</span><span id="shAvail">${isBuy ? "¥" + _m4(me.exAvailable || 0).toFixed(4) : (me.lingqi || 0) + " 灵气"}</span></div>
           <div class="ex-err" id="shErr" style="display:none"></div>
           <button class="ex-submit" id="shOk" style="margin-top:10px">确 认 ${isBuy ? "买 入" : "卖 出"}</button>
           <div class="ex-tip">${isBuy ? "从交易所余额扣款" : "扣手续费后进你的交易所余额"}</div>
@@ -814,7 +915,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           showPaySuccess({
             title: "交易已成功",
             amount: (isBuy ? "−¥" : "+¥") + _fmt4(_m4(n * o.price)),
-            sub: n + " 灵气 × ¥" + _m4(o.price).toFixed(3),
+            sub: n + " 灵气 × ¥" + _m4(o.price).toFixed(4),
             bal: "网络波动导致提示延迟，实际已成交并同步",
           });
           try { await META.load(); renderHome(); } catch (_) { }
@@ -890,6 +991,26 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           <span class="exr-mine" id="exMineBar"></span>
         </div>
 
+        <!-- 【v26.9】灵气行情走势（股票式，默认只显示一行当前价，点开看完整图） -->
+        <div class="ex-chart">
+          <div class="ex-chart-head" id="exChartHead">
+            <span>📈 灵气行情</span>
+            <b id="exChartNow">--</b>
+            <em class="chg" id="exChartChg">--</em>
+            <i id="exChartArrow">▼</i>
+          </div>
+          <div class="ex-chart-body" id="exChartBody" style="display:none">
+            <div class="ex-chart-tabs" id="exChartTabs">
+              <button data-r="1d" class="on">24小时</button>
+              <button data-r="7d">7天</button>
+              <button data-r="30d">30天</button>
+              <button data-r="all">全部</button>
+            </div>
+            <div id="exChartSvg"><div class="ex-empty">加载中…</div></div>
+            <div class="ex-chart-info" id="exChartInfo">—</div>
+          </div>
+        </div>
+
         <div class="ex-tabs">
           <div class="ex-tab on" data-t="buy">我要买</div>
           <div class="ex-tab" data-t="sell">我要卖</div>
@@ -911,6 +1032,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     mask.querySelectorAll(".ex-tab").forEach(t => {
       t.onclick = () => { EX.tab = t.dataset.t; renderEx(); };
     });
+    bindExChart();          // 【v26.9】行情走势：展开/折叠 + 区间切换
     // 列表按钮统一走事件委托
     mask.addEventListener("click", async e => {
       const btn = e.target.closest(".ex-btn");
@@ -965,18 +1087,15 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       const useFirst = !d.firstUsed && it.firstPrice;
       const price = useFirst ? it.firstPrice : it.price;
       const poor = (d.lingqi || 0) < price;
-      return `<div class="shop-card">
-        <div class="shop-ico">${it.icon || "🎁"}</div>
-        <div class="shop-main">
-          <div class="shop-name">${_escHtml(it.name)}${useFirst ? '<span class="shop-tag">首单特惠</span>' : ""}</div>
-          <div class="shop-desc">${_escHtml(it.desc)}</div>
-          <div class="shop-rate">${_escHtml(it.rates || "")}</div>
-        </div>
-        <div class="shop-act">
-          <div class="shop-price">${price}<i>灵气</i></div>
-          ${useFirst ? `<div class="shop-old">原价 ${it.price}</div>` : ""}
-          <button class="shop-buy" data-id="${it.id}" ${poor ? "disabled" : ""}>${poor ? "灵气不足" : (useFirst ? "特惠购买" : "购买")}</button>
-        </div>
+      // 【v26.9】方形卡牌售卖框（商业模式：图标在上、名称、卖点、价格、按钮竖排）
+      return `<div class="pack-card">
+        ${useFirst ? '<div class="pack-flag">首单特惠</div>' : ""}
+        <div class="pack-ico">${it.icon || "🎁"}</div>
+        <div class="pack-name">${_escHtml(it.name)}</div>
+        <div class="pack-desc">${_escHtml(it.desc)}</div>
+        <div class="pack-rate">${_escHtml(it.rates || "")}</div>
+        <div class="pack-price">${price}<i>灵气</i>${useFirst ? `<em>原价 ${it.price}</em>` : ""}</div>
+        <button class="pack-buy" data-id="${it.id}" ${poor ? "disabled" : ""}>${poor ? "灵气不足" : (useFirst ? "特惠购买" : "购买")}</button>
       </div>`;
     }).join("");
     const his = (d.history || []).length
@@ -989,7 +1108,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     body.innerHTML = cards + his;
     const hh = document.getElementById("shopHisHead");
     if (hh) hh.onclick = () => { SHOP.open = !SHOP.open; renderShop(); };
-    body.querySelectorAll(".shop-buy").forEach(b => { b.onclick = () => buyBag(b.dataset.id, b); });
+    body.querySelectorAll(".pack-buy").forEach(b => { b.onclick = () => buyBag(b.dataset.id, b); });
   }
 
   async function loadShop() {
@@ -1262,6 +1381,50 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
   window.showComposePanel = showComposePanel;
 
+  /* ==================== 【v26.9】玄机宝阁 · 装备阁楼（抽卡大厅） ====================
+     商城主页只留入口横条 + 礼包卡牌，真正的抽卡放进居中弹窗。
+     实现用「搬 DOM」而不是重建：把抽卡区块整块 appendChild 进弹窗，
+     关闭时搬回原位 —— 原有按钮绑定、结果网格、十连揭示动画全都照常工作。 */
+  function syncGachaCur() {
+    const p = META.profile || {};
+    const set2 = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set2("gachaXianyu", p.xianyu || 0);
+    set2("gachaLingqi", p.lingqi || 0);
+  }
+  function showGachaHall() {
+    const inner = document.getElementById("gachaInner");
+    const holder = document.getElementById("gachaHolder");
+    if (!inner || !holder) return;
+    if (document.getElementById("gachaMask")) { closeGachaHall(); return; }
+    const mask = document.createElement("div");
+    mask.className = "ex-mask"; mask.id = "gachaMask";
+    mask.onclick = e => { if (e.target === mask) closeGachaHall(); };
+    mask.innerHTML = `
+      <div class="ex-wrap gacha-hall">
+        <div class="ex-board" style="height:64px"></div>
+        <div class="ex-head" style="padding-top:12px">
+          <div class="ex-title">玄机宝阁 · 装备阁楼</div>
+          <div class="ex-sub">寻宝得神装 · 空槽自动穿戴</div>
+          <div class="ex-close" id="gachaClose">×</div>
+        </div>
+        <div class="gacha-hall-body" id="gachaHallBody"></div>
+      </div>`;
+    document.body.appendChild(mask);
+    document.getElementById("gachaClose").onclick = closeGachaHall;
+    document.getElementById("gachaHallBody").appendChild(inner);
+    inner.style.display = "";
+    syncGachaCur();
+    if (typeof renderTiers === "function") renderTiers();
+  }
+  function closeGachaHall() {
+    const mask = document.getElementById("gachaMask");
+    const inner = document.getElementById("gachaInner");
+    const holder = document.getElementById("gachaHolder");
+    if (inner && holder) { holder.appendChild(inner); inner.style.display = "none"; }
+    if (mask) mask.remove();
+  }
+  window.showGachaHall = showGachaHall;
+
   /* ==================== 【v26.6.1】Service Worker 更新自愈 ====================
      背景：此前游戏页被 portal 注册的 Service Worker 接管，而 SW 对 /games/ 下的请求
      走的是"先回缓存、后台再拉新"，导致**部署新版本后用户刷新多少次都是旧页面**。
@@ -1360,6 +1523,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     $("shLingqi").textContent = p.lingqi || 0;
     $("shopXianyu").textContent = p.xianyu || 0; // 商城页货币同步
     $("shopLingqi").textContent = p.lingqi || 0;
+    const stEl = $("shopStone"); if (stEl) stEl.textContent = ((p.stones || {})["1"]) || 0;   // 【v26.9】一阶灵石
     $("tbName").textContent = p.username || "御火行者";
     const wins = p.wins || 0;
     $("tbTitle").textContent = wins >= 10 ? "山海伏妖师" : wins >= 3 ? "斩妖剑客" : wins >= 1 ? "初露锋芒" : "初入山海";
@@ -1776,7 +1940,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const cur = TIERS[curTier - 1];
     $("tierNote").textContent = cur.note;
     const banner = document.querySelector(".shop-banner-t");
-    if (banner) banner.textContent = "✦ 玄机宝阁 · " + TIER_CN[cur.n] + " ✦";
+    // 【v26.9】横条是「装备阁楼」的入口（点开抽卡大厅），阶位跟在后面
+    if (banner) banner.textContent = "✦ 玄机宝阁 · 装备阁楼 ✦";
     const b1 = document.getElementById("btnDraw1"), b10 = document.getElementById("btnDraw10");
     if (b1) b1.innerHTML = `<i>寻宝 ×1</i><b>120 ◉</b>`;
     if (b10) b10.innerHTML = `<i>寻宝 ×10</i><b>1200 ◉</b>`;
