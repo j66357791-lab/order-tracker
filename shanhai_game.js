@@ -720,6 +720,8 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
             nodes: (b.nodes || []).map(n => ({
               id: n.id, name: n.name, type: n.type, cost: n.cost, max: n.max,
               desc: n.desc || '', eff: n.eff || {},
+              // 【v26.17】前置技能解锁条件：req = { node, lv } —— 前置节点达到 lv 级才可学
+              req: n.req ? { node: String(n.req.node), lv: Math.max(1, Math.round(Number(n.req.lv) || 1)) } : null,
             })),
           })),
         })),
@@ -764,6 +766,16 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const lv = +ft[nodeId] || 0;
       const max = Math.max(1, +node.max || 1);
       if (lv >= max) return res.status(400).json({ ok: false, error: '该天赋已满级' });
+      // 【v26.17】前置技能等级限制：req = { node, lv }——前置节点达到 lv 级才能学本节点
+      if (node.req && node.req.node) {
+        const reqLv = Math.max(1, Math.round(Number(node.req.lv) || 1));
+        const cur = +ft[node.req.node] || 0;
+        if (cur < reqLv) {
+          let rn = null;
+          for (const b of (f.branches || [])) { const x = (b.nodes || []).find(y => y.id === node.req.node); if (x) { rn = x; break; } }
+          return res.status(400).json({ ok: false, error: `前置技能「${rn ? rn.name : node.req.node}」需先达到 Lv.${reqLv}（当前 Lv.${cur}）`, code: 'REQ_LOCKED' });
+        }
+      }
       const cost = Math.max(0, +node.cost || 1);
       const tp = await syncTalent(db, p);
       if (tp.points < cost) return res.status(400).json({ ok: false, error: `天赋点不足（需 ${cost}，剩 ${tp.points}）`, code: 'NO_POINT' });
@@ -781,6 +793,111 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       }).catch(() => { });
       res.json({ ok: true, points: np.talentPoints || 0, talents: np.talents || {}, level: lv + 1 });
     } catch (e) { console.error('[api] talent/learn', e); res.status(500).json({ ok: false, error: '学习失败，请稍后再试' }); }
+  });
+
+  // ==================== 【v26.17】后台：流派技能树配置 ====================
+  // 管理员可视化配置技能树结构：层级（分支/节点）、前置解锁条件（前置节点+所需等级）、
+  // 每节点最高等级。保存到 shanhai_config(_id:'factions')，玩家端 /faction 即时生效。
+  function validateFactions(list) {
+    if (!Array.isArray(list) || list.length < 1 || list.length > 10) return '流派数量需为 1~10 个';
+    const fids = new Set();
+    for (const f of list) {
+      if (!f || typeof f !== 'object') return '流派数据格式错误';
+      if (!/^[a-zA-Z0-9_-]{2,20}$/.test(String(f.id || ''))) return `流派 id 不合法（${f.id || '空'}）：需 2~20 位字母数字_-`;
+      if (!String(f.name || '').trim() || String(f.name).length > 20) return `流派 ${f.id} 的名称需 1~20 字`;
+      if (fids.has(f.id)) return `流派 id 重复：${f.id}`;
+      fids.add(f.id);
+      if (!Array.isArray(f.branches) || f.branches.length < 1 || f.branches.length > 10) return `流派 ${f.name} 需有 1~10 个分支`;
+      const nodeMap = new Map();   // id -> {max}
+      for (const b of f.branches) {
+        if (!b || typeof b !== 'object') return `流派 ${f.name} 的分支数据格式错误`;
+        if (!/^[a-zA-Z0-9_-]{2,20}$/.test(String(b.id || ''))) return `流派 ${f.name} 的分支 id 不合法`;
+        if (!String(b.name || '').trim() || String(b.name).length > 20) return `流派 ${f.name} 的分支名称需 1~20 字`;
+        if (!Array.isArray(b.nodes) || b.nodes.length < 1 || b.nodes.length > 20) return `分支「${b.name}」需有 1~20 个节点`;
+        for (const n of b.nodes) {
+          if (!n || typeof n !== 'object') return `分支「${b.name}」的节点数据格式错误`;
+          if (!/^[a-zA-Z0-9_-]{2,20}$/.test(String(n.id || ''))) return `分支「${b.name}」的节点 id 不合法（${n.id || '空'}）`;
+          if (nodeMap.has(n.id)) return `节点 id 在同一流派内必须唯一：${n.id}`;
+          const max = Math.round(Number(n.max));
+          if (!(max >= 1 && max <= 50)) return `节点「${n.name || n.id}」的最高等级需为 1~50`;
+          const cost = Math.round(Number(n.cost));
+          if (!(cost >= 0 && cost <= 20)) return `节点「${n.name || n.id}」的每次消耗需为 0~20 天赋点`;
+          const eff = (n.eff && typeof n.eff === 'object' && !Array.isArray(n.eff)) ? n.eff : {};
+          const effKeys = Object.keys(eff);
+          if (effKeys.length > 6) return `节点「${n.name || n.id}」的加成字段最多 6 个`;
+          for (const k of effKeys) {
+            if (!/^[a-zA-Z]{2,20}$/.test(k)) return `节点「${n.name || n.id}」的加成字段名不合法：${k}`;
+            if (!Number.isFinite(+eff[k]) || Math.abs(+eff[k]) > 100000) return `节点「${n.name || n.id}」的加成数值不合法：${k}`;
+          }
+          nodeMap.set(n.id, { max, name: n.name });
+        }
+      }
+      // 第二遍：校验前置引用（可跨分支引用同流派节点）+ 前置等级 <= 前置节点最高级
+      const edges = new Map();   // nodeId -> prereq nodeId
+      for (const b of f.branches) {
+        for (const n of b.nodes) {
+          if (n.req == null || n.req.node == null || n.req.node === '') continue;
+          const rn = String(n.req.node);
+          if (rn === String(n.id)) return `节点「${n.name || n.id}」不能以自己为前置`;
+          const pr = nodeMap.get(rn);
+          if (!pr) return `节点「${n.name || n.id}」的前置节点 ${rn} 不存在（前置只能指向同一流派内的节点）`;
+          const rl = Math.round(Number(n.req.lv));
+          if (!(rl >= 1 && rl <= pr.max)) return `节点「${n.name || n.id}」的前置等级需为 1~${pr.max}（前置「${pr.name}」最高 ${pr.max} 级）`;
+          edges.set(n.id, rn);
+        }
+      }
+      // 防环：前置链必须是有向无环图（否则出现"互为前置"永远学不了的死节点）
+      const color = new Map();   // 0=未访 1=在栈 2=完成
+      const hasCycle = (id) => {
+        color.set(id, 1);
+        const nxt = edges.get(id);
+        if (nxt) {
+          const c = color.get(nxt);
+          if (c === 1) return true;
+          if (!c && hasCycle(nxt)) return true;
+        }
+        color.set(id, 2);
+        return false;
+      };
+      for (const id of edges.keys()) {
+        if (!color.get(id) && hasCycle(id)) return `流派 ${f.name} 的前置关系存在循环依赖（如 A 前置 B、B 又前置 A），请调整`;
+      }
+    }
+    return null;
+  }
+
+  app.get('/api/shanhai/admin/factions', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const doc = await db.collection('shanhai_config').findOne({ _id: 'factions' });
+      const custom = !!(doc && Array.isArray(doc.value) && doc.value.length);
+      res.json({ ok: true, factions: custom ? doc.value : DEFAULT_FACTIONS, custom });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+  app.put('/api/shanhai/admin/factions', auth, adminOnly, async (req, res) => {
+    try {
+      const list = (req.body || {}).factions;
+      const err = validateFactions(list);
+      if (err) return res.status(400).json({ ok: false, error: err });
+      await db.collection('shanhai_config').updateOne(
+        { _id: 'factions' },
+        { $set: { value: list, updatedAt: new Date() } },
+        { upsert: true });
+      await db.collection('shanhai_logs').insertOne({
+        userId: req.user.id, action: 'admin_factions_save', detail: { factions: list.length }, createdAt: new Date(),
+      }).catch(() => { });
+      res.json({ ok: true });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '保存失败，请稍后再试' }); }
+  });
+  app.post('/api/shanhai/admin/factions/reset', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      await db.collection('shanhai_config').deleteOne({ _id: 'factions' });
+      await db.collection('shanhai_logs').insertOne({
+        userId: req.user.id, action: 'admin_factions_reset', detail: {}, createdAt: new Date(),
+      }).catch(() => { });
+      res.json({ ok: true, factions: DEFAULT_FACTIONS, custom: false });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
   // ==================== 体力（v24.9） ====================
