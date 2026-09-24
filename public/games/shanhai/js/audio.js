@@ -100,6 +100,10 @@ const SFX = (() => {
     gameOver() { [392, 330, 262].forEach((f, i) => tone(f, 0.34, "sine", 0.14, i * 0.20)); },
 
     // ================= 战斗 BGM（五声音阶循环乐句） =================
+    // 【v26.13 重写调度】原来每小节一个 setTimeout 排音符，页面切后台时浏览器把
+    // timer 节流到 1 秒甚至每分钟一次 → 音乐断断续续，这就是"背景音乐有问题"的根源。
+    // 现在改成 lookahead 调度：轮询只负责"提前把音符排进音频时钟"，
+    // 即使 timer 被节流，已排好的音符照样按精确时间响，节奏不受影响。
     bgmStart() {
       if (bgmOn || !enabled) return;
       const c = ac(); if (!c) return;
@@ -110,26 +114,30 @@ const SFX = (() => {
       bgmGain.gain.linearRampToValueAtTime(0.10, c.currentTime + 1.5);
       const PENTA = [261.6, 293.7, 329.6, 392.0, 440.0];   // 宫 商 角 徵 羽
       const BAR = 2.0;                                      // 每小节 2 秒
-      const playBar = () => {
-        if (!bgmOn) return;
-        const t = c.currentTime;
-        // 低音（每小节根音）
+      const scheduleBar = (start) => {
+        const rel = start - c.currentTime;                  // 相对当前音频时钟的偏移
         const root = [130.8, 146.8, 164.8, 196.0][bgmBar % 4];
-        tone(root, BAR * 0.9, "sine", 0.10, 0, root, bgmGain);
-        // 旋律：五声音阶随机游走（每小节 4 音）
+        tone(root, BAR * 0.9, "sine", 0.10, rel, root, bgmGain);
         for (let i = 0; i < 4; i++) {
           const f = PENTA[Math.floor(Math.random() * PENTA.length)] * (Math.random() < 0.3 ? 2 : 1);
-          tone(f, 0.42, "triangle", 0.055, i * (BAR / 4), f, bgmGain);
+          tone(f, 0.42, "triangle", 0.055, rel + i * (BAR / 4), f, bgmGain);
         }
-        // 鼓点：kick 在 1/3 拍，hat 在每个八分
         for (let i = 0; i < 4; i++) {
-          if (i % 2 === 0) tone(70, 0.16, "sine", 0.14, i * (BAR / 4), 45, bgmGain);
-          noise(0.04, 0.02, "highpass", 6000);
+          if (i % 2 === 0) tone(70, 0.16, "sine", 0.14, rel + i * (BAR / 4), 45, bgmGain);
+          noise(0.04, 0.02, "highpass", 6000, rel + i * (BAR / 4));
         }
         bgmBar++;
-        bgmTimer = setTimeout(playBar, BAR * 1000);
       };
-      playBar();
+      let nextBar = c.currentTime + 0.1;
+      const scheduler = () => {
+        if (!bgmOn) return;
+        while (nextBar < c.currentTime + 0.5) {             // 提前排 0.5 秒的音符
+          scheduleBar(nextBar);
+          nextBar += BAR;
+        }
+        bgmTimer = setTimeout(scheduler, 250);
+      };
+      scheduler();
     },
     bgmStop() {
       if (!bgmOn) return;
