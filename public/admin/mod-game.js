@@ -175,6 +175,13 @@ export function mount(root) {
         .st-add { width:100%; }
         .st-adv-toggle { margin-left:auto; font:600 11px/1.4 sans-serif; color:#1f4e79; display:flex; align-items:center; gap:3px; }
         .st-line select { min-width:0; }
+        /* 拖拽排序 */
+        .st-card { cursor: grab; }
+        .st-card.dragging, .st-card.st-dragging { opacity: .45; outline: 2px dashed #4a9a6e; }
+        .st-card.st-over { outline: 2px dashed #4a9a6e; outline-offset: -2px; background: #eef8f1; }
+        .st-colhead { cursor: grab; }
+        .st-colhead.st-dragging { opacity: .5; }
+        .st-colhead input, .st-colhead button { cursor: auto; }
       </style>
       <h2 class="serif">流派技能树配置</h2>
       <div class="sub">和玩家端一样的树：每个竖列是一个分支方向，技能从上往下排。<b>最常用就三件事</b>——改技能名、改「级」（最高等级）、在「前置」里选先学哪个技能。点 ✕ 删除，列底「＋加技能」。改完点下方「保存技能树」。</div>
@@ -708,7 +715,22 @@ export function mount(root) {
   // 紧凑竖向：流派 pill 切换 → 分支块竖排 → 节点一行一条
   let ST = { factions: [], cur: 0, custom: false, adv: false };
   const ST_TYPE = { minor: '属性', special: '特殊', play: '玩法', ultimate: '主动' };
-  const stUid = () => 'n' + Date.now().toString(36).slice(-5) + Math.floor(Math.random() * 90 + 10);
+  // 【v26.23 修复】连点"＋加技能"时旧 id 生成规则可能撞车（同一毫秒+随机段重复），
+  // 保存被"节点 id 重复"校验拦下——这就是"新建技能后保存失败"的元凶。加自增计数彻底防撞
+  let _stUidN = 0;
+  const stUid = () => 'n' + Date.now().toString(36).slice(-6) + (++_stUidN) + Math.floor(Math.random() * 90 + 10);
+  // 【v26.23】拖拽排序：正在拖的节点/分支（编辑态内存，保存时按数组顺序落库）
+  let STDRAG = null;
+  function moveNode(from, to) {
+    const f = ST.factions[ST.cur];
+    if (!f || !f.branches[from.bi] || !f.branches[to.bi]) return;
+    if (from.bi === to.bi && from.ni === to.ni) return;
+    const src = f.branches[from.bi].nodes;
+    const node = src.splice(from.ni, 1)[0];
+    let ni = to.ni;
+    if (from.bi === to.bi && from.ni < to.ni) ni -= 1;   // 同列后移：先删后插要回一位
+    f.branches[to.bi].nodes.splice(Math.max(0, Math.min(f.branches[to.bi].nodes.length, ni)), 0, node);
+  }
 
   async function loadSkillTree() {
     try {
@@ -759,13 +781,13 @@ export function mount(root) {
       <div class="st-cols">
       ${(f.branches || []).map((b, bi) => `
       <div class="st-col">
-        <div class="st-colhead">
+        <div class="st-colhead" draggable="true" data-b="${bi}" title="按住此处拖动，可左右调整分支顺序">
           <input data-b="${bi}" data-k="name" value="${esc(b.name)}" placeholder="分支名" title="分支名称">
           <input data-b="${bi}" data-k="role" value="${esc(b.role || '')}" placeholder="定位" title="定位说明">
           <button class="st-del" data-act="delBranch" data-b="${bi}" title="删除整个分支">✕</button>
         </div>
         ${(b.nodes || []).map((n, ni) => `
-        <div class="st-card">
+        <div class="st-card" draggable="true" data-b="${bi}" data-n="${ni}">
           <div class="st-line">
             <input data-n="${bi}_${ni}" data-k="name" value="${esc(n.name)}" placeholder="技能名" title="技能名（节点 id: ${esc(n.id)}）">
             <label class="st-lbl" title="最高可升级等级">级<input data-n="${bi}_${ni}" data-k="max" type="number" min="1" max="50" value="${+n.max || 1}"></label>
@@ -786,7 +808,7 @@ export function mount(root) {
         </div>`).join('')}
         <button class="st-mini st-add" data-act="addNode" data-b="${bi}">＋ 加技能</button>
       </div>`).join('')}
-      <div class="st-col st-coladd"><button class="st-mini" data-act="addBranch">＋ 加分支</button></div>
+      <div class="st-col st-coladd"><button class="st-mini" data-act="addBranch" title="新增一个分支列；把新列第一个技能的「前置」指向某个节点，就能实现从该节点分叉出多个方向">＋ 加分支</button></div>
       </div>`;
     bindSkillTree();
   }
@@ -840,6 +862,59 @@ export function mount(root) {
         else if (act === 'delNode') { if (f.branches[bi].nodes.length <= 1) return toast('分支至少保留一个技能'); f.branches[bi].nodes.splice(ni, 1); }
         renderSkillTree();
       };
+    });
+    // 【v26.23】拖拽排序：节点卡可拖（同列排序 / 跨列移动），分支列头可拖（左右调顺序）
+    ed.querySelectorAll('.st-card').forEach(card => {
+      card.addEventListener('dragstart', e => {
+        if (e.target.closest('input,select,button')) { e.preventDefault(); return; }   // 输入框内选字不触发卡片拖拽
+        STDRAG = { kind: 'n', bi: +card.dataset.b, ni: +card.dataset.n };
+        card.classList.add('st-dragging');
+        try { e.dataTransfer.effectAllowed = 'move'; } catch (err) { }
+      });
+      card.addEventListener('dragend', () => { card.classList.remove('st-dragging'); ed.querySelectorAll('.st-over').forEach(x => x.classList.remove('st-over')); STDRAG = null; });
+      card.addEventListener('dragover', e => { if (STDRAG && STDRAG.kind === 'n') { e.preventDefault(); card.classList.add('st-over'); } });
+      card.addEventListener('dragleave', () => card.classList.remove('st-over'));
+      card.addEventListener('drop', e => {
+        e.preventDefault(); e.stopPropagation();
+        card.classList.remove('st-over');
+        if (!STDRAG || STDRAG.kind !== 'n') return;
+        moveNode(STDRAG, { bi: +card.dataset.b, ni: +card.dataset.n });
+        STDRAG = null;
+        renderSkillTree();
+      });
+    });
+    ed.querySelectorAll('.st-col').forEach(col => {
+      col.addEventListener('dragover', e => { if (STDRAG) e.preventDefault(); });
+      col.addEventListener('drop', e => {
+        e.preventDefault();
+        if (!STDRAG) return;
+        const toBi = +col.dataset.b;
+        if (Number.isNaN(toBi)) return;
+        if (STDRAG.kind === 'n') {
+          // 落到列空白处 → 移到该列末尾
+          if (!(STDRAG.bi === toBi && STDRAG.ni === f.branches[toBi].nodes.length)) {
+            const node = f.branches[STDRAG.bi].nodes.splice(STDRAG.ni, 1)[0];
+            f.branches[toBi].nodes.push(node);
+            renderSkillTree();
+          }
+        } else if (STDRAG.bi !== toBi) {
+          const br = f.branches.splice(STDRAG.bi, 1)[0];
+          let at = toBi;
+          if (STDRAG.bi < toBi) at -= 1;
+          f.branches.splice(at, 0, br);
+          renderSkillTree();
+        }
+        STDRAG = null;
+      });
+    });
+    ed.querySelectorAll('.st-colhead').forEach(head => {
+      head.addEventListener('dragstart', e => {
+        if (e.target.closest('input,select,button')) { e.preventDefault(); return; }
+        STDRAG = { kind: 'b', bi: +head.dataset.b };
+        head.classList.add('st-dragging');
+        try { e.dataTransfer.effectAllowed = 'move'; } catch (err) { }
+      });
+      head.addEventListener('dragend', () => { head.classList.remove('st-dragging'); STDRAG = null; });
     });
   }
 
