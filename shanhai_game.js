@@ -344,7 +344,9 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     {
       id: 'tier1_bag',
       name: '随机一阶装备福袋',
-      icon: '🎁',
+      // 【v26.10】不用 emoji：🎁💎 这类贴图像素风在游戏里显得廉价（用户原话"人机图标"）。
+      // 改用古风篆字，前端给它套一个金色圆底，像印章，题材也更搭。
+      icon: '福',
       desc: '必出一件一阶装备，品质随机',
       rates: '上品 70%　仙品 20%　神品 10%',
       price: 600,          // 单价（灵气）
@@ -355,7 +357,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     {
       id: 'upgrade_bag',
       name: '升级福袋',
-      icon: '💎',
+      icon: '宝',
       desc: '随机获得仙玉与一阶灵石，强化装备的硬通货',
       rates: '仙玉 100~1000　一阶灵石 1~5 块',
       price: 600,          // 单价（灵气）——如需调整改这里
@@ -641,8 +643,10 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       // 【v24.5】星级改按剩余血量：满血 3 星 / ≥60% 2 星 / <60% 1 星
       // （原来按用时算，玩家反馈"满血通关只给一星"）
       const hp = Number(hpPct);
+      // 【v26.10】与客户端 ui.js 保持同一套标准：≥95% 血 3 星 / ≥60% 2 星 / 通关 1 星。
+      // （原来服务端用 0.999，客户端也是 0.999，但上报时漏传 hero 导致 hp 恒为 0 → 永远 1 星）
       const stars = isWin
-        ? (Number.isFinite(hp) ? (hp >= 0.999 ? 3 : hp >= 0.6 ? 2 : 1) : (t < 180 ? 3 : t < 360 ? 2 : 1))
+        ? (Number.isFinite(hp) ? (hp >= 0.95 ? 3 : hp >= 0.6 ? 2 : 1) : (t < 180 ? 3 : t < 360 ? 2 : 1))
         : 0;
       // 【二次复核修正】bestTimeSec 原来用对象展开生成第二个 $set，首通那一局会把
       // 前面 $set 里的 username/updatedAt 整体覆盖丢掉——改为预先组装同一个 $set
