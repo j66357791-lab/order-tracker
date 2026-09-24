@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.9',   // 【v26.9】价格走势图(时/日/月/全部)+机器人价格波动中枢+金额统一4位+装备阁楼抽卡大厅+礼包方形卡牌+灵石图标
+  appVersion: '26.10',  // 【v26.10】修机器人零成交+行情剧本/插针+修三星变一星+默认停在当打关+山海录功能入口+台账精度+去emoji
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
