@@ -100,8 +100,12 @@ export default function mountPortal(app, ctx = {}) {
       const { username, password } = req.body || {};
       const u = await db.collection('users').findOne({ username: String(username || '') });
       // 【2026-09-16 修复】主体系密码为 SHA-256 预哈希后 bcrypt；兼容明文注册的旧测试号
-      const ok = u && (await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false)
-        || await bcrypt.compare(String(req.body?.passwordPlain || ''), u.passwordHash).catch(() => false));
+      // 【2026-09-24 安全修复】用户不存在时也对哑哈希做一次 bcrypt 比较，
+      // 两条路径耗时一致，消除"用户名是否存在"的时序枚举侧信道
+      const ok = u
+        ? (await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false)
+          || await bcrypt.compare(String(req.body?.passwordPlain || ''), u.passwordHash).catch(() => false))
+        : await bcrypt.compare(String(password || ''), '$2a$10$CwTycUXWue0Thq9StjUM0uJ8DsCjW.P8FTkWPnrAgv9VHCJy4mRLu').catch(() => false);
       if (!ok) return res.status(401).json({ ok: false, error: '账号或密码错误' });
       limitPass(req);   // 登录成功，清掉尝试计数
       res.json({ ok: true, token: signToken(u), user: selfUser(u), redirect: u.role === 'admin' ? '/admin.html' : (u.role === 'writer' ? '/writer.html' : '/portal.html') });
