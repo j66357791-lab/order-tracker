@@ -156,9 +156,26 @@ export function mount(root) {
         .st-fhead { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
         .st-fhead input { font:12px/1.4 sans-serif; padding:3px 6px; border:1px solid #cfd8e3; border-radius:5px; }
         .st-fhead label { font:600 11px/1.4 sans-serif; color:#5b6a7d; display:flex; align-items:center; gap:3px; }
+        /* 【v26.21】树状列布局：与玩家端技能阁同构（核心→汇集轨→五列平齐向下） */
+        .st-rail { height:2px; background:#c9d4e0; border-radius:1px; margin:2px 8% 0; }
+        .st-cols { display:flex; gap:8px; align-items:stretch; margin-top:8px; flex-wrap:wrap; }
+        .st-col { flex:1; min-width:158px; border:1px solid #dde5ee; border-radius:8px; padding:6px; background:#fafcfe; display:flex; flex-direction:column; gap:5px; }
+        .st-col::before { content:""; width:2px; height:8px; margin:0 auto; background:#c9d4e0; }
+        .st-coladd { justify-content:flex-end; align-items:center; background:transparent; border-style:dashed; }
+        .st-coladd::before { display:none; }
+        .st-colhead { display:flex; gap:3px; align-items:center; }
+        .st-colhead input { font:700 12px/1.4 sans-serif; padding:3px 4px; border:1px solid #cfd8e3; border-radius:5px; min-width:0; width:100%; box-sizing:border-box; }
+        .st-card { border:1px solid #e3eaf2; border-radius:7px; padding:5px; background:#fff; display:flex; flex-direction:column; gap:4px; }
+        .st-line { display:flex; gap:3px; align-items:center; }
+        .st-line input, .st-line select { font:11.5px/1.4 sans-serif; padding:2px 3px; border:1px solid #cfd8e3; border-radius:4px; min-width:0; flex:1; width:auto; box-sizing:border-box; }
+        .st-line input[type="number"] { width:40px; flex:0 0 40px; }
+        .st-lbl { font:600 10px/1.4 sans-serif; color:#8a97a8; display:flex; align-items:center; gap:2px; flex:0 0 auto; }
+        .st-lbl input { width:34px !important; flex:0 0 34px !important; }
+        .st-wide { font:11.5px/1.4 sans-serif; padding:2px 4px; border:1px solid #e3eaf2; border-radius:4px; width:100%; box-sizing:border-box; background:#fbfdff; }
+        .st-add { width:100%; }
       </style>
       <h2 class="serif">流派技能树配置</h2>
-      <div class="sub">配置技能树的层级结构、前置解锁条件（前置技能需达到指定等级）与每个节点的最高等级。保存后玩家端「技能阁」即时生效。</div>
+      <div class="sub">与玩家端「技能阁」同构的树状编辑：每个竖列是一个分支方向，从上往下依次是技能节点。直接在卡片里改名称/类型/消耗/最高等级/前置条件/加成/说明，点 ✕ 删除，列底「＋加技能」新增。保存后玩家端即时生效。</div>
       <div class="st-tabs" id="stTabs"></div>
       <div id="stEditor"><div class="empty">加载中…</div></div>
       <div class="inline" style="margin-top:10px">
@@ -735,32 +752,37 @@ export function mount(root) {
         <label>简介 <input data-f="desc" value="${esc(f.desc || '')}" style="flex:1;min-width:160px"></label>
         <label><input type="checkbox" data-f="starter" ${f.starter ? 'checked' : ''}> 新手流派</label>
       </div>
+      <div class="st-rail"></div>
+      <div class="st-cols">
       ${(f.branches || []).map((b, bi) => `
-      <div class="st-branch">
-        <div class="st-bhead">
-          <span style="font:700 12px/1.4 sans-serif;color:#1f4e79">分枝</span>
-          <input data-b="${bi}" data-k="id" value="${esc(b.id)}" style="width:110px" title="分支 id（引用用）">
-          <input data-b="${bi}" data-k="name" value="${esc(b.name)}" style="width:150px" title="分支名称">
-          <input data-b="${bi}" data-k="role" value="${esc(b.role || '')}" style="width:110px" title="定位说明">
-          <span style="flex:1"></span>
-          <button class="st-mini" data-act="delBranch" data-b="${bi}">删分支</button>
+      <div class="st-col">
+        <div class="st-colhead">
+          <input data-b="${bi}" data-k="name" value="${esc(b.name)}" placeholder="分支名" title="分支名称">
+          <input data-b="${bi}" data-k="role" value="${esc(b.role || '')}" placeholder="定位" title="定位说明">
+          <button class="st-del" data-act="delBranch" data-b="${bi}" title="删除整个分支">✕</button>
         </div>
-        <div class="st-head"><span>技能名</span><span>类型</span><span>消耗点</span><span>最高等级</span><span>前置技能</span><span>前置等级</span><span>加成（如 atk:2, crit:3）</span><span>说明</span><span></span></div>
         ${(b.nodes || []).map((n, ni) => `
-        <div class="st-row">
-          <input data-n="${bi}_${ni}" data-k="name" value="${esc(n.name)}" title="技能名">
-          <select data-n="${bi}_${ni}" data-k="type">${Object.entries(ST_TYPE).map(([k, v]) => `<option value="${k}" ${n.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
-          <input data-n="${bi}_${ni}" data-k="cost" type="number" min="0" max="20" value="${+n.cost || 0}">
-          <input data-n="${bi}_${ni}" data-k="max" type="number" min="1" max="50" value="${+n.max || 1}">
-          <select data-n="${bi}_${ni}" data-k="reqNode">${nodeOpts(ST.cur).replace(`value="${esc((n.req || {}).node || '')}"`, `value="${esc((n.req || {}).node || '')}" selected`)}</select>
-          <input data-n="${bi}_${ni}" data-k="reqLv" type="number" min="1" max="50" value="${(n.req || {}).lv || 1}" ${n.req && n.req.node ? '' : 'disabled'}>
-          <input data-n="${bi}_${ni}" data-k="eff" value="${esc(effToText(n.eff))}" title="加成字段:数值，逗号分隔">
-          <input data-n="${bi}_${ni}" data-k="desc" value="${esc(n.desc || '')}">
-          <button class="st-del" data-act="delNode" data-b="${bi}" data-n="${ni}" title="删除该技能">✕</button>
+        <div class="st-card">
+          <div class="st-line">
+            <input data-n="${bi}_${ni}" data-k="name" value="${esc(n.name)}" placeholder="技能名" title="技能名（节点 id: ${esc(n.id)}）">
+            <button class="st-del" data-act="delNode" data-b="${bi}" data-n="${ni}" title="删除该技能">✕</button>
+          </div>
+          <div class="st-line">
+            <select data-n="${bi}_${ni}" data-k="type" title="节点类型">${Object.entries(ST_TYPE).map(([k, v]) => `<option value="${k}" ${n.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+            <label class="st-lbl" title="每次学习消耗天赋点">耗<input data-n="${bi}_${ni}" data-k="cost" type="number" min="0" max="20" value="${+n.cost || 0}"></label>
+            <label class="st-lbl" title="最高可升级等级">级<input data-n="${bi}_${ni}" data-k="max" type="number" min="1" max="50" value="${+n.max || 1}"></label>
+          </div>
+          <div class="st-line">
+            <select data-n="${bi}_${ni}" data-k="reqNode" title="前置技能（需达到指定等级才能学本技能）">${nodeOpts(ST.cur).replace(`value="${esc((n.req || {}).node || '')}"`, `value="${esc((n.req || {}).node || '')}" selected`)}</select>
+            <label class="st-lbl" title="前置技能需达到的等级">前<input data-n="${bi}_${ni}" data-k="reqLv" type="number" min="1" max="50" value="${(n.req || {}).lv || 1}" ${n.req && n.req.node ? '' : 'disabled'}></label>
+          </div>
+          <input class="st-wide" data-n="${bi}_${ni}" data-k="eff" value="${esc(effToText(n.eff))}" placeholder="加成：atk:2, crit:3">
+          <input class="st-wide" data-n="${bi}_${ni}" data-k="desc" value="${esc(n.desc || '')}" placeholder="玩家看到的说明">
         </div>`).join('')}
-        <div style="margin-top:6px"><button class="st-mini" data-act="addNode" data-b="${bi}">＋ 加技能</button></div>
+        <button class="st-mini st-add" data-act="addNode" data-b="${bi}">＋ 加技能</button>
       </div>`).join('')}
-      <button class="st-mini" data-act="addBranch">＋ 加分支</button>`;
+      <div class="st-col st-coladd"><button class="st-mini" data-act="addBranch">＋ 加分支</button></div>
+      </div>`;
     bindSkillTree();
   }
 
