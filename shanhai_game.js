@@ -982,6 +982,71 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   }
 
   // ---------- 行情看板 ----------
+  // 【v26.9】灵气价格走势（股票式 K 线简版：只要折线 + 高低点）
+  // 数据来自统一成交台账 shanhai_ex_deals，按时间桶做**按成交量加权**的均价
+  // （算术均价会让一手小单把曲线拽歪，加权均价才是真实成交重心）
+  app.get('/api/shanhai/exchange/chart', auth, exGuard, async (req, res) => {
+    try {
+      const db = await getDb();
+      const range = String((req.query || {}).range || '1d');
+      const HOUR = 3600000, DAY = 86400000;
+      const now = Date.now();
+      let since, bucketMs, label;
+      if (range === '1d') { since = now - DAY; bucketMs = HOUR; label = '近 24 小时'; }
+      else if (range === '7d') { since = now - 7 * DAY; bucketMs = DAY; label = '近 7 天'; }
+      else if (range === '30d') { since = now - 30 * DAY; bucketMs = DAY; label = '近 30 天'; }
+      else { since = 0; bucketMs = 30 * DAY; label = '全部（按月）'; }
+
+      const rows = await db.collection('shanhai_ex_deals')
+        .find(since ? { createdAt: { $gte: new Date(since) } } : {})
+        .sort({ createdAt: 1 })
+        .project({ price: 1, amount: 1, total: 1, createdAt: 1 })
+        .limit(20000).toArray();
+
+      const buckets = new Map();
+      for (const r of rows) {
+        const b = Math.floor(new Date(r.createdAt).getTime() / bucketMs) * bucketMs;
+        const cur = buckets.get(b) || { q: 0, v: 0, n: 0, hi: 0, lo: Infinity };
+        cur.q += Number(r.amount) || 0;
+        cur.v += Number(r.total) || 0;
+        cur.n += 1;
+        const p = Number(r.price) || 0;
+        if (p > cur.hi) cur.hi = p;
+        if (p < cur.lo) cur.lo = p;
+        buckets.set(b, cur);
+      }
+      // 补空桶：没有成交的时段沿用上一个价格，曲线才连续（否则断成几截）
+      let last = 0;
+      const pts = [];
+      const startB = rows.length ? Math.floor(new Date(rows[0].createdAt).getTime() / bucketMs) * bucketMs : (now - DAY);
+      for (let b = startB; b <= now; b += bucketMs) {
+        const c = buckets.get(b);
+        if (c && c.q > 0) {
+          const avg = money4(c.v / c.q);
+          last = avg;
+          pts.push({ t: b, price: avg, vol: c.q, cnt: c.n, hi: money4(c.hi), lo: c.lo === Infinity ? avg : money4(c.lo) });
+        } else if (last > 0) {
+          pts.push({ t: b, price: last, vol: 0, cnt: 0, hi: last, lo: last });
+        }
+      }
+      const prices = pts.map(p => p.price);
+      const first = prices.length ? prices[0] : 0;
+      const cur = prices.length ? prices[prices.length - 1] : 0;
+      res.json({
+        ok: true, range, label, bucketMs,
+        points: pts.slice(-120),                       // 最多留 120 个点，前端画得动
+        first, cur,
+        hi: prices.length ? Math.max(...prices) : 0,
+        lo: prices.length ? Math.min(...prices) : 0,
+        vol: pts.reduce((s, p) => s + p.vol, 0),
+        change: first > 0 ? money4((cur - first) / first * 100) : 0,   // 涨跌幅 %
+      });
+    } catch (e) {
+      console.error('[api] exchange/chart', e);
+      res.status(500).json({ ok: false, error: '走势加载失败，请稍后再试' });
+    }
+  });
+
   app.get('/api/shanhai/exchange/board', auth, exGuard, async (req, res) => {
     try {
       const db = await getDb();
@@ -1098,7 +1163,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         return res.status(400).json({ ok: false, error: `可转出金额不足 ¥${EX_MIN_TRANSFER}（零头留在交易所，攒够 0.01 再转）` });
       if (!(amt >= EX_MIN_TRANSFER)) return res.status(400).json({ ok: false, error: `最低转出 ¥${EX_MIN_TRANSFER}` });
       const avail = await exAvailable(db, me);
-      if (avail < amt) return res.status(400).json({ ok: false, error: `交易所可用余额不足（可用 ¥${avail.toFixed(3)}，挂单冻结中的部分不能转出）`, code: 'NO_EX_BALANCE' });
+      if (avail < amt) return res.status(400).json({ ok: false, error: `交易所可用余额不足（可用 ¥${avail.toFixed(4)}，挂单冻结中的部分不能转出）`, code: 'NO_EX_BALANCE' });
       // 条件更新保证「冻结中的钱转不走」（可用 = balance - frozen >= amt）
       const r = await db.collection(EXW_COL).findOneAndUpdate(
         { userId: me, $expr: { $gte: [{ $subtract: [{ $ifNull: ['$balance', 0] }, { $ifNull: ['$frozen', 0] }] }, amt] } },
@@ -1145,7 +1210,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         // 主站余额负责充值/提现，交易所折腾不到它；玩家要先转入才挂得了单。
         const avail = await exAvailable(db, me);
         if (avail < orderTotal)
-          return res.status(400).json({ ok: false, error: `交易所余额不足（需冻结 ¥${orderTotal.toFixed(3)}，可用 ¥${avail.toFixed(3)}），请先把主站余额转入交易所`, code: 'NO_EX_BALANCE' });
+          return res.status(400).json({ ok: false, error: `交易所余额不足（需冻结 ¥${orderTotal.toFixed(4)}，可用 ¥${avail.toFixed(4)}），请先把主站余额转入交易所`, code: 'NO_EX_BALANCE' });
       }
       const doc = {
         userId: me, username: req.user.displayName || req.user.username || '佚名',
@@ -1223,7 +1288,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         // 【v26.4】付款方看的是「交易所钱包」可用余额，不是主站余额
         const payerId = iAmBuyer ? me : ord.userId;
         const avail = await exAvailable(db, payerId);
-        if (avail < total) return res.status(400).json({ ok: false, error: `交易所余额不足（需 ¥${total.toFixed(3)}，可用 ¥${avail.toFixed(3)}）`, code: 'NO_EX_BALANCE' });
+        if (avail < total) return res.status(400).json({ ok: false, error: `交易所余额不足（需 ¥${total.toFixed(4)}，可用 ¥${avail.toFixed(4)}）`, code: 'NO_EX_BALANCE' });
       } else {
         if ((p0.lingqi || 0) < n) return res.status(400).json({ ok: false, error: `灵气不足（需 ${n}，可用 ${p0.lingqi || 0}）` });
       }
