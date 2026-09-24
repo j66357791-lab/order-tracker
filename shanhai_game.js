@@ -817,17 +817,17 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         for (const n of b.nodes) {
           if (!n || typeof n !== 'object') return `分支「${b.name}」的节点数据格式错误`;
           if (!/^[a-zA-Z0-9_-]{2,20}$/.test(String(n.id || ''))) return `分支「${b.name}」的节点 id 不合法（${n.id || '空'}）`;
-          if (nodeMap.has(n.id)) return `节点 id 在同一流派内必须唯一：${n.id}`;
+          if (nodeMap.has(n.id)) return `分支「${b.name}」存在重复的节点 id：${n.id}（${n.name || '未命名'}），请删掉多余的一张卡`;
           const max = Math.round(Number(n.max));
-          if (!(max >= 1 && max <= 50)) return `节点「${n.name || n.id}」的最高等级需为 1~50`;
+          if (!(max >= 1 && max <= 50)) return `分支「${b.name}」的「${n.name || n.id}」最高等级需为 1~50`;
           const cost = Math.round(Number(n.cost));
-          if (!(cost >= 0 && cost <= 20)) return `节点「${n.name || n.id}」的每次消耗需为 0~20 天赋点`;
+          if (!(cost >= 0 && cost <= 20)) return `分支「${b.name}」的「${n.name || n.id}」每次消耗需为 0~20 天赋点`;
           const eff = (n.eff && typeof n.eff === 'object' && !Array.isArray(n.eff)) ? n.eff : {};
           const effKeys = Object.keys(eff);
-          if (effKeys.length > 6) return `节点「${n.name || n.id}」的加成字段最多 6 个`;
+          if (effKeys.length > 6) return `分支「${b.name}」的「${n.name || n.id}」加成字段最多 6 个`;
           for (const k of effKeys) {
-            if (!/^[a-zA-Z]{2,20}$/.test(k)) return `节点「${n.name || n.id}」的加成字段名不合法：${k}`;
-            if (!Number.isFinite(+eff[k]) || Math.abs(+eff[k]) > 100000) return `节点「${n.name || n.id}」的加成数值不合法：${k}`;
+            if (!/^[a-zA-Z]{2,20}$/.test(k)) return `分支「${b.name}」的「${n.name || n.id}」加成字段名不合法：${k}`;
+            if (!Number.isFinite(+eff[k]) || Math.abs(+eff[k]) > 100000) return `分支「${b.name}」的「${n.name || n.id}」加成数值不合法：${k}`;
           }
           nodeMap.set(n.id, { max, name: n.name });
         }
@@ -838,11 +838,11 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         for (const n of b.nodes) {
           if (n.req == null || n.req.node == null || n.req.node === '') continue;
           const rn = String(n.req.node);
-          if (rn === String(n.id)) return `节点「${n.name || n.id}」不能以自己为前置`;
+          if (rn === String(n.id)) return `分支「${b.name}」的「${n.name || n.id}」不能以自己为前置`;
           const pr = nodeMap.get(rn);
-          if (!pr) return `节点「${n.name || n.id}」的前置节点 ${rn} 不存在（前置只能指向同一流派内的节点）`;
+          if (!pr) return `分支「${b.name}」的「${n.name || n.id}」前置节点 ${rn} 不存在（可能已被删除或改名，请重新选择前置）`;
           const rl = Math.round(Number(n.req.lv));
-          if (!(rl >= 1 && rl <= pr.max)) return `节点「${n.name || n.id}」的前置等级需为 1~${pr.max}（前置「${pr.name}」最高 ${pr.max} 级）`;
+          if (!(rl >= 1 && rl <= pr.max)) return `分支「${b.name}」的「${n.name || n.id}」前置等级需为 1~${pr.max}（前置「${pr.name}」最高 ${pr.max} 级）`;
           edges.set(n.id, rn);
         }
       }
