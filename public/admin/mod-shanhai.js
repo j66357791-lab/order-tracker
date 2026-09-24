@@ -68,12 +68,16 @@ export function mount(root) {
         <input id="mkVol" type="number" min="0.1" max="30" step="0.1" placeholder="默认 3">
         <div class="sub" style="margin-top:2px">每轮中枢游走幅度。太小 → 走势是平线；太大 → 价格乱跳</div></div>
       <div><label class="lab">行情剧本（先涨后跌，可选）</label>
-        <input id="mkScript" placeholder='例：[{"pct":20,"rounds":8},{"pct":-15,"rounds":6}]'>
-        <div class="sub" style="margin-top:2px">按顺序循环执行：<b>pct</b> 相对基准价的涨跌幅，<b>rounds</b> 该段持续轮数。留空则纯随机</div></div>
-      <div><label class="lab">插针（瞬拉/瞬砸，可选）</label>
-        <div class="inline"><input id="mkSpikePct" type="number" step="1" placeholder="幅度% 例 -30" style="width:110px">
-        <input id="mkSpikeRounds" type="number" min="0" max="100" placeholder="持续轮数" style="width:90px"></div>
-        <div class="sub" style="margin-top:2px">填了就立刻把中枢钉在 ±幅度%，持续指定轮数后自动恢复</div></div>
+        <textarea id="mkScript" rows="3" style="width:100%;font:12px/1.6 monospace" placeholder="每行一段：涨跌幅,轮数&#10;例：&#10;20,8&#10;-15,6"></textarea>
+        <div class="sub" style="margin-top:2px">每行一段，<b>涨跌幅%（逗号）轮数</b>。上例＝先涨 20% 走 8 轮，再跌 15% 走 6 轮，之后循环。留空则纯随机</div></div>
+      <div><label class="lab">插针（瞬拉 / 瞬砸，可选）</label>
+        <div class="inline">
+          <input id="mkSpikePct" type="number" step="1" placeholder="幅度% 例 -30" style="width:110px">
+          <span class="sub">持续</span>
+          <input id="mkSpikeRounds" type="number" min="0" max="100" placeholder="轮数" style="width:70px">
+          <span class="sub">轮</span>
+        </div>
+        <div class="sub" style="margin-top:2px">填了立刻把中枢钉到「基准价 ±幅度%」，持续指定轮数后自动恢复。不想要就留空</div></div>
       <div><label class="lab">每笔数量区间（灵气）</label>
         <div class="inline"><input id="mkAmountMin" type="number" min="1" style="width:80px">
         <span class="sub">~</span><input id="mkAmountMax" type="number" min="1" style="width:80px"></div></div>
@@ -176,7 +180,9 @@ export function mount(root) {
       $('mkAmountMin').value = c.amountMin; $('mkAmountMax').value = c.amountMax;
       $('mkSpread').value = c.spreadMin === undefined ? 0.001 : c.spreadMin;
       $('mkVol').value = c.volatility === undefined ? 3 : c.volatility;
-      $('mkScript').value = Array.isArray(c.script) && c.script.length ? JSON.stringify(c.script) : '';
+      // 剧本回填成"每行一段"的可读格式（原来存 JSON，管理员看着不好填）
+      $('mkScript').value = Array.isArray(c.script) && c.script.length
+        ? c.script.map(s => `${s.pct},${s.rounds}`).join('\n') : '';
       $('mkSpikePct').value = c.spikePct || '';
       $('mkSpikeRounds').value = c.spikeRounds || '';
       // 机器人实际报价：让管理员一眼看出买卖盘有没有被劈开
@@ -209,12 +215,15 @@ export function mount(root) {
         priceMin: +$('mkPriceMin').value, priceMax: +$('mkPriceMax').value,
         spreadMin: +$('mkSpread').value || 0.001,
         volatility: +$('mkVol').value || 3,
-        // 剧本：解析失败就不写（避免把坏 JSON 塞进配置里让机器人每轮报错）
+        // 剧本：按行解析「涨跌幅,轮数」，忽略空行与格式不对的行（别让坏配置卡住机器人）
         ...(function () {
-          const raw = ($('mkScript').value || '').trim();
-          if (!raw) return { script: [] };
-          try { const arr = JSON.parse(raw); return Array.isArray(arr) ? { script: arr } : {}; }
-          catch (e) { toast('行情剧本不是合法 JSON，已忽略'); return {}; }
+          const lines = ($('mkScript').value || '').split('\n').map(s => s.trim()).filter(Boolean);
+          const arr = [];
+          for (const ln of lines) {
+            const m = ln.match(/^(-?\d+(?:\.\d+)?)\s*[,，、\s]\s*(\d+)$/);
+            if (m) arr.push({ pct: +m[1], rounds: Math.max(1, +m[2] || 1) });
+          }
+          return { script: arr };
         })(),
         spikePct: $('mkSpikePct').value === '' ? 0 : (+$('mkSpikePct').value || 0),
         spikeRounds: $('mkSpikeRounds').value === '' ? 0 : (+$('mkSpikeRounds').value || 0),
