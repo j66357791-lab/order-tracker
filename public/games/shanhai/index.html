@@ -594,7 +594,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
 
   function mktVisible(cs) {
     const len = cs.length;
-    let cnt = MKT.view.cnt || Math.min(len, 60);
+    // 【v26.20】默认自适应全量展示（cnt=0 → 全部）；滚轮/＋－缩放后 cnt 生效，才产生可拖动的历史区间
+    let cnt = MKT.view.cnt || len;
     cnt = Math.max(8, Math.min(len, Math.round(cnt)));
     const off = Math.max(0, Math.min(len - cnt, Math.round(MKT.view.off || 0)));
     MKT.view = { off, cnt };
@@ -615,24 +616,38 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   function renderCandles(box, cs, W, H) {
     if (!cs.length) { box.innerHTML = '<div class="ex-empty">这段时间还没有成交，做几笔就有行情了</div>'; return; }
     const { vis, start } = mktVisible(cs);
-    const PL = 8, PR = 42, PT = 14, PB = 18;
+    const PL = 8, PR = 46, PT = 10, PB = 16;
+    // 【v26.20】股票式双区布局：上 72% 价格区 + 下 22% 成交量区（柱按涨跌染色）
+    const priceB = PT + Math.round((H - PT - PB) * 0.74);
+    const volTop = priceB + 6, volB = H - PB;
     const hi = Math.max.apply(null, vis.map(c => c.hi));
     const lo = Math.min.apply(null, vis.map(c => c.lo));
-    const pad = (hi - lo) * 0.06;
+    const pad = (hi - lo) * 0.08 || (hi || 0.001) * 0.02;
     const top = hi + pad, bot = Math.max(0.0001, lo - pad);
     const span = (top - bot) || 0.0001;
     const step = (W - PL - PR) / vis.length;
-    const bw = Math.max(2, step * 0.55);
+    const bw = Math.max(1.5, Math.min(13, step * 0.62));
     const X = i => PL + step * (i + 0.5);
-    const Y = v => PT + (H - PT - PB) * (1 - (v - bot) / span);
+    const Y = v => PT + (priceB - PT) * (1 - (v - bot) / span);
     const fp = v => Number(v).toFixed(4).replace(/0$/, "");
+    // 本帧渲染上下文：悬停十字光标的 pointermove 绑定只执行一次，从这里取当前帧参数
+    MKT.rt = { vis, PL, PR, step, W, H, X, fp };
     let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block">`;
+    // 价格区网格 + 右侧价格轴
     for (let g = 0; g <= 3; g++) {
-      const y = (PT + (H - PT - PB) * g / 3).toFixed(1);
+      const y = (PT + (priceB - PT) * g / 3).toFixed(1);
       const gv = (bot + (1 - g / 3) * span).toFixed(4);
       s += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="rgba(122,96,48,.14)" stroke-width="1"/>`;
-      s += `<text x="${W - PR + 3}" y="${(+y + 3).toFixed(1)}" fill="#9c8b6b" font-size="8.5">${fp(gv)}</text>`;
+      s += `<text x="${W - PR + 3}" y="${(+y + 3).toFixed(1)}" fill="#9c8b6b" font-size="8">${fp(gv)}</text>`;
     }
+    // 成交量柱（涨红跌绿，压暗不抢戏）
+    const maxVol = Math.max.apply(null, vis.map(c => c.v || 0)) || 1;
+    vis.forEach((c, i) => {
+      const up = c.c >= c.o;
+      const vh = Math.max(1, (volB - volTop) * ((c.v || 0) / maxVol));
+      s += `<rect x="${(X(i) - bw / 2).toFixed(1)}" y="${(volB - vh).toFixed(1)}" width="${bw.toFixed(1)}" height="${vh.toFixed(1)}" fill="${up ? "#d0452c" : "#2f9a63"}" opacity=".45"/>`;
+    });
+    s += `<text x="${PL}" y="${(volTop + 8).toFixed(1)}" fill="#9c8b6b" font-size="8">成交量</text>`;
     // 【v26.18】MA5/MA10 均线叠加（对全量收盘价计算，只画可见段）
     const drawMa = (vals, color) => {
       let d = "", pen = false;
@@ -645,6 +660,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     };
     drawMa(maValues(cs, start, vis.length, 5), "#c98a2e");
     drawMa(maValues(cs, start, vis.length, 10), "#5a6ea0");
+    // 蜡烛：影线 + 实体
     vis.forEach((c, i) => {
       const up = c.c >= c.o;
       const col = up ? "#d0452c" : "#2f9a63";
@@ -654,20 +670,30 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       const hh = Math.max(1.5, Y(Math.min(c.o, c.c)) - Y(Math.max(c.o, c.c))).toFixed(1);
       s += `<rect x="${(X(i) - bw / 2).toFixed(1)}" y="${yTop}" width="${bw.toFixed(1)}" height="${hh}" fill="${col}"/>`;
     });
+    // 价格区/成交量区分隔线 + 最新价虚线与右轴标签
     const lastC = vis[vis.length - 1];
     const lastCol = lastC.c >= lastC.o ? "#d0452c" : "#2f9a63";
+    s += `<line x1="${PL}" y1="${(volTop - 3).toFixed(1)}" x2="${W - PR}" y2="${(volTop - 3).toFixed(1)}" stroke="rgba(122,96,48,.22)" stroke-width="1"/>`;
     s += `<line x1="${PL}" y1="${Y(lastC.c).toFixed(1)}" x2="${W - PR}" y2="${Y(lastC.c).toFixed(1)}" stroke="${lastCol}" stroke-width="0.8" stroke-dasharray="3,3" opacity=".7"/>`;
     s += `<rect x="${W - PR + 1}" y="${(Y(lastC.c) - 7).toFixed(1)}" width="${PR - 2}" height="13" rx="2" fill="${lastCol}"/>`;
     s += `<text x="${W - PR + (PR - 2) / 2 + 1}" y="${(Y(lastC.c) + 2.5).toFixed(1)}" fill="#fff" font-size="8" font-weight="700" text-anchor="middle">${fp(lastC.c)}</text>`;
+    // 时间轴
     s += `<text x="${PL}" y="${H - 4}" fill="#9c8b6b" font-size="9">${fmtT(vis[0].t)}</text>`;
     s += `<text x="${W - PR}" y="${H - 4}" fill="#9c8b6b" font-size="9" text-anchor="end">${fmtT(vis[vis.length - 1].t)}</text>`;
+    // 十字光标（默认隐藏，悬停时 pointermove 驱动）
+    s += `<g id="mktCross" style="display:none" pointer-events="none">
+      <line id="mktCrossV" y1="${PT}" y2="${volB}" stroke="rgba(58,47,28,.45)" stroke-width="0.8" stroke-dasharray="2,2"/>
+      <line id="mktCrossH" x1="${PL}" x2="${W - PR}" stroke="rgba(58,47,28,.45)" stroke-width="0.8" stroke-dasharray="2,2"/>
+    </g>`;
     // 透明命中层（data-i 为全量数组的下标，供点击查单根详情）
     vis.forEach((c, i) => {
-      s += `<rect class="mkt-hit" data-i="${start + i}" x="${(PL + step * i).toFixed(1)}" y="${PT}" width="${step.toFixed(1)}" height="${(H - PT - PB).toFixed(1)}" fill="transparent" style="cursor:crosshair"/>`;
+      s += `<rect class="mkt-hit" data-i="${start + i}" x="${(PL + step * i).toFixed(1)}" y="${PT}" width="${step.toFixed(1)}" height="${(volB - PT).toFixed(1)}" fill="transparent" style="cursor:crosshair"/>`;
     });
     s += `</svg>`;
-    if (MKT.view.off > 0 || MKT.view.cnt) {
-      s += `<div style="text-align:right;font:10px/1.6 sans-serif;color:#9c8b6b">MA5 <span style="color:#c98a2e">━</span> MA10 <span style="color:#5a6ea0">━</span> ｜ 滚轮缩放 · 拖拽平移 · 双击复位</div>`;
+    if (MKT.view.cnt && MKT.view.cnt < cs.length) {
+      s += `<div style="text-align:right;font:10px/1.6 sans-serif;color:#9c8b6b">MA5 <span style="color:#c98a2e">━</span> MA10 <span style="color:#5a6ea0">━</span> ｜ 已放大 ${MKT.view.cnt}/${cs.length} 根 · 按住拖动看历史 · 双击复位</div>`;
+    } else {
+      s += `<div style="text-align:right;font:10px/1.6 sans-serif;color:#9c8b6b">MA5 <span style="color:#c98a2e">━</span> MA10 <span style="color:#5a6ea0">━</span> ｜ 自适应全量 ${cs.length} 根 · 滚轮/＋－放大后可拖动</div>`;
     }
     box.innerHTML = s;
     const info = document.getElementById("mktInfo");
@@ -709,10 +735,33 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         MKT.drag = { x: ev.clientX, off: MKT.view.off || 0, moved: false };
       });
       box.addEventListener("pointermove", ev => {
+        const rt = MKT.rt;
+        if (!rt) return;
+        const info = document.getElementById("mktInfo");
+        // 【v26.20】悬停十字光标 + 单根行情跟随（拖动中隐藏）
+        const r = box.getBoundingClientRect();
+        const xSvg = (ev.clientX - r.left) * rt.W / r.width;
+        const ySvg = (ev.clientY - r.top) * rt.H / r.height;
+        const g2 = box.querySelector("#mktCross");
+        if (g2) {
+          const i2 = Math.floor((xSvg - rt.PL) / rt.step);
+          if (!MKT.drag && i2 >= 0 && i2 < rt.vis.length && xSvg >= rt.PL && xSvg <= rt.W - rt.PR) {
+            g2.style.display = "";
+            const cx2 = rt.X(i2).toFixed(1);
+            const vLine = g2.querySelector("#mktCrossV"), hLine = g2.querySelector("#mktCrossH");
+            vLine.setAttribute("x1", cx2); vLine.setAttribute("x2", cx2);
+            hLine.setAttribute("y1", ySvg.toFixed(1)); hLine.setAttribute("y2", ySvg.toFixed(1));
+            const hc = rt.vis[i2];
+            if (hc && info) info.textContent = `${fmtT(hc.t)}　开 ¥${rt.fp(hc.o)}　收 ¥${rt.fp(hc.c)}　高 ¥${rt.fp(hc.hi)}　低 ¥${rt.fp(hc.lo)}　量 ${hc.v}`;
+          } else {
+            g2.style.display = "none";
+          }
+        }
+        // 拖拽平移（只有放大后才有历史可拖；自适应全量时无余量属正常）
         if (!MKT.drag) return;
         const dx = ev.clientX - MKT.drag.x;
         if (Math.abs(dx) > 4) MKT.drag.moved = true;
-        const stepPx = Math.max(4, (box.clientWidth - 50) / (MKT.view.cnt || 60));
+        const stepPx = Math.max(4, rt.step * box.clientWidth / rt.W);
         const shift = Math.round(dx / stepPx);
         if (shift !== (MKT.view.dragApplied || 0)) {
           MKT.view.off = MKT.drag.off + shift;
@@ -803,6 +852,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         return;
       }
       MKT.range = b.dataset.r;
+      MKT.view = { off: 0, cnt: 0 };   // 切区间回到自适应全量
       document.querySelectorAll("#mktTabs button").forEach(x => x.classList.toggle("on", x === b));
       loadMkt();
     });
@@ -1803,6 +1853,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <div class="fac-trunk">
           <div class="fac-core"><i>${f.icon || "⚔"}</i><b>${_escHtml((f.name || "").replace("流派", ""))}</b></div>
         </div>
+        <div class="fac-rail"></div>
         <div class="fac-branches">${(f.branches || []).map(b => `
           <div class="fac-branch-row">
             <div class="fac-blabel"><b>${_escHtml(b.name)}</b><i>${_escHtml(b.role || "")}</i></div>
