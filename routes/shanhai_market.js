@@ -18,6 +18,7 @@ const BOT_ID = '__market__';
 const FUND_COL = 'shanhai_market_fund';
 const CFG_COL = 'shanhai_config';
 const DEAL_COL = 'shanhai_ex_deals';
+const EX_FEE = 0.005;    // 手续费率（与 shanhai_game.js 的 EX_CFG.feeRate 一致）
 const ORD_COL = 'shanhai_exchange';
 
 const DEFAULT_CFG = {
@@ -166,7 +167,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     //   机器人卖 → [askMin, askMin×1.35]      机器人买 → [bidMax×0.65, bidMax]
     // 这样无论随机到多少，卖价永远高于买价，玩家无法低买高卖套利。
     const pr = marketPrices(cfg, center);
-    const price = side === 'sell'
+    let price = side === 'sell'
       ? money4(pr.askMin * (1 + Math.random() * 0.35))
       : money4(pr.bidMax * (1 - Math.random() * 0.35));
     const amount = rndInt(cfg.amountMin, cfg.amountMax);
@@ -277,9 +278,19 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     // 市场上没有可吃的单 → 机器人自己挂一单（提供流动性）
     const openSame = await col.countDocuments({ userId: BOT_ID, side, status: 'open' });
     if (openSame >= BOT_MAX_OPEN_PER_SIDE) return { skipped: 'bot_orders_full' };
-    // 同一价格已经有单就不再堆一张（否则同一价位挂成一排，玩家看着很假）
-    const samePrice = await col.findOne({ userId: BOT_ID, side, status: 'open', price });
-    if (samePrice) return { skipped: 'bot_same_price' };
+    // 【v26.10 修】原来"同价位已有单"直接放弃这一笔。价格区间一窄（4 位小数下可选价位
+    // 可能只有几十个），机器人很快就把价位占满 → 每笔都撞车 → 全场零成交、走势图空白。
+    // 现在：先按最小步长微调重试几次，实在撞就允许同价位并存（但最多 2 张，不至于挂成一排）。
+    const STEP = 0.0001;
+    let finalPrice = price;
+    for (let k = 0; k < 6; k++) {
+      const cnt = await col.countDocuments({ userId: BOT_ID, side, status: 'open', price: finalPrice });
+      if (cnt < 2) break;
+      const nx = money4(finalPrice + (side === 'sell' ? STEP : -STEP) * (k + 1));
+      if (nx <= 0) break;
+      finalPrice = nx;
+    }
+    if (finalPrice !== price) price = finalPrice;   // 用微调后的价挂出
     const totalNew = money4(amount * price);
     if (side === 'sell') {
       if ((fund.lingqi || 0) < amount) return { skipped: 'bot_no_lingqi' };
@@ -343,16 +354,77 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     const doc = await db.collection(CFG_COL).findOne({ _id: 'market' }).catch(() => null);
     const saved = Number(doc && doc.priceCenter);
     if (saved && Number.isFinite(saved) && saved > 0) c = money4(saved);
+    const patch = { priceCenter: c, centerAt: new Date() };
 
-    c = money4(c * (1 + (Math.random() * 2 - 1) * (vol / 100)));          // ① 游走
-    c = money4(c + (base - c) * 0.08);                                     // ② 回归
-    if (Math.random() < 0.05) {                                            // ③ 脉冲
-      c = money4(c * (1 + (Math.random() * 2 - 1) * (vol / 100) * 3));
+    // 【v26.10】插针：管理员设了 spikePct/spikeRounds 时，中枢直接钉死在
+    // base×(1+spikePct%)，持续 spikeRounds 轮后自动恢复常规逻辑（用于"砸盘/拉盘"演示）
+    const spikePct = Number(cfg.spikePct) || 0;
+    const spikeRounds = Math.max(0, Math.floor(Number(cfg.spikeRounds) || 0));
+    let spikeLeft = Number(doc && doc.spikeLeft);
+    if (!Number.isFinite(spikeLeft)) spikeLeft = spikeRounds;
+    if (spikePct !== 0 && spikeLeft > 0) {
+      c = money4(base * (1 + spikePct / 100));
+      patch.priceCenter = money4(Math.max(min, Math.min(max, c)));
+      patch.spikeLeft = spikeLeft - 1;
+      await db.collection(CFG_COL).updateOne({ _id: 'market' }, { $set: patch }, { upsert: true }).catch(() => { });
+      return patch.priceCenter;
+    }
+
+    // 【v26.10】剧本：[{pct:20,rounds:10},{pct:-15,rounds:10}] —— "先涨 20%，再跌 15%"
+    const script = Array.isArray(cfg.script) ? cfg.script.filter(s => s && Number(s.pct) !== undefined) : [];
+    if (script.length) {
+      let idx = Math.max(0, Math.min(script.length - 1, Number(doc && doc.scriptIdx) || 0));
+      let left = Number(doc && doc.scriptLeft);
+      if (!Number.isFinite(left) || left <= 0) left = Math.max(1, Math.floor(Number(script[idx].rounds) || 10));
+      const seg = script[idx];
+      const target = money4(base * (1 + (Number(seg.pct) || 0) / 100));
+      c = money4(c + (target - c) * 0.3);                                        // 向本段目标推进 30%
+      c = money4(c * (1 + (Math.random() * 2 - 1) * (vol / 100) * 0.5));         // 叠加小幅噪声，别太机械
+      left -= 1;
+      if (left <= 0) {
+        idx = (idx + 1) % script.length;
+        left = Math.max(1, Math.floor(Number(script[idx].rounds) || 10));
+      }
+      patch.scriptIdx = idx;
+      patch.scriptLeft = left;
+    } else {
+      c = money4(c * (1 + (Math.random() * 2 - 1) * (vol / 100)));          // ① 游走
+      c = money4(c + (base - c) * 0.08);                                     // ② 回归
+      if (Math.random() < 0.05) {                                            // ③ 脉冲
+        c = money4(c * (1 + (Math.random() * 2 - 1) * (vol / 100) * 3));
+      }
     }
     c = money4(Math.max(min, Math.min(max, c)));                           // ④ 夹逼
+    patch.priceCenter = c;
     await db.collection(CFG_COL).updateOne(
-      { _id: 'market' }, { $set: { priceCenter: c, centerAt: new Date() } }, { upsert: true }).catch(() => { });
+      { _id: 'market' }, { $set: patch }, { upsert: true }).catch(() => { });
     return c;
+  }
+
+  // ==================== 【v26.10】做市撮合（保证行情曲线不空白） ====================
+  // 机器人不能和自己成交（卖价永远高于买价，且 ord.userId===me 会被拦），
+  // 所以只要没人来玩，成交量就永远是 0，走势图一片空白。
+  // 这里让机器人做一笔"演习撮合"：**只写台账、资产净变化≈0**，
+  // 目的是让价格曲线有真实的数据点。后台台账用 sim:true 标记，与真实成交区分。
+  async function simMatch(db, cfg, center) {
+    const pr = marketPrices(cfg, center);
+    const n = rndInt(cfg.amountMin, cfg.amountMax);
+    // 演习价取买卖中值的邻域：略偏一侧，让曲线有起伏而不是一条平线
+    const mid = money4((pr.askMin + pr.bidMax) / 2);
+    const jitter = (Math.random() * 2 - 1) * (pr.spread || 0.001) * 0.4;
+    const price = money4(Math.max(0.0001, mid + jitter));
+    const total = money4(n * price);
+    const fee = money4(total * EX_FEE);
+    await db.collection(DEAL_COL).insertOne({
+      orderId: null, side: Math.random() < 0.5 ? 'sell' : 'buy',
+      amount: n, price, total, fee,
+      buyerId: BOT_ID, sellerId: BOT_ID,
+      bot: true, mode: 'player', sim: true,
+      buyerName: '做市', sellerName: '做市',
+      createdAt: new Date(),
+    });
+    // 资产净变化≈0：灵气与钱各在自己账上走一圈（卖出所得与买入付出同为机器人）
+    return { dealt: true, sim: true, amount: n, price };
   }
 
   async function runRound() {
@@ -371,6 +443,12 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       for (let i = 0; i < n; i++) {
         res.push(await oneTrade(db, cfg, center));
         await new Promise(r => setTimeout(r, 300));   // 稍微错开，避免同一秒挤在一起
+      }
+      // 【v26.10】真实成交为 0 时补一笔"做市撮合"：否则没人来玩的那几个小时
+      // 行情曲线会整段空白，走势图等于白做。
+      if (res.filter(r => r.dealt).length === 0 && cfg.simMatch !== false) {
+        const s = await simMatch(db, cfg, center).catch(() => null);
+        if (s) res.push(s);
       }
       const deals = res.filter(r => r.dealt).length;
       const posts = res.filter(r => r.posted).length;
