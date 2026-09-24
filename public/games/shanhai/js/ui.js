@@ -168,7 +168,9 @@ const UI = (() => {
     localStorage.setItem("m1_best_win", best);
     // 【v24.5】星级按剩余血量：满血 3 星 / ≥60% 2 星 / <60% 1 星
     const hpPct = Math.max(0, Math.min(1, (hero.hp || 0) / (hero.maxHp || 1)));
-    const star = hpPct >= 0.999 ? 3 : hpPct >= 0.6 ? 2 : 1;
+    // 【v26.10】阈值放宽：原来要 ≥99.9% 血才算 3 星（等于必须滴血未损），
+    // 玩家辛辛苦苦通关却总是 1 星。改成 ≥95% 即 3 星；服务端用同一套标准。
+    const star = hpPct >= 0.95 ? 3 : hpPct >= 0.6 ? 2 : 1;
     ov.innerHTML = `
       <div class="panel">
         <div class="panel-title win">斩妖功成</div>
