@@ -203,9 +203,17 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     //   机器人卖 → [askMin, askMin×1.35]      机器人买 → [bidMax×0.65, bidMax]
     // 这样无论随机到多少，卖价永远高于买价，玩家无法低买高卖套利。
     const pr = marketPrices(cfg, center);
+    // 【v26.17 修复·机器人不挂单根因】报价必须落在配置区间 [priceMin, priceMax] 内：
+    // 中枢游走到区间边缘（或管理员设的区间很窄）时，卖价 askMin×1.35 会越过 priceMax、
+    // 买价 bidMax×0.65 会跌破 priceMin —— 挂出去的单每轮都被末尾的 cancelOutOfRange
+    // 立刻撤掉，表现就是"启动机器人后既没有卖单也没有买单"（行情却还在动，因为 simMatch 只写台账）。
+    // 处理：卖价夹到 [askMin, max]（区间窄到 askMin>max 时取 max）；买价夹到 [min, bidMax]
+    // （bidMax<min 时取 min）。夹紧后卖价 > 买价仍然成立（askMin ≥ bidMax 恒成立，见 marketPrices）。
+    const rangeMin = Number(cfg.priceMin) || 0.0001;
+    const rangeMax = Number(cfg.priceMax) || 0.18;
     let price = side === 'sell'
-      ? money4(pr.askMin * (1 + Math.random() * 0.35))
-      : money4(pr.bidMax * (1 - Math.random() * 0.35));
+      ? money4(Math.min(rangeMax, Math.max(pr.askMin, pr.askMin * (1 + Math.random() * 0.35))))
+      : money4(Math.max(rangeMin, Math.min(pr.bidMax, pr.bidMax * (1 - Math.random() * 0.35))));
     const amount = rndInt(cfg.amountMin, cfg.amountMax);
     const fund = await ensureFund(db, cfg);
     // 【v26.4】机器人花的钱来自它的「交易所钱包」可用余额（余额 − 挂单冻结）
@@ -350,14 +358,16 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     // 现在：先按最小步长微调重试几次，实在撞就允许同价位并存（但最多 2 张，不至于挂成一排）。
     // 【v26.15】步长按区间跨度自适应：0.001-0.002 用 0.0001，更窄的区间（如 0.0001-0.0002）
     // 用 0.00001——支持更细的小数，不设上限
-    const STEP = Math.max(0.00001, money4((max - min) / 500));
+    // 【v26.17 修复】微调步进同样夹回区间内：原来步进方向朝区间外走（卖价向上/买价向下），
+    // 走出 [min,max] 的单又会被 cancelOutOfRange 撤掉，越调越少
+    const STEP = Math.max(0.00001, money4((rangeMax - rangeMin) / 500));
     let finalPrice = price;
     for (let k = 0; k < 6; k++) {
       const cnt = await col.countDocuments({ userId: BOT_ID, side, status: 'open', price: finalPrice });
       if (cnt < 2) break;
       const nx = money4(finalPrice + (side === 'sell' ? STEP : -STEP) * (k + 1));
       if (nx <= 0) break;
-      finalPrice = nx;
+      finalPrice = Math.max(rangeMin, Math.min(rangeMax, nx));
     }
     if (finalPrice !== price) price = finalPrice;   // 用微调后的价挂出
     const totalNew = money4(amount * price);
