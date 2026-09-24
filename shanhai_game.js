@@ -836,38 +836,50 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
 
       // —— 首通判定（在 $addToSet 前查） ——
       const before = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
-      const firstClear = isWin && !(before.clearedStages || []).includes(st);
 
       // —— 战绩 + 养成奖励原子入账 ——
       // 【v24.4】首通奖励随关卡递增：150 + 30×(st-1)，上限 720
       const firstClearGain = Math.min(720, META_CFG.firstClearXianyu + (st - 1) * 30);
-      const gainXianyu = k * META_CFG.killXianyu + (isWin ? META_CFG.winXianyu : 0) + (firstClear ? firstClearGain : 0);
-      const gainLingqi = isWin ? META_CFG.winLingqi : 0;
       // 【v24.5】星级改按剩余血量：满血 3 星 / ≥60% 2 星 / <60% 1 星
       // （原来按用时算，玩家反馈"满血通关只给一星"）
-      const hp = Number(hpPct);
+      // 【2026-09-24 加固】hpPct 截断到 [0,1]，防上报 1.5 之类越界值干扰星级
+      const hp = Math.max(0, Math.min(1, Number(hpPct) || 0));
       // 【v26.10】与客户端 ui.js 保持同一套标准：≥95% 血 3 星 / ≥60% 2 星 / 通关 1 星。
-      // （原来服务端用 0.999，客户端也是 0.999，但上报时漏传 hero 导致 hp 恒为 0 → 永远 1 星）
       const stars = isWin
-        ? (Number.isFinite(hp) ? (hp >= 0.95 ? 3 : hp >= 0.6 ? 2 : 1) : (t < 180 ? 3 : t < 360 ? 2 : 1))
+        ? (Number(hpPct) != null && Number.isFinite(Number(hpPct)) ? (hp >= 0.95 ? 3 : hp >= 0.6 ? 2 : 1) : (t < 180 ? 3 : t < 360 ? 2 : 1))
         : 0;
       // 【二次复核修正】bestTimeSec 原来用对象展开生成第二个 $set，首通那一局会把
       // 前面 $set 里的 username/updatedAt 整体覆盖丢掉——改为预先组装同一个 $set
       const setResult = { username: req.user.displayName || req.user.username, updatedAt: new Date() };
       if (isWin && t > 0 && before.bestTimeSec == null) setResult.bestTimeSec = t;
-      const upd = {
-        $inc: { plays: 1, wins: isWin ? 1 : 0, totalKills: k, xianyu: gainXianyu, lingqi: gainLingqi },
-        // 【v24.5】星级写入档案（$max 保证只升不降）
-        $max: isWin ? { bestKills: k, maxLevel: lv, ["stageStars." + st]: stars } : { bestKills: k, maxLevel: lv },
-        $set: setResult,
-        ...(firstClear ? { $addToSet: { clearedStages: st } } : {}),
+      // 【2026-09-24 安全修复】首通奖励改为原子抢占：条件更新 clearedStages $ne st，
+      // 命中（确实把 st 加进已通关列表）才发首通奖——原先读-判-写在并发双报同一关时首通奖（最高 720 仙玉）可发两次
+      const mkUpd = (fc) => {
+        const gainXianyu = k * META_CFG.killXianyu + (isWin ? META_CFG.winXianyu : 0) + (fc ? firstClearGain : 0);
+        const gainLingqi = isWin ? META_CFG.winLingqi : 0;
+        const upd = {
+          $inc: { plays: 1, wins: isWin ? 1 : 0, totalKills: k, xianyu: gainXianyu, lingqi: gainLingqi },
+          // 【v24.5】星级写入档案（$max 保证只升不降）
+          $max: isWin ? { bestKills: k, maxLevel: lv, ["stageStars." + st]: stars } : { bestKills: k, maxLevel: lv },
+          $set: setResult,
+        };
+        if (fc) upd.$addToSet = { clearedStages: st };
+        if (isWin && t > 0 && before.bestTimeSec != null) upd.$min = { bestTimeSec: t };
+        return { upd, gainXianyu, gainLingqi };
       };
-      if (isWin && t > 0 && before.bestTimeSec != null) upd.$min = { bestTimeSec: t };
-      const r = await db.collection('shanhai_profiles').findOneAndUpdate(
-        { userId: req.user.id },
-        upd,
-        { returnDocument: 'after', upsert: true }
-      );
+      let firstClear = isWin;
+      let { upd, gainXianyu, gainLingqi } = mkUpd(firstClear);
+      const profCol = db.collection('shanhai_profiles');
+      let r = firstClear
+        ? await profCol.findOneAndUpdate(
+          { userId: req.user.id, clearedStages: { $ne: st } }, upd, { returnDocument: 'after' })
+        : await profCol.findOneAndUpdate({ userId: req.user.id }, upd, { returnDocument: 'after', upsert: true });
+      if (!r && firstClear) {
+        // 并发抢先（另一请求已把该关记为首通）：本局降级为普通通关重写一次
+        firstClear = false;
+        ({ upd, gainXianyu, gainLingqi } = mkUpd(false));
+        r = await profCol.findOneAndUpdate({ userId: req.user.id }, upd, { returnDocument: 'after' });
+      }
       const p = r.value || r;
       res.json({
         ok: true,
@@ -1135,8 +1147,26 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         return res.status(503).json({ ok: false, error: '交易所正在维护，请稍后再来', code: 'EX_CLOSED' });
       }
       next();
-    } catch (e) { next(); }
+    } catch (e) {
+      // 【2026-09-24 安全修复】fail-closed：DB 异常时维护总闸失效是"最需要止血时开关失灵"，
+      // 改为拒绝请求（503），宁可误报维护也不能在异常态放行资金操作
+      console.error('[exchange] 总闸检查失败，按维护处理:', e.message);
+      res.status(503).json({ ok: false, error: '交易所暂时不可用，请稍后再来', code: 'EX_CLOSED' });
+    }
   };
+
+  // 【2026-09-24 安全修复】进程内用户级互斥锁：把同一用户的资金操作（转入/挂单/吃单/撤单）
+  // 串行化，根治"读-判-写"竞态（并发双花、冻结超发、撤单与成交双退）。
+  // 本系统为单实例部署（限流/缓存同为进程内存），进程内锁即全局锁；多实例部署需换 Redis。
+  const _userLocks = new Map();
+  async function withUserLock(key, fn) {
+    while (_userLocks.has(key)) { await _userLocks.get(key).catch(() => { }); }
+    let release;
+    const gate = new Promise(r => { release = r; });
+    _userLocks.set(key, gate);
+    try { return await fn(); }
+    finally { release(); if (_userLocks.get(key) === gate) _userLocks.delete(key); }
+  }
 
   async function exWalletOf(db, userId) {
     let w = await db.collection(EXW_COL).findOne({ userId });
@@ -1168,8 +1198,14 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   }
 
   async function walletBalanceOf(db, userId) {
-    const rows = await db.collection('wallet_log').find({ userId }, { projection: { amount: 1 } }).toArray();
-    return money2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+    // 【2026-09-24 性能优化】服务端 $group 求和：原先把该用户全部流水拉进 Node 内存再 reduce，
+    // 流水涨到几千条后交易所每次 board/deposit/withdraw 都拖全量文档（传输+内存+CPU 线性涨）。
+    // 改为库端聚合，走 wallet_log.userId 索引，只回一个数字
+    const r = await db.collection('wallet_log').aggregate([
+      { $match: { userId } },
+      { $group: { _id: null, sum: { $sum: { $cond: [{ $isNumber: '$amount' }, '$amount', 0] } } } },
+    ]).toArray();
+    return money2((r[0] && r[0].sum) || 0);
   }
   // 每侧未成交单数
   async function openSides(db, userId) {
@@ -1204,23 +1240,43 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       else if (range === '30d') { since = now - 30 * DAY; bucketMs = DAY; label = '近 30 天'; }
       else { since = 0; bucketMs = 30 * DAY; label = '全部（按月）'; }
 
-      const rows = await db.collection('shanhai_ex_deals')
-        .find(since ? { createdAt: { $gte: new Date(since) } } : {})
-        .sort({ createdAt: 1 })
-        .project({ price: 1, amount: 1, total: 1, createdAt: 1 })
-        .limit(20000).toArray();
+      // 【2026-09-24 性能优化】原先拉 2 万条成交进 Node 内存做两轮分桶（range=all 时几乎全表），
+      // 改为 $facet 在库端同时完成粗/细两套分桶，只把聚合结果（几十个桶）传回来
+      const coarseId = { $multiply: [{ $floor: { $divide: [{ $toLong: '$createdAt' }, bucketMs] } }, bucketMs] };
+      const fineId = { $multiply: [{ $floor: { $divide: [{ $toLong: '$createdAt' }, range === '1d' || range === '7d' ? 60000 : range === '30d' ? 3600000 : DAY] } }, range === '1d' || range === '7d' ? 60000 : range === '30d' ? 3600000 : DAY] };
+      const facet = await db.collection('shanhai_ex_deals').aggregate([
+        { $match: since ? { createdAt: { $gte: new Date(since) } } : {} },
+        { $facet: {
+          coarse: [
+            { $group: {
+              _id: coarseId,
+              q: { $sum: '$amount' }, v: { $sum: '$total' }, n: { $sum: 1 },
+              hi: { $max: '$price' }, lo: { $min: '$price' },
+            } },
+            { $sort: { _id: 1 } },
+          ],
+          fine: [
+            { $sort: { createdAt: 1 } },
+            { $group: {
+              _id: fineId,
+              q: { $sum: '$amount' }, v: { $sum: '$total' },
+              hi: { $max: '$price' }, lo: { $min: '$price' },
+              first: { $first: '$price' }, last: { $last: '$price' },
+            } },
+            { $sort: { _id: 1 } },
+          ],
+          firstDoc: [{ $sort: { createdAt: 1 } }, { $limit: 1 }, { $project: { price: 1, createdAt: 1 } }],
+          lastDoc: [{ $sort: { createdAt: -1 } }, { $limit: 1 }, { $project: { price: 1, createdAt: 1 } }],
+        } },
+      ], { allowDiskUse: true }).toArray();
+      const F = facet[0] || {};
+      const coarseRows = F.coarse || [], fineRows = F.fine || [];
+      const firstDoc = (F.firstDoc || [])[0] || null, lastDoc = (F.lastDoc || [])[0] || null;
 
       const buckets = new Map();
-      for (const r of rows) {
-        const b = Math.floor(new Date(r.createdAt).getTime() / bucketMs) * bucketMs;
-        const cur = buckets.get(b) || { q: 0, v: 0, n: 0, hi: 0, lo: Infinity };
-        cur.q += Number(r.amount) || 0;
-        cur.v += Number(r.total) || 0;
-        cur.n += 1;
-        const p = Number(r.price) || 0;
-        if (p > cur.hi) cur.hi = p;
-        if (p < cur.lo) cur.lo = p;
-        buckets.set(b, cur);
+      for (const r of coarseRows) {
+        const b = Math.floor(Number(r._id) || 0);
+        buckets.set(b, { q: Number(r.q) || 0, v: Number(r.v) || 0, n: r.n, hi: Number(r.hi) || 0, lo: Number(r.lo) || 0 });
       }
       // 【v26.11 修 24 小时画不出来】原来 startB 从"第一条成交"开始：
       // 若近 1 小时才有成交，24 小时视图就只有 1 个点（甚至点太少画不成线）。
@@ -1229,10 +1285,10 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       let last = 0;
       const sortedB = [...buckets.entries()].sort((a, b) => a[0] - b[0]);
       for (const [, c] of sortedB) { if (c.q > 0) { last = money4(c.v / c.q); break; } }
-      if (!last && rows.length) last = money4(Number(rows[rows.length - 1].price) || 0);
+      if (!last && lastDoc) last = money4(Number(lastDoc.price) || 0);
       const pts = [];
       const startB = (range === 'all')
-        ? (rows.length ? Math.floor(new Date(rows[0].createdAt).getTime() / bucketMs) * bucketMs : now)
+        ? (firstDoc ? Math.floor(new Date(firstDoc.createdAt).getTime() / bucketMs) * bucketMs : now)
         : Math.floor(since / bucketMs) * bucketMs;
       for (let b = startB; b <= now; b += bucketMs) {
         const c = buckets.get(b);
@@ -1251,24 +1307,12 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       // 【v26.12】K 线：先用**更细的桶**（1d/7d→分钟，30d→小时，all→天）做加权均价，
       // 再把细桶聚合成蜡烛：开盘=桶内第一笔，收盘=最后一笔，高低=区间极值。
       // 这样才能画出股票那种带上下影线的柱子，而不只是一条折线。
-      const fineMs = range === '1d' || range === '7d' ? 60000 : range === '30d' ? 3600000 : DAY;
       const groupMs = range === '1d' ? 3600000 : range === '7d' ? 4 * 3600000 : range === '30d' ? DAY : 30 * DAY;
-      const fine = new Map();
-      for (const r of rows) {
-        const b = Math.floor(new Date(r.createdAt).getTime() / fineMs) * fineMs;
-        const c = fine.get(b) || { q: 0, v: 0, hi: 0, lo: Infinity, first: null, last: 0, at: new Date(r.createdAt).getTime() };
-        const p = Number(r.price) || 0;
-        if (c.first === null) c.first = p;
-        c.last = p;
-        c.q += Number(r.amount) || 0;
-        c.v += Number(r.total) || 0;
-        if (p > c.hi) c.hi = p;
-        if (p < c.lo) c.lo = p;
-        fine.set(b, c);
-      }
+      // 细桶已在 $facet 里由库端算好（fineRows 已按时间升序、含 first/last 收开盘价）
       const hourMap = new Map();
-      for (const [t, c] of [...fine.entries()].sort((a, b) => a[0] - b[0])) {
+      for (const c of fineRows) {
         if (!(c.q > 0)) continue;
+        const t = Math.floor(Number(c._id) || 0);
         const p = money4(c.v / c.q);
         const g = Math.floor(t / groupMs) * groupMs;
         const cur = hourMap.get(g) || { t: g, o: c.first, c: p, hi: 0, lo: Infinity, v: 0 };
@@ -1389,15 +1433,22 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const me = req.user.id;
       const amt = money2((req.body || {}).amount);
       if (!(amt >= EX_MIN_TRANSFER)) return res.status(400).json({ ok: false, error: `最低转入 ¥${EX_MIN_TRANSFER}` });
-      const bal = await walletBalanceOf(db, me);
-      if (bal < amt) return res.status(400).json({ ok: false, error: `主站余额不足（可用 ¥${bal.toFixed(2)}）`, code: 'NO_BALANCE' });
-      await walletLog(db, me, -amt, 'ex_deposit', `转入交易所 ¥${amt.toFixed(2)}`);
-      await db.collection(EXW_COL).updateOne(
-        { userId: me }, { $inc: { balance: amt }, $set: { updatedAt: new Date() } }, { upsert: true });
-      await db.collection('shanhai_logs').insertOne({ userId: me, action: 'ex_deposit', detail: { amount: amt }, createdAt: new Date() }).catch(() => { });
+      // 【2026-09-24 安全修复】整个"读余额→判够→写流水→加交易所余额"放进用户锁：
+      // 原先是读-判-写三步裸奔，并发两次转入会把主站余额打成负数（双花真实充值余额）
+      await withUserLock('exw:' + me, async () => {
+        const bal = await walletBalanceOf(db, me);
+        if (bal < amt) throw Object.assign(new Error(`主站余额不足（可用 ¥${bal.toFixed(2)}）`), { statusCode: 400, code: 'NO_BALANCE' });
+        await walletLog(db, me, -amt, 'ex_deposit', `转入交易所 ¥${amt.toFixed(2)}`);
+        await db.collection(EXW_COL).updateOne(
+          { userId: me }, { $inc: { balance: amt }, $set: { updatedAt: new Date() } }, { upsert: true });
+        await db.collection('shanhai_logs').insertOne({ userId: me, action: 'ex_deposit', detail: { amount: amt }, createdAt: new Date() }).catch(() => { });
+      });
       const w = await exWalletOf(db, me);
       res.json({ ok: true, amount: amt, exBalance: money4(w.balance || 0), exFrozen: money4(w.frozen || 0), balance: await walletBalanceOf(db, me) });
-    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+    } catch (e) {
+      if (e.statusCode) return res.status(e.statusCode).json({ ok: false, error: e.message, code: e.code });
+      console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' });
+    }
   });
 
   app.post('/api/shanhai/exchange/withdraw', auth, exGuard, limit({ name: 'ex-withdraw', max: 20, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
@@ -1457,11 +1508,18 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         );
         if (!fz || !(fz.value || fz)) return res.status(409).json({ ok: false, error: '灵气不足或操作冲突，请刷新重试' });
       } else {
-        // 【v26.4】求购单冻结的是「交易所钱包」里的钱（不是主站余额）：
-        // 主站余额负责充值/提现，交易所折腾不到它；玩家要先转入才挂得了单。
-        const avail = await exAvailable(db, me);
-        if (avail < orderTotal)
-          return res.status(400).json({ ok: false, error: `交易所余额不足（需冻结 ¥${orderTotal.toFixed(4)}，可用 ¥${avail.toFixed(4)}），请先把主站余额转入交易所`, code: 'NO_EX_BALANCE' });
+        // 【v26.4】求购单冻结的是「交易所钱包」里的钱（不是主站余额）
+        // 【2026-09-24 安全修复】冻结改为 $expr 条件原子更新（可用 = balance - frozen >= orderTotal），
+        // 并改为"先冻结、后落单"——原先先插单再无条件 $inc frozen，
+        // 并发挂多张买单各自通过陈旧可用额检查，frozen 可累计超发（产生无资金背书的冻结）
+        await exWalletOf(db, me);   // 确保钱包文档存在（下面条件更新不带 upsert，避免 $expr 建出不合法文档）
+        const fz = await db.collection(EXW_COL).findOneAndUpdate(
+          { userId: me, $expr: { $gte: [{ $subtract: [{ $ifNull: ['$balance', 0] }, { $ifNull: ['$frozen', 0] }] }, orderTotal] } },
+          { $inc: { frozen: orderTotal }, $set: { updatedAt: new Date() } },
+          { returnDocument: 'after' }
+        );
+        if (!fz || !(fz.value || fz))
+          return res.status(400).json({ ok: false, error: `交易所余额不足（需冻结 ¥${orderTotal.toFixed(4)}），请先把主站余额转入交易所`, code: 'NO_EX_BALANCE' });
       }
       const doc = {
         userId: me, username: req.user.displayName || req.user.username || '佚名',
@@ -1472,19 +1530,20 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         exLocked: side === 'buy' ? true : undefined,
         createdAt: new Date(), updatedAt: new Date(),
       };
-      await db.collection('shanhai_exchange').insertOne(doc);
-      // 买单：订单落库后冻结交易所钱包（冻结失败就把订单撤掉，不留无冻结的空单）
-      if (side === 'buy' && orderTotal > 0) {
-        try {
+      // 【2026-09-24 修复】冻结已在前一步原子完成；这里落单失败要解冻，
+      // 不能让冻结的钱悬空（订单没建出来，钱却冻着）
+      try {
+        await db.collection('shanhai_exchange').insertOne(doc);
+      } catch (e) {
+        if (side === 'buy' && orderTotal > 0) {
           await db.collection(EXW_COL).updateOne(
-            { userId: me },
-            { $inc: { frozen: orderTotal }, $set: { updatedAt: new Date() } },
-            { upsert: true }
-          );
-        } catch (e) {
-          await db.collection('shanhai_exchange').deleteOne({ _id: doc._id }).catch(() => { });
-          throw e;
+            { userId: me }, { $inc: { frozen: -orderTotal }, $set: { updatedAt: new Date() } }).catch(() => { });
         }
+        if (side === 'sell') {
+          await db.collection('shanhai_profiles').updateOne(
+            { userId: me }, { $inc: { lingqi: n, lingqiFrozen: -n }, $set: { updatedAt: new Date() } }).catch(() => { });
+        }
+        throw e;
       }
       await db.collection('shanhai_logs').insertOne({ userId: me, action: 'exchange_publish', detail: { side, amount: n, price: pr }, createdAt: new Date() }).catch(() => {});
       // 【v26.5.1】同样返回最新数值，前端挂单成功后立刻更新（冻结额 / 灵气都会变）
@@ -1556,49 +1615,76 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       // 手续费：买家付 total，卖家实收 total×(1-feeRate)，差额进平台账户
       const fee = money4(total * EX_CFG.feeRate);
       const sellerGet = money4(total - fee);
-      const rollback = async () => { await col.updateOne({ _id: oid }, { $inc: { left: n }, $set: { updatedAt: new Date() } }).catch(() => {}); };
+      // 【2026-09-24 安全修复】吃单资金流转重写：
+      // ① 买家扣款改为 $expr 条件原子更新（可用余额 >= total），根治"预检查与扣款之间"的
+      //    TOCTOU——原先无条件 $inc balance:-total，并发吃多张卖单可把钱包扣成负数（等于印钱）；
+      // ② 卖家灵气解冻/扣减检查更新结果（原先匹配 0 行也继续走）；
+      // ③ 失败回滚不再只还原订单余量——已发生的资金/灵气划转全部逆向回滚，不再账实错乱。
+      const sellerId = iAmBuyer ? ord.userId : me;      // 出灵气的一方
+      const buyerId = iAmBuyer ? me : ord.userId;       // 出钱的一方
+      let step = 'init';
+      const undo = [];   // 已完成的划转，按逆序回滚
+      const rollback = async () => {
+        await col.updateOne({ _id: oid }, { $inc: { left: n }, $set: { updatedAt: new Date() } }).catch(() => { });
+        for (const u of undo.reverse()) { try { await u(); } catch (e2) { } }
+      };
       try {
-        const sellerId = iAmBuyer ? ord.userId : me;      // 出灵气的一方
-        const buyerId = iAmBuyer ? me : ord.userId;       // 出钱的一方
-        // 【v26.5.3 回归串行】v26.5.2 曾把这几步改成 Promise.all 并行提速，但并行会带来
-        // 「同一个钱包文档被并发 upsert」的风险（Mongo 会抛 E11000 duplicate key），
-        // 一旦命中就是"服务器开小差"。这点速度不值得拿稳定性换 —— 改成串行，并把
-        // 每一步单独标号，出错时日志能看出卡在哪一步。
-        let step = 'lingqi-seller';
-        // 1) 灵气流转：卖家 -n（或解冻 -n）
-        if (iAmBuyer) {
-          await prof.updateOne({ userId: sellerId }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
+        const exw = db.collection(EXW_COL);
+        // 1) 资金流转：先扣钱（条件更新，失败即中止，不产生任何副作用）
+        step = 'cash';
+        if (payerNeedsCash) {
+          // 主动买家 / 从未冻结过的老买单：从交易所余额实时扣（可用 = balance - frozen >= total）
+          const r = await exw.findOneAndUpdate(
+            { userId: buyerId, $expr: { $gte: [{ $subtract: [{ $ifNull: ['$balance', 0] }, { $ifNull: ['$frozen', 0] }] }, total] } },
+            { $inc: { balance: -total }, $set: { updatedAt: new Date() } }
+          );
+          if (!r || !(r.value || r)) throw Object.assign(new Error('买家可用余额不足'), { userCode: 'NO_EX_BALANCE' });
+          undo.push(() => exw.updateOne({ userId: buyerId }, { $inc: { balance: total }, $set: { updatedAt: new Date() } }));
+        } else if (ord.exLocked) {
+          // 新买单（v26.4 起）：钱冻在交易所钱包里 → 同一笔里「解冻」+「扣掉」
+          const r = await exw.findOneAndUpdate(
+            { userId: buyerId, frozen: { $gte: total } },
+            { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } }
+          );
+          if (!r || !(r.value || r)) throw new Error('买单冻结资金不足');
+          undo.push(() => exw.updateOne({ userId: buyerId }, { $inc: { frozen: total, balance: total }, $set: { updatedAt: new Date() } }));
+          const rl = await col.updateOne({ _id: oid }, { $inc: { locked: -total } });
+          if (rl.modifiedCount) undo.push(() => col.updateOne({ _id: oid }, { $inc: { locked: total } }));
         } else {
-          await prof.updateOne({ userId: sellerId, lingqi: { $gte: n } }, { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } });
+          // 【v26.4 兼容】v26.4 之前挂的买单：钱当时就从「主站余额」扣走了（在 wallet_log 里），
+          // 交易所钱包里根本没有这笔钱。这里只冲减订单冻结额，绝不能再动任何钱包。
+          const rl = await col.updateOne({ _id: oid }, { $inc: { locked: -total } });
+          if (rl.modifiedCount) undo.push(() => col.updateOne({ _id: oid }, { $inc: { locked: total } }));
+        }
+        // 2) 灵气流转：卖家 -n（或解冻 -n），条件更新并检查结果
+        step = 'lingqi-seller';
+        if (iAmBuyer) {
+          const r = await prof.findOneAndUpdate(
+            { userId: sellerId, lingqiFrozen: { $gte: n } },
+            { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
+          if (!r || !(r.value || r)) throw new Error('卖家冻结灵气不足（可能与撤单并发冲突）');
+          undo.push(() => prof.updateOne({ userId: sellerId }, { $inc: { lingqiFrozen: n }, $set: { updatedAt: new Date() } }));
+        } else {
+          const r = await prof.findOneAndUpdate(
+            { userId: sellerId, lingqi: { $gte: n } },
+            { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } });
+          if (!r || !(r.value || r)) throw new Error('卖家灵气不足');
+          undo.push(() => prof.updateOne({ userId: sellerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } }));
         }
         step = 'lingqi-buyer';
         // 买家加灵气。注意：对手是机器人时它没有 shanhai_profiles 档案（额度存在 shanhai_fund），
         // 匹配不到文档属于正常情况，不能因此报错。
-        await prof.updateOne({ userId: buyerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } }).catch(() => { });
-        // 2) 资金流转：买家付全额，平台抽 0.5%，卖家收剩下的
-        step = 'cash';
-        if (payerNeedsCash) {
-          // 主动买家 / 从未冻结过的老买单：从交易所余额实时扣
-          // （钱包一定已存在：上面 exAvailable() 会顺带创建；这里不加 upsert，避免并发冲突）
-          await db.collection(EXW_COL).updateOne(
-            { userId: buyerId }, { $inc: { balance: -total }, $set: { updatedAt: new Date() } });
-        } else if (ord.exLocked) {
-          // 新买单（v26.4 起）：钱冻在交易所钱包里 → 同一笔里「解冻」+「扣掉」
-          await db.collection(EXW_COL).updateOne(
-            { userId: buyerId }, { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } });
-          await col.updateOne({ _id: oid }, { $inc: { locked: -total } });
-        } else {
-          // 【v26.4 兼容】v26.4 之前挂的买单：钱当时就从「主站余额」扣走了（在 wallet_log 里），
-          // 交易所钱包里根本没有这笔钱。这里只冲减订单冻结额，绝不能再动任何钱包。
-          await col.updateOne({ _id: oid }, { $inc: { locked: -total } });
+        const rb = await prof.updateOne({ userId: buyerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
+        if (rb && rb.modifiedCount) {
+          undo.push(() => prof.updateOne({ userId: buyerId }, { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } }));
         }
+        // 3) 卖家收款：货款（已扣手续费）进他的交易所余额（upsert：卖家可能第一次用交易所）
         step = 'pay-seller';
-        // 卖家：货款（已扣手续费）进他的交易所余额。这里保留 upsert：卖家可能是第一次用交易所，
-        // 而且这是**单个**操作，不存在并发冲突。
-        await db.collection(EXW_COL).updateOne(
+        const rp = await exw.updateOne(
           { userId: sellerId }, { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
-        // 【v26.4】手续费只在台账里记一笔（shanghai_ex_deals.fee），不再往主站 wallet_log 塞流水，
-        // 这样主站余额永远只反映充值/激励/提现/转入转出，口径干净
+        if (!(rp && (rp.upsertedCount || rp.modifiedCount || rp.matchedCount))) throw new Error('卖家入账失败');
+        undo.push(() => exw.updateOne({ userId: sellerId }, { $inc: { balance: -sellerGet }, $set: { updatedAt: new Date() } }));
+        // 【v26.4】手续费只在台账里记一笔（shanghai_ex_deals.fee），不再往主站 wallet_log 塞流水
       } catch (e) {
         await rollback().catch(() => { });
         console.error('[exchange deal] 失败 step=%s', step, e);
@@ -1607,10 +1693,10 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
           userId: me, action: 'exchange_error', detail: { where: 'deal', step, msg: String((e && e.message) || e).slice(0, 200), orderId: String(oid) },
           createdAt: new Date(),
         }).catch(() => { });
-        return res.status(500).json({
-          ok: false, error: '交易未完成，挂单已还原，请重试',
-          debug: 'step=' + step + ' ' + String((e && e.message) || e).slice(0, 90),
-        });
+        if (e.userCode === 'NO_EX_BALANCE') {
+          return res.status(400).json({ ok: false, error: `交易所余额不足（需 ¥${total.toFixed(4)}）`, code: 'NO_EX_BALANCE' });
+        }
+        return res.status(500).json({ ok: false, error: '交易未完成，已还原，请重试' });
       }
       // 3) 余量清零则结单；求购单把可能剩下的零头退回，不让几分钱永远冻着
       if (after.left <= 0) {
@@ -1673,30 +1759,38 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       let oid;
       try { oid = new ObjectId(String((req.body || {}).orderId)); } catch (e) { return res.status(400).json({ ok: false, error: '挂单不存在' }); }
       const col = db.collection('shanhai_exchange');
-      const o = await col.findOne({ _id: oid, userId: me, status: 'open' });
-      if (!o) return res.status(404).json({ ok: false, error: '挂单不存在或已结束' });
+      // 【2026-09-24 安全修复】先原子翻状态（open→cancel）、再按翻状态前返回的文档退款。
+      // 原先"先按读到的 left/locked 退款、后置状态"，与吃单并发时按旧余量全额退款，
+      // 可造成双重退款（灵气/资金凭空多出来）或冻结额被打负。
+      const o = await col.findOneAndUpdate(
+        { _id: oid, userId: me, status: 'open' },
+        { $set: { status: 'cancel', updatedAt: new Date() } },
+        { returnDocument: 'before' }
+      );
+      const od = o && (o.value || o);
+      if (!od) return res.status(404).json({ ok: false, error: '挂单不存在或已结束' });
       // 卖单把未成交部分的冻结灵气退回
-      if (o.side === 'sell' && o.left > 0) {
+      if (od.side === 'sell' && od.left > 0) {
         await db.collection('shanhai_profiles').updateOne(
           { userId: me },
-          { $inc: { lingqi: o.left, lingqiFrozen: -o.left }, $set: { updatedAt: new Date() } });
-      } else if (o.side === 'buy' && (o.locked || 0) > 0) {
-        if (o.exLocked) {
+          { $inc: { lingqi: od.left, lingqiFrozen: -od.left }, $set: { updatedAt: new Date() } });
+      } else if (od.side === 'buy' && (od.locked || 0) > 0) {
+        if (od.exLocked) {
           // 新单：解冻交易所钱包里被冻住的那部分（钱仍留在交易所，不回主站）
           await db.collection(EXW_COL).updateOne(
-            { userId: me }, { $inc: { frozen: -o.locked }, $set: { updatedAt: new Date() } });
+            { userId: me }, { $inc: { frozen: -od.locked }, $set: { updatedAt: new Date() } });
         } else {
           // 【v26.4 兼容】老单：钱当初是从主站余额扣的 → 退回主站，否则玩家的钱就凭空没了
-          await walletLog(db, me, o.locked, 'exchange_unlock', `求购单撤单退回 ¥${o.locked.toFixed(2)}`, String(oid));
+          await walletLog(db, me, od.locked, 'exchange_unlock', `求购单撤单退回 ¥${od.locked.toFixed(2)}`, String(oid));
         }
       }
-      await col.updateOne({ _id: oid }, { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } });
+      await col.updateOne({ _id: oid }, { $set: { left: 0, locked: 0, updatedAt: new Date() } });
       const np = await db.collection('shanhai_profiles').findOne({ userId: me });
-      await db.collection('shanhai_logs').insertOne({ userId: me, action: 'exchange_cancel', detail: { orderId: String(oid), side: o.side, left: o.left }, createdAt: new Date() }).catch(() => {});
+      await db.collection('shanhai_logs').insertOne({ userId: me, action: 'exchange_cancel', detail: { orderId: String(oid), side: od.side, left: od.left }, createdAt: new Date() }).catch(() => {});
       // 【v26.5.1】撤单后的最新数值一起回，前端立刻更新冻结与余额
       const nwc = await exWalletOf(db, me);
       res.json({
-        ok: true, side: o.side, backAmount: o.side === 'sell' ? o.left : (o.locked || 0),
+        ok: true, side: od.side, backAmount: od.side === 'sell' ? od.left : (od.locked || 0),
         lingqi: np ? (np.lingqi || 0) : 0, frozen: np ? (np.lingqiFrozen || 0) : 0,
         exBalance: money4(nwc.balance || 0),
         exFrozen: money4(nwc.frozen || 0),
