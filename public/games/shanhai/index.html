@@ -368,6 +368,9 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   // 点封面进入主页
   $("scrCover").addEventListener("click", () => {
     showScreen("scrHome");
+    // 【v26.13】主页也放背景乐（用户手势之后启动，满足 autoplay 策略）；
+    // 战斗共用这条 BGM，不再战斗一结束就静音
+    try { if (window.SFX) { SFX.unlock(); SFX.bgmStart(); } } catch (e) { }
   }, { once: true });
 
   // 用户菜单弹窗
@@ -587,7 +590,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
 
   function renderCandles(box, cs, W, H) {
     if (!cs.length) { box.innerHTML = '<div class="ex-empty">这段时间还没有成交，做几笔就有行情了</div>'; return; }
-    const PL = 8, PR = 8, PT = 12, PB = 18;
+    const PL = 8, PR = 42, PT = 14, PB = 18;
     const hi = Math.max.apply(null, cs.map(c => c.hi));
     const lo = Math.min.apply(null, cs.map(c => c.lo));
     const span = (hi - lo) || (hi || 0.001) * 0.2 || 0.0001;
@@ -595,10 +598,14 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const bw = Math.max(2, step * 0.55);
     const X = i => PL + step * (i + 0.5);
     const Y = v => PT + (H - PT - PB) * (1 - (v - lo) / span);
+    const fp = v => Number(v).toFixed(4).replace(/0$/, "");
     let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block">`;
     for (let g = 0; g <= 3; g++) {
       const y = (PT + (H - PT - PB) * g / 3).toFixed(1);
+      const gv = (lo - span * 0 * 0 + (1 - g / 3) * span).toFixed(4);
       s += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="rgba(122,96,48,.14)" stroke-width="1"/>`;
+      // 【v26.13】网格上直接标价格，一眼读出高低位
+      s += `<text x="${W - PR + 3}" y="${(+y + 3).toFixed(1)}" fill="#9c8b6b" font-size="8.5">${fp(gv)}</text>`;
     }
     cs.forEach((c, i) => {
       const up = c.c >= c.o;
@@ -610,11 +617,29 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       s += `<rect x="${(X(i) - bw / 2).toFixed(1)}" y="${yTop}" width="${bw.toFixed(1)}" height="${hh}" fill="${col}"/>`;
     });
     const lastC = cs[cs.length - 1];
-    s += `<line x1="${PL}" y1="${Y(lastC.c).toFixed(1)}" x2="${W - PR}" y2="${Y(lastC.c).toFixed(1)}" stroke="${lastC.c >= lastC.o ? "#d0452c" : "#2f9a63"}" stroke-width="0.8" stroke-dasharray="3,3" opacity=".6"/>`;
+    const lastCol = lastC.c >= lastC.o ? "#d0452c" : "#2f9a63";
+    s += `<line x1="${PL}" y1="${Y(lastC.c).toFixed(1)}" x2="${W - PR}" y2="${Y(lastC.c).toFixed(1)}" stroke="${lastCol}" stroke-width="0.8" stroke-dasharray="3,3" opacity=".7"/>`;
+    // 【v26.13】最新价标在右侧价格轴上（红绿跟随涨跌）
+    s += `<rect x="${W - PR + 1}" y="${(Y(lastC.c) - 7).toFixed(1)}" width="${PR - 2}" height="13" rx="2" fill="${lastCol}"/>`;
+    s += `<text x="${W - PR + (PR - 2) / 2 + 1}" y="${(Y(lastC.c) + 2.5).toFixed(1)}" fill="#fff" font-size="8" font-weight="700" text-anchor="middle">${fp(lastC.c)}</text>`;
     s += `<text x="${PL}" y="${H - 4}" fill="#9c8b6b" font-size="9">${fmtT(cs[0].t)}</text>`;
     s += `<text x="${W - PR}" y="${H - 4}" fill="#9c8b6b" font-size="9" text-anchor="end">${fmtT(cs[cs.length - 1].t)}</text>`;
+    // 【v26.13】透明命中层：点任意一根 K 线，下方信息行显示这根的开/收/高/低/量
+    cs.forEach((c, i) => {
+      s += `<rect class="mkt-hit" data-i="${i}" x="${(PL + step * i).toFixed(1)}" y="${PT}" width="${step.toFixed(1)}" height="${(H - PT - PB).toFixed(1)}" fill="transparent" style="cursor:crosshair"/>`;
+    });
     s += `</svg>`;
     box.innerHTML = s;
+    // 【v26.13】事件委托绑在容器上：SVG 子元素的 onclick 在部分内核（尤其微信 X5）不可靠
+    const info = document.getElementById("mktInfo");
+    box.onclick = ev => {
+      const tg = ev.target;
+      const di = tg && tg.getAttribute ? tg.getAttribute("data-i") : null;
+      if (di === null || di === undefined) return;
+      const c = cs[+di];
+      if (!c || !info) return;
+      info.textContent = `${fmtT(c.t)}　开 ¥${fp(c.o)}　收 ¥${fp(c.c)}　高 ¥${fp(c.hi)}　低 ¥${fp(c.lo)}　量 ${c.v}`;
+    };
   }
 
   async function showMarketChart() {
