@@ -91,6 +91,8 @@ const META = (() => {
   async function exPublish(side, amount, price) { return shApi("/api/shanhai/exchange/publish", { side, amount, price }); }
   async function exDeal(orderId, amount) { return shApi("/api/shanhai/exchange/deal", { orderId, amount }); }
   async function exCancel(orderId) { return shApi("/api/shanhai/exchange/cancel", { orderId }); }
+  // 【v26.9】价格走势（range: 1d / 7d / 30d / all）
+  async function exChart(range) { return shApi("/api/shanhai/exchange/chart?range=" + encodeURIComponent(range || "1d")); }
   // 【v26.4】交易所独立钱包：主站余额 ⇄ 交易所余额
   async function exDeposit(amount) { return shApi("/api/shanhai/exchange/deposit", { amount }); }
   // all=true：全部转出（后端按分取整，不足 0.01 的零头留在交易所）
@@ -106,7 +108,7 @@ const META = (() => {
   async function equipCompose(itemIds) { return shApi("/api/shanhai/equip/compose", { itemIds }); }
 
   return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, consumeStamina, dismantle, dismantlePrice, bonus, exBoard, exPublish, exDeal, exCancel,
-    exDeposit, exWithdraw, lingqiInfo, lingqiClaim, shopInfo, shopBuy, equipUpgrade, equipCompose,
+    exDeposit, exWithdraw, lingqiInfo, lingqiClaim, shopInfo, shopBuy, equipUpgrade, equipCompose, exChart,
     get profile() { return profile; }, get stamina() { return stamina; }, set stamina(v) { stamina = v; },
     set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
 })();
