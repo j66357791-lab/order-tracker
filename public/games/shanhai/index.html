@@ -101,6 +101,32 @@
         </div>
         <div class="daily-tip" id="stageTip">每局皆得仙玉 · 首通另有重赏</div>
 
+        <!-- 【v26.25】活动入口：贴屏幕左侧的挂轴（商业游戏样式），维护时显示上锁样式 -->
+        <div id="actEntry" title="活动">
+          <svg viewBox="0 0 46 92" aria-hidden="true">
+            <defs>
+              <linearGradient id="actCloth" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#8e2f23"/><stop offset=".5" stop-color="#b0402f"/><stop offset="1" stop-color="#7c281e"/>
+              </linearGradient>
+              <linearGradient id="actRod" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#8a6a2a"/><stop offset=".5" stop-color="#e8c46e"/><stop offset="1" stop-color="#8a6a2a"/>
+              </linearGradient>
+            </defs>
+            <rect x="5" y="7" width="36" height="78" rx="3" fill="url(#actCloth)" stroke="#4a1d15" stroke-width="1.4"/>
+            <rect x="8" y="12" width="30" height="68" rx="2" fill="#f2e6c8" stroke="rgba(122,96,48,.55)" stroke-width="1"/>
+            <rect x="2" y="0" width="42" height="9" rx="3" fill="url(#actRod)" stroke="#5a3f14" stroke-width="1"/>
+            <rect x="2" y="83" width="42" height="9" rx="3" fill="url(#actRod)" stroke="#5a3f14" stroke-width="1"/>
+            <circle cx="23" cy="4.5" r="1.8" fill="#5a3f14"/>
+            <circle cx="23" cy="87.5" r="1.8" fill="#5a3f14"/>
+            <text x="23" y="36" text-anchor="middle" font-family="'STKaiti','KaiTi',serif" font-size="17" font-weight="900" fill="#a03024">活</text>
+            <text x="23" y="58" text-anchor="middle" font-family="'STKaiti','KaiTi',serif" font-size="17" font-weight="900" fill="#a03024">动</text>
+            <path d="M10 66 Q23 60 36 66" stroke="#c8901f" stroke-width="1.2" fill="none" opacity=".8"/>
+            <circle cx="23" cy="71" r="3.4" fill="#c8452f" stroke="#8a5a25" stroke-width=".8"/>
+            <rect x="21.6" y="66.6" width="2.8" height="2" fill="#8a5a25"/>
+          </svg>
+          <span id="actEntryLock" style="display:none">🔒</span>
+        </div>
+
         <!-- 【v24.7】战斗页右侧工具：道具合成 + 挂机收益（宝箱重做） -->
         <div id="idleEntry" title="挂机收益">
           <svg class="idle-chest" viewBox="0 0 72 64" aria-hidden="true">
@@ -804,6 +830,96 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const m = document.getElementById("mktMask");
     if (m) m.remove();
   }
+
+  /* ==================== 【v26.25】活动中心：左侧列表选取 / 右侧 80% 展示 ==================== */
+  let ACTC = { data: null, cur: 0 };
+
+  function closeAct() {
+    const m = document.getElementById("actMask");
+    if (m) m.remove();
+  }
+
+  async function loadActState() {
+    // 入口锁样式 + 数据预热；测试账号服务端判 locked=false
+    try {
+      const d = await shApi("/api/shanhai/activities");
+      if (d && d.ok) {
+        ACTC.data = d;
+        const lock = document.getElementById("actEntryLock");
+        if (lock) lock.style.display = d.locked ? "" : "none";
+        const en = document.getElementById("actEntry");
+        if (en) en.classList.toggle("act-locked", !!d.locked);
+      }
+    } catch (e) { }
+  }
+
+  function renderActCenter() {
+    const d = ACTC.data || { activities: [] };
+    const list = d.activities || [];
+    const cur = list[ACTC.cur] || list[0] || null;
+    const mask = document.getElementById("actMask");
+    if (!mask) return;
+    const contentHtml = cur
+      ? (cur.img ? `<div class="act-banner"><img src="${_escHtml(cur.img)}" alt="" onerror="this.style.display='none'"></div>` : "") +
+        `<div class="act-content">${_escHtml(cur.content || "活动详情敬请期待").replace(/\n/g, "<br>")}</div>` +
+        ((cur.start || cur.end) ? `<div class="act-time">⏱ ${cur.start ? new Date(cur.start).toLocaleDateString("zh-CN") : ""} ~ ${cur.end ? new Date(cur.end).toLocaleDateString("zh-CN") : ""}</div>` : "")
+      : '<div class="act-empty">暂无活动，敬请期待</div>';
+    mask.innerHTML = `
+      <div class="ex-wrap" style="max-width:520px;height:80vh">
+        <div class="ex-head" style="padding-top:11px">
+          <div class="ex-title">活动中心</div>
+          <div class="ex-sub">限时活动 · 福利放送</div>
+          <div class="ex-close" id="actClose">×</div>
+        </div>
+        <div class="act-body">
+          <div class="act-nav">
+            ${list.length ? list.map((a, i) => `
+              <div class="act-nav-item${i === ACTC.cur ? " on" : ""}" data-i="${i}">
+                <b>${_escHtml(a.title)}</b>${a.tag ? `<i>${_escHtml(a.tag)}</i>` : ""}
+              </div>`).join("") : '<div class="act-empty" style="padding:14px 6px">暂无活动</div>'}
+          </div>
+          <div class="act-stage" id="actStage">
+            ${contentHtml}
+          </div>
+        </div>
+      </div>`;
+    document.getElementById("actClose").onclick = closeAct;
+    mask.querySelectorAll(".act-nav-item").forEach(it => it.onclick = () => {
+      ACTC.cur = +it.dataset.i;
+      mask.querySelectorAll(".act-nav-item").forEach(x => x.classList.toggle("on", x === it));
+      const c = list[ACTC.cur];
+      document.getElementById("actStage").innerHTML = c
+        ? (c.img ? `<div class="act-banner"><img src="${_escHtml(c.img)}" alt="" onerror="this.style.display='none'"></div>` : "") +
+          `<div class="act-content">${_escHtml(c.content || "活动详情敬请期待").replace(/\n/g, "<br>")}</div>` +
+          ((c.start || c.end) ? `<div class="act-time">⏱ ${c.start ? new Date(c.start).toLocaleDateString("zh-CN") : ""} ~ ${c.end ? new Date(c.end).toLocaleDateString("zh-CN") : ""}</div>` : "")
+        : '<div class="act-empty">暂无活动</div>';
+    });
+  }
+
+  async function showActCenter() {
+    closeAct();
+    let mask = document.getElementById("actMask");
+    mask = document.createElement("div");
+    mask.className = "ex-mask"; mask.id = "actMask";
+    mask.onclick = e => { if (e.target === mask) closeAct(); };
+    mask.innerHTML = '<div class="ex-wrap" style="max-width:520px;height:60vh"><div class="mkt-body"><div class="ex-empty">加载中…</div></div></div>';
+    document.body.appendChild(mask);
+    try {
+      const d = await shApi("/api/shanhai/activities");
+      if (!d.ok) throw new Error(d.error || "加载失败");
+      ACTC.data = d; ACTC.cur = 0;
+      const lock = document.getElementById("actEntryLock");
+      if (lock) lock.style.display = d.locked ? "" : "none";
+      if (d.locked) { closeAct(); toast("活动维护中，敬请期待"); return; }
+      renderActCenter();
+    } catch (e) { closeAct(); toast("活动加载失败：" + ((e && (e.error || e.message)) || "")); }
+  }
+  window.showActCenter = showActCenter;
+  (function () {
+    const en = document.getElementById("actEntry");
+    if (en) en.onclick = () => showActCenter();
+    loadActState();   // 页面加载即拉一次锁状态，维护时入口直接显示上锁样式
+  })();
 
   async function showMarketChart() {
     closeMkt();
