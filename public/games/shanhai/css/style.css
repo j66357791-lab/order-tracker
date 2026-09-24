@@ -751,6 +751,22 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .act-content { color: #4a3a1c; font: 11.5px/1.9 "PingFang SC", sans-serif; word-break: break-all; }
 .act-time { margin-top: 10px; font: 10px/1.5 sans-serif; color: #9c8b6b; }
 .act-empty { text-align: center; color: #9c8b6b; padding: 20px 8px; font: 11.5px/1.6 sans-serif; }
+/* —— 灵气堆堆乐 —— */
+.dd-box { margin-bottom: 10px; }
+.dd-status { font: 11px/1.7 "PingFang SC", sans-serif; color: #4a3a1c; background: rgba(217,176,97,.16); border: 1px solid rgba(122,96,48,.3); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; }
+.dd-status em { color: #a03024; font-style: normal; font-weight: 700; }
+.dd-note { font: 10px/1.7 sans-serif; color: #8a7a58; margin-bottom: 8px; }
+.dd-btn {
+  width: 100%; padding: 10px 0; border: none; border-radius: 10px; cursor: pointer;
+  font: 900 14px/1 "PingFang SC", sans-serif; color: #fff; letter-spacing: 2px;
+  background: linear-gradient(180deg, #d0452c, #a03024); box-shadow: 0 3px 8px rgba(160,48,36,.35);
+}
+.dd-btn:disabled { background: linear-gradient(180deg, #b8ab90, #9a8d70); box-shadow: none; cursor: not-allowed; }
+.dd-result { margin-top: 10px; text-align: center; }
+.dd-roll { font: 900 44px/1.2 "PingFang SC", sans-serif; color: #a03024; text-shadow: 0 2px 0 rgba(255,244,200,.9); }
+.dd-final { font: 900 18px/1.5 "PingFang SC", sans-serif; color: #2f7a5a; }
+.dd-final b { font-size: 24px; color: #a03024; }
+.dd-sub { font: 10.5px/1.7 sans-serif; color: #8a7a58; margin-top: 4px; }
 .fac-node .fn-lv { font: 900 10px/1.3 "PingFang SC", sans-serif; color: #b8641a; }
 .fac-node b { display: block; font: 900 11px/1.4 "PingFang SC", sans-serif; color: #3a2f1c; }
 .fac-node i { display: block; font: 8.5px/1.4 sans-serif; color: #8a6a2a; font-style: normal; }
