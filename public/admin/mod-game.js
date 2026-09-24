@@ -187,6 +187,14 @@ export function mount(root) {
       <div class="sub">和玩家端一样的树：每个竖列是一个分支方向，技能从上往下排。<b>最常用就三件事</b>——改技能名、改「级」（最高等级）、在「前置」里选先学哪个技能。点 ✕ 删除，列底「＋加技能」。改完点下方「保存技能树」。</div>
       <div class="st-tabs" id="stTabs"></div>
       <div id="stEditor"><div class="empty">加载中…</div></div>
+      <div style="margin-top:10px">
+        <div class="inline">
+          <button class="btn-ghost" id="stExport">导出为文本</button>
+          <button class="btn-ghost" id="stImport">从文本导入</button>
+          <span class="sub">导出后直接改文字，改完点「从文本导入」回填；把文本发我也行，我来解析写入</span>
+        </div>
+        <textarea id="stIOText" rows="12" style="display:none;width:100%;font:12px/1.8 monospace;margin-top:6px;padding:8px;border:1px solid #cfd8e3;border-radius:8px;box-sizing:border-box" placeholder="流派 万剑流派 | ⚔ | 新手 | 简介...&#10;  分支 万剑归宗 | 群体攻击&#10;    剑意 | 属性 | 耗1 | 级5 | atk:1 | 攻击力+1&#10;    剑芒 | 特殊 | 耗2 | 级3 | crit:2 | 暴击率+2% | 前置:剑意@2"></textarea>
+      </div>
       <div class="inline" style="margin-top:10px">
         <button class="btn-ghost" id="stAddFaction">＋ 新增流派</button>
         <button class="btn-ghost" id="stReset">恢复默认技能树</button>
@@ -719,6 +727,116 @@ export function mount(root) {
   // 保存被"节点 id 重复"校验拦下——这就是"新建技能后保存失败"的元凶。加自增计数彻底防撞
   let _stUidN = 0;
   const stUid = () => 'n' + Date.now().toString(36).slice(-6) + (++_stUidN) + Math.floor(Math.random() * 90 + 10);
+
+  // ==================== 【v26.24】文本导入/导出（批量配置技能树） ====================
+  // 文本格式（竖线分段，缩进表达层级，# 开头是注释）：
+  //   流派 万剑流派 | ⚔ | 新手 | 简介...
+  //     分支 万剑归宗 | 群体攻击
+  //       剑意 | 属性 | 耗1 | 级5 | atk:1 | 攻击力+1
+  //       剑芒 | 特殊 | 耗2 | 级3 | crit:2 | 暴击率+2% | 前置:剑意@2
+  function exportTreeText() {
+    const T = { minor: '属性', special: '特殊', play: '玩法', ultimate: '主动' };
+    const lines = ['# 山海技能树配置（竖线分段；改完粘贴回上方点「从文本导入」，或直接发给客服代解析）'];
+    for (const f of ST.factions) {
+      lines.push(`流派 ${f.name} | ${f.icon || '✦'}${f.starter ? ' | 新手' : ''}${f.desc ? ' | ' + f.desc : ''}`);
+      for (const b of (f.branches || [])) {
+        lines.push(`  分支 ${b.name}${b.role ? ' | ' + b.role : ''}`);
+        for (const n of (b.nodes || [])) {
+          let s = `    ${n.name} | ${T[n.type] || n.type || '属性'} | 耗${+n.cost || 0} | 级${+n.max || 1}`;
+          const eff = Object.entries(n.eff || {}).map(([k, v]) => k + ':' + v).join(',');
+          if (eff) s += ` | ${eff}`;
+          if (n.desc) s += ` | ${n.desc}`;
+          if (n.req && n.req.node) {
+            let rn = n.req.node;
+            for (const bb of (f.branches || [])) { const x = (bb.nodes || []).find(y => y.id === n.req.node); if (x) { rn = x.name; break; } }
+            s += ` | 前置:${rn}@${n.req.lv || 1}`;
+          }
+          lines.push(s);
+        }
+      }
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  function parseTreeText(text) {
+    const T2 = { '属性': 'minor', '特殊': 'special', '玩法': 'play', '主动': 'ultimate', minor: 'minor', special: 'special', play: 'play', ultimate: 'ultimate' };
+    const factions = [];
+    let curF = null, curB = null;
+    const oldList = ST.factions || [];
+    for (const raw of String(text || '').split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+      if (/^流派/.test(line)) {
+        const parts = line.slice(2).split('|').map(s => s.trim()).filter(s => s !== '');
+        const name = parts.shift();
+        if (!name) return { err: '流派行缺少名称：' + line };
+        const starter = parts.includes('新手');
+        const rest = parts.filter(p => p !== '新手');
+        let icon = '✦';
+        if (rest.length && rest[0].length <= 3) icon = rest.shift();
+        const desc = rest.join('｜');
+        let f = oldList.find(x => x.name === name);        // 同名沿用旧 id：玩家已学等级/流派选择不丢
+        if (!f) f = { id: 'f' + stUid(), name, icon, desc, starter, branches: [] };
+        else { f.icon = icon; f.desc = desc; f.starter = starter; f.branches = f.branches || []; }
+        if (!factions.includes(f)) factions.push(f);
+        curF = f; curB = null;
+      } else if (/^分支/.test(line)) {
+        if (!curF) return { err: '「分支」行出现在流派之前：' + line };
+        const parts = line.slice(2).split('|').map(s => s.trim());
+        const name = parts.shift();
+        if (!name) return { err: '分支行缺少名称：' + line };
+        let b = curF.branches.find(x => x.name === name);
+        if (!b) { b = { id: 'b' + stUid(), name, role: '', nodes: [] }; curF.branches.push(b); }
+        b.role = parts[0] || '';
+        curB = b;
+      } else {
+        if (!curB) return { err: '技能行出现在分支之前（先写流派和分支行）：' + line };
+        const parts = line.replace(/^[-•·]\s*/, '').split('|').map(s => s.trim());
+        const name = parts.shift();
+        if (!name) return { err: '技能行缺少名称：' + line };
+        let type = 'minor', cost = 1, max = 5, effText = '', desc = '', reqName = null, reqLv = 1;
+        for (const p of parts) {
+          if (/^耗\d/.test(p)) { cost = Math.max(0, parseInt(p.slice(1), 10) || 0); continue; }
+          if (/^级\d/.test(p)) { max = Math.max(1, parseInt(p.slice(1), 10) || 1); continue; }
+          if (/^前置[:：]/.test(p)) {
+            const m = p.slice(3).split(/[@＠]/);
+            reqName = (m[0] || '').trim(); reqLv = Math.max(1, parseInt(m[1], 10) || 1);
+            continue;
+          }
+          if (/^[a-zA-Z]{2,20}:\s*-?\d/.test(p)) { effText = effText ? effText + ',' + p : p; continue; }
+          if (T2[p]) { type = T2[p]; continue; }
+          desc = desc ? desc + '，' + p : p;
+        }
+        // 同流派同名节点沿用旧 id（改名/改数值不影响已学等级）；若它挂在别的分支则先挪走
+        let node = null;
+        for (const bb of curF.branches) {
+          const i = (bb.nodes || []).findIndex(y => y.name === name);
+          if (i >= 0) { node = bb.nodes.splice(i, 1)[0]; break; }
+        }
+        if (!node) node = { id: stUid() };
+        node.name = name; node.type = type; node.cost = cost; node.max = max;
+        node.eff = textToEff(effText); node.desc = desc;
+        if (reqName) { node._reqName = reqName; node._reqLv = reqLv; }
+        else delete node.req;
+        curB.nodes.push(node);
+      }
+    }
+    if (!factions.length) return { err: '没有解析到任何流派（第一行应为：流派 名称）' };
+    // 前置按技能名解析成节点 id（允许引用后面才出现的技能）
+    for (const f of factions) {
+      const byName = new Map();
+      for (const b of (f.branches || [])) for (const n of (b.nodes || [])) byName.set(n.name, n);
+      for (const b of (f.branches || [])) for (const n of (b.nodes || [])) {
+        if (!n._reqName) continue;
+        const t = byName.get(n._reqName);
+        if (!t || t === n) return { err: `流派「${f.name}」里找不到前置技能「${n._reqName}」（检查名字是否写对，不能以自己为前置）` };
+        n.req = { node: t.id, lv: n._reqLv || 1 };
+        delete n._reqName; delete n._reqLv;
+      }
+    }
+    return { factions };
+  }
   // 【v26.23】拖拽排序：正在拖的节点/分支（编辑态内存，保存时按数组顺序落库）
   let STDRAG = null;
   function moveNode(from, to) {
@@ -941,6 +1059,24 @@ export function mount(root) {
     ] });
     ST.cur = ST.factions.length - 1;
     renderSkillTree();
+  };
+  // 【v26.24】文本导入/导出
+  $('stExport').onclick = () => {
+    const ta = $('stIOText');
+    ta.style.display = 'block';
+    ta.value = exportTreeText();
+    ta.focus(); ta.select();
+    toast('已导出当前技能树文本，可直接修改或复制');
+  };
+  $('stImport').onclick = () => {
+    const ta = $('stIOText');
+    ta.style.display = 'block';
+    if (!ta.value.trim()) return toast('请先在文本框里粘贴/编写配置');
+    const r = parseTreeText(ta.value);
+    if (r.err) return toast('导入失败：' + r.err);
+    ST.factions = r.factions; ST.cur = 0;
+    renderSkillTree();
+    toast('已导入到编辑器，请检查无误后点「保存技能树」');
   };
 
   $('gmRefresh').onclick = () => { loadStats(); loadShanhai(); loadCfg(); loadSkillTree(); };
