@@ -131,7 +131,11 @@ const SFX = (() => {
       let nextBar = c.currentTime + 0.1;
       const scheduler = () => {
         if (!bgmOn) return;
-        while (nextBar < c.currentTime + 0.5) {             // 提前排 0.5 秒的音符
+        const now = c.currentTime;
+        // 【v26.14 修杂音】落后了就直接跳到现在，绝不补播积压——
+        // 否则切后台回来，积压的小节全部以负偏移瞬间齐奏，就是"一进游戏乱七八糟的音效"
+        if (nextBar < now) nextBar = now + 0.05;
+        while (nextBar < now + 0.5) {
           scheduleBar(nextBar);
           nextBar += BAR;
         }
