@@ -177,11 +177,22 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     const bal = bw.available;
     const col = db.collection(ORD_COL);
 
-    // 找对手方：机器人卖 → 吃玩家的买单；机器人买 → 吃玩家的卖单
-    const target = await col.findOne(
-      { side: side === 'sell' ? 'buy' : 'sell', status: 'open', left: { $gt: 0 }, userId: { $nin: [BOT_ID, null] } },
-      { sort: { price: side === 'sell' ? -1 : 1, createdAt: 1 } }
-    );
+    // 找对手方：机器人卖 → 吃买单；机器人买 → 吃卖单。玩家优先，没有再考虑自己
+    const oppSide = side === 'sell' ? 'buy' : 'sell';
+    const oppSort = { price: side === 'sell' ? -1 : 1, createdAt: 1 };
+    let target = await col.findOne(
+      { side: oppSide, status: 'open', left: { $gt: 0 }, userId: { $nin: [BOT_ID, null] } },
+      { sort: oppSort });
+    let selfDeal = false;
+    // 【v26.11】官方护盘：没人来玩时机器人可以自己吃自己的挂单。
+    // 这样成交量、挂单深度都是真的（走势图与流动性都靠它），资产在自己账上转一圈，
+    // 净损耗只有手续费。玩家挂单一进来仍然优先成交。
+    if (!target && cfg.selfDeal !== false) {
+      target = await col.findOne(
+        { userId: BOT_ID, side: oppSide, status: 'open', left: { $gt: 0 } },
+        { sort: oppSort });
+      selfDeal = !!target;
+    }
 
     if (target) {
       const n = Math.min(amount, target.left);
@@ -193,8 +204,13 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       //   机器人买 → 只吃单价 ≤ bidMax 的卖单；机器人卖 → 只吃单价 ≥ askMin 的买单。
       // 没有这道校验，玩家只要挂一张离谱高价（比如 0.99）的卖单、而市场上恰好只有他这一张，
       // 机器人就会真的按 0.99 买走 —— 等于把定价权交给挂单人。
-      if (botIsBuyer && target.price > pr.bidMax) return { skipped: 'ask_too_high' };
-      if (!botIsBuyer && target.price < pr.askMin) return { skipped: 'bid_too_low' };
+      // 【v26.11】护盘自成交不受"买价上限/卖价下限"约束——那是防玩家套利的护栏，
+      // 机器人吃自己的单不存在套利问题（钱和灵气都在自己账上转一圈）。
+      if (!selfDeal) {
+        if (botIsBuyer && target.price > pr.bidMax) return { skipped: 'ask_too_high' };
+        if (!botIsBuyer && target.price < pr.askMin) return { skipped: 'bid_too_low' };
+      }
+      if (selfDeal) return await selfDealTrade(db, cfg, target, amount, side);
       // 机器人能力校验
       if (botIsBuyer && bal < total) return { skipped: 'bot_no_cash' };
       if (!botIsBuyer && (fund.lingqi || 0) < n) return { skipped: 'bot_no_lingqi' };
@@ -425,6 +441,51 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     });
     // 资产净变化≈0：灵气与钱各在自己账上走一圈（卖出所得与买入付出同为机器人）
     return { dealt: true, sim: true, amount: n, price };
+  }
+
+  // ==================== 【v26.11】官方护盘：机器人吃自己的挂单 ====================
+  // 目的：没人来玩时也要有真实成交量与挂单深度（走势图、流动性都靠它）。
+  // 资产在机器人自己的两个账本之间转，净损耗只有手续费：
+  //   吃自己的卖单 → 灵气出库、钱入库
+  //   吃自己的买单 → 钱出库、灵气入库
+  async function selfDealTrade(db, cfg, ord, amount, side) {
+    const col = db.collection(ORD_COL);
+    const n = Math.min(amount, ord.left);
+    const total = money4(n * ord.price);
+    const fee = money4(total * EX_FEE);
+    const tk = await col.findOneAndUpdate(
+      { _id: ord._id, status: 'open', left: { $gte: n } },
+      { $inc: { left: -n }, $set: { updatedAt: new Date() } },
+      { returnDocument: 'after' });
+    const after = tk && (tk.value || tk);
+    if (!after) return { skipped: 'self_race' };
+    const botIsBuyer = side === 'buy';
+    try {
+      if (botIsBuyer) {
+        // 自己的卖单被买走：冻结的灵气出库，货款（扣手续费）进交易所钱包
+        await db.collection(FUND_COL).updateOne(
+          { _id: 'market' }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } }, { upsert: true });
+        await db.collection(EXW_COL).updateOne(
+          { userId: BOT_ID }, { $inc: { balance: money4(total - fee) }, $set: { updatedAt: new Date() } }, { upsert: true });
+      } else {
+        // 自己的买单被卖：冻结的钱付出去，灵气进机器人额度
+        await db.collection(EXW_COL).updateOne(
+          { userId: BOT_ID }, { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
+        await db.collection(FUND_COL).updateOne(
+          { _id: 'market' }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } }, { upsert: true });
+      }
+      if (after.left <= 0) await col.updateOne({ _id: ord._id }, { $set: { status: 'done', updatedAt: new Date() } });
+      await db.collection(DEAL_COL).insertOne({
+        orderId: String(ord._id), side: ord.side, amount: n, price: ord.price, total, fee,
+        buyerId: BOT_ID, sellerId: BOT_ID, bot: true, mode: 'player', self: true,
+        buyerName: '护盘', sellerName: '护盘', createdAt: new Date(),
+      }).catch(() => { });
+      return { dealt: true, self: true, amount: n, price: ord.price, total };
+    } catch (e) {
+      console.error('[market] 护盘自成交失败', e);
+      await col.updateOne({ _id: ord._id }, { $inc: { left: n } }).catch(() => { });   // 还原余量
+      return { skipped: 'self_fail' };
+    }
   }
 
   async function runRound() {
