@@ -137,6 +137,37 @@ export function mount(root) {
       <div class="sub">玩家总量 / 胜场 / 顶榜写手</div>
       <div id="gmShanhai"><div class="empty">加载中…</div></div>
     </div>
+
+    <div class="card">
+      <style>
+        /* 【v26.17】技能树配置 · 紧凑竖向布局：分支一列往下排，节点一行一条 */
+        .st-tabs { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 10px; }
+        .st-tabs button { padding:5px 12px; border-radius:16px; border:1px solid #cfd8e3; background:#fff; font:600 12px/1.4 sans-serif; cursor:pointer; }
+        .st-tabs button.on { background:#1f4e79; color:#fff; border-color:#1f4e79; }
+        .st-branch { border:1px solid #dde5ee; border-radius:8px; padding:8px 10px; margin-bottom:8px; background:#fafcfe; }
+        .st-bhead { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+        .st-bhead input { font-weight:700; }
+        .st-row { display:grid; grid-template-columns:minmax(90px,1.2fr) 64px 52px 52px minmax(110px,1fr) 46px minmax(110px,1.2fr) minmax(110px,1.2fr) 26px; gap:4px; align-items:center; padding:4px 0; border-top:1px dashed #e7edf4; }
+        .st-row:first-of-type { border-top:none; }
+        .st-row input, .st-row select { font:12px/1.4 sans-serif; padding:3px 4px; border:1px solid #cfd8e3; border-radius:5px; min-width:0; width:100%; box-sizing:border-box; }
+        .st-row .st-del { color:#b3452f; cursor:pointer; border:none; background:none; font:700 14px/1 sans-serif; }
+        .st-head { font:700 10.5px/1.4 sans-serif; color:#8a97a8; display:grid; grid-template-columns:minmax(90px,1.2fr) 64px 52px 52px minmax(110px,1fr) 46px minmax(110px,1.2fr) minmax(110px,1.2fr) 26px; gap:4px; padding-bottom:2px; }
+        .st-mini { font:11px/1.4 sans-serif; padding:3px 6px; border:1px solid #cfd8e3; border-radius:5px; background:#fff; }
+        .st-fhead { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+        .st-fhead input { font:12px/1.4 sans-serif; padding:3px 6px; border:1px solid #cfd8e3; border-radius:5px; }
+        .st-fhead label { font:600 11px/1.4 sans-serif; color:#5b6a7d; display:flex; align-items:center; gap:3px; }
+      </style>
+      <h2 class="serif">流派技能树配置</h2>
+      <div class="sub">配置技能树的层级结构、前置解锁条件（前置技能需达到指定等级）与每个节点的最高等级。保存后玩家端「技能阁」即时生效。</div>
+      <div class="st-tabs" id="stTabs"></div>
+      <div id="stEditor"><div class="empty">加载中…</div></div>
+      <div class="inline" style="margin-top:10px">
+        <button class="btn-ghost" id="stAddFaction">＋ 新增流派</button>
+        <button class="btn-ghost" id="stReset">恢复默认技能树</button>
+        <span style="flex:1"></span>
+        <button class="btn-main" id="stSave">保存技能树</button>
+      </div>
+    </div>
   </div>
 
   <!-- ============ 区三：数据与日志 ============ -->
@@ -652,6 +683,162 @@ export function mount(root) {
   $('gmFind').onclick = findUser;
   $('gmGrant').onclick = grant;
 
-  loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle();
-  return { refresh: () => { loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle(); } };
+  // ==================== 【v26.17】流派技能树配置 ====================
+  // 数据结构与服务端一致：factions[{id,name,icon,desc,starter,branches[{id,name,role,nodes[
+  //   {id,name,type,cost,max,eff,desc,req:{node,lv}}]}]}]
+  // 紧凑竖向：流派 pill 切换 → 分支块竖排 → 节点一行一条
+  let ST = { factions: [], cur: 0, custom: false };
+  const ST_TYPE = { minor: '属性', special: '特殊', play: '玩法', ultimate: '主动' };
+  const stUid = () => 'n' + Date.now().toString(36).slice(-5) + Math.floor(Math.random() * 90 + 10);
+
+  async function loadSkillTree() {
+    try {
+      const j = await api('/api/shanhai/admin/factions');
+      if (!j.ok) throw new Error(j.error || '加载失败');
+      ST.factions = j.factions || []; ST.cur = 0; ST.custom = !!j.custom;
+      renderSkillTree();
+    } catch (e) { $('stEditor').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+  }
+
+  function effToText(eff) { return Object.entries(eff || {}).map(([k, v]) => k + ':' + v).join(', '); }
+  function textToEff(s) {
+    const out = {};
+    for (const part of String(s || '').split(/[,，]/)) {
+      const seg = part.trim(); if (!seg) continue;
+      const i = seg.indexOf(':'); if (i < 1) continue;
+      const k = seg.slice(0, i).trim(), v = Number(seg.slice(i + 1).trim());
+      if (/^[a-zA-Z]{2,20}$/.test(k) && Number.isFinite(v)) out[k] = v;
+    }
+    return out;
+  }
+
+  function renderSkillTree() {
+    const tabs = $('stTabs');
+    tabs.innerHTML = ST.factions.map((f, i) =>
+      `<button data-i="${i}" class="${i === ST.cur ? 'on' : ''}">${esc(f.icon || '✦')} ${esc(f.name)}${f.starter ? '（新手）' : ''}</button>`).join('');
+    tabs.querySelectorAll('button').forEach(b => b.onclick = () => { ST.cur = +b.dataset.i; renderSkillTree(); });
+    const f = ST.factions[ST.cur];
+    if (!f) { $('stEditor').innerHTML = '<div class="empty">没有流派，点"新增流派"开始</div>'; return; }
+    const nodeOpts = fid => {
+      const ff = ST.factions[fid];
+      let out = '<option value="">无前置</option>';
+      for (const b of (ff.branches || [])) for (const n of (b.nodes || [])) {
+        out += `<option value="${esc(n.id)}">${esc(n.id)} · ${esc(n.name)}</option>`;
+      }
+      return out;
+    };
+    $('stEditor').innerHTML = `
+      <div class="st-fhead">
+        <label>ID <input data-f="id" value="${esc(f.id)}" style="width:110px"></label>
+        <label>名称 <input data-f="name" value="${esc(f.name)}" style="width:130px"></label>
+        <label>图标 <input data-f="icon" value="${esc(f.icon || '')}" style="width:44px"></label>
+        <label>简介 <input data-f="desc" value="${esc(f.desc || '')}" style="flex:1;min-width:160px"></label>
+        <label><input type="checkbox" data-f="starter" ${f.starter ? 'checked' : ''}> 新手流派</label>
+      </div>
+      ${(f.branches || []).map((b, bi) => `
+      <div class="st-branch">
+        <div class="st-bhead">
+          <span style="font:700 12px/1.4 sans-serif;color:#1f4e79">分枝</span>
+          <input data-b="${bi}" data-k="id" value="${esc(b.id)}" style="width:110px" title="分支 id（引用用）">
+          <input data-b="${bi}" data-k="name" value="${esc(b.name)}" style="width:150px" title="分支名称">
+          <input data-b="${bi}" data-k="role" value="${esc(b.role || '')}" style="width:110px" title="定位说明">
+          <span style="flex:1"></span>
+          <button class="st-mini" data-act="delBranch" data-b="${bi}">删分支</button>
+        </div>
+        <div class="st-head"><span>技能名</span><span>类型</span><span>消耗点</span><span>最高等级</span><span>前置技能</span><span>前置等级</span><span>加成（如 atk:2, crit:3）</span><span>说明</span><span></span></div>
+        ${(b.nodes || []).map((n, ni) => `
+        <div class="st-row">
+          <input data-n="${bi}_${ni}" data-k="name" value="${esc(n.name)}" title="技能名">
+          <select data-n="${bi}_${ni}" data-k="type">${Object.entries(ST_TYPE).map(([k, v]) => `<option value="${k}" ${n.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          <input data-n="${bi}_${ni}" data-k="cost" type="number" min="0" max="20" value="${+n.cost || 0}">
+          <input data-n="${bi}_${ni}" data-k="max" type="number" min="1" max="50" value="${+n.max || 1}">
+          <select data-n="${bi}_${ni}" data-k="reqNode">${nodeOpts(ST.cur).replace(`value="${esc((n.req || {}).node || '')}"`, `value="${esc((n.req || {}).node || '')}" selected`)}</select>
+          <input data-n="${bi}_${ni}" data-k="reqLv" type="number" min="1" max="50" value="${(n.req || {}).lv || 1}" ${n.req && n.req.node ? '' : 'disabled'}>
+          <input data-n="${bi}_${ni}" data-k="eff" value="${esc(effToText(n.eff))}" title="加成字段:数值，逗号分隔">
+          <input data-n="${bi}_${ni}" data-k="desc" value="${esc(n.desc || '')}">
+          <button class="st-del" data-act="delNode" data-b="${bi}" data-n="${ni}" title="删除该技能">✕</button>
+        </div>`).join('')}
+        <div style="margin-top:6px"><button class="st-mini" data-act="addNode" data-b="${bi}">＋ 加技能</button></div>
+      </div>`).join('')}
+      <button class="st-mini" data-act="addBranch">＋ 加分支</button>`;
+    bindSkillTree();
+  }
+
+  function bindSkillTree() {
+    const f = ST.factions[ST.cur];
+    if (!f) return;
+    const ed = $('stEditor');
+    // 流派头
+    ed.querySelectorAll('[data-f]').forEach(el => {
+      const k = el.dataset.f;
+      const apply = () => {
+        if (k === 'starter') f.starter = el.checked;
+        else f[k] = el.value;
+      };
+      el.onchange = apply; if (el.type === 'text' || el.type === 'checkbox') el.oninput = apply;
+    });
+    // 分支头
+    ed.querySelectorAll('[data-b][data-k]').forEach(el => {
+      el.oninput = el.onchange = () => { f.branches[+el.dataset.b][el.dataset.k] = el.value; };
+    });
+    // 节点行（key 形如 bi_ni）
+    ed.querySelectorAll('[data-n][data-k]').forEach(el => {
+      const [bi, ni] = el.dataset.n.split('_').map(Number);
+      el.oninput = el.onchange = () => {
+        const n = f.branches[bi].nodes[ni];
+        const k = el.dataset.k;
+        if (k === 'cost') n.cost = Math.max(0, Math.round(+el.value || 0));
+        else if (k === 'max') n.max = Math.max(1, Math.round(+el.value || 1));
+        else if (k === 'reqNode') {
+          if (el.value) { n.req = { node: el.value, lv: Math.max(1, (n.req || {}).lv || 1) }; }
+          else delete n.req;
+          // 联动启停前置等级输入框（只重渲，保持简单）
+          renderSkillTree();
+        }
+        else if (k === 'reqLv') { n.req = n.req || { node: '', lv: 1 }; n.req.lv = Math.max(1, Math.round(+el.value || 1)); }
+        else if (k === 'eff') n.eff = textToEff(el.value);
+        else n[k] = el.value;
+      };
+    });
+    // 按钮（增删）
+    ed.querySelectorAll('[data-act]').forEach(el => {
+      el.onclick = () => {
+        const act = el.dataset.act, bi = +el.dataset.b, ni = +el.dataset.n;
+        if (act === 'addBranch') f.branches.push({ id: stUid() + 'b', name: '新分支', role: '', nodes: [{ id: stUid(), name: '新技能', type: 'minor', cost: 1, max: 5, eff: { atk: 1 }, desc: '' }] });
+        else if (act === 'delBranch') { if (f.branches.length <= 1) return toast('至少保留一个分支'); if (!confirm('删除该分支及其全部技能？')) return; f.branches.splice(bi, 1); }
+        else if (act === 'addNode') f.branches[bi].nodes.push({ id: stUid(), name: '新技能', type: 'minor', cost: 1, max: 5, eff: { atk: 1 }, desc: '' });
+        else if (act === 'delNode') { if (f.branches[bi].nodes.length <= 1) return toast('分支至少保留一个技能'); f.branches[bi].nodes.splice(ni, 1); }
+        renderSkillTree();
+      };
+    });
+  }
+
+  $('stSave').onclick = async () => {
+    try {
+      const j = await api('/api/shanhai/admin/factions', { method: 'PUT', body: JSON.stringify({ factions: ST.factions }) });
+      if (!j.ok) throw new Error(j.error || '保存失败');
+      toast('技能树已保存，玩家端即时生效');
+    } catch (e) { toast(e.message); }
+  };
+  $('stReset').onclick = async () => {
+    if (!confirm('恢复为系统默认技能树？当前自定义配置将被清除（玩家已学等级保留，但节点若在默认树中不存在将不再生效）。')) return;
+    try {
+      const j = await api('/api/shanhai/admin/factions/reset', { method: 'POST', body: '{}' });
+      if (!j.ok) throw new Error(j.error || '操作失败');
+      ST.factions = j.factions || []; ST.cur = 0; ST.custom = false;
+      renderSkillTree();
+      toast('已恢复默认技能树');
+    } catch (e) { toast(e.message); }
+  };
+  $('stAddFaction').onclick = () => {
+    ST.factions.push({ id: 'f' + stUid(), name: '新流派', icon: '✦', desc: '', starter: false, branches: [
+      { id: 'b' + stUid(), name: '主修', role: '', nodes: [{ id: stUid(), name: '新技能', type: 'minor', cost: 1, max: 5, eff: { atk: 1 }, desc: '' }] },
+    ] });
+    ST.cur = ST.factions.length - 1;
+    renderSkillTree();
+  };
+
+  $('gmRefresh').onclick = () => { loadStats(); loadShanhai(); loadCfg(); loadSkillTree(); };
+  loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle(); loadSkillTree();
+  return { refresh: () => { loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle(); loadSkillTree(); } };
 }
