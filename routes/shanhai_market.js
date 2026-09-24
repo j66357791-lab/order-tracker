@@ -28,6 +28,9 @@ const DEFAULT_CFG = {
   tradesMax: 5,           // 每轮最多成交笔数
   priceMin: 0.06,         // 价格波动下限（元/灵气）——后台最低可设到 0.0001，与交易所同口径
   priceMax: 0.18,         // 价格波动上限（同样支持 4 位小数）
+  // 【v26.9】价格波动率：每轮价格中枢随机游走的幅度（%），越大行情起伏越明显。
+  // 太小 → 走势是条直线（一眼假）；太大 → 价格乱跳。3% 是比较自然的日间波动。
+  volatility: 3,
   // 【v26.5】买卖最小价差：卖单最低价 − 买单最高价。
   // 这是防套利的核心参数 —— 价差必须盖住「双向手续费」，否则玩家能低买高卖刷钱。
   spreadMin: 0.001,
@@ -56,10 +59,12 @@ const money4 = n => Math.round(Number(n) * 10000) / 10000;   // 交易所内部 
 //     机器人卖单价 ≥ mid + half          机器人买单价 ≤ mid - half
 //     买卖价差 ≥ spreadMin（默认 0.001，且不小于双向手续费 + 缓冲）
 // 玩家套利一轮的收益 = 买价×(1−手续费) − 卖价，在价差覆盖手续费后必然为负 —— 必亏。
-function marketPrices(cfg) {
+function marketPrices(cfg, center) {
   const min = Number(cfg.priceMin) || 0.0001;
   const max = Number(cfg.priceMax) || 0.18;
-  const mid = money4((min + max) / 2);
+  // 【v26.9】中枢由调用方传入（每轮做一次随机游走），不再固定取区间中点——
+  // 固定中枢会导致行情是一条毫无起伏的直线，一眼假。
+  const mid = money4(center || ((min + max) / 2));
   const feeBuffer = money4(mid * 0.015);                      // 双向手续费约 1% + 缓冲
   const spread = Math.max(Number(cfg.spreadMin) || 0.001, feeBuffer, 0.0002);
   const half = money4(spread / 2);
@@ -155,12 +160,12 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
 
   // ==================== 一轮做市 ====================
   // 单笔：优先吃玩家挂单；没有可吃的就自己挂一单补流动性
-  async function oneTrade(db, cfg) {
+  async function oneTrade(db, cfg, center) {
     const side = Math.random() < 0.5 ? 'sell' : 'buy';       // 机器人这一笔想「卖灵气」还是「买灵气」
     // 【v26.5】价格不再在整段区间里乱撒，而是按「中间价 ± 半个价差」分别生成：
     //   机器人卖 → [askMin, askMin×1.35]      机器人买 → [bidMax×0.65, bidMax]
     // 这样无论随机到多少，卖价永远高于买价，玩家无法低买高卖套利。
-    const pr = marketPrices(cfg);
+    const pr = marketPrices(cfg, center);
     const price = side === 'sell'
       ? money4(pr.askMin * (1 + Math.random() * 0.35))
       : money4(pr.bidMax * (1 - Math.random() * 0.35));
@@ -322,6 +327,34 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
   }
   mountShanhaiMarket.cleanupOldData = cleanupOldData;
 
+  // ==================== 【v26.9】价格中枢：随机游走 + 均值回归 ====================
+  // 之前中枢固定 = 区间中点，行情永远是一条平线，玩家一眼看出是假的。
+  // 现在每轮推进一次中枢：
+  //   ① 随机游走：±volatility%（默认 3%）
+  //   ② 均值回归：向基准价拉回 8%，防止无限漂走
+  //   ③ 5% 概率的"行情脉冲"：3 倍幅度波动，制造趋势段
+  //   ④ 夹在 [priceMin, priceMax] 内，永不越界
+  async function nextCenter(db, cfg) {
+    const min = Number(cfg.priceMin) || 0.0001;
+    const max = Number(cfg.priceMax) || 0.18;
+    const base = money4((min + max) / 2);
+    const vol = Math.max(0.1, Math.min(30, Number(cfg.volatility) || 3));
+    let c = base;
+    const doc = await db.collection(CFG_COL).findOne({ _id: 'market' }).catch(() => null);
+    const saved = Number(doc && doc.priceCenter);
+    if (saved && Number.isFinite(saved) && saved > 0) c = money4(saved);
+
+    c = money4(c * (1 + (Math.random() * 2 - 1) * (vol / 100)));          // ① 游走
+    c = money4(c + (base - c) * 0.08);                                     // ② 回归
+    if (Math.random() < 0.05) {                                            // ③ 脉冲
+      c = money4(c * (1 + (Math.random() * 2 - 1) * (vol / 100) * 3));
+    }
+    c = money4(Math.max(min, Math.min(max, c)));                           // ④ 夹逼
+    await db.collection(CFG_COL).updateOne(
+      { _id: 'market' }, { $set: { priceCenter: c, centerAt: new Date() } }, { upsert: true }).catch(() => { });
+    return c;
+  }
+
   async function runRound() {
     try {
       const db = await getDb();
@@ -333,8 +366,10 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       await ensureFund(db, cfg);
       const n = rndInt(Math.min(cfg.tradesMin, cfg.tradesMax), Math.max(cfg.tradesMin, cfg.tradesMax));
       const res = [];
+      // 【v26.9】本轮先推进一次价格中枢，这一轮所有笔共用同一个中枢（同轮内价格连贯）
+      const center = await nextCenter(db, cfg);
       for (let i = 0; i < n; i++) {
-        res.push(await oneTrade(db, cfg));
+        res.push(await oneTrade(db, cfg, center));
         await new Promise(r => setTimeout(r, 300));   // 稍微错开，避免同一秒挤在一起
       }
       const deals = res.filter(r => r.dealt).length;
@@ -488,6 +523,7 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         priceMin: num(b.priceMin, 0.06, 0.0001, 9999, 4),
         priceMax: num(b.priceMax, 0.18, 0.0001, 9999, 4),
         spreadMin: num(b.spreadMin, 0.001, 0.0001, 9999, 4),
+        volatility: num(b.volatility, 3, 0.1, 30, 1),
         amountMin: Math.round(num(b.amountMin, 20, 1, 999999, 0)),
         amountMax: Math.round(num(b.amountMax, 500, 1, 999999, 0)),
       };
