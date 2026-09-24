@@ -43,7 +43,9 @@ export default function mountRecharge(app, ctx) {
   // kind='recharge'，不会干扰 LV1 激励的历史特征匹配（那条只认 kind:'lv1_bonus' 或 无 kind+有 base+无 note）
   async function credit(db, userId, amount, note) {
     const now = new Date();
-    const month = new Date(now.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+    // 【2026-09-24 修复】month 口径与其他模块对齐为 YYYY-MM（原 .slice(0,10) 写成完整日期，
+    // 任何按 month 做月度聚合/判重的逻辑都匹配不到充值流水）
+    const month = new Date(now.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 7);
     await db.collection('wallet_log').insertOne({
       userId, month, kind: 'recharge', amount: Math.round(amount * 100) / 100, note: note || '充值到账', createdAt: now,
     });
@@ -135,6 +137,11 @@ export default function mountRecharge(app, ctx) {
         const picked = ocr.ok ? pickAmount(ocr.text, declared) : { amount: null, list: [] };
         const ocrAmount = picked.amount;
         const amountMatched = ocrAmount != null && Math.abs(ocrAmount - declared) < 0.011;
+        // 【2026-09-24 安全修复】订单号通道必须与 OCR 文本交叉验证：
+        // 原先只校验"16~40位数字 + 未用过"，订单号是用户手抄自报的，随便编一个就能免审核入账（刷余额）。
+        // 现要求：OCR 可用且订单号确实出现在截图文本里才放行；OCR 不可用/对不上 → 一律转人工。
+        const orderNoInOcr = !!(ocr.ok && orderNoOk
+          && String(ocr.text || '').replace(/[^0-9]/g, '').includes(orderNoRaw));
 
         // 单日自动到账额度
         const today = todayStr();
@@ -152,15 +159,13 @@ export default function mountRecharge(app, ctx) {
         if (ocr.ok && amountMatched && withinAuto) {
           // 第一重：截图金额与申报一致
           status = 'auto_paid'; verifyMethod = 'ocr'; reason = '机器核验通过（截图金额与申报一致）';
-          await credit(db, req.user.id, declared, `充值到账 · ${no}（支付宝截图机器核验）`);
-        } else if (cfg.orderNoVerify !== false && orderNoOk && !orderNoDup) {
-          // 第二重：订单号核验（OCR 不可用/识别不准时兜住，小额照常秒到账）
+        } else if (cfg.orderNoVerify !== false && orderNoOk && !orderNoDup && orderNoInOcr) {
+          // 第二重：订单号核验（订单号须真实出现在截图 OCR 文本中，双重自洽才放行）
           if (!withinAuto) {
             status = 'pending'; reason = '超出单日自动到账额度，转人工审核';
           } else {
             status = 'auto_paid'; verifyMethod = 'orderNo';
-            reason = '订单号核验通过（订单号唯一，未重复提交）';
-            await credit(db, req.user.id, declared, `充值到账 · ${no}（转账订单号核验）`);
+            reason = '订单号核验通过（订单号出现在截图中且未重复提交）';
           }
         } else {
           status = 'pending';
@@ -170,22 +175,41 @@ export default function mountRecharge(app, ctx) {
               + (orderNoRaw && !orderNoOk ? '；订单号格式不对（需 16~40 位数字）' : (orderNoRaw ? '' : '；未填写订单号'));
           } else if (!amountMatched) reason = ocrAmount == null ? '截图中未识别到金额，转人工审核' : `截图金额（¥${ocrAmount}）与申报金额（¥${declared}）不一致，转人工审核`;
           else if (!withinAuto) reason = '超出单日自动到账额度，转人工审核';
+          else if (orderNoOk && !orderNoInOcr) reason = '订单号未能在截图中核验到，转人工审核';
           else reason = '转人工审核（订单号缺失或格式不对）';
         }
         const doc = {
           no, userId: req.user.id, username: req.user.displayName || req.user.username || '',
           amount: declared, declared, ocrAmount: ocrAmount == null ? null : ocrAmount,
           ocrConfidence: ocr.confidence || 0, ocrText: (ocr.text || '').slice(0, 800),
-          ocrOk: !!ocr.ok, amountMatched,
+          ocrOk: !!ocr.ok, amountMatched, orderNoInOcr,
           orderNo: orderNoOk ? orderNoRaw : null, verifyMethod,
           shotFileId, shotHash: hash, shotName: fileName, shotSize: req.file.size,
           status, reason, autoDay: status === 'auto_paid' ? today : null,
           createdAt: now, reviewedBy: null, reviewedAt: null,
         };
-        await db.collection('recharge_orders').insertOne(doc);
+        // 【2026-09-24 安全修复】先落单、后入账（原顺序反了：并发同图可双份入账，
+        // 且 insertOne 失败时出现"钱已到账却无单据"的孤儿流水）。
+        // 并发同图由 recharge_orders 的 (userId, shotHash) 唯一索引兜底（见 lib/db.js）。
+        try {
+          await db.collection('recharge_orders').insertOne(doc);
+        } catch (err) {
+          if (err && err.code === 11000) {
+            return res.status(400).json({ ok: false, error: '这张截图已经提交过了，请勿重复提交' });
+          }
+          throw err;
+        }
+        if (status === 'auto_paid') {
+          await credit(db, req.user.id, declared,
+            verifyMethod === 'orderNo' ? `充值到账 · ${no}（转账订单号核验）` : `充值到账 · ${no}（支付宝截图机器核验）`);
+        }
 
-        const grants = await db.collection('wallet_log').find({ userId: req.user.id }).toArray();
-        balance = Math.round(grants.reduce((s, g) => s + (g.amount || 0), 0) * 100) / 100;
+        // 【2026-09-24 性能优化】余额求和改库端聚合（原先全量流水拉进 Node 再 reduce）
+        const grantsAgg = await db.collection('wallet_log').aggregate([
+          { $match: { userId: req.user.id } },
+          { $group: { _id: null, sum: { $sum: { $cond: [{ $isNumber: '$amount' }, '$amount', 0] } } } },
+        ]).toArray();
+        balance = Math.round(((grantsAgg[0] && grantsAgg[0].sum) || 0) * 100) / 100;
         res.json({
           ok: true, no, status, reason, amount: declared, ocrAmount, ocrOk: !!ocr.ok,
           amountMatched, ocrConfidence: ocr.confidence || 0, balance, verifyMethod,
@@ -307,35 +331,58 @@ export default function mountRecharge(app, ctx) {
       if (!['pending', 'auto_paid', 'paid', 'rejected'].includes(o.status)) return res.status(400).json({ ok: false, error: '状态异常' });
       if (action === 'approve') {
         if (o.status === 'paid') return res.status(400).json({ ok: false, error: '该单已到账' });
+        // 【2026-09-24 资金安全修复】auto_paid 提交时已自动入账过一次，
+        // 再 approve 会二次 credit（同一单双倍到账）。此类单只能走"驳回"（自动扣回）。
+        if (o.status === 'auto_paid') return res.status(400).json({ ok: false, error: '该单机器核验时已自动到账，不能重复审核；如要撤回到账请使用驳回（将自动扣回）' });
         const amt = Math.round((Number(amount) || o.amount) * 100) / 100;
         if (!(amt > 0)) return res.status(400).json({ ok: false, error: '金额不合法' });
-        // 条件更新：只有仍处于可审核状态才入账（防并发重复打款）
+        // 条件更新：只有仍处于待审核状态才入账（防并发重复打款）
         const upd = await db.collection('recharge_orders').findOneAndUpdate(
-          { _id: o._id, status: { $in: ['pending', 'auto_paid'] } },
+          { _id: o._id, status: 'pending' },
           { $set: { status: 'paid', amount: amt, reviewedBy: req.user.displayName || req.user.username || 'admin', reviewedAt: new Date(), reviewNote: note || '' } },
           { returnDocument: 'after' }
         );
         const np = upd && (upd.value || upd);
         if (!np) return res.status(409).json({ ok: false, error: '该单已被处理，请刷新' });
         await credit(db, o.userId, amt, `充值到账 · ${o.no}（管理员审核通过）`);
-        const grants = await db.collection('wallet_log').find({ userId: o.userId }).toArray();
-        return res.json({ ok: true, status: 'paid', amount: amt, balance: Math.round(grants.reduce((s, g) => s + (g.amount || 0), 0) * 100) / 100 });
+        const grantsAgg = await db.collection('wallet_log').aggregate([
+          { $match: { userId: o.userId } },
+          { $group: { _id: null, sum: { $sum: { $cond: [{ $isNumber: '$amount' }, '$amount', 0] } } } },
+        ]).toArray();
+        return res.json({ ok: true, status: 'paid', amount: amt, balance: Math.round(((grantsAgg[0] && grantsAgg[0].sum) || 0) * 100) / 100 });
       }
       if (action === 'reject') {
+        // 【2026-09-24 资金安全修复】驳回 auto_paid 单必须同步扣回已入账金额——
+        // 原先只改状态，钱还留在钱包里（"假驳回真到账"）。扣回用负向流水，保留审计链。
+        const wasAutoPaid = o.status === 'auto_paid';
         const upd = await db.collection('recharge_orders').findOneAndUpdate(
           { _id: o._id, status: { $in: ['pending', 'auto_paid'] } },
           { $set: { status: 'rejected', reviewedBy: req.user.displayName || req.user.username || 'admin', reviewedAt: new Date(), reviewNote: note || '' } },
           { returnDocument: 'after' }
         );
         if (!(upd && (upd.value || upd))) return res.status(409).json({ ok: false, error: '该单已被处理，请刷新' });
-        return res.json({ ok: true, status: 'rejected' });
+        if (wasAutoPaid && (o.amount || 0) > 0) {
+          await db.collection('wallet_log').insertOne({
+            userId: o.userId,
+            month: new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7),
+            kind: 'recharge_revoke', amount: -Math.round(o.amount * 100) / 100,
+            note: `充值单 ${o.no} 审核驳回，扣回自动到账金额`,
+            createdAt: new Date(),
+          });
+        }
+        return res.json({ ok: true, status: 'rejected', revoked: wasAutoPaid });
       }
       res.status(400).json({ ok: false, error: '未知操作' });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
   // OCR 自检（管理员）：上传一张图看识别结果，用于排查"识别不准"
-  app.post('/api/admin/recharge/ocr-test', auth, upload.single('file'), async (req, res) => {
+  // 【2026-09-24 安全修复】权限校验提到 upload.single 之前（原先普通用户可先把文件体灌进内存才被 403），
+  // 并补限流（原先无任何限流，可无限打外部 OCR 服务烧配额）
+  app.post('/api/admin/recharge/ocr-test', auth, limit({ name: 'ocr-test', max: 5, windowMs: 10 * 60 * 1000, msg: 'OCR 自检太频繁，请 10 分钟后再试' }), (req, res, next) => {
+    if (!isAdmin(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
+    next();
+  }, upload.single('file'), async (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
     try {
       if (!req.file) return res.status(400).json({ ok: false, error: '请选择图片' });
