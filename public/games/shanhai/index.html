@@ -843,8 +843,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     document.querySelectorAll("#mktTabs button").forEach(b => b.onclick = () => {
       if (b.dataset.act) {
         const len = (MKT.data && MKT.data.candles || []).length || 60;
-        const cur = MKT.view.cnt || Math.min(len, 60);
-        if (b.dataset.act === "zin") MKT.view.cnt = Math.round(cur * 0.7);
+        const cur = MKT.view.cnt || len;   // 【v26.21】基准改为全量根数（原 Math.min(len,60) 在根数少时会钳住缩放）
+        if (b.dataset.act === "zin") MKT.view.cnt = Math.max(6, Math.round(cur * 0.7));
         else if (b.dataset.act === "zout") MKT.view.cnt = Math.round(cur * 1.4);
         else MKT.view = { off: 0, cnt: 0 };
         const box = document.getElementById("mktCandle");
