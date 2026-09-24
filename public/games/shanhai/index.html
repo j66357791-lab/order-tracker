@@ -1671,14 +1671,22 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
               const lv = +my[n.id] || 0;
               const max = +n.max || 1;
               const full = lv >= max;
-              const can = !full && d.points >= (+n.cost || 1);
+              // 【v26.17】前置技能锁：req={node,lv} 未达标时灰显并提示前置要求
+              let reqNode = null, reqLv = 0, reqCur = 0;
+              if (n.req && n.req.node) {
+                reqLv = +n.req.lv || 1; reqCur = +my[n.req.node] || 0;
+                for (const bb of (f.branches || [])) { const x = (bb.nodes || []).find(y => y.id === n.req.node); if (x) { reqNode = x; break; } }
+              }
+              const locked = !full && !!reqNode && reqCur < reqLv;
+              const can = !full && !locked && d.points >= (+n.cost || 1);
               const TYPENAME = { minor: "属性", special: "特殊", play: "玩法", ultimate: "主动" };
-              return `<div class="fac-node${full ? " full" : can ? " can" : ""}${i > 0 ? " linked" : ""}" data-n="${n.id}" data-c="${n.cost || 1}" title="${_escHtml(n.desc || "")}">
+              const reqTxt = reqNode ? `前置：${reqNode.name} Lv.${reqLv}` : "";
+              return `<div class="fac-node${full ? " full" : can ? " can" : ""}${locked ? " reqlocked" : ""}${i > 0 ? " linked" : ""}" data-n="${n.id}" data-c="${n.cost || 1}" data-locked="${locked ? 1 : 0}" title="${_escHtml((reqTxt ? reqTxt + " · " : "") + (n.desc || ""))}">
                 <div class="fn-lv">${lv}/${max}</div>
                 <b>${_escHtml(n.name)}</b>
                 <i>${TYPENAME[n.type] || n.type || ""}</i>
                 <span>${_escHtml(n.desc || "")}</span>
-                ${full ? '<em>已满</em>' : `<em>耗${n.cost}点</em>`}
+                ${full ? '<em>已满</em>' : locked ? `<em>🔒 ${_escHtml(reqTxt)}</em>` : `<em>耗${n.cost}点</em>`}
               </div>`;
             }).join("")}</div>
           </div>`).join("")}</div>
@@ -1698,6 +1706,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     };
     body.querySelectorAll(".fac-node").forEach(nd => nd.onclick = async () => {
       if (nd.classList.contains("full")) return toast("该天赋已满级");
+      // 【v26.17】前置未解锁：前端先拦截（服务端同样强校验）
+      if (nd.dataset.locked === "1") return toast("前置技能等级不足，先升前置节点");
       const fid = f.id, nid = nd.dataset.n, cost = +nd.dataset.c || 1;
       if (d.points < cost) return toast("天赋点不足（还差 " + (cost - d.points) + " 点）");
       try {
