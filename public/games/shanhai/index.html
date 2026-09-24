@@ -564,7 +564,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   function bindExChart() {
     const head = document.getElementById("exChartHead");
     const tabs = document.getElementById("exChartTabs");
-    if (head) head.onclick = () => {
+    if (head) head.onclick = e => {
+      if (e.target.closest(".ex-chart-more")) return;   // 详情按钮走自己的
       CHART.open = !CHART.open;
       renderExChart();
       if (CHART.open) loadExChart();
@@ -577,6 +578,110 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         loadExChart();
       };
     });
+  }
+
+  /* ==================== 【v26.12】灵气行情 · 独立弹窗（K 线蜡烛图） ====================
+     交易所里只留一行行情条，详细走势（蜡烛图/成交量/高低点）点「详情」进独立弹窗看，
+     弹窗空间大，K 线画得开，不用挤在交易所列表里。 */
+  let MKT = { range: "1d", data: null };
+
+  function renderCandles(box, cs, W, H) {
+    if (!cs.length) { box.innerHTML = '<div class="ex-empty">这段时间还没有成交，做几笔就有行情了</div>'; return; }
+    const PL = 8, PR = 8, PT = 12, PB = 18;
+    const hi = Math.max.apply(null, cs.map(c => c.hi));
+    const lo = Math.min.apply(null, cs.map(c => c.lo));
+    const span = (hi - lo) || (hi || 0.001) * 0.2 || 0.0001;
+    const step = (W - PL - PR) / cs.length;
+    const bw = Math.max(2, step * 0.55);
+    const X = i => PL + step * (i + 0.5);
+    const Y = v => PT + (H - PT - PB) * (1 - (v - lo) / span);
+    let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block">`;
+    for (let g = 0; g <= 3; g++) {
+      const y = (PT + (H - PT - PB) * g / 3).toFixed(1);
+      s += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="rgba(122,96,48,.14)" stroke-width="1"/>`;
+    }
+    cs.forEach((c, i) => {
+      const up = c.c >= c.o;
+      const col = up ? "#d0452c" : "#2f9a63";
+      const x = X(i).toFixed(1);
+      s += `<line x1="${x}" y1="${Y(c.hi).toFixed(1)}" x2="${x}" y2="${Y(c.lo).toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
+      const yTop = Y(Math.max(c.o, c.c)).toFixed(1);
+      const hh = Math.max(1.5, Y(Math.min(c.o, c.c)) - Y(Math.max(c.o, c.c))).toFixed(1);
+      s += `<rect x="${(X(i) - bw / 2).toFixed(1)}" y="${yTop}" width="${bw.toFixed(1)}" height="${hh}" fill="${col}"/>`;
+    });
+    const lastC = cs[cs.length - 1];
+    s += `<line x1="${PL}" y1="${Y(lastC.c).toFixed(1)}" x2="${W - PR}" y2="${Y(lastC.c).toFixed(1)}" stroke="${lastC.c >= lastC.o ? "#d0452c" : "#2f9a63"}" stroke-width="0.8" stroke-dasharray="3,3" opacity=".6"/>`;
+    s += `<text x="${PL}" y="${H - 4}" fill="#9c8b6b" font-size="9">${fmtT(cs[0].t)}</text>`;
+    s += `<text x="${W - PR}" y="${H - 4}" fill="#9c8b6b" font-size="9" text-anchor="end">${fmtT(cs[cs.length - 1].t)}</text>`;
+    s += `</svg>`;
+    box.innerHTML = s;
+  }
+
+  async function showMarketChart() {
+    let mask = document.getElementById("mktMask");
+    if (mask) mask.remove();
+    mask = document.createElement("div");
+    mask.className = "ex-mask"; mask.id = "mktMask";
+    mask.onclick = e => { if (e.target === mask) mask.remove(); };
+    mask.innerHTML = `
+      <div class="ex-wrap" style="max-width:460px">
+        <div class="ex-board" style="height:60px"></div>
+        <div class="ex-head" style="padding-top:11px">
+          <div class="ex-title">灵气行情</div>
+          <div class="ex-sub" id="mktSub">加权均价 · 涨红跌绿</div>
+          <div class="ex-close" id="mktClose">×</div>
+        </div>
+        <div class="mkt-body">
+          <div class="mkt-top">
+            <span>当前 <b id="mktNow">--</b></span>
+            <span>涨跌 <em class="chg" id="mktChg">--</em></span>
+            <span>区间最高 <b id="mktHi">--</b></span>
+            <span>最低 <b id="mktLo">--</b></span>
+          </div>
+          <div class="ex-chart-tabs" id="mktTabs">
+            <button data-r="1d" class="on">24小时</button>
+            <button data-r="7d">7天</button>
+            <button data-r="30d">30天</button>
+            <button data-r="all">全部</button>
+          </div>
+          <div id="mktCandle">加载中…</div>
+          <div class="ex-chart-info" id="mktInfo">—</div>
+        </div>
+      </div>`;
+    document.body.appendChild(mask);
+    document.getElementById("mktClose").onclick = () => mask.remove();
+    document.querySelectorAll("#mktTabs button").forEach(b => b.onclick = () => {
+      MKT.range = b.dataset.r;
+      document.querySelectorAll("#mktTabs button").forEach(x => x.classList.toggle("on", x === b));
+      loadMkt();
+    });
+    await loadMkt();
+  }
+  window.showMarketChart = showMarketChart;
+
+  async function loadMkt() {
+    const box = document.getElementById("mktCandle");
+    if (!box) return;
+    box.innerHTML = '<div class="ex-empty">加载中…</div>';
+    try {
+      const d = await META.exChart(MKT.range);
+      if (!d.ok) throw new Error(d.error || "加载失败");
+      MKT.data = d;
+      const set2 = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+      set2("mktNow", "¥" + _fmt4(d.cur || 0));
+      const chg = document.getElementById("mktChg");
+      if (chg) {
+        const up = (d.change || 0) >= 0;
+        chg.textContent = (up ? "+" : "") + (d.change || 0) + "%";
+        chg.className = "chg " + (up ? "up" : "down");
+      }
+      set2("mktHi", "¥" + _fmt4(d.hi || 0));
+      set2("mktLo", "¥" + _fmt4(d.lo || 0));
+      renderCandles(box, d.candles || [], 420, 180);
+      set2("mktInfo", d.label + "　成交 " + (d.vol || 0) + " 灵气　" + (d.candles || []).length + " 根 K 线");
+    } catch (e) {
+      box.innerHTML = `<div class="ex-empty">加载失败：${_escHtml((e && (e.error || e.message)) || "")}</div>`;
+    }
   }
 
   async function loadEx(onlyLists) {
@@ -1018,6 +1123,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
             <b id="exChartNow">--</b>
             <em class="chg" id="exChartChg">--</em>
             <i id="exChartArrow">▼</i>
+            <span class="ex-chart-more" onclick="event.stopPropagation();showMarketChart()">K线详情 ›</span>
           </div>
           <div class="ex-chart-body" id="exChartBody" style="display:none">
             <div class="ex-chart-tabs" id="exChartTabs">
@@ -1519,7 +1625,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       });
       return;
     }
-    // ---- 天赋树视图 ----
+    // ---- 天赋树视图（【v26.12】思维导图式：流派中心在左，各分支向右展开成链） ----
     const f = (d.factions || []).find(x => x.id === FAC.cur) || d.factions[0];
     set2("shTitle", f.name);
     set2("shSub", (f.desc || "") + "　·　天赋点 " + d.points);
@@ -1529,24 +1635,29 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <span>天赋点 <b>${d.points}</b></span>
         ${f.id === d.current ? '<em class="fac-on">装备中</em>' : `<button class="fac-equip" id="facEquip">装备此流派</button>`}
       </div>
-      ${(f.branches || []).map(b => `
-        <div class="fac-branch">
-          <div class="fac-bh"><b>${_escHtml(b.name)}</b><i>${_escHtml(b.role || "")}</i></div>
-          <div class="fac-nodes">${(b.nodes || []).map((n, i) => {
-            const lv = +my[n.id] || 0;
-            const max = +n.max || 1;
-            const full = lv >= max;
-            const can = !full && d.points >= (+n.cost || 1);
-            const TYPENAME = { minor: "属性", special: "特殊", play: "玩法", ultimate: "主动" };
-            return `<div class="fac-node${full ? " full" : can ? " can" : ""}${i > 0 ? " linked" : ""}" data-n="${n.id}" data-c="${n.cost || 1}" title="${_escHtml(n.desc || "")}">
-              <div class="fn-lv">${lv}/${max}</div>
-              <b>${_escHtml(n.name)}</b>
-              <i>${TYPENAME[n.type] || n.type || ""}</i>
-              <span>${_escHtml(n.desc || "")}</span>
-              ${full ? '<em>已满</em>' : `<em>耗${n.cost}点</em>`}
-            </div>`;
-          }).join("")}</div>
-        </div>`).join("")}`;
+      <div class="fac-map">
+        <div class="fac-trunk">
+          <div class="fac-core"><i>${f.icon || "⚔"}</i><b>${_escHtml((f.name || "").replace("流派", ""))}</b></div>
+        </div>
+        <div class="fac-branches">${(f.branches || []).map(b => `
+          <div class="fac-branch-row">
+            <div class="fac-blabel"><b>${_escHtml(b.name)}</b><i>${_escHtml(b.role || "")}</i></div>
+            <div class="fac-chain">${(b.nodes || []).map((n, i) => {
+              const lv = +my[n.id] || 0;
+              const max = +n.max || 1;
+              const full = lv >= max;
+              const can = !full && d.points >= (+n.cost || 1);
+              const TYPENAME = { minor: "属性", special: "特殊", play: "玩法", ultimate: "主动" };
+              return `<div class="fac-node${full ? " full" : can ? " can" : ""}${i > 0 ? " linked" : ""}" data-n="${n.id}" data-c="${n.cost || 1}" title="${_escHtml(n.desc || "")}">
+                <div class="fn-lv">${lv}/${max}</div>
+                <b>${_escHtml(n.name)}</b>
+                <i>${TYPENAME[n.type] || n.type || ""}</i>
+                <span>${_escHtml(n.desc || "")}</span>
+                ${full ? '<em>已满</em>' : `<em>耗${n.cost}点</em>`}
+              </div>`;
+            }).join("")}</div>
+          </div>`).join("")}</div>
+      </div>`;
     const eqBtn = document.getElementById("facEquip");
     if (eqBtn) eqBtn.onclick = async () => {
       eqBtn.disabled = true; eqBtn.textContent = "切换中";
