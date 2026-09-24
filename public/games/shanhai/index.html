@@ -586,28 +586,66 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   /* ==================== 【v26.12】灵气行情 · 独立弹窗（K 线蜡烛图） ====================
      交易所里只留一行行情条，详细走势（蜡烛图/成交量/高低点）点「详情」进独立弹窗看，
      弹窗空间大，K 线画得开，不用挤在交易所列表里。 */
-  let MKT = { range: "1d", data: null };
+  /* 【v26.18 重构】MKT 增加：
+     · view（off=距最新偏移根数, cnt=可见根数）→ 滚轮缩放 / 拖拽平移 / 双击复位 / 触屏双指缩放
+     · MA5 / MA10 均线叠加
+     · 弹窗打开期间 10s 静默轮询：数据没变不重绘（不闪烁），视图状态保持 */
+  let MKT = { range: "1d", data: null, view: { off: 0, cnt: 0 }, drag: null, poll: null, sig: "" };
+
+  function mktVisible(cs) {
+    const len = cs.length;
+    let cnt = MKT.view.cnt || Math.min(len, 60);
+    cnt = Math.max(8, Math.min(len, Math.round(cnt)));
+    const off = Math.max(0, Math.min(len - cnt, Math.round(MKT.view.off || 0)));
+    MKT.view = { off, cnt };
+    return { vis: cs.slice(len - off - cnt, len - off), start: len - off - cnt };
+  }
+
+  function maValues(cs, start, cnt, n) {
+    const out = [];
+    for (let i = start; i < start + cnt; i++) {
+      if (i - n + 1 < 0) { out.push(null); continue; }
+      let s = 0;
+      for (let k = i - n + 1; k <= i; k++) s += cs[k].c;
+      out.push(s / n);
+    }
+    return out;
+  }
 
   function renderCandles(box, cs, W, H) {
     if (!cs.length) { box.innerHTML = '<div class="ex-empty">这段时间还没有成交，做几笔就有行情了</div>'; return; }
+    const { vis, start } = mktVisible(cs);
     const PL = 8, PR = 42, PT = 14, PB = 18;
-    const hi = Math.max.apply(null, cs.map(c => c.hi));
-    const lo = Math.min.apply(null, cs.map(c => c.lo));
-    const span = (hi - lo) || (hi || 0.001) * 0.2 || 0.0001;
-    const step = (W - PL - PR) / cs.length;
+    const hi = Math.max.apply(null, vis.map(c => c.hi));
+    const lo = Math.min.apply(null, vis.map(c => c.lo));
+    const pad = (hi - lo) * 0.06;
+    const top = hi + pad, bot = Math.max(0.0001, lo - pad);
+    const span = (top - bot) || 0.0001;
+    const step = (W - PL - PR) / vis.length;
     const bw = Math.max(2, step * 0.55);
     const X = i => PL + step * (i + 0.5);
-    const Y = v => PT + (H - PT - PB) * (1 - (v - lo) / span);
+    const Y = v => PT + (H - PT - PB) * (1 - (v - bot) / span);
     const fp = v => Number(v).toFixed(4).replace(/0$/, "");
     let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block">`;
     for (let g = 0; g <= 3; g++) {
       const y = (PT + (H - PT - PB) * g / 3).toFixed(1);
-      const gv = (lo - span * 0 * 0 + (1 - g / 3) * span).toFixed(4);
+      const gv = (bot + (1 - g / 3) * span).toFixed(4);
       s += `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="rgba(122,96,48,.14)" stroke-width="1"/>`;
-      // 【v26.13】网格上直接标价格，一眼读出高低位
       s += `<text x="${W - PR + 3}" y="${(+y + 3).toFixed(1)}" fill="#9c8b6b" font-size="8.5">${fp(gv)}</text>`;
     }
-    cs.forEach((c, i) => {
+    // 【v26.18】MA5/MA10 均线叠加（对全量收盘价计算，只画可见段）
+    const drawMa = (vals, color) => {
+      let d = "", pen = false;
+      vals.forEach((v, i) => {
+        if (v == null) { pen = false; return; }
+        d += (pen ? " L" : " M") + X(i).toFixed(1) + " " + Y(v).toFixed(1);
+        pen = true;
+      });
+      if (d) s += `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.2" opacity=".85"/>`;
+    };
+    drawMa(maValues(cs, start, vis.length, 5), "#c98a2e");
+    drawMa(maValues(cs, start, vis.length, 10), "#5a6ea0");
+    vis.forEach((c, i) => {
       const up = c.c >= c.o;
       const col = up ? "#d0452c" : "#2f9a63";
       const x = X(i).toFixed(1);
@@ -616,21 +654,22 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       const hh = Math.max(1.5, Y(Math.min(c.o, c.c)) - Y(Math.max(c.o, c.c))).toFixed(1);
       s += `<rect x="${(X(i) - bw / 2).toFixed(1)}" y="${yTop}" width="${bw.toFixed(1)}" height="${hh}" fill="${col}"/>`;
     });
-    const lastC = cs[cs.length - 1];
+    const lastC = vis[vis.length - 1];
     const lastCol = lastC.c >= lastC.o ? "#d0452c" : "#2f9a63";
     s += `<line x1="${PL}" y1="${Y(lastC.c).toFixed(1)}" x2="${W - PR}" y2="${Y(lastC.c).toFixed(1)}" stroke="${lastCol}" stroke-width="0.8" stroke-dasharray="3,3" opacity=".7"/>`;
-    // 【v26.13】最新价标在右侧价格轴上（红绿跟随涨跌）
     s += `<rect x="${W - PR + 1}" y="${(Y(lastC.c) - 7).toFixed(1)}" width="${PR - 2}" height="13" rx="2" fill="${lastCol}"/>`;
     s += `<text x="${W - PR + (PR - 2) / 2 + 1}" y="${(Y(lastC.c) + 2.5).toFixed(1)}" fill="#fff" font-size="8" font-weight="700" text-anchor="middle">${fp(lastC.c)}</text>`;
-    s += `<text x="${PL}" y="${H - 4}" fill="#9c8b6b" font-size="9">${fmtT(cs[0].t)}</text>`;
-    s += `<text x="${W - PR}" y="${H - 4}" fill="#9c8b6b" font-size="9" text-anchor="end">${fmtT(cs[cs.length - 1].t)}</text>`;
-    // 【v26.13】透明命中层：点任意一根 K 线，下方信息行显示这根的开/收/高/低/量
-    cs.forEach((c, i) => {
-      s += `<rect class="mkt-hit" data-i="${i}" x="${(PL + step * i).toFixed(1)}" y="${PT}" width="${step.toFixed(1)}" height="${(H - PT - PB).toFixed(1)}" fill="transparent" style="cursor:crosshair"/>`;
+    s += `<text x="${PL}" y="${H - 4}" fill="#9c8b6b" font-size="9">${fmtT(vis[0].t)}</text>`;
+    s += `<text x="${W - PR}" y="${H - 4}" fill="#9c8b6b" font-size="9" text-anchor="end">${fmtT(vis[vis.length - 1].t)}</text>`;
+    // 透明命中层（data-i 为全量数组的下标，供点击查单根详情）
+    vis.forEach((c, i) => {
+      s += `<rect class="mkt-hit" data-i="${start + i}" x="${(PL + step * i).toFixed(1)}" y="${PT}" width="${step.toFixed(1)}" height="${(H - PT - PB).toFixed(1)}" fill="transparent" style="cursor:crosshair"/>`;
     });
     s += `</svg>`;
+    if (MKT.view.off > 0 || MKT.view.cnt) {
+      s += `<div style="text-align:right;font:10px/1.6 sans-serif;color:#9c8b6b">MA5 <span style="color:#c98a2e">━</span> MA10 <span style="color:#5a6ea0">━</span> ｜ 滚轮缩放 · 拖拽平移 · 双击复位</div>`;
+    }
     box.innerHTML = s;
-    // 【v26.13】事件委托绑在容器上：SVG 子元素的 onclick 在部分内核（尤其微信 X5）不可靠
     const info = document.getElementById("mktInfo");
     box.onclick = ev => {
       const tg = ev.target;
@@ -640,20 +679,82 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       if (!c || !info) return;
       info.textContent = `${fmtT(c.t)}　开 ¥${fp(c.o)}　收 ¥${fp(c.c)}　高 ¥${fp(c.hi)}　低 ¥${fp(c.lo)}　量 ${c.v}`;
     };
+    // —— 缩放 / 平移交互（绑一次） ——
+    if (!box.dataset.bound) {
+      box.dataset.bound = "1";
+      const clampView = () => {
+        const len = (MKT.data && MKT.data.candles || []).length || 1;
+        MKT.view.cnt = Math.max(8, Math.min(len, MKT.view.cnt || Math.min(len, 60)));
+        MKT.view.off = Math.max(0, Math.min(len - MKT.view.cnt, MKT.view.off || 0));
+      };
+      const rerender = () => {
+        if (!MKT.data) return;
+        clampView();
+        renderCandles(box, MKT.data.candles || [], 420, 180);
+      };
+      box.addEventListener("wheel", ev => {
+        ev.preventDefault();
+        const old = MKT.view.cnt || Math.min((MKT.data && MKT.data.candles || []).length, 60);
+        MKT.view.cnt = Math.round(old * (ev.deltaY > 0 ? 1.25 : 0.8));
+        rerender();
+      }, { passive: false });
+      box.addEventListener("dblclick", () => { MKT.view = { off: 0, cnt: 0 }; rerender(); });
+      box.addEventListener("pointerdown", ev => {
+        if (ev.target.classList && ev.target.classList.contains("mkt-hit")) return;   // 点单根看详情不拖动
+        MKT.drag = { x: ev.clientX, off: MKT.view.off || 0 };
+        box.setPointerCapture && box.setPointerCapture(ev.pointerId);
+      });
+      box.addEventListener("pointermove", ev => {
+        if (!MKT.drag) return;
+        const dx = ev.clientX - MKT.drag.x;
+        const stepPx = (box.clientWidth - 50) / (MKT.view.cnt || 60);
+        const shift = Math.round(dx / Math.max(4, stepPx));
+        if (shift !== MKT.view.dragApplied) {
+          MKT.view.off = MKT.drag.off + shift;
+          MKT.view.dragApplied = shift;
+          rerender();
+        }
+      });
+      const endDrag = () => { MKT.drag = null; MKT.view.dragApplied = 0; };
+      box.addEventListener("pointerup", endDrag);
+      box.addEventListener("pointercancel", endDrag);
+      // 触屏双指缩放
+      let pinch0 = 0, cnt0 = 0;
+      box.addEventListener("touchstart", ev => {
+        if (ev.touches.length === 2) {
+          pinch0 = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
+          cnt0 = MKT.view.cnt || Math.min((MKT.data && MKT.data.candles || []).length, 60);
+        }
+      }, { passive: true });
+      box.addEventListener("touchmove", ev => {
+        if (ev.touches.length === 2 && pinch0 > 0) {
+          const d = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
+          MKT.view.cnt = Math.round(cnt0 * pinch0 / Math.max(20, d));
+          ev.preventDefault();
+          rerender();
+        }
+      }, { passive: false });
+      box.addEventListener("touchend", () => { pinch0 = 0; });
+    }
+  }
+
+  function closeMkt() {
+    if (MKT.poll) { clearInterval(MKT.poll); MKT.poll = null; }
+    const m = document.getElementById("mktMask");
+    if (m) m.remove();
   }
 
   async function showMarketChart() {
-    let mask = document.getElementById("mktMask");
-    if (mask) mask.remove();
-    mask = document.createElement("div");
+    closeMkt();
+    let mask = document.createElement("div");
     mask.className = "ex-mask"; mask.id = "mktMask";
-    mask.onclick = e => { if (e.target === mask) mask.remove(); };
+    mask.onclick = e => { if (e.target === mask) closeMkt(); };
     mask.innerHTML = `
       <div class="ex-wrap" style="max-width:460px">
         <div class="ex-board" style="height:60px"></div>
         <div class="ex-head" style="padding-top:11px">
           <div class="ex-title">灵气行情</div>
-          <div class="ex-sub" id="mktSub">加权均价 · 涨红跌绿</div>
+          <div class="ex-sub" id="mktSub">加权均价 · 涨红跌绿 · MA5/MA10</div>
           <div class="ex-close" id="mktClose">×</div>
         </div>
         <div class="mkt-body">
@@ -668,29 +769,53 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
             <button data-r="7d">7天</button>
             <button data-r="30d">30天</button>
             <button data-r="all">全部</button>
+            <button data-act="zin">＋</button>
+            <button data-act="zout">－</button>
+            <button data-act="reset">复位</button>
           </div>
           <div id="mktCandle">加载中…</div>
           <div class="ex-chart-info" id="mktInfo">—</div>
         </div>
       </div>`;
     document.body.appendChild(mask);
-    document.getElementById("mktClose").onclick = () => mask.remove();
+    document.getElementById("mktClose").onclick = closeMkt;
     document.querySelectorAll("#mktTabs button").forEach(b => b.onclick = () => {
+      if (b.dataset.act) {
+        const len = (MKT.data && MKT.data.candles || []).length || 60;
+        const cur = MKT.view.cnt || Math.min(len, 60);
+        if (b.dataset.act === "zin") MKT.view.cnt = Math.round(cur * 0.7);
+        else if (b.dataset.act === "zout") MKT.view.cnt = Math.round(cur * 1.4);
+        else MKT.view = { off: 0, cnt: 0 };
+        const box = document.getElementById("mktCandle");
+        if (box && MKT.data) renderCandles(box, MKT.data.candles || [], 420, 180);
+        return;
+      }
       MKT.range = b.dataset.r;
       document.querySelectorAll("#mktTabs button").forEach(x => x.classList.toggle("on", x === b));
       loadMkt();
     });
     await loadMkt();
+    // 【v26.18】弹窗打开期间静默轮询（10s）：数据没变不重绘，视图保持不闪烁
+    if (MKT.poll) clearInterval(MKT.poll);
+    MKT.poll = setInterval(() => { if (document.getElementById("mktMask")) loadMkt(true); else closeMkt(); }, 10000);
   }
   window.showMarketChart = showMarketChart;
 
-  async function loadMkt() {
+  async function loadMkt(silent) {
     const box = document.getElementById("mktCandle");
     if (!box) return;
-    box.innerHTML = '<div class="ex-empty">加载中…</div>';
+    if (!silent) box.innerHTML = '<div class="ex-empty">加载中…</div>';
     try {
       const d = await META.exChart(MKT.range);
       if (!d.ok) throw new Error(d.error || "加载失败");
+      // 静默刷新：最新一根没变化就跳过重绘（防闪烁、保持缩放/平移视图）
+      const cs = d.candles || [];
+      const sig = MKT.range + "|" + (cs.length ? cs.length + "@" + cs[cs.length - 1].t + ":" + cs[cs.length - 1].c : "empty");
+      if (silent && sig === MKT.sig) {
+        MKT.data = d;
+        return;
+      }
+      MKT.sig = sig;
       MKT.data = d;
       const set2 = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       set2("mktNow", "¥" + _fmt4(d.cur || 0));
@@ -702,10 +827,10 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       }
       set2("mktHi", "¥" + _fmt4(d.hi || 0));
       set2("mktLo", "¥" + _fmt4(d.lo || 0));
-      renderCandles(box, d.candles || [], 420, 180);
-      set2("mktInfo", d.label + "　成交 " + (d.vol || 0) + " 灵气　" + (d.candles || []).length + " 根 K 线");
+      renderCandles(box, cs, 420, 180);
+      set2("mktInfo", d.label + "　成交 " + (d.vol || 0) + " 灵气　" + cs.length + " 根 K 线");
     } catch (e) {
-      box.innerHTML = `<div class="ex-empty">加载失败：${_escHtml((e && (e.error || e.message)) || "")}</div>`;
+      if (!silent) box.innerHTML = `<div class="ex-empty">加载失败：${_escHtml((e && (e.error || e.message)) || "")}</div>`;
     }
   }
 
@@ -1704,21 +1829,118 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         toast("已装备 " + f.name);
       } catch (e) { toast((e && e.error) || "切换失败"); eqBtn.disabled = false; eqBtn.textContent = "装备此流派"; }
     };
-    body.querySelectorAll(".fac-node").forEach(nd => nd.onclick = async () => {
-      if (nd.classList.contains("full")) return toast("该天赋已满级");
-      // 【v26.17】前置未解锁：前端先拦截（服务端同样强校验）
-      if (nd.dataset.locked === "1") return toast("前置技能等级不足，先升前置节点");
-      const fid = f.id, nid = nd.dataset.n, cost = +nd.dataset.c || 1;
-      if (d.points < cost) return toast("天赋点不足（还差 " + (cost - d.points) + " 点）");
-      try {
-        const r = await META.talentLearn(fid, nid);
-        if (!r.ok) throw new Error(r.error || "学习失败");
-        d.points = r.points;
-        d.talents = r.talents;
-        renderFaction();
-        toast("学习成功 Lv." + r.level);
-      } catch (e) { toast((e && e.error) || "学习失败"); }
+    // 【v26.18】技能选择改为弹窗内完成：点节点 → 详情弹窗（等级/消耗/加成/前置/说明）→ 确认学习
+    const EFF_LBL = { atk: "攻击力%", moveSpd: "移速%", hp: "生命值%", crit: "暴击率%", dodge: "闪避率%", shield: "护盾", pickRange: "拾取范围%", expRate: "经验%", atkSpd: "攻速%", pierce: "穿甲%", burn: "灼烧", slow: "减速", chain: "连锁", multiChance: "多发概率%", multiCnt: "多发数量", executeChance: "斩杀概率%", backstab: "背刺伤害%", thorns: "反震%", summon: "召唤飞剑", burst: "爆发伤害%", invis: "隐身秒", ironBody: "减伤秒", haste: "狂攻秒", meteor: "陨火", freeze: "冻结秒", thunder: "雷霆道" };
+    const effText = eff => Object.entries(eff || {}).map(([k, v]) => (EFF_LBL[k] || k) + " +" + v).join("　");
+    body.querySelectorAll(".fac-node").forEach(nd => nd.onclick = () => {
+      if (FAC._dragged) return;   // 拖拽平移结束的那次 click 不当作选择
+      const nid = nd.dataset.n;
+      let node = null;
+      for (const bb of f.branches || []) { const x = (bb.nodes || []).find(y => y.id === nid); if (x) { node = x; break; } }
+      if (!node) return;
+      const lv = +my[nid] || 0, max = +node.max || 1;
+      const TYPENAME = { minor: "属性", special: "特殊", play: "玩法", ultimate: "主动技能" };
+      let reqNode = null;
+      if (node.req && node.req.node) for (const bb of (f.branches || [])) { const x = (bb.nodes || []).find(y => y.id === node.req.node); if (x) { reqNode = x; break; } }
+      const reqLv = node.req ? (+node.req.lv || 1) : 0;
+      const reqOk = !reqNode || ((+my[node.req.node] || 0) >= reqLv);
+      const full = lv >= max;
+      let dlg = document.getElementById("facDlg");
+      if (dlg) dlg.remove();
+      dlg = document.createElement("div");
+      dlg.id = "facDlg";
+      dlg.innerHTML = `
+        <div class="fac-dlg-card">
+          <div class="fd-head"><b>${_escHtml(node.name)}</b><i>${TYPENAME[node.type] || node.type || "技能"} · Lv.${lv}/${max}</i></div>
+          <div class="fd-row">加成：${effText(node.eff) || "—"}</div>
+          <div class="fd-row">${_escHtml(node.desc || "")}</div>
+          ${reqNode ? `<div class="fd-row">前置：${_escHtml(reqNode.name)} 需 Lv.${reqLv}（当前 Lv.${+my[node.req.node] || 0}）</div>` : ""}
+          <div class="fd-row">消耗：<b>${node.cost || 0}</b> 天赋点（可用 ${d.points}）</div>
+          <div class="fd-btns">
+            ${full ? '<button class="fd-cancel">已满级</button>'
+              : !reqOk ? '<button class="fd-cancel">前置未达标</button>'
+              : d.points < (+node.cost || 1) ? '<button class="fd-cancel">天赋点不足</button>'
+              : '<button class="fd-ok">学习 Lv.' + (lv + 1) + '</button><button class="fd-cancel">取消</button>'}
+          </div>
+        </div>`;
+      document.body.appendChild(dlg);
+      dlg.onclick = e => { if (e.target === dlg) dlg.remove(); };
+      const okBtn = dlg.querySelector(".fd-ok");
+      if (okBtn) okBtn.onclick = async () => {
+        okBtn.disabled = true; okBtn.textContent = "学习中…";
+        try {
+          const r = await META.talentLearn(f.id, nid);
+          if (!r.ok) throw new Error(r.error || "学习失败");
+          d.points = r.points;
+          d.talents = r.talents;
+          dlg.remove();
+          renderFaction();
+          toast("学习成功 Lv." + r.level);
+        } catch (e) { toast((e && e.error) || "学习失败"); okBtn.disabled = false; okBtn.textContent = "学习 Lv." + (lv + 1); }
+      };
+      const cBtn = dlg.querySelector(".fd-cancel");
+      if (cBtn) cBtn.onclick = () => dlg.remove();
     });
+    // 【v26.18】天赋树画布：滚轮/双指缩放 + 拖拽平移（纵向树内容多时也能看全）
+    const map = body.querySelector(".fac-map");
+    if (map) {
+      const vp = document.createElement("div");
+      vp.className = "fac-viewport";
+      map.parentNode.insertBefore(vp, map);
+      vp.appendChild(map);
+      const bar = document.createElement("div");
+      bar.className = "fac-zoombar";
+      bar.innerHTML = `<button data-z="in" title="放大">＋</button><button data-z="out" title="缩小">－</button><button data-z="reset" title="复位">⟲</button><i>滚轮/双指缩放 · 拖拽平移</i>`;
+      vp.insertBefore(bar, map);
+      let scale = 1, tx = 0, ty = 0;
+      const apply = () => { map.style.transform = `translate(${tx.toFixed(1)}px,${ty.toFixed(1)}px) scale(${scale.toFixed(3)})`; };
+      const zoomAt = ns => {
+        ns = Math.max(0.6, Math.min(2.2, ns));
+        const k = ns / scale;
+        const r = vp.getBoundingClientRect();
+        const cx = r.width / 2, cy = r.height / 2;
+        tx = cx - (cx - tx) * k;
+        ty = cy - (cy - ty) * k;
+        scale = ns;
+        apply();
+      };
+      vp.addEventListener("wheel", ev => { ev.preventDefault(); zoomAt(scale * (ev.deltaY < 0 ? 1.12 : 0.9)); }, { passive: false });
+      bar.querySelectorAll("button").forEach(b => b.onclick = () => {
+        if (b.dataset.z === "in") zoomAt(scale * 1.2);
+        else if (b.dataset.z === "out") zoomAt(scale * 0.83);
+        else { scale = 1; tx = 0; ty = 0; apply(); }
+      });
+      let drag = null, pinch0 = 0, scale0 = 1;
+      vp.addEventListener("pointerdown", ev => {
+        FAC._dragged = false;
+        drag = { x: ev.clientX, y: ev.clientY, tx, ty };
+      });
+      vp.addEventListener("pointermove", ev => {
+        if (!drag) return;
+        const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+        if (Math.abs(dx) + Math.abs(dy) > 6) FAC._dragged = true;
+        tx = drag.tx + dx; ty = drag.ty + dy;
+        apply();
+      });
+      const endDrag = () => { drag = null; setTimeout(() => { FAC._dragged = false; }, 50); };
+      vp.addEventListener("pointerup", endDrag);
+      vp.addEventListener("pointercancel", endDrag);
+      vp.addEventListener("touchstart", ev => {
+        if (ev.touches.length === 2) {
+          pinch0 = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
+          scale0 = scale;
+        }
+      }, { passive: true });
+      vp.addEventListener("touchmove", ev => {
+        if (ev.touches.length === 2 && pinch0 > 0) {
+          const d = Math.hypot(ev.touches[0].clientX - ev.touches[1].clientX, ev.touches[0].clientY - ev.touches[1].clientY);
+          zoomAt(scale0 * d / pinch0);
+          ev.preventDefault();
+        }
+      }, { passive: false });
+      vp.addEventListener("touchend", () => { pinch0 = 0; });
+      vp.addEventListener("dblclick", () => { scale = 1; tx = 0; ty = 0; apply(); });
+    }
   }
 
   /* ==================== 【v26.6.1】Service Worker 更新自愈 ====================
