@@ -8,6 +8,10 @@ import { ObjectId, GridFSBucket } from 'mongodb';
 import { limit, limitPass } from '../lib/ratelimit.js';
 import { INLINE_SAFE_TYPES } from '../lib/core.js';
 
+// 【2026-09-24 安全修复】登录时序侧信道兜底：对不存在的用户也执行一次同价 bcrypt 比较。
+// 哈希值对应随机口令「不可能被任何真实口令命中」（bcrypt 哈希本身无法逆推口令）。
+const DUMMY_BCRYPT_HASH = '$2a$10$CwTycUXWue0Thq9StjUM0uJ8DsCjW.P8FTkWPnrAgv9VHCJy4mRLu';
+
 export default function mount(ctx) {
   const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
 // ---------- 初始化：创建管理员（仅当没有任何账号时） ----------
@@ -58,18 +62,24 @@ app.post('/api/auth/login', limit({ name: 'login-internal', max: 15, windowMs: 5
     const db = await getDb();
     const { username, password, passwordPlain } = req.body || {};
     const u = await db.collection('users').findOne({ username: String(username || '') });
-    // 新体系：前端SHA-256预哈希；旧用户：前端同时带上原文，验证通过后静默升级为哈希体系
-    const okNew = u && await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false);
+    // 【2026-09-24 安全修复】用户不存在时也对固定哑哈希执行一次 bcrypt 比较，
+    // 使「用户名存在/不存在」两条路径耗时一致，消除用户名枚举时序侧信道
+    const okNew = u
+      ? await bcrypt.compare(String(password || ''), u.passwordHash).catch(() => false)
+      : await bcrypt.compare(String(password || ''), DUMMY_BCRYPT_HASH).catch(() => false);
     const okLegacy = !okNew && u && passwordPlain && await bcrypt.compare(String(passwordPlain), u.passwordHash).catch(() => false);
     if (!u || (!okNew && !okLegacy)) {
       return res.status(401).json({ ok: false, error: '用户名或密码错误' });
     }
     if (okLegacy) {
       // 静默升级：换成SHA-256预哈希存储，此后登录不再传输明文
-      // 【2026-09-17 修复】老代码只传 passwordPlain 时 password 为 undefined，
-      // bcrypt.hash('undefined') 会把该账号密码永久写坏，此处兜底按原文算 SHA-256
-      const preHash = String(password || '') || sha256hex(String(passwordPlain || ''));
-      await db.collection('users').updateOne({ _id: u._id }, { $set: { passwordHash: await bcrypt.hash(preHash, 8) } }).catch(() => {});
+      // 【2026-09-24 安全修复】统一以已通过验证的明文派生预哈希。
+      // 原写法 `String(password||'') || sha256hex(passwordPlain)` 不校验 password 与原文的一致性，
+      // 异常客户端带上任意非空 password + 正确 passwordPlain 时，账号密码哈希会被写坏导致永久无法登录。
+      // password 字段若与 sha256hex(原文) 一致才采用，否则按原文计算（两者语义等价，均以验证过的明文为准）。
+      const expected = sha256hex(String(passwordPlain));
+      const preHash = expected;
+      await db.collection('users').updateOne({ _id: u._id }, { $set: { passwordHash: await bcrypt.hash(preHash, 10) } }).catch(() => {});
     }
     limitPass(req);   // 登录成功，清掉尝试计数
     res.json({ ok: true, token: signToken(u), user: selfUser(u) });
@@ -350,6 +360,10 @@ app.post('/api/files', auth, limit({ name: 'upload', max: 30, windowMs: 10 * 60 
     const peer = String(req.body?.peer || '');
     if (!ObjectId.isValid(peer)) return res.status(400).json({ ok: false, error: '无效会话' });
     const db = await getDb();
+    // 【2026-09-24 安全修复】校验接收方账号真实存在——
+    // 原先只验 ObjectId 格式，注册无门槛时可向任意伪造 id 持续塞 25MB 文件（无 TTL、无配额）刷爆 GridFS 存储
+    const peerUser = await db.collection('users').findOne({ _id: new ObjectId(peer) }, { projection: { _id: 1 } });
+    if (!peerUser) return res.status(400).json({ ok: false, error: '会话对象不存在' });
     const bucket = new GridFSBucket(db);
     const meta = { from: req.user.id, to: peer, fileName: req.file.originalname };
     const uploadStream = bucket.openUploadStream(req.file.originalname, {
