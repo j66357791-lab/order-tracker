@@ -716,8 +716,10 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .fac-node.reqlocked em { color: #a05a2c; }
 
 /* ==================== 【v26.25】活动入口（南山草泽左侧贴屏挂轴） + 活动中心 ==================== */
+/* 【v26.27 修复】fixed 是相对浏览器视口——桌面端游戏面板居中时挂轴会跑到窗口最左边，
+   改为 absolute 相对当前屏幕（.screen 铺满 #app），始终贴游戏面板左缘 */
 #actEntry {
-  position: fixed; left: 0; top: 108px; width: 46px; z-index: 30; cursor: pointer;
+  position: absolute; left: 0; top: 130px; width: 46px; z-index: 30; cursor: pointer;
   filter: drop-shadow(2px 3px 6px rgba(30, 15, 5, .45));
   transition: transform .15s;
 }
