@@ -624,14 +624,40 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .fac-main b { display: block; font: 900 13px/1.5 "PingFang SC", sans-serif; color: #3a2f1c; }
 .fac-main i { display: block; font: 10.5px/1.4 sans-serif; color: #8a7a58; font-style: normal; }
 .fac-go { font: 900 11px/1 "PingFang SC", sans-serif; color: #8a6a2a; }
+/* 【v26.12】思维导图式天赋树：流派核心在左，分支向右展开成链 */
+.fac-map { display: flex; gap: 10px; }
+.fac-trunk { width: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.fac-core {
+  width: 56px; height: 56px; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 34% 28%, #f6e2a8, #d9b061 62%, #b98d3c);
+  box-shadow: 0 3px 10px rgba(120, 86, 20, .4), inset 0 0 0 2px rgba(255, 250, 230, .55);
+}
+.fac-core i { font-style: normal; font-size: 18px; line-height: 1.1; }
+.fac-core b { font: 900 10px/1.2 "STKaiti", serif; color: #5a3f14; }
+.fac-branches { flex: 1; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.fac-branch-row { display: flex; align-items: center; gap: 5px; }
+.fac-blabel {
+  width: 64px; flex-shrink: 0; padding: 5px 4px; border-radius: 9px; text-align: center;
+  background: rgba(217, 176, 97, .18); border: 1px solid rgba(122, 96, 48, .3);
+}
+.fac-blabel b { display: block; font: 900 10px/1.35 "STKaiti", serif; color: #6b4a10; }
+.fac-blabel i { display: block; font: 8px/1.3 sans-serif; color: #9c8b6b; font-style: normal; }
+.fac-chain { flex: 1; display: flex; align-items: stretch; gap: 0; min-width: 0; }
 .fac-branch { margin-bottom: 14px; }
 .fac-bh { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
 .fac-bh b { font: 900 13px/1.4 "STKaiti", serif; color: #6b4a10; }
 .fac-bh i { font: 10px/1.4 sans-serif; color: #9c8b6b; font-style: normal; }
 .fac-nodes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .fac-node {
-  padding: 7px 5px; border-radius: 10px; text-align: center; cursor: pointer;
+  padding: 6px 4px; border-radius: 10px; text-align: center; cursor: pointer;
   background: rgba(255, 255, 255, .5); border: 1.5px solid rgba(122, 96, 48, .3);
+}
+/* 节点之间的连线（思维导图的枝干） */
+.fac-node.linked { position: relative; margin-left: 7px; }
+.fac-node.linked::before {
+  content: ""; position: absolute; left: -7px; top: 50%; width: 7px; height: 2px;
+  background: rgba(122, 96, 48, .4);
 }
 .fac-node.full { border-color: #d9b061; background: #fdf6e3; }
 .fac-node.can { border-color: #2f7a5a; background: #eef8f1; }
@@ -686,6 +712,13 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 }
 .ex-chart-tabs button.on { color: #F7F0DE; background: linear-gradient(180deg, #3f6b57, #2e5443); border-color: #2e5443; }
 .ex-chart-info { font: 10px/1.5 sans-serif; color: #9c8b6b; text-align: center; margin-top: 2px; }
+.ex-chart-more { margin-left: auto; font: 900 10.5px/1 "PingFang SC", sans-serif; color: #8a6a2a; padding: 3px 7px; border-radius: 8px; background: rgba(217,176,97,.22); }
+.ex-chart-head i { margin-left: 0; }
+.mkt-body { padding: 4px 12px 14px; overflow-y: auto; flex: 1; }
+.mkt-top { display: flex; gap: 10px; flex-wrap: wrap; font: 11.5px/1.6 "PingFang SC", sans-serif; color: #6b5f45; margin-bottom: 8px; }
+.mkt-top b { color: #3a2f1c; font-size: 12.5px; }
+.mkt-top .chg { font-size: 10.5px; }
+#mktCandle { border-radius: 10px; background: rgba(255, 252, 244, .5); border: 1px solid rgba(122, 96, 48, .18); padding: 4px; }
 
 /* ==================== 【v26.8】装备强化 / 合成 ==================== */
 .btn-compose {
