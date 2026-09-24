@@ -98,6 +98,8 @@ const DEPLOY_CHECK_FILES = [
   // 而页面本身不报错，很容易被当成样式 bug 排查半天——所以纳入核验清单
   'public/games/shanhai/assets/exchange/ex-entry.png', 'public/games/shanhai/assets/exchange/ex-board.png',
   'public/games/shanhai/assets/exchange/ex-bar.png', 'public/games/shanhai/assets/exchange/ex-frame.png',
+  // 【v26.9】灵石图标（新道具，漏传会表现为商城货币条上灵石位置空白）
+  'public/games/shanhai/assets/item/lingstone_t1.png',
   'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js', 'lib/ocr.js', 'lib/ocr-child.mjs', 'lib/tessdata/eng.traineddata.gz',
   'routes/portal.js', 'routes/authx.js', 'routes/user.js', 'routes/orders.js',
   'routes/recharge.js', 'public/admin/mod-recharge.js',
