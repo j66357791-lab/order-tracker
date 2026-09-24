@@ -341,7 +341,7 @@ const Game = (() => {
     // 死亡
     if (hero.hp <= 0) {
       state = "over";
-      if (window.SFX) { SFX.hurt(); SFX.bgmStop(); SFX.gameOver(); }
+      if (window.SFX) { SFX.hurt(); SFX.gameOver(); }   // 【v26.13】BGM 不停了：主页和战斗共用同一条背景乐，连续不断
       UI.gameOver(stats, hero);
     }
 
@@ -379,65 +379,69 @@ const Game = (() => {
     UI.toast(`山臊王 已被斩杀！`);
     boss = null;
     state = "win";
-    if (window.SFX) { SFX.bgmStop(); SFX.victory(); }
+    if (window.SFX) { SFX.victory(); }   // 【v26.13】BGM 连续，不再战斗一结束就静音
     UI.victory(stats, hero);
   }
 
   // ============ 升级三选一 ============
+  // 【v26.13】按定稿：局内**只**进行基础能力选择，不再出现任何技能/武器选项。
+  // 上轮只是把基础能力"加进池子"，技能还在 → 三选一照样抽到技能，用户看到的就是旧版。
+  // 内置一份兜底表：流派数据没加载出来时也能抽（数值与定稿一致）。
+  const INBORN_FALLBACK = {
+    white: { w: 50, name: "白色", color: "#cfd8dc", mods: [
+      { k: "atk", v: 5, t: "攻击力 +5%" }, { k: "moveSpd", v: 10, t: "移动速度 +10%" },
+      { k: "hp", v: 5, t: "生命值 +5%" }, { k: "atkSpd", v: 10, t: "攻击速度 +10%" },
+      { k: "crit", v: 5, t: "暴击率 +5%" }, { k: "dodge", v: 5, t: "闪避率 +5%" },
+      { k: "shield", v: 20, t: "护盾血量 +20" }, { k: "pickRange", v: 10, t: "经验拾取范围 +10%" },
+      { k: "expRate", v: 10, t: "经验加成 +10%" }] },
+    blue: { w: 25, name: "蓝色", color: "#8ecff0", mods: [
+      { k: "atk", v: 10, t: "攻击力 +10%" }, { k: "moveSpd", v: 15, t: "移动速度 +15%" },
+      { k: "hp", v: 10, t: "生命值 +10%" }, { k: "atkSpd", v: 20, t: "攻击速度 +20%" },
+      { k: "crit", v: 8, t: "暴击率 +8%" }, { k: "dodge", v: 8, t: "闪避率 +8%" },
+      { k: "shield", v: 40, t: "护盾血量 +40" }, { k: "pickRange", v: 20, t: "经验拾取范围 +20%" },
+      { k: "expRate", v: 15, t: "经验加成 +15%" }] },
+    purple: { w: 15, name: "紫色", color: "#c9a0ff", mods: [
+      { k: "atk", v: 20, t: "攻击力 +20%" }, { k: "moveSpd", v: 30, t: "移动速度 +30%" },
+      { k: "hp", v: 20, t: "生命值 +20%" }, { k: "atkSpd", v: 30, t: "攻击速度 +30%" },
+      { k: "crit", v: 15, t: "暴击率 +15%" }, { k: "dodge", v: 15, t: "闪避率 +15%" },
+      { k: "shield", v: 80, t: "护盾血量 +80" }, { k: "pickRange", v: 30, t: "经验拾取范围 +30%" },
+      { k: "expRate", v: 20, t: "经验加成 +20%" }] },
+    gold: { w: 8, name: "金色", color: "#ffd76a", mods: [
+      { k: "atk", v: 40, t: "攻击力 +40%" }, { k: "moveSpd", v: 40, t: "移动速度 +40%" },
+      { k: "hp", v: 40, t: "生命值 +40%" }, { k: "atkSpd", v: 40, t: "攻击速度 +40%" },
+      { k: "crit", v: 20, t: "暴击率 +20%" }, { k: "dodge", v: 20, t: "闪避率 +20%" },
+      { k: "shield", v: 180, t: "护盾血量 +180" }, { k: "pickRange", v: 40, t: "经验拾取范围 +40%" },
+      { k: "expRate", v: 30, t: "经验加成 +30%" }] },
+    myth: { w: 2, name: "神话", color: "#ff7a5c", mods: [
+      { k: "atk", v: 60, t: "攻击力 +60%" }, { k: "moveSpd", v: 60, t: "移动速度 +60%" },
+      { k: "hp", v: 60, t: "生命值 +60%" }, { k: "atkSpd", v: 60, t: "攻击速度 +60%" }] },
+  };
   function buildChoices() {
-    const pool = [];
-    const W = CONFIG.weapons;
-    // 已有技能可升级
-    for (const key of ["fireline", "icepick", "galeorb"]) {
-      if (weapons.has(key)) {
-        if (weapons.lv(key) < W[key].maxLv) pool.push({ key, kind: "up" });
-      } else {
-        pool.push({ key, kind: "new" });
-      }
-    }
-    // 修身体质（被动，未满级）
-    if (!weapons.has("body") || weapons.lv("body") < W.body.maxLv) pool.push({ key: "body", kind: weapons.has("body") ? "up" : "new" });
-    // 【2026-09-15】飞剑五诀（御剑术专属技能点选）
-    const S = weapons.swordSkill;
-    if (S.count < 2) pool.push({ key: "swordcount", kind: "sword", name: "剑影分光", desc: "多一把飞剑齐射（" + (1 + S.count) + " → " + (2 + S.count) + "把）", icon: "剑" });
-    if (S.atk < 5) pool.push({ key: "swordatk", kind: "sword", name: "剑意淬锋", desc: "飞剑攻击力 +20%", icon: "锋" });
-    if (S.spd < 5) pool.push({ key: "swordspd", kind: "sword", name: "剑御风行", desc: "飞剑攻击速度 +20%", icon: "疾" });
-    if (S.lock < 1) pool.push({ key: "swordlock", kind: "sword", name: "锁妖剑诀", desc: "飞剑锁定敌人，弹道追踪（精英）", icon: "锁" });
-    if (S.burst < 1) pool.push({ key: "swordburst", kind: "sword", name: "万剑归宗", desc: "每射50剑，齐发10剑轰向妖群（精英）", icon: "万" });
-    // 【v26.11】基础能力池：白50/蓝25/紫15/金8/神话2 —— 局内不再选技能强化，只抽基础能力
-    const IB = (window.META && META.factionCache) ? META.factionCache.inborn : null;
-    if (IB) {
+    const IB = (window.META && META.factionCache && META.factionCache.inborn) ? META.factionCache.inborn : INBORN_FALLBACK;
+    const rollQ = () => {
       const r = Math.random() * 100;
-      let acc = 0, q = "white";
-      for (const k of ["white", "blue", "purple", "gold", "myth"]) { acc += IB[k].w; if (r < acc) { q = k; break; } }
-      const mods = IB[q].mods;
-      const m = mods[Math.floor(Math.random() * mods.length)];
-      pool.push({ key: m.k, kind: "inborn", q, vNum: m.v, name: IB[q].name + " · " + m.t, desc: IB[q].name + "品质加成", icon: IB[q].name[0] });
-    } else {
-      // 兜底：流派数据还没加载出来时保留原三条，不至于没得选
-      pool.push({ key: "atk", kind: "stat", name: "煞气淬炼", desc: "攻击力 +12%", icon: "煞" });
-      pool.push({ key: "spd", kind: "stat", name: "御风步", desc: "移动速度 +8%", icon: "风" });
-      pool.push({ key: "hp", kind: "stat", name: "龟息吐纳", desc: "生命上限 +15 并回满", icon: "龟" });
-    }
-    // 抽 3 个不重复
+      let acc = 0;
+      for (const k of ["white", "blue", "purple", "gold", "myth"]) { acc += IB[k].w; if (r < acc) return k; }
+      return "white";
+    };
     const out = [];
     const used = new Set();
-    // 【2026-09-15b】保底：前4级升级至少含一个飞剑剑诀（新人必能点到飞剑技能）
-    if (hero.level <= 4) {
-      const swordPool = pool.filter(c => c.kind === "sword");
-      if (swordPool.length) {
-        const c0 = swordPool[Math.floor(Math.random() * swordPool.length)];
-        out.push(c0); used.add(c0.key + c0.kind);
-      }
-    }
-    while (out.length < 3 && pool.length) {
-      const i = Math.floor(Math.random() * pool.length);
-      const c = pool[i];
-      if (!used.has(c.key + c.kind)) {
-        used.add(c.key + c.kind);
-        out.push(c);
-        pool.splice(i, 1);
-      } else pool.splice(i, 1);
+    let guard = 0;
+    // 抽 3 条**不同**的基础能力（各自独立掷品质；同条目同数值去重）
+    while (out.length < 3 && guard++ < 80) {
+      const q = rollQ();
+      const mods = IB[q].mods;
+      const m = mods[Math.floor(Math.random() * mods.length)];
+      const sig = m.k + "|" + m.v;
+      if (used.has(sig)) continue;
+      used.add(sig);
+      out.push({
+        key: m.k, kind: "inborn", q, vNum: m.v,
+        name: IB[q].name + " · " + m.t,
+        desc: IB[q].name + "品质基础加成",
+        icon: IB[q].name[0],
+        color: IB[q].color,
+      });
     }
     return out;
   }
