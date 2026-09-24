@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.13',  // 【v26.13】局内只抽基础能力(移除全部技能选项)+行情条防压缩+K线价格轴/点击详情+BGM主页连续播放+lookahead调度修切后台断续
+  appVersion: '26.14',  // 【v26.14】修BGM积压齐奏杂音+机器人遇高价单转挂单不空轮+涨跌由买卖压力驱动
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
