@@ -1,6 +1,7 @@
 // routes/gameadmin.js — 活动数据/维护/发钥匙/清理
 // 【2026-09-14 ES6 重构】自 server.js 原样迁出，行为不变
 import { ObjectId } from 'mongodb';
+import crypto from 'node:crypto';
 
 export default function mount(ctx) {
   const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
@@ -79,10 +80,12 @@ app.post('/api/admin/users/:id/reset-password', auth, adminOnly, async (req, res
     const id = String(req.params.id || '');
     if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: '参数无效' });
     let newPassword = String(req.body?.newPassword || '').trim();
-    // 不传则自动生成 8 位临时密码（大写字母 + 数字，易读无歧义字符）
+    // 不传则自动生成 12 位临时密码（大写字母 + 数字，易读无歧义字符）
+    // 【2026-09-24 安全修复】改用 CSPRNG（crypto.randomInt）且加长到 12 位——
+    // 原先 Math.random() 生成的 8 位临时密码熵约 30bit，可被在线快速爆破
     if (!newPassword) {
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      newPassword = 'Xy' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+      newPassword = 'Xy' + Array.from({ length: 10 }, () => chars[crypto.randomInt(chars.length)]).join('');
     }
     if (newPassword.length < 8 || newPassword.length > 64) {
       return res.status(400).json({ ok: false, error: '新密码需为 8-64 位' });
@@ -90,7 +93,8 @@ app.post('/api/admin/users/:id/reset-password', auth, adminOnly, async (req, res
     const u = await db.collection('users').findOne({ _id: new ObjectId(id) }, { projection: { username: 1, role: 1 } });
     if (!u) return res.status(404).json({ ok: false, error: '用户不存在' });
     // 与登录体系对齐：登录时前端传 SHA-256(用户输入)，后端 bcrypt 比对——重置时同样存 bcrypt(SHA-256(新密码))
-    const passwordHash = await bcrypt.hash(sha256hex(newPassword), 8);
+    // 【2026-09-24 安全修复】bcrypt cost 8 → 10
+    const passwordHash = await bcrypt.hash(sha256hex(newPassword), 10);
     await db.collection('users').updateOne(
       { _id: u._id },
       { $set: { passwordHash, passwordResetAt: new Date(), passwordResetBy: req.user.username || String(req.user._id) } });
@@ -132,6 +136,13 @@ app.post('/api/admin/game-grant', auth, adminOnly, async (req, res) => {
     if (!Number.isFinite(amt) || amt === 0 || Math.abs(amt) > 100000) {
       return res.status(400).json({ ok: false, error: '数量需为有限数字（单次±10万以内）' });
     }
+    // 【2026-09-24 修复】收回（负数）时校验当前存量足够，防止道具被打成大负数
+    if (amt < 0) {
+      const cur = await db.collection('game_profiles').findOne({ userId: String(userId) });
+      if (cur && (cur[item] || 0) + amt < 0) {
+        return res.status(400).json({ ok: false, error: `收回数量超过当前存量（现有 ${cur[item] || 0}）` });
+      }
+    }
     // 【v23.2】upsert 建档时补全标准字段——否则发给一个从没玩过游戏的玩家，
     // 档案里只有被发放的那一个字段，管理端查询会显示一排 undefined
     const defaults = { keys: 0, balls: 0, frags: 0, revives: 0, bagS: 0, bagM: 0, bagL: 0, totalGames: 0 };
@@ -166,11 +177,19 @@ app.post('/api/admin/game-cleanup', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
     const sessions = await db.collection('game_sessions').find({ status: { $in: ['playing','wave_done'] } }).toArray();
+    let cleaned = 0;
     for (const s of sessions) {
-      await db.collection('game_sessions').updateOne({ _id: s._id }, { $set: { status: 'aborted', endedAt: new Date() } });
-      await db.collection('game_profiles').updateOne({ userId: s.userId }, { $inc: { keys: 1 } });
+      // 【2026-09-24 修复】条件更新 + 只有真正把会话置为 aborted 才退钥匙——
+      // 原先无条件 $set：会话若恰在清理间隙被玩家正常结算，玩家已领过奖励，这里又退一把钥匙（双发）
+      const r = await db.collection('game_sessions').findOneAndUpdate(
+        { _id: s._id, status: { $in: ['playing','wave_done'] } },
+        { $set: { status: 'aborted', endedAt: new Date() } });
+      if (r) {
+        await db.collection('game_profiles').updateOne({ userId: s.userId }, { $inc: { keys: 1 } });
+        cleaned++;
+      }
     }
-    res.json({ ok: true, cleaned: sessions.length });
+    res.json({ ok: true, cleaned });
   } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
