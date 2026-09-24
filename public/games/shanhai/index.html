@@ -672,6 +672,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     box.innerHTML = s;
     const info = document.getElementById("mktInfo");
     box.onclick = ev => {
+      // 【v26.19 修复】拖拽平移结束的那次 click 不当作"点选单根"（拖完松手会触发 click）
+      if (MKT.dragSuppressed) return;
       const tg = ev.target;
       const di = tg && tg.getAttribute ? tg.getAttribute("data-i") : null;
       if (di === null || di === undefined) return;
@@ -699,25 +701,35 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         rerender();
       }, { passive: false });
       box.addEventListener("dblclick", () => { MKT.view = { off: 0, cnt: 0 }; rerender(); });
+      // 【v26.19 修复】拖拽平移：
+      // ① 命中层（mkt-hit）铺满整个图表，原先 pointerdown 一律被它吞掉 → 拖拽永远不启动；
+      // ② 原先用 setPointerCapture 会把 click 重定向到容器，单根详情也跟着失灵。
+      // 现在按下即进入拖拽、位移超 4px 判定为拖动并抑制随后的 click，松手后 60ms 恢复点选。
       box.addEventListener("pointerdown", ev => {
-        if (ev.target.classList && ev.target.classList.contains("mkt-hit")) return;   // 点单根看详情不拖动
-        MKT.drag = { x: ev.clientX, off: MKT.view.off || 0 };
-        box.setPointerCapture && box.setPointerCapture(ev.pointerId);
+        MKT.drag = { x: ev.clientX, off: MKT.view.off || 0, moved: false };
       });
       box.addEventListener("pointermove", ev => {
         if (!MKT.drag) return;
         const dx = ev.clientX - MKT.drag.x;
-        const stepPx = (box.clientWidth - 50) / (MKT.view.cnt || 60);
-        const shift = Math.round(dx / Math.max(4, stepPx));
-        if (shift !== MKT.view.dragApplied) {
+        if (Math.abs(dx) > 4) MKT.drag.moved = true;
+        const stepPx = Math.max(4, (box.clientWidth - 50) / (MKT.view.cnt || 60));
+        const shift = Math.round(dx / stepPx);
+        if (shift !== (MKT.view.dragApplied || 0)) {
           MKT.view.off = MKT.drag.off + shift;
           MKT.view.dragApplied = shift;
           rerender();
         }
       });
-      const endDrag = () => { MKT.drag = null; MKT.view.dragApplied = 0; };
+      const endDrag = () => {
+        if (MKT.drag && MKT.drag.moved) {
+          MKT.dragSuppressed = true;
+          setTimeout(() => { MKT.dragSuppressed = false; }, 60);
+        }
+        MKT.drag = null; MKT.view.dragApplied = 0;
+      };
       box.addEventListener("pointerup", endDrag);
       box.addEventListener("pointercancel", endDrag);
+      box.addEventListener("pointerleave", () => { if (MKT.drag) endDrag(); });
       // 触屏双指缩放
       let pinch0 = 0, cnt0 = 0;
       box.addEventListener("touchstart", ev => {
@@ -847,7 +859,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     }
   }
 
-  /* 一条挂单。v26.4 起不再显示任何身份信息——只有数量、单价、总额与操作。 */
+  /* 一条挂单。v26.4 起不显示玩家身份——只有数量、单价、总额与操作。
+     【v26.19】恢复机器人「灵傀」标记（原有设计）：玩家一眼看出市场里有做市托底 */
   function exRowHTML(o) {
     const left = o.left, unit = _m4(o.price).toFixed(4), total = _fmt4(left * o.price);
     if (o.mine) {
@@ -857,8 +870,9 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       </div>`;
     }
     const isBuy = o.side === "sell";   // 对方挂卖 → 我要买
-    return `<div class="ex-row">
-      <div class="num"><b>${left}</b> 灵气<i>单价 ¥${unit} · 共 ¥${total}</i></div>
+    const isBot = o.userId === "__market__";
+    return `<div class="ex-row${isBot ? " bot-row" : ""}">
+      <div class="num"><b>${left}</b> 灵气${isBot ? '<span class="ex-tag-bot" title="做市机器人挂单，随时有人接盘">灵傀</span>' : ""}<i>单价 ¥${unit} · 共 ¥${total}</i></div>
       <div class="ex-btn ${isBuy ? "buy" : "sell"}" data-act="deal" data-id="${o.id}" data-left="${left}" data-price="${o.price}" data-side="${o.side}">${isBuy ? "买入" : "卖出"}</div>
     </div>`;
   }
@@ -1767,7 +1781,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
             </div>
             <div class="fac-go">${f.id === d.current ? "强化 ›" : "装备 ›"}</div>
           </div>`).join("")}</div>
-        <div class="ex-tip">天赋树走「小属性 → 特殊加成 → 特殊玩法 → 大技能」四层，在流派页内加点</div>`;
+        <div class="ex-tip">天赋树走「小属性 → 特殊加成 → 特殊玩法 → 大技能」四层；进入流派后点技能节点，在弹窗里确认学习；支持滚轮/双指缩放与拖拽平移</div>`;
       body.querySelectorAll(".fac-card").forEach(c => c.onclick = () => {
         FAC.cur = c.dataset.id;
         FAC.view = "tree";
