@@ -28,15 +28,14 @@ app.get('/api/activity/checkin', auth, async (req, res) => {
     // 月历
     const monthRecs = await db.collection('checkin_records').find({ userId, date: { $regex: '^' + month } }).toArray();
     const signedDays = monthRecs.map(r => r.date);
-    // 连续签到天数
+    // 连续签到天数（【2026-09-24 性能优化】一次拉最近 60 天记录在内存里算——
+    // 原先 while(true) 逐日 findOne，连签 N 天就是 N 次串行查询，长 streak 用户打开签到页就放大 DB 负载）
+    const sinceDate = cnDayStr(new Date(Date.now() - 60 * 86400000));
+    const recentRecs = await db.collection('checkin_records')
+      .find({ userId, date: { $gte: sinceDate } }).project({ date: 1 }).toArray();
+    const haveDays = new Set(recentRecs.map(r => r.date));
     let streak = 0;
-    let d = new Date();
-    while (true) {
-      const ds = cnDayStr(d);
-      const rec = await db.collection('checkin_records').findOne({ userId, date: ds });
-      if (rec) { streak++; d.setDate(d.getDate() - 1); }
-      else break;
-    }
+    for (let d = new Date(); haveDays.has(cnDayStr(d)); d.setDate(d.getDate() - 1)) streak++;
     res.json({ ok: true, today: today, signedToday: !!todayRec, todayAmount: todayRec ? todayRec.amount : 0, streak, signedDays, month, eligible: takenCnt > 0 });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
@@ -63,15 +62,18 @@ app.post('/api/activity/checkin', auth, async (req, res) => {
     } else {
       amount = Math.round((0.01 + Math.random() * 0.09) * 100) / 100; // 0.01~0.10
     }
-    // 连续天数
+    // 连续天数（【2026-09-24 性能优化】与 GET 同款：一次批量拉取代替逐日查询）
     let streak = 1;
     let yd = new Date(); yd.setDate(yd.getDate() - 1);
     const ydStr = cnDayStr(yd);
     const ydRec = await db.collection('checkin_records').findOne({ userId, date: ydStr });
     if (ydRec) {
-      // 计算连续天数
-      let d = new Date(); let s = 1;
-      while (true) { d.setDate(d.getDate() - 1); const rec = await db.collection('checkin_records').findOne({ userId, date: cnDayStr(d) }); if (rec) s++; else break; }
+      const sinceDate = cnDayStr(new Date(Date.now() - 60 * 86400000));
+      const recentRecs = await db.collection('checkin_records')
+        .find({ userId, date: { $gte: sinceDate } }).project({ date: 1 }).toArray();
+      const haveDays = new Set(recentRecs.map(r => r.date));
+      let s = 1;
+      for (let d = new Date(); haveDays.has(cnDayStr(d)); d.setDate(d.getDate() - 1)) s++;
       streak = s;
     }
     // 【2026-09-17 修复】并发双击兜底：唯一索引(userId+date)拦截同一秒内的重复签到
@@ -130,6 +132,8 @@ app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
     const db = await getDb();
     const userId = req.user.id;
     const cardId = req.params.cardId;
+    // 【2026-09-24 修复】先校验格式：非法 cardId 原先直接 new ObjectId 抛错返回 500（应为 400）
+    if (!ObjectId.isValid(String(cardId))) return res.status(400).json({ ok: false, error: '参数无效' });
     const today = cnDayStr(new Date());
     // 检查是否已拆（终身一次：不限日期）
     // 【2026-09-14 修复】cardId 类型对齐（库里存 ObjectId，字符串查永远落空）+ 查重
