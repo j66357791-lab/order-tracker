@@ -14,6 +14,7 @@ const fmtT = t => {
 const SKIP_LABEL = {
   bot_no_cash: '机器人余额不足（去「补充额度」）',
   bot_no_lingqi: '机器人灵气不足（去「补充额度」）',
+  bot_no_resources: '机器人灵气与余额双双见底（去「补充额度」）',
   bot_orders_full: '机器人挂单已满（等旧单被吃掉，30 分钟后自动回收）',
   bot_same_price: '同价位已有单（正常，避免重复堆叠）',
   // 【v26.5】这两条就是防套利的护栏在起作用：玩家挂了机器人不愿意接受的价格，直接不碰
@@ -67,6 +68,10 @@ export function mount(root) {
       <div><label class="lab">价格波动率（%）</label>
         <input id="mkVol" type="number" min="0.1" max="30" step="0.1" placeholder="默认 3">
         <div class="sub" style="margin-top:2px">每轮中枢游走幅度。太小 → 走势是平线；太大 → 价格乱跳</div></div>
+      <!-- 【v26.18】单轮涨跌幅管控：行情再剧烈也不会一步跳崩，管理员可按行情调节 -->
+      <div><label class="lab">单轮最大涨跌幅（%）</label>
+        <input id="mkMoveCap" type="number" min="0.1" max="50" step="0.1" placeholder="默认 5">
+        <div class="sub" style="margin-top:2px">中枢相对上一轮最多涨跌这么多。日常市场 3~8；做演示行情可调大到 50；<b>插针不受此限</b></div></div>
       <div><label class="lab">行情剧本（先涨后跌，可选）</label>
         <textarea id="mkScript" rows="3" style="width:100%;font:12px/1.6 monospace" placeholder="每行一段：涨跌幅,轮数&#10;例：&#10;20,8&#10;-15,6"></textarea>
         <div class="sub" style="margin-top:2px">每行一段，<b>涨跌幅%（逗号）轮数</b>。上例＝先涨 20% 走 8 轮，再跌 15% 走 6 轮，之后循环。留空则纯随机</div></div>
@@ -180,6 +185,7 @@ export function mount(root) {
       $('mkAmountMin').value = c.amountMin; $('mkAmountMax').value = c.amountMax;
       $('mkSpread').value = c.spreadMin === undefined ? 0.001 : c.spreadMin;
       $('mkVol').value = c.volatility === undefined ? 3 : c.volatility;
+      $('mkMoveCap').value = c.moveCapPct === undefined ? 5 : c.moveCapPct;
       // 剧本回填成"每行一段"的可读格式（原来存 JSON，管理员看着不好填）
       $('mkScript').value = Array.isArray(c.script) && c.script.length
         ? c.script.map(s => `${s.pct},${s.rounds}`).join('\n') : '';
@@ -215,6 +221,7 @@ export function mount(root) {
         priceMin: +$('mkPriceMin').value, priceMax: +$('mkPriceMax').value,
         spreadMin: +$('mkSpread').value || 0.001,
         volatility: +$('mkVol').value || 3,
+        moveCapPct: +$('mkMoveCap').value || 5,
         // 剧本：按行解析「涨跌幅,轮数」，忽略空行与格式不对的行（别让坏配置卡住机器人）
         ...(function () {
           const lines = ($('mkScript').value || '').split('\n').map(s => s.trim()).filter(Boolean);
