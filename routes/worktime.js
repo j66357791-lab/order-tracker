@@ -47,23 +47,30 @@ async function evalAttendance(db, userId) {
 }
 // 排班：写手自行设置每周班表（0=周日…6=周六；null=休）
 app.get('/api/schedule', auth, async (req, res) => {
-  const db = await getDb();
-  const uid = req.user.role === 'admin' && req.query.userId ? String(req.query.userId) : req.user.id;
-  await evalAttendance(db, uid);
-  const sched = await db.collection('schedules').findOne({ userId: uid });
-  res.json({ ok: true, schedule: sched ? sched.days : null });
+  // 【2026-09-24 修复】补 try/catch——原 handler 无任何异常保护，
+  // Express 4 不捕获 async rejection，getDb/evalAttendance 抛错会变成 unhandledRejection 直接崩进程
+  try {
+    const db = await getDb();
+    const uid = req.user.role === 'admin' && req.query.userId ? String(req.query.userId) : req.user.id;
+    await evalAttendance(db, uid);
+    const sched = await db.collection('schedules').findOne({ userId: uid });
+    res.json({ ok: true, schedule: sched ? sched.days : null });
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 app.post('/api/schedule', auth, async (req, res) => {
   try {
     const db = await getDb();
     const days = req.body?.days || {};
+    const cleanDays = {};
     for (const k of Object.keys(days)) {
       if (!['0', '1', '2', '3', '4', '5', '6'].includes(k)) return res.status(400).json({ ok: false, error: '非法星期' });
       if (days[k] && (!/^\d{2}:\d{2}$/.test(days[k].start || '') || !/^\d{2}:\d{2}$/.test(days[k].end || ''))) {
         return res.status(400).json({ ok: false, error: '时间格式应为 HH:MM' });
       }
+      // 【2026-09-24 修复】重建干净对象入库：原先 days[k] 整个对象原样落库，任意额外字段会被一并写入
+      cleanDays[k] = days[k] ? { start: days[k].start, end: days[k].end } : null;
     }
-    await db.collection('schedules').updateOne({ userId: req.user.id }, { $set: { days, updatedAt: new Date() } }, { upsert: true });
+    await db.collection('schedules').updateOne({ userId: req.user.id }, { $set: { days: cleanDays, updatedAt: new Date() } }, { upsert: true });
     res.json({ ok: true });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
@@ -219,7 +226,11 @@ async function cleanupOldData() {
     const db = await getDb();
     const bucket = new GridFSBucket(db);
     const cutoff = new Date(Date.now() - FILE_RETAIN_DAYS * 24 * 3600 * 1000);
-    const old = await db.collection('fs.files').find({ uploadDate: { $lt: cutoff } }).project({ _id: 1 }).toArray();
+    // 【2026-09-24 资金安全修复】只清理聊天附件（metadata.kind 为空或 'chat'）。
+    // 原先无差别删除 fs 桶 3 天前的所有文件——充值截图（kind:'recharge'）是财务凭证，
+    // 也存这个桶，3 天后 404 会导致审计链条断裂、历史充值截图全部裂图。
+    const old = await db.collection('fs.files')
+      .find({ uploadDate: { $lt: cutoff }, 'metadata.kind': { $ne: 'recharge' } }).project({ _id: 1 }).toArray();
     for (const f of old) { try { await bucket.delete(f._id); } catch (e) {} }
     if (old.length) console.log('[清理] 已删除', old.length, '个超过' + FILE_RETAIN_DAYS + '天的聊天附件');
     // 已读消息3天后清理（省库）；未读兜底30天，防止漏看的信息凭空消失
