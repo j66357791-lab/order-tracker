@@ -7,7 +7,9 @@ export default function mount(ctx) {
   const CLEAN_TARGETS = {
     game_sessions: { label: '翻翻乐已结束对局', filter: days => ({ status: { $in: ['done', 'lost', 'timeout'] }, endedAt: { $lt: new Date(Date.now() - days * 86400000) } }) },
     game_logs: { label: '游戏审计日志', filter: days => ({ createdAt: { $lt: new Date(Date.now() - days * 86400000) } }) },
-    wallet_log: { label: '钱包流水（签到/红包/福袋入账）', filter: days => ({ createdAt: { $lt: new Date(Date.now() - days * 86400000) } }) },
+    // 【2026-09-24 资金安全修复】wallet_log 已从清理白名单移除：
+    // 全站余额就是 wallet_log 求和（无独立 balance 字段），删除流水 = 直接蒸发用户余额；
+    // 同时提现对账、红包解冻幂等判重都依赖它，清理等于摧毁账本。
   };
 
   const fmt = n => {
@@ -39,7 +41,7 @@ export default function mount(ctx) {
   app.get('/api/admin/db/cleanup-candidates', auth, adminOnly, async (req, res) => {
     try {
       const db = await getDb();
-      const days = { game_sessions: 30, game_logs: 90, wallet_log: 365 };
+      const days = { game_sessions: 30, game_logs: 90 };
       const out = [];
       for (const [name, def] of Object.entries(CLEAN_TARGETS)) {
         const d = days[name];
@@ -54,7 +56,9 @@ export default function mount(ctx) {
     try {
       const db = await getDb();
       const target = String(req.body?.target || '');
-      const days = Math.max(1, Number(req.body?.days) || 0);
+      // 审计日志最短保留 90 天：game_logs 里有管理员改密/发道具/清理操作等审计记录，
+      // 允许 days=1 随手清空等于让同一权限面销毁自己的操作痕迹
+      const days = Math.max(target === 'game_logs' ? 90 : 1, Number(req.body?.days) || 0);
       const def = CLEAN_TARGETS[target];
       if (!def) return res.status(400).json({ ok: false, error: '不支持的清理目标（只允许：' + Object.keys(CLEAN_TARGETS).join('、') + '）' });
       const r = await db.collection(target).deleteMany(def.filter(days));
