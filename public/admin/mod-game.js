@@ -220,10 +220,20 @@ export function mount(root) {
         <label class="mini-lbl">维护锁
           <select id="actLock"><option value="0">关闭（活动可正常访问）</option><option value="1">开启（玩家端上锁）</option></select>
         </label>
+        <label class="mini-lbl">堆堆乐内测
+          <select id="ddBeta"><option value="0">关闭</option><option value="1">开启（测试员不受时间限制可提前参与）</option></select>
+        </label>
         <label class="mini-lbl" style="flex:1">测试账号（逗号分隔，用户名或工号）
           <input id="actTesters" placeholder="如：admin,1000001,tester01" style="width:100%">
         </label>
         <button class="btn-main" id="actSysSave">保存维护设置</button>
+      </div>
+      <div class="inline" style="margin-top:6px">
+        <label class="mini-lbl">清理堆堆乐参与记录（内测重置）：用户名/工号
+          <input id="ddCleanUser" placeholder="留空 = 清空全部记录" style="width:200px">
+        </label>
+        <button class="btn-ghost" id="ddClean" style="color:#b3452f">清理记录</button>
+        <span class="sub">清理后该玩家的免费次数/通关加成次数会重新可用</span>
       </div>
       <div style="margin-top:12px" id="actList"><div class="empty">加载中…</div></div>
       <div class="inline" style="margin-top:8px">
@@ -1118,6 +1128,7 @@ export function mount(root) {
       if (!j.ok) throw new Error(j.error || '加载失败');
       $('actLock').value = j.sys.locked ? '1' : '0';
       $('actTesters').value = (j.sys.testAccounts || []).join(',');
+      $('ddBeta').value = j.sys.duiduileBeta ? '1' : '0';
       ACTROWS = j.list;
       renderActRows();
     } catch (e) { $('actList').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
@@ -1128,8 +1139,14 @@ export function mount(root) {
       ? ACTROWS.map((a, i) => `
       <div class="act-row" data-i="${i}">
         <div class="line">
-          <label>标题<input data-k="title" value="${esc(a.title)}" style="width:180px"></label>
-          <label>角标<input data-k="tag" value="${esc(a.tag || '')}" style="width:80px" title="列表里的小字，如：限时/新活动"></label>
+          <label>标题<input data-k="title" value="${esc(a.title)}" style="width:170px"></label>
+          <label>类型
+            <select data-k="type">
+              <option value="" ${!a.type ? 'selected' : ''}>普通活动</option>
+              <option value="duiduile" ${a.type === 'duiduile' ? 'selected' : ''}>灵气堆堆乐</option>
+            </select>
+          </label>
+          <label>角标<input data-k="tag" value="${esc(a.tag || '')}" style="width:70px" title="列表里的小字，如：限时/中秋"></label>
           <label>启用<input type="checkbox" data-k="enabled" ${a.enabled ? 'checked' : ''}></label>
           <span class="${a.enabled ? 'act-badge-on' : 'act-badge-off'}">${a.enabled ? '展示中' : '已停用'}</span>
           <span style="flex:1"></span>
@@ -1197,10 +1214,19 @@ export function mount(root) {
     try {
       const j = await api('/api/shanhai/admin/activity-sys', {
         method: 'POST',
-        body: JSON.stringify({ locked: $('actLock').value === '1', testAccounts: $('actTesters').value }),
+        body: JSON.stringify({ locked: $('actLock').value === '1', testAccounts: $('actTesters').value, duiduileBeta: $('ddBeta').value === '1' }),
       });
       if (!j.ok) throw new Error(j.error || '保存失败');
       toast('维护设置已保存（玩家端入口立即生效）');
+    } catch (e) { toast(e.message); }
+  };
+  $('ddClean').onclick = async () => {
+    const who = $('ddCleanUser').value.trim();
+    if (!confirm(who ? `清掉「${who}」的堆堆乐参与记录？（其免费/加成次数将重置）` : '确定清空【全部】堆堆乐参与记录？')) return;
+    try {
+      const j = await api('/api/shanhai/admin/duiduile/cleanup', { method: 'POST', body: JSON.stringify({ username: who }) });
+      if (!j.ok) throw new Error(j.error || '清理失败');
+      toast('已清理 ' + j.deleted + ' 条参与记录');
     } catch (e) { toast(e.message); }
   };
   $('actAdd').onclick = () => {
