@@ -240,7 +240,25 @@
           <span class="cur-chip xianyu"><i>◉</i>仙玉 <b id="shXianyu">0</b></span>
           <span class="cur-chip lingqi"><i>✦</i>灵气 <b id="shLingqi">0</b></span>
         </div>
-        <div class="grow-sec">◆ 御剑五诀（对局内升级点选）</div>
+        <!-- 【v26.10】山海录首页改成功能入口，不再一进去就铺开技能列表 -->
+        <div class="sh-grid">
+          <div class="sh-entry" onclick="openShanhai('skill')">
+            <i>⚔</i><b>技 能</b><span>永久强化 · 点击进技能阁</span>
+          </div>
+          <div class="sh-entry soon" onclick="openShanhai('fabao')">
+            <i>🪷</i><b>法 宝</b><span>炼制中</span>
+          </div>
+          <div class="sh-entry soon" onclick="openShanhai('tujian')">
+            <i>📖</i><b>图 鉴</b><span>炼制中</span>
+          </div>
+          <div class="sh-entry soon" onclick="openShanhai('dongfu')">
+            <i>🏯</i><b>洞 府</b><span>炼制中</span>
+          </div>
+        </div>
+        <!-- 技能正文平时藏在这里，点「技能」时搬进弹窗（搬 DOM，事件绑定不丢） -->
+        <div id="shHolder">
+          <div id="shSkillInner" style="display:none">
+            <div class="grow-sec">◆ 御剑五诀（对局内升级点选）</div>
         <div class="sword-skills" id="swordSkillCard">
           <div class="sk-row"><i>剑影分光</i><span>多一把飞剑齐射，最多3把同发</span></div>
           <div class="sk-row"><i>剑意淬锋</i><span>飞剑攻击力 +20%（可叠5层）</span></div>
@@ -252,8 +270,10 @@
         <div id="skillList" class="skill-list"></div>
         <div class="grow-sec">◆ 局内新技 · 旋风刃（升级三选一有概率习得）</div>
         <div class="sk-row"><i>风 · 旋风刃</i><span>2 柄灵刃绕体旋飞，绞碎近身之敌；升 3/5 层各 +1 柄</span></div>
-        <div class="grow-sec">◆ 斩妖图志</div>
-        <div class="sh-lore">山海经异兽志 · 南山经首列：狌狌知往，鹿蜀佩宜，旋龟愈聋，鯤鱼无肿。斩妖证道，录名于此。</div>
+            <div class="grow-sec">◆ 斩妖图志</div>
+            <div class="sh-lore">山海经异兽志 · 南山经首列：狌狌知往，鹿蜀佩宜，旋龟愈聋，鯤鱼无肿。斩妖证道，录名于此。</div>
+          </div>
+        </div>
       </div>
       <!-- 挑战（占位） -->
       <div class="home-tab" id="tabChallenge">
@@ -1425,6 +1445,48 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
   window.showGachaHall = showGachaHall;
 
+  /* ==================== 【v26.10】山海录：功能入口 + 技能阁弹窗 ====================
+     首页只放四个入口图标（技能 / 法宝 / 图鉴 / 洞府），点「技能」才把技能正文
+     搬进弹窗——同样用搬 DOM，原有的强化按钮绑定全部保留。 */
+  const SH_ENTRY = { skill: "技 能", fabao: "法 宝", tujian: "图 鉴", dongfu: "洞 府" };
+  function openShanhai(kind) {
+    if (kind !== "skill") {
+      const n = SH_ENTRY[kind] || "该功能";
+      toast(n.replace(/\s/g, "") + "正在炼制中，敬请期待");
+      return;
+    }
+    const inner = document.getElementById("shSkillInner");
+    const holder = document.getElementById("shHolder");
+    if (!inner || !holder) return;
+    if (document.getElementById("shMask")) { closeShanhai(); return; }
+    const mask = document.createElement("div");
+    mask.className = "ex-mask"; mask.id = "shMask";
+    mask.onclick = e => { if (e.target === mask) closeShanhai(); };
+    mask.innerHTML = `
+      <div class="ex-wrap" style="max-width:420px">
+        <div class="ex-board" style="height:60px"></div>
+        <div class="ex-head" style="padding-top:11px">
+          <div class="ex-title">技能阁</div>
+          <div class="ex-sub">永久强化 · 对局外生效</div>
+          <div class="ex-close" id="shClose">×</div>
+        </div>
+        <div class="sh-hall-body" id="shHallBody"></div>
+      </div>`;
+    document.body.appendChild(mask);
+    document.getElementById("shClose").onclick = closeShanhai;
+    document.getElementById("shHallBody").appendChild(inner);
+    inner.style.display = "";
+    if (typeof renderGrow === "function") renderGrow();
+  }
+  function closeShanhai() {
+    const mask = document.getElementById("shMask");
+    const inner = document.getElementById("shSkillInner");
+    const holder = document.getElementById("shHolder");
+    if (inner && holder) { holder.appendChild(inner); inner.style.display = "none"; }
+    if (mask) mask.remove();
+  }
+  window.openShanhai = openShanhai;
+
   /* ==================== 【v26.6.1】Service Worker 更新自愈 ====================
      背景：此前游戏页被 portal 注册的 Service Worker 接管，而 SW 对 /games/ 下的请求
      走的是"先回缓存、后台再拉新"，导致**部署新版本后用户刷新多少次都是旧页面**。
@@ -1528,7 +1590,13 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const wins = p.wins || 0;
     $("tbTitle").textContent = wins >= 10 ? "山海伏妖师" : wins >= 3 ? "斩妖剑客" : wins >= 1 ? "初露锋芒" : "初入山海";
     // 关卡展示（单关卡+左右切换，共 20 关）
-    renderStage(0);
+    // 【v26.10】默认停在"该打的那一关"，不再每次都从第 1 关翻起。
+    // 已通关到第 6 关 → 默认展示第 7 关（索引 6）；一关没通 → 第 1 关；全通关 → 最后一关。
+    const cleared = (p.clearedStages || []).map(Number).filter(n => n >= 1 && n <= CHAPTER.total);
+    const startIdx = cleared.length
+      ? Math.min(CHAPTER.total - 1, Math.max(...cleared))   // cleared 最大 6 → 索引 6 = 第 7 关
+      : 0;
+    renderStage(startIdx);
     document.getElementById("stagePrev").onclick = () => { if (curStageIdx > 0) renderStage(curStageIdx - 1); };
     document.getElementById("stageNext").onclick = () => { if (curStageIdx < CHAPTER.total - 1) renderStage(curStageIdx + 1); };
     document.getElementById("btnEnterBattle").onclick = () => {
@@ -2049,9 +2117,15 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
 
   // 结算 monkey-patch：上报 + 返回主页按钮
   const _over = UI.gameOver, _win = UI.victory;
-  UI.gameOver = function (stats, hero) { META.report(false, curStage).then(g => g && renderHome()); const r = _over(stats, hero); addHomeBtn(); return r; };
+  // 【v26.10 修】原来调用 report 时**没把 hero 传进去**，血量默认 0，
+  // 服务端按 hp 判星就永远给 1 星 —— 表现正是"局内拿了三星，出来一看是一星"。
+  // 结算时间也一并带上（stats.time 才是用时，hero 上没有）。
+  const packStats = (stats, hero) => Object.assign({}, hero || {}, {
+    timeAlive: (stats && stats.time) || (hero && hero.timeAlive) || 0,
+  });
+  UI.gameOver = function (stats, hero) { META.report(false, curStage, packStats(stats, hero)).then(g => g && renderHome()); const r = _over(stats, hero); addHomeBtn(); return r; };
   UI.victory = function (stats, hero) {
-    META.report(true, curStage).then(g => {
+    META.report(true, curStage, packStats(stats, hero)).then(g => {
       if (g && g.stars) { localStorage.setItem("sh_stars_" + curStage, g.stars); META.stageStars = META.stageStars || {}; META.stageStars[curStage] = g.stars; }
       renderHome();
       if (g) {
