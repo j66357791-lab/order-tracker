@@ -900,6 +900,101 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
+  // ==================== 【v26.25】活动系统（活动中心 + 维护锁 + 测试账号） ====================
+  async function loadActSys(db) {
+    const d = await db.collection('shanhai_config').findOne({ _id: 'activity_sys' });
+    const v = Object.assign({ locked: false, testAccounts: [] }, (d && d.value) || {});
+    if (!Array.isArray(v.testAccounts)) v.testAccounts = String(v.testAccounts || '').split(/[,，\s]+/).filter(Boolean);
+    return v;
+  }
+  const actPub = a => ({
+    id: String(a._id), title: a.title, tag: a.tag || '', content: a.content || '',
+    img: a.img || '', start: a.start || null, end: a.end || null,
+  });
+
+  // 玩家端：活动列表 + 维护锁状态（测试账号不受锁限制；名单不下发）
+  app.get('/api/shanhai/activities', auth, limit({ name: 'sh-act', max: 30, windowMs: 60 * 1000, msg: '太快了' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const sys = await loadActSys(db);
+      const me = req.user;
+      const isTester = sys.testAccounts.includes(me.username) || (me.uid && sys.testAccounts.includes(String(me.uid)));
+      const now = new Date();
+      const list = (await db.collection('shanhai_activities').find({ enabled: { $ne: false } })
+        .sort({ sort: 1, createdAt: 1 }).limit(50).toArray())
+        .filter(a => (!a.start || new Date(a.start) <= now) && (!a.end || new Date(a.end) >= now))
+        .map(actPub);
+      res.json({ ok: true, locked: !!sys.locked && !isTester, activities: list });
+    } catch (e) { console.error('[api] activities', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+
+  // 管理端：列表（含禁用与未生效的，便于编辑）
+  app.get('/api/shanhai/admin/activities', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const sys = await loadActSys(db);
+      const list = await db.collection('shanhai_activities').find({}).sort({ sort: 1, createdAt: 1 }).limit(100).toArray();
+      res.json({ ok: true, sys, list: list.map(a => Object.assign(actPub(a), { enabled: a.enabled !== false })) });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+  app.post('/api/shanhai/admin/activities/save', auth, adminOnly, async (req, res) => {
+    try {
+      const b = req.body || {};
+      const doc = {
+        title: String(b.title || '').trim().slice(0, 40),
+        tag: String(b.tag || '').trim().slice(0, 10),
+        img: String(b.img || '').trim().slice(0, 200),
+        content: String(b.content || '').slice(0, 5000),
+        start: b.start ? new Date(b.start) : null,
+        end: b.end ? new Date(b.end) : null,
+        enabled: b.enabled !== false,
+        updatedAt: new Date(),
+      };
+      if (!doc.title) return res.status(400).json({ ok: false, error: '请填写活动标题' });
+      let _id = null;
+      if (b.id && ObjectId.isValid(String(b.id))) _id = new ObjectId(String(b.id));
+      if (_id) await db.collection('shanhai_activities').updateOne({ _id }, { $set: doc });
+      else {
+        const cnt = await db.collection('shanhai_activities').countDocuments({});
+        await db.collection('shanhai_activities').insertOne(Object.assign(doc, { sort: cnt, createdAt: new Date() }));
+      }
+      await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'admin_activity_save', detail: { title: doc.title }, createdAt: new Date() }).catch(() => { });
+      res.json({ ok: true });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '保存失败，请稍后再试' }); }
+  });
+  app.post('/api/shanhai/admin/activities/del', auth, adminOnly, async (req, res) => {
+    try {
+      const id = String((req.body || {}).id || '');
+      if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: '参数无效' });
+      await db.collection('shanhai_activities').deleteOne({ _id: new ObjectId(id) });
+      res.json({ ok: true });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '删除失败，请稍后再试' }); }
+  });
+  app.post('/api/shanhai/admin/activities/reorder', auth, adminOnly, async (req, res) => {
+    try {
+      const ids = (req.body || {}).ids || [];
+      if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ ok: false, error: '参数无效' });
+      for (let i = 0; i < ids.length; i++) {
+        if (!ObjectId.isValid(String(ids[i]))) continue;
+        await db.collection('shanhai_activities').updateOne({ _id: new ObjectId(String(ids[i])) }, { $set: { sort: i } });
+      }
+      res.json({ ok: true });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '排序失败，请稍后再试' }); }
+  });
+  // 维护锁 + 测试账号（锁打开时普通玩家入口显示上锁样式，名单内账号不受限）
+  app.post('/api/shanhai/admin/activity-sys', auth, adminOnly, async (req, res) => {
+    try {
+      const b = req.body || {};
+      let accounts = b.testAccounts || [];
+      if (typeof accounts === 'string') accounts = accounts.split(/[,，\s]+/).filter(Boolean);
+      accounts = accounts.map(s => String(s).trim().slice(0, 30)).filter(Boolean).slice(0, 50);
+      const value = { locked: !!b.locked, testAccounts: accounts, updatedAt: new Date() };
+      await db.collection('shanhai_config').updateOne({ _id: 'activity_sys' }, { $set: { value } }, { upsert: true });
+      await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'admin_activity_sys', detail: { locked: value.locked, testers: accounts.length }, createdAt: new Date() }).catch(() => { });
+      res.json({ ok: true, sys: value });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '保存失败，请稍后再试' }); }
+  });
+
   // ==================== 体力（v24.9） ====================
   // 上限 10 点，挑战一局消耗 1 点，每 2 小时恢复 1 点（服务端计时，客户端改不了）
   const STAMINA_CFG = { cap: 10, cost: 1, recoverSec: 7200, init: 10 };
