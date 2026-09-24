@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.8',   // 【v26.8】装备升级(灵石加成)+装备合成(5合1升品质)+升级福袋；交易失败自动核实真实结果
+  appVersion: '26.9',   // 【v26.9】价格走势图(时/日/月/全部)+机器人价格波动中枢+金额统一4位+装备阁楼抽卡大厅+礼包方形卡牌+灵石图标
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
