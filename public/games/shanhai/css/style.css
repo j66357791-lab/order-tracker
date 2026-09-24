@@ -691,6 +691,8 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 /* ==================== 【v26.9】灵气行情走势（股票式） ==================== */
 .ex-chart {
   margin: 0 11px 6px; border-radius: 10px; overflow: hidden;
+  /* 【v26.13】固定不压缩：原来列表一多，flex 布局把行情条挤没了 */
+  flex-shrink: 0;
   background: rgba(122, 96, 48, .08); border: 1px solid rgba(122, 96, 48, .22);
 }
 .ex-chart-head {
