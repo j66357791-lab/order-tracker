@@ -1446,9 +1446,15 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       // 且根数少于缩放下限时 ＋/－ 按钮被钳住"没反应"
       let candles = [];
       if (candleList.length) {
-        const firstT = candleList[0].t;
-        let idx = 0, prevClose = candleList[0].o;
-        for (let t = firstT; t <= now && candles.length < 400; t += groupMs) {
+        // 【v26.22 修复】7 天正常、24 小时仍缺根的原因：补根起点用的是"第一根蜡烛"，
+        // 而 1d 的第一根从首笔成交算起——首笔在 3 小时前就只补出 4 根。
+        // 改为：固定区间（1d/7d/30d）一律从区间起点（since 取整到 group）开始补；"全部"视图仍从首根开始。
+        const startT = (range !== 'all' && since) ? Math.floor(since / groupMs) * groupMs : candleList[0].t;
+        let prevClose = candleList[0].o;
+        for (const c of candleList) { if (c.t < startT) prevClose = c.c; else break; }
+        let idx = candleList.findIndex(c => c.t >= startT);
+        if (idx < 0) idx = candleList.length;
+        for (let t = startT; t <= now && candles.length < 400; t += groupMs) {
           const c = (candleList[idx] && candleList[idx].t === t) ? candleList[idx++] : null;
           if (c) prevClose = c.c;
           candles.push(c || { t, o: prevClose, c: prevClose, hi: prevClose, lo: prevClose, v: 0 });
