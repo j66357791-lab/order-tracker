@@ -70,15 +70,21 @@ const Assets = (() => {
   }
 
   // 绘制：ctx, anim, 序号, 目标中心 x,y, 尺寸缩放, 水平翻转
+  // 【2026-09-24 性能优化】不翻转时省掉 save/translate/restore 三次状态机操作——
+  // 每帧几十上百个实体的绘制调用，这是占比最高的纯开销
   function draw(ctx, anim, f, cx, cy, scale = 1, flip = false) {
     const s = sheets[anim];
     if (!s) return;
     const w = s.fw * scale, h = s.fh * scale;
-    ctx.save();
-    ctx.translate(cx, cy);
-    if (flip) ctx.scale(-1, 1);
-    ctx.drawImage(s.img, f * s.fw, 0, s.fw, s.fh, -w / 2, -h / 2, w, h);
-    ctx.restore();
+    if (flip) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(-1, 1);
+      ctx.drawImage(s.img, f * s.fw, 0, s.fw, s.fh, -w / 2, -h / 2, w, h);
+      ctx.restore();
+    } else {
+      ctx.drawImage(s.img, f * s.fw, 0, s.fw, s.fh, cx - w / 2, cy - h / 2, w, h);
+    }
   }
 
   return { load, get, frame, draw, sheets };
