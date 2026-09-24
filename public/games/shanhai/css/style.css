@@ -554,7 +554,16 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
   font: 700 9.5px/1.5 "PingFang SC", sans-serif; color: #fff;
   background: linear-gradient(180deg, #e0603a, #c2401c);
 }
-.pack-ico { font-size: 38px; line-height: 1.1; }
+/* 【v26.10】图标不用 emoji，改古风篆字 + 金色圆底（像印章） */
+.pack-ico {
+  width: 58px; height: 58px; margin: 0 auto; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font: 900 26px/1 "STKaiti", "KaiTi", serif; color: #5a3f14;
+  background: radial-gradient(circle at 34% 28%, #f6e2a8, #d9b061 62%, #b98d3c);
+  box-shadow: 0 2px 8px rgba(120, 86, 20, .35), inset 0 0 0 2px rgba(255, 250, 230, .55);
+}
+/* 结果层里的大图标同理 */
+.bag-open .pack-ico { width: 66px; height: 66px; font-size: 30px; }
 .pack-name { margin-top: 4px; font: 900 13px/1.4 "PingFang SC", sans-serif; color: #3a2f1c; }
 .pack-desc { margin-top: 3px; font: 10.5px/1.45 sans-serif; color: #6a5c3f; min-height: 30px; }
 .pack-rate { margin-top: 3px; font: 10px/1.45 sans-serif; color: #8a6a2a; min-height: 26px; }
@@ -581,6 +590,25 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .gacha-hall-cur { display: flex; justify-content: center; gap: 10px; margin-bottom: 8px; }
 .cur-chip.stone { display: inline-flex; align-items: center; gap: 3px; }
 .stone-ico { width: 18px; height: 18px; display: block; }
+
+/* ==================== 【v26.10】山海录：功能入口 + 技能阁 ==================== */
+.sh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 4px 0 10px; }
+.sh-entry {
+  padding: 14px 8px; border-radius: 12px; text-align: center; cursor: pointer;
+  background: linear-gradient(180deg, #fbf6e8, #efe4cc);
+  border: 1px solid rgba(122, 96, 48, .28);
+  box-shadow: 0 2px 7px rgba(60, 40, 10, .13);
+  transition: transform .12s;
+}
+.sh-entry:active { transform: scale(.97); }
+.sh-entry i { display: block; font-size: 28px; line-height: 1.2; font-style: normal; }
+.sh-entry b { display: block; margin-top: 3px; font: 900 13.5px/1.5 "PingFang SC", sans-serif; color: #3a2f1c; letter-spacing: 2px; }
+.sh-entry span { display: block; font: 10px/1.5 sans-serif; color: #8a7a58; }
+/* 未开放的三个入口：降饱和，一眼看出是占位 */
+.sh-entry.soon { background: linear-gradient(180deg, #f2efe8, #e6e1d6); }
+.sh-entry.soon i { filter: grayscale(.75); opacity: .62; }
+.sh-entry.soon b { color: #7c7159; }
+.sh-hall-body { padding: 6px 12px 14px; overflow-y: auto; flex: 1; }
 
 /* ==================== 【v26.9】灵气行情走势（股票式） ==================== */
 .ex-chart {
