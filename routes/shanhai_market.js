@@ -133,6 +133,35 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
 
   // 【v26.3.2】回收机器人自己挂了太久没成交的单：卖单退冻结灵气、买单退冻结余额，
   // 撤掉后腾出的价格档位与额度可以重新挂，避免"被自己的旧单堵死"。
+  // 【v26.15】区间变更自愈：价格跑出 [min,max] 的自家旧单立即撤掉退冻结。
+  // 用户改了价格区间后，旧区间时代挂的单还挂在市场上（比如 0.0005 < 新下限 0.001），
+  // 行情/列表看起来就像"价格没夹住"。逐张退冻结，不吃资产。
+  async function cancelOutOfRange(db, cfg) {
+    const min = Number(cfg.priceMin) || 0.0001;
+    const max = Number(cfg.priceMax) || 0.18;
+    const stale = await db.collection(ORD_COL)
+      .find({ userId: BOT_ID, status: 'open',
+        $or: [{ price: { $lt: min } }, { price: { $gt: max } }] })
+      .limit(50).toArray();
+    if (!stale.length) return { cancelled: 0 };
+    let backLingqi = 0;
+    for (const o of stale) {
+      if (o.side === 'sell' && o.left > 0) backLingqi += o.left;
+      else if (o.side === 'buy' && (o.locked || 0) > 0) {
+        await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+          { $inc: { frozen: -o.locked }, $set: { updatedAt: new Date() } });
+      }
+    }
+    if (backLingqi) {
+      await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: backLingqi, lingqiFrozen: -backLingqi } });
+    }
+    await db.collection(ORD_COL).updateMany(
+      { _id: { $in: stale.map(o => o._id) } },
+      { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } });
+    console.log('[market] 区间变更：回收越界挂单 %d 张，退回灵气 %d', stale.length, backLingqi);
+    return { cancelled: stale.length };
+  }
+
   async function recycleStaleBotOrders(db) {
     const deadline = new Date(Date.now() - BOT_ORDER_TTL_MS);
     const stale = await db.collection(ORD_COL)
@@ -302,7 +331,9 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     // 【v26.10 修】原来"同价位已有单"直接放弃这一笔。价格区间一窄（4 位小数下可选价位
     // 可能只有几十个），机器人很快就把价位占满 → 每笔都撞车 → 全场零成交、走势图空白。
     // 现在：先按最小步长微调重试几次，实在撞就允许同价位并存（但最多 2 张，不至于挂成一排）。
-    const STEP = 0.0001;
+    // 【v26.15】步长按区间跨度自适应：0.001-0.002 用 0.0001，更窄的区间（如 0.0001-0.0002）
+    // 用 0.00001——支持更细的小数，不设上限
+    const STEP = Math.max(0.00001, money4((max - min) / 500));
     let finalPrice = price;
     for (let k = 0; k < 6; k++) {
       const cnt = await col.countDocuments({ userId: BOT_ID, side, status: 'open', price: finalPrice });
@@ -531,6 +562,8 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         const s = await simMatch(db, cfg, center).catch(() => null);
         if (s) res.push(s);
       }
+      // 【v26.15】每轮顺手撤掉价格越出当前区间的自家旧单（改了区间立刻统一口径）
+      await cancelOutOfRange(db, cfg).catch(() => { });
       const deals = res.filter(r => r.dealt).length;
       const posts = res.filter(r => r.posted).length;
       await db.collection(CFG_COL).updateOne({ _id: 'market' }, { $set: { lastRunAt: new Date(), lastSummary: { tried: n, deals, posts, skips: res.filter(r => r.skipped).map(r => r.skipped) } } }, { upsert: true }).catch(() => { });
