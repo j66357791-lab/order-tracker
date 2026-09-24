@@ -853,17 +853,22 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     } catch (e) { }
   }
 
+  function actStageHtml(c) {
+    if (!c) return '<div class="act-empty">暂无活动，敬请期待</div>';
+    let h = "";
+    if (c.type === "duiduile") h += '<div class="dd-box" id="ddBox">加载中…</div>';
+    if (c.img) h += `<div class="act-banner"><img src="${_escHtml(c.img)}" alt="" onerror="this.style.display='none'"></div>`;
+    h += `<div class="act-content">${_escHtml(c.content || "活动详情敬请期待").replace(/\n/g, "<br>")}</div>`;
+    if (c.start || c.end) h += `<div class="act-time">⏱ ${c.start ? new Date(c.start).toLocaleDateString("zh-CN") : ""} ~ ${c.end ? new Date(c.end).toLocaleDateString("zh-CN") : ""}</div>`;
+    return h;
+  }
+
   function renderActCenter() {
     const d = ACTC.data || { activities: [] };
     const list = d.activities || [];
-    const cur = list[ACTC.cur] || list[0] || null;
+    ACTC.cur = Math.min(ACTC.cur, Math.max(0, list.length - 1));
     const mask = document.getElementById("actMask");
     if (!mask) return;
-    const contentHtml = cur
-      ? (cur.img ? `<div class="act-banner"><img src="${_escHtml(cur.img)}" alt="" onerror="this.style.display='none'"></div>` : "") +
-        `<div class="act-content">${_escHtml(cur.content || "活动详情敬请期待").replace(/\n/g, "<br>")}</div>` +
-        ((cur.start || cur.end) ? `<div class="act-time">⏱ ${cur.start ? new Date(cur.start).toLocaleDateString("zh-CN") : ""} ~ ${cur.end ? new Date(cur.end).toLocaleDateString("zh-CN") : ""}</div>` : "")
-      : '<div class="act-empty">暂无活动，敬请期待</div>';
     mask.innerHTML = `
       <div class="ex-wrap" style="max-width:520px;height:80vh">
         <div class="ex-head" style="padding-top:11px">
@@ -878,22 +883,69 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
                 <b>${_escHtml(a.title)}</b>${a.tag ? `<i>${_escHtml(a.tag)}</i>` : ""}
               </div>`).join("") : '<div class="act-empty" style="padding:14px 6px">暂无活动</div>'}
           </div>
-          <div class="act-stage" id="actStage">
-            ${contentHtml}
-          </div>
+          <div class="act-stage" id="actStage">${actStageHtml(list[ACTC.cur])}</div>
         </div>
       </div>`;
     document.getElementById("actClose").onclick = closeAct;
     mask.querySelectorAll(".act-nav-item").forEach(it => it.onclick = () => {
       ACTC.cur = +it.dataset.i;
       mask.querySelectorAll(".act-nav-item").forEach(x => x.classList.toggle("on", x === it));
-      const c = list[ACTC.cur];
-      document.getElementById("actStage").innerHTML = c
-        ? (c.img ? `<div class="act-banner"><img src="${_escHtml(c.img)}" alt="" onerror="this.style.display='none'"></div>` : "") +
-          `<div class="act-content">${_escHtml(c.content || "活动详情敬请期待").replace(/\n/g, "<br>")}</div>` +
-          ((c.start || c.end) ? `<div class="act-time">⏱ ${c.start ? new Date(c.start).toLocaleDateString("zh-CN") : ""} ~ ${c.end ? new Date(c.end).toLocaleDateString("zh-CN") : ""}</div>` : "")
-        : '<div class="act-empty">暂无活动</div>';
+      document.getElementById("actStage").innerHTML = actStageHtml(list[ACTC.cur]);
+      if (list[ACTC.cur] && list[ACTC.cur].type === "duiduile") loadDdBox();
     });
+    if (list[ACTC.cur] && list[ACTC.cur].type === "duiduile") loadDdBox();
+  }
+
+  /* —— 灵气堆堆乐：参与按钮 + 数字翻滚动画 —— */
+  let DD = { busy: false };
+  async function loadDdBox() {
+    const box = document.getElementById("ddBox");
+    if (!box) return;
+    try {
+      const d = await shApi("/api/shanhai/duiduile/info", {});
+      if (!d.ok) throw new Error(d.error || "加载失败");
+      const i = d.info;
+      if (!i.open) { box.innerHTML = '<div class="act-empty">活动未开启</div>'; return; }
+      const leftTxt = i.freeLeft > 0 ? '免费×1' : (i.bonusLeft > 0 ? `通关加成×${i.bonusLeft}` : `灵气 ${i.cost}/次`);
+      const canIn = i.inWindow || i.beta;
+      box.innerHTML = `
+        <div class="dd-status">已参与 <b>${i.plays}</b> 次 ｜ 剩余次数：<b>${leftTxt}</b>${i.beta ? ' ｜ <em>内测模式</em>' : ''}</div>
+        <div class="dd-note">投入 ${i.cost} 灵气触发翻倍：90% 1~2倍 · 8% 2~3倍 · 1.9% 3~5倍 · 0.1% 5~10倍。奖励在活动结束次日起分 100 天每日发放。每通关 10 关 +1 次参与机会（当前通关 ${i.cleared} 关）。</div>
+        <button class="dd-btn" id="ddPlay" ${canIn ? '' : 'disabled'}>${i.plays === 0 ? '免费参与' : (i.freeLeft > 0 || i.bonusLeft > 0 ? '使用次数参与' : '投入 ' + i.cost + ' 灵气 参与')}</button>
+        <div class="dd-result" id="ddResult">${i.last ? `上次：×${i.last.mult} → <b>${i.last.reward}</b> 灵气 ｜ 已释放 ${i.last.releasedDays}/100 天（每天约 ${i.last.perDay}）` : '还没有参与记录'}</div>`;
+      const btn = document.getElementById("ddPlay");
+      if (btn) btn.onclick = playDd;
+    } catch (e) { box.innerHTML = '<div class="act-empty">' + _escHtml(e.message || "") + '</div>'; }
+  }
+  async function playDd() {
+    if (DD.busy) return;
+    const res = document.getElementById("ddResult");
+    const btn = document.getElementById("ddPlay");
+    DD.busy = true; if (btn) btn.disabled = true;
+    if (res) res.innerHTML = '<div class="dd-roll" id="ddRoll">×1.00</div><div class="dd-sub">灵气翻倍中…</div>';
+    try {
+      const d = await shApi("/api/shanhai/duiduile/play", {});
+      if (!d.ok) throw new Error(d.error || "参与失败");
+      // 数字翻滚：×1.00 缓动滚到最终倍率
+      const dur = 2200, t0 = performance.now();
+      await new Promise(done => {
+        const tick = () => {
+          const p = Math.min(1, (performance.now() - t0) / dur);
+          const ease = 1 - Math.pow(1 - p, 3);
+          const el = document.getElementById("ddRoll");
+          if (el) el.textContent = "×" + (1 + (d.mult - 1) * ease).toFixed(2);
+          if (p < 1) requestAnimationFrame(tick); else done();
+        };
+        requestAnimationFrame(tick);
+      });
+      if (res) res.innerHTML = `<div class="dd-final">×${d.mult} ｜ 获得 <b>${d.reward}</b> 灵气</div><div class="dd-sub">将于活动结束次日起分 ${d.days} 天发放，每天约 ${d.perDay} 灵气（最后一天发尾差）</div>`;
+      toast(`翻倍 ×${d.mult}！获得 ${d.reward} 灵气`);
+    } catch (e) {
+      if (res) res.innerHTML = '<div class="act-empty">' + _escHtml(e.message || "") + '</div>';
+    }
+    DD.busy = false;
+    const b2 = document.getElementById("ddPlay");
+    if (b2) { b2.disabled = false; b2.textContent = '再玩一次'; }
   }
 
   async function showActCenter() {
