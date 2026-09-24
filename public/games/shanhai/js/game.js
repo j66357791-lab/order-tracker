@@ -69,11 +69,13 @@ const Game = (() => {
     } catch (e) { console.warn("meta bonus fail", e); }
     weapons = new WeaponSystem(hero);
     boss = null;
-    enemyPool = new Pool(() => new Enemy(), (e, t, x, y) => e.reset(t, x, y), 60);
-    projPool = new Pool(() => new Projectile(), (p, k, x, y, dx, dy, prm) => p.reset(k, x, y, dx, dy, prm), 80);
-    pickupPool = new Pool(() => new Pickup(), (p, k, x, y) => p.reset(k, x, y), 100);
-    fxPool = new Pool(() => new Fx(), (f, k, x, y, s) => f.reset(k, x, y, s), 30);
-    dmgTextPool = new Pool(() => new DamageText(), (d, x, y, t, c, b) => d.reset(x, y, t, c, b), 30);
+    // 【2026-09-24 性能优化】各池加存活上限（第 4 参数）：高负载战斗（Boss 召唤翻倍、
+    // 全屏弹幕、伤害数字刷屏）下对象数有界，帧率稳定，低端机不再越打越卡
+    enemyPool = new Pool(() => new Enemy(), (e, t, x, y) => e.reset(t, x, y), 60, 240);
+    projPool = new Pool(() => new Projectile(), (p, k, x, y, dx, dy, prm) => p.reset(k, x, y, dx, dy, prm), 80, 400);
+    pickupPool = new Pool(() => new Pickup(), (p, k, x, y) => p.reset(k, x, y), 100, 300);
+    fxPool = new Pool(() => new Fx(), (f, k, x, y, s) => f.reset(k, x, y, s), 30, 100);
+    dmgTextPool = new Pool(() => new DamageText(), (d, x, y, t, c, b) => d.reset(x, y, t, c, b), 30, 60);
     grid = new SpatialGrid(64);
     waveIdx = 0; waveT = 0; spawnT = 0; spawnQueue = [];
     stats = { time: 0, kills: 0, level: 1, dmg: 0 };
@@ -542,11 +544,17 @@ const Game = (() => {
       Assets.draw(ctx, d.kind, 0, d.x, d.y, d.scale);
     }
 
+    // 【2026-09-24 性能优化】视口裁剪：屏幕外的实体不再发起 drawImage 调用。
+    // 高关卡怪物/弹幕/特效数量大，视野外绘制是纯浪费（原本只有装饰做了裁剪）
+    const cullL = camera.x - W / 2 - 80, cullR = camera.x + W / 2 + 80;
+    const cullT = camera.y - H / 2 - 90, cullB = camera.y + H / 2 + 90;
+    const inView = (x, y) => x > cullL && x < cullR && y > cullT && y < cullB;
+
     // —— 拾取 ——
-    for (const pk of pickupPool.active) pk.draw(ctx);
+    for (const pk of pickupPool.active) { if (inView(pk.x, pk.y)) pk.draw(ctx); }
 
     // —— 怪 ——
-    for (const e of enemyPool.active) e.draw(ctx);
+    for (const e of enemyPool.active) { if (inView(e.x, e.y)) e.draw(ctx); }
 
     // —— Boss ——
     if (boss) boss.draw(ctx);
@@ -555,11 +563,11 @@ const Game = (() => {
     hero.draw(ctx);
 
     // —— 弹幕 ——
-    for (const p of projPool.active) p.draw(ctx);
+    for (const p of projPool.active) { if (inView(p.x, p.y)) p.draw(ctx); }
 
     // —— 特效 + 伤害数字 ——
-    for (const f of fxPool.active) f.draw(ctx);
-    for (const d of dmgTextPool.active) d.draw(ctx);
+    for (const f of fxPool.active) { if (inView(f.x, f.y)) f.draw(ctx); }
+    for (const d of dmgTextPool.active) { if (inView(d.x, d.y)) d.draw(ctx); }
 
     // —— 拾取半径提示（低透明圈）——
     ctx.save();
@@ -624,6 +632,23 @@ const Game = (() => {
     start() {
       resize();
       window.addEventListener("resize", resize);
+      // 【2026-09-24 稳定性】客户端全局错误兜底：
+      // ① 未捕获异常/rejection 不再静默丢掉，记入 window.__err（结算页/客服可查，便于定位"闪退"）；
+      // ② 页面切后台再回来时强制一帧小步长，避免超长 dt 造成瞬移/穿模（rAF 暂停期间 last 停在旧时间戳）
+      window.__err = window.__err || [];
+      window.addEventListener("error", e => {
+        const msg = (e && e.message) || String(e);
+        if (window.__err.length < 50) window.__err.push("error: " + msg);
+        console.error("[game] uncaught:", e.error || e);
+      });
+      window.addEventListener("unhandledrejection", e => {
+        const r = e && e.reason;
+        if (window.__err.length < 50) window.__err.push("rejection: " + ((r && r.message) || String(r)));
+        console.error("[game] unhandledRejection:", r);
+      });
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && state === "playing") last = 0;   // 回前台第一帧按 0.016 起步
+      });
       requestAnimationFrame(loop);
     },
     startRun,
