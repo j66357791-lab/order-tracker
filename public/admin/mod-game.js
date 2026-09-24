@@ -173,9 +173,11 @@ export function mount(root) {
         .st-lbl input { width:34px !important; flex:0 0 34px !important; }
         .st-wide { font:11.5px/1.4 sans-serif; padding:2px 4px; border:1px solid #e3eaf2; border-radius:4px; width:100%; box-sizing:border-box; background:#fbfdff; }
         .st-add { width:100%; }
+        .st-adv-toggle { margin-left:auto; font:600 11px/1.4 sans-serif; color:#1f4e79; display:flex; align-items:center; gap:3px; }
+        .st-line select { min-width:0; }
       </style>
       <h2 class="serif">流派技能树配置</h2>
-      <div class="sub">与玩家端「技能阁」同构的树状编辑：每个竖列是一个分支方向，从上往下依次是技能节点。直接在卡片里改名称/类型/消耗/最高等级/前置条件/加成/说明，点 ✕ 删除，列底「＋加技能」新增。保存后玩家端即时生效。</div>
+      <div class="sub">和玩家端一样的树：每个竖列是一个分支方向，技能从上往下排。<b>最常用就三件事</b>——改技能名、改「级」（最高等级）、在「前置」里选先学哪个技能。点 ✕ 删除，列底「＋加技能」。改完点下方「保存技能树」。</div>
       <div class="st-tabs" id="stTabs"></div>
       <div id="stEditor"><div class="empty">加载中…</div></div>
       <div class="inline" style="margin-top:10px">
@@ -704,7 +706,7 @@ export function mount(root) {
   // 数据结构与服务端一致：factions[{id,name,icon,desc,starter,branches[{id,name,role,nodes[
   //   {id,name,type,cost,max,eff,desc,req:{node,lv}}]}]}]
   // 紧凑竖向：流派 pill 切换 → 分支块竖排 → 节点一行一条
-  let ST = { factions: [], cur: 0, custom: false };
+  let ST = { factions: [], cur: 0, custom: false, adv: false };
   const ST_TYPE = { minor: '属性', special: '特殊', play: '玩法', ultimate: '主动' };
   const stUid = () => 'n' + Date.now().toString(36).slice(-5) + Math.floor(Math.random() * 90 + 10);
 
@@ -751,6 +753,7 @@ export function mount(root) {
         <label>图标 <input data-f="icon" value="${esc(f.icon || '')}" style="width:44px"></label>
         <label>简介 <input data-f="desc" value="${esc(f.desc || '')}" style="flex:1;min-width:160px"></label>
         <label><input type="checkbox" data-f="starter" ${f.starter ? 'checked' : ''}> 新手流派</label>
+        <label class="st-adv-toggle"><input type="checkbox" data-adv ${ST.adv ? 'checked' : ''}> 高级设置</label>
       </div>
       <div class="st-rail"></div>
       <div class="st-cols">
@@ -765,19 +768,21 @@ export function mount(root) {
         <div class="st-card">
           <div class="st-line">
             <input data-n="${bi}_${ni}" data-k="name" value="${esc(n.name)}" placeholder="技能名" title="技能名（节点 id: ${esc(n.id)}）">
+            <label class="st-lbl" title="最高可升级等级">级<input data-n="${bi}_${ni}" data-k="max" type="number" min="1" max="50" value="${+n.max || 1}"></label>
             <button class="st-del" data-act="delNode" data-b="${bi}" data-n="${ni}" title="删除该技能">✕</button>
           </div>
           <div class="st-line">
-            <select data-n="${bi}_${ni}" data-k="type" title="节点类型">${Object.entries(ST_TYPE).map(([k, v]) => `<option value="${k}" ${n.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
-            <label class="st-lbl" title="每次学习消耗天赋点">耗<input data-n="${bi}_${ni}" data-k="cost" type="number" min="0" max="20" value="${+n.cost || 0}"></label>
-            <label class="st-lbl" title="最高可升级等级">级<input data-n="${bi}_${ni}" data-k="max" type="number" min="1" max="50" value="${+n.max || 1}"></label>
+            <select data-n="${bi}_${ni}" data-k="reqNode" title="前置技能：选了之后，前置技能达到指定等级才能学本技能">${nodeOpts(ST.cur).replace(`value="${esc((n.req || {}).node || '')}"`, `value="${esc((n.req || {}).node || '')}" selected`)}</select>
+            ${(n.req && n.req.node) ? `<label class="st-lbl" title="前置技能需达到的等级">需<input data-n="${bi}_${ni}" data-k="reqLv" type="number" min="1" max="50" value="${(n.req || {}).lv || 1}"></label>` : ''}
           </div>
-          <div class="st-line">
-            <select data-n="${bi}_${ni}" data-k="reqNode" title="前置技能（需达到指定等级才能学本技能）">${nodeOpts(ST.cur).replace(`value="${esc((n.req || {}).node || '')}"`, `value="${esc((n.req || {}).node || '')}" selected`)}</select>
-            <label class="st-lbl" title="前置技能需达到的等级">前<input data-n="${bi}_${ni}" data-k="reqLv" type="number" min="1" max="50" value="${(n.req || {}).lv || 1}" ${n.req && n.req.node ? '' : 'disabled'}></label>
+          <div class="st-adv" style="${ST.adv ? '' : 'display:none'}">
+            <div class="st-line">
+              <select data-n="${bi}_${ni}" data-k="type" title="节点类型">${Object.entries(ST_TYPE).map(([k, v]) => `<option value="${k}" ${n.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+              <label class="st-lbl" title="每次学习消耗天赋点">耗<input data-n="${bi}_${ni}" data-k="cost" type="number" min="0" max="20" value="${+n.cost || 0}"></label>
+            </div>
+            <input class="st-wide" data-n="${bi}_${ni}" data-k="eff" value="${esc(effToText(n.eff))}" placeholder="加成：atk:2, crit:3">
+            <input class="st-wide" data-n="${bi}_${ni}" data-k="desc" value="${esc(n.desc || '')}" placeholder="说明（玩家可见）">
           </div>
-          <input class="st-wide" data-n="${bi}_${ni}" data-k="eff" value="${esc(effToText(n.eff))}" placeholder="加成：atk:2, crit:3">
-          <input class="st-wide" data-n="${bi}_${ni}" data-k="desc" value="${esc(n.desc || '')}" placeholder="玩家看到的说明">
         </div>`).join('')}
         <button class="st-mini st-add" data-act="addNode" data-b="${bi}">＋ 加技能</button>
       </div>`).join('')}
@@ -790,6 +795,9 @@ export function mount(root) {
     const f = ST.factions[ST.cur];
     if (!f) return;
     const ed = $('stEditor');
+    // 【v26.22】高级设置开关：默认只显示"技能名/最高等级/前置"，勾选后才展开类型/消耗/加成/说明
+    const adv = ed.querySelector('[data-adv]');
+    if (adv) adv.onchange = () => { ST.adv = adv.checked; renderSkillTree(); };
     // 流派头
     ed.querySelectorAll('[data-f]').forEach(el => {
       const k = el.dataset.f;
