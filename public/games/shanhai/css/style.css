@@ -661,6 +661,9 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 }
 .fac-node.full { border-color: #d9b061; background: #fdf6e3; }
 .fac-node.can { border-color: #2f7a5a; background: #eef8f1; }
+/* 【v26.17】前置未解锁：灰显 + 虚线边框，一眼区分"能点/不能点" */
+.fac-node.reqlocked { opacity: .55; border-style: dashed; border-color: rgba(122, 96, 48, .35); background: rgba(255, 255, 255, .35); cursor: not-allowed; }
+.fac-node.reqlocked em { color: #a05a2c; }
 .fac-node .fn-lv { font: 900 10px/1.3 "PingFang SC", sans-serif; color: #b8641a; }
 .fac-node b { display: block; font: 900 11px/1.4 "PingFang SC", sans-serif; color: #3a2f1c; }
 .fac-node i { display: block; font: 8.5px/1.4 sans-serif; color: #8a6a2a; font-style: normal; }
