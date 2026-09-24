@@ -543,36 +543,36 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 
 /* ==================== 【v26.9】商城：礼包方形卡牌 + 装备阁楼入口 ==================== */
 .pack-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* 【v26.11】整体缩小一倍：原尺寸在手机上占得太满，一屏只看到两张卡 */
 .pack-card {
-  position: relative; padding: 13px 10px 12px; border-radius: 14px; text-align: center;
+  position: relative; padding: 7px 6px 7px; border-radius: 10px; text-align: center;
   background: url(../assets/exchange/ex-frame.png?v=26) center/100% 100% no-repeat, #f7f2e4;
   border: 1px solid rgba(122, 96, 48, .34);
-  box-shadow: 0 3px 10px rgba(60, 40, 10, .18);
+  box-shadow: 0 2px 6px rgba(60, 40, 10, .16);
 }
 .pack-flag {
-  position: absolute; top: -1px; left: -1px; padding: 2px 8px; border-radius: 12px 0 12px 0;
-  font: 700 9.5px/1.5 "PingFang SC", sans-serif; color: #fff;
+  position: absolute; top: -1px; left: -1px; padding: 1px 5px; border-radius: 8px 0 8px 0;
+  font: 700 8px/1.4 "PingFang SC", sans-serif; color: #fff;
   background: linear-gradient(180deg, #e0603a, #c2401c);
 }
 /* 【v26.10】图标不用 emoji，改古风篆字 + 金色圆底（像印章） */
 .pack-ico {
-  width: 58px; height: 58px; margin: 0 auto; border-radius: 50%;
+  width: 30px; height: 30px; margin: 0 auto; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font: 900 26px/1 "STKaiti", "KaiTi", serif; color: #5a3f14;
+  font: 900 14px/1 "STKaiti", "KaiTi", serif; color: #5a3f14;
   background: radial-gradient(circle at 34% 28%, #f6e2a8, #d9b061 62%, #b98d3c);
-  box-shadow: 0 2px 8px rgba(120, 86, 20, .35), inset 0 0 0 2px rgba(255, 250, 230, .55);
+  box-shadow: 0 1px 4px rgba(120, 86, 20, .35), inset 0 0 0 1px rgba(255, 250, 230, .55);
 }
-/* 结果层里的大图标同理 */
-.bag-open .pack-ico { width: 66px; height: 66px; font-size: 30px; }
-.pack-name { margin-top: 4px; font: 900 13px/1.4 "PingFang SC", sans-serif; color: #3a2f1c; }
-.pack-desc { margin-top: 3px; font: 10.5px/1.45 sans-serif; color: #6a5c3f; min-height: 30px; }
-.pack-rate { margin-top: 3px; font: 10px/1.45 sans-serif; color: #8a6a2a; min-height: 26px; }
-.pack-price { margin-top: 6px; font: 900 16px/1.3 "PingFang SC", sans-serif; color: #b8641a; }
-.pack-price i { font-style: normal; font-size: 10px; color: #8a7a58; margin-left: 2px; }
-.pack-price em { display: block; font: 400 9.5px/1.4 sans-serif; color: #a09480; text-decoration: line-through; }
+.bag-open .pack-ico { width: 34px; height: 34px; font-size: 16px; }
+.pack-name { margin-top: 2px; font: 900 10.5px/1.35 "PingFang SC", sans-serif; color: #3a2f1c; }
+.pack-desc { margin-top: 1px; font: 8.5px/1.4 sans-serif; color: #6a5c3f; min-height: 24px; }
+.pack-rate { margin-top: 1px; font: 8px/1.4 sans-serif; color: #8a6a2a; min-height: 22px; }
+.pack-price { margin-top: 3px; font: 900 12px/1.25 "PingFang SC", sans-serif; color: #b8641a; }
+.pack-price i { font-style: normal; font-size: 8px; color: #8a7a58; margin-left: 1px; }
+.pack-price em { display: block; font: 400 8px/1.3 sans-serif; color: #a09480; text-decoration: line-through; }
 .pack-buy {
-  margin-top: 7px; width: 100%; padding: 6px 0; border: none; border-radius: 14px; cursor: pointer;
-  font: 900 12px/1 "PingFang SC", sans-serif; color: #fff;
+  margin-top: 4px; width: 100%; padding: 4px 0; border: none; border-radius: 9px; cursor: pointer;
+  font: 900 9.5px/1 "PingFang SC", sans-serif; color: #fff;
   background: linear-gradient(180deg, #4a9a6e, #2f6b4c);
 }
 .pack-buy:disabled { background: #d7cfbe; color: #9c8b6b; cursor: default; }
@@ -590,6 +590,58 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .gacha-hall-cur { display: flex; justify-content: center; gap: 10px; margin-bottom: 8px; }
 .cur-chip.stone { display: inline-flex; align-items: center; gap: 3px; }
 .stone-ico { width: 18px; height: 18px; display: block; }
+
+/* ==================== 【v26.11】流派 + 天赋树 ==================== */
+.fac-point {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 10px;
+  border-radius: 10px; background: rgba(255, 252, 244, .6); border: 1px solid rgba(122, 96, 48, .2);
+  font: 12px/1.5 "PingFang SC", sans-serif; color: #6b5f45;
+}
+.fac-point b { font: 900 16px/1 "PingFang SC", sans-serif; color: #b8641a; }
+.fac-on {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px;
+  font: 700 9.5px/16px "PingFang SC", sans-serif; font-style: normal; color: #fff;
+  background: linear-gradient(180deg, #4a9a6e, #2f6b4c);
+}
+.fac-new {
+  display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 4px;
+  font: 700 9px/15px "PingFang SC", sans-serif; font-style: normal; color: #8a6a2a;
+  background: rgba(217, 176, 97, .25);
+}
+.fac-equip {
+  margin-left: auto; padding: 5px 12px; border: none; border-radius: 12px; cursor: pointer;
+  font: 900 11px/1 "PingFang SC", sans-serif; color: #fff;
+  background: linear-gradient(180deg, #4a9a6e, #2f6b4c);
+}
+.fac-list { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.fac-card {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; cursor: pointer;
+  background: rgba(255, 252, 244, .62); border: 1px solid rgba(122, 96, 48, .26);
+}
+.fac-card.on { border-color: #2f7a5a; background: #eef8f1; }
+.fac-ico { font-size: 26px; line-height: 1; font-style: normal; }
+.fac-main { flex: 1; min-width: 0; }
+.fac-main b { display: block; font: 900 13px/1.5 "PingFang SC", sans-serif; color: #3a2f1c; }
+.fac-main i { display: block; font: 10.5px/1.4 sans-serif; color: #8a7a58; font-style: normal; }
+.fac-go { font: 900 11px/1 "PingFang SC", sans-serif; color: #8a6a2a; }
+.fac-branch { margin-bottom: 14px; }
+.fac-bh { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.fac-bh b { font: 900 13px/1.4 "STKaiti", serif; color: #6b4a10; }
+.fac-bh i { font: 10px/1.4 sans-serif; color: #9c8b6b; font-style: normal; }
+.fac-nodes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.fac-node {
+  padding: 7px 5px; border-radius: 10px; text-align: center; cursor: pointer;
+  background: rgba(255, 255, 255, .5); border: 1.5px solid rgba(122, 96, 48, .3);
+}
+.fac-node.full { border-color: #d9b061; background: #fdf6e3; }
+.fac-node.can { border-color: #2f7a5a; background: #eef8f1; }
+.fac-node .fn-lv { font: 900 10px/1.3 "PingFang SC", sans-serif; color: #b8641a; }
+.fac-node b { display: block; font: 900 11px/1.4 "PingFang SC", sans-serif; color: #3a2f1c; }
+.fac-node i { display: block; font: 8.5px/1.4 sans-serif; color: #8a6a2a; font-style: normal; }
+.fac-node span { display: block; margin-top: 2px; font: 8.5px/1.35 sans-serif; color: #6a5c3f; min-height: 24px; }
+.fac-node em { display: block; font: 700 8.5px/1.4 sans-serif; color: #9c8b6b; font-style: normal; }
+.fac-node.full em { color: #b8641a; }
+.fac-node.can em { color: #2f7a5a; }
 
 /* ==================== 【v26.10】山海录：功能入口 + 技能阁 ==================== */
 .sh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 4px 0 10px; }
