@@ -32,6 +32,10 @@ const DEFAULT_CFG = {
   // 【v26.9】价格波动率：每轮价格中枢随机游走的幅度（%），越大行情起伏越明显。
   // 太小 → 走势是条直线（一眼假）；太大 → 价格乱跳。3% 是比较自然的日间波动。
   volatility: 3,
+  // 【v26.18】单轮最大涨跌幅（%）：无论随机游走/脉冲/剧本怎么算，
+  // 中枢相对上一轮的变化被夹在此范围内——行情再剧烈也不会一步跳崩，
+  // 管理员可调大（最高 50）做演示行情，也可调小（0.1）做超平稳市场
+  moveCapPct: 5,
   // 【v26.5】买卖最小价差：卖单最低价 − 买单最高价。
   // 这是防套利的核心参数 —— 价差必须盖住「双向手续费」，否则玩家能低买高卖刷钱。
   spreadMin: 0.001,
@@ -198,7 +202,23 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
   // ==================== 一轮做市 ====================
   // 单笔：优先吃玩家挂单；没有可吃的就自己挂一单补流动性
   async function oneTrade(db, cfg, center) {
-    const side = Math.random() < 0.5 ? 'sell' : 'buy';       // 机器人这一笔想「卖灵气」还是「买灵气」
+    // 【v26.18】按库存智能选边：卖单消耗灵气额度、买单消耗现金。
+    // 原先纯随机 50/50——任一资源见底后，一半的轮次都在空转（bot_no_lingqi/bot_no_cash）。
+    // 现在：资源见底强制走另一边；都健康时按灵气库存占比偏移（灵气多偏卖、现金多偏买），自动再平衡。
+    const preFund = await ensureFund(db, cfg);
+    const preW = await botWallet(db);
+    const lingqiOk = (preFund.lingqi || 0) >= Math.max(1, Number(cfg.amountMin) || 1);
+    const cashOk = preW.available >= money4(Math.max(1, Number(cfg.amountMin) || 1) * (Number(cfg.priceMin) || 0.01));
+    if (!lingqiOk && !cashOk) return { skipped: 'bot_no_resources' };
+    let side;
+    if (!lingqiOk) side = 'buy';
+    else if (!cashOk) side = 'sell';
+    else {
+      const lingqiTotal = (preFund.lingqi || 0) + (preFund.lingqiFrozen || 0);
+      const ratio = lingqiTotal > 0 ? (preFund.lingqi || 0) / lingqiTotal : 0.5;
+      const sellBias = ratio > 0.7 ? 0.7 : ratio < 0.3 ? 0.3 : 0.5;
+      side = Math.random() < sellBias ? 'sell' : 'buy';
+    }
     // 【v26.5】价格不再在整段区间里乱撒，而是按「中间价 ± 半个价差」分别生成：
     //   机器人卖 → [askMin, askMin×1.35]      机器人买 → [bidMax×0.65, bidMax]
     // 这样无论随机到多少，卖价永远高于买价，玩家无法低买高卖套利。
@@ -293,11 +313,22 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
           await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
             { $inc: { balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
           await prof.updateOne({ userId: playerId }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
+          // 【v26.18 账本修复】机器人买入 → 灵气进机器人额度。
+          // 原先这笔从来没记！玩家持续把灵气卖给机器人，fund.lingqi 只出不进，
+          // 流干后所有卖单尝试都跳过 bot_no_lingqi —— 这就是"只剩买单、没有卖单"的根因
+          await db.collection(FUND_COL).updateOne({ _id: 'market' },
+            { $inc: { lingqi: n }, $set: { updatedAt: new Date() } }, { upsert: true });
         } else {
           // 机器人是卖家：收钱进交易所钱包；对手方是玩家挂的求购单，由他付钱
           await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
             { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
           await prof.updateOne({ userId: playerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
+          // 【v26.18 账本修复】机器人卖出 → 交付的灵气从额度扣掉。
+          // 原先只在挂单时冻结、成交后冻结额永不释放：frozen 越堆越大、可用灵气单边流失
+          if (!selfDeal) {
+            await db.collection(FUND_COL).updateOne({ _id: 'market' },
+              { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } }, { upsert: true });
+          }
           if (targetLegacyBuy) {
             // 从未冻结过的老求购单：从玩家的交易所余额实时扣
             await db.collection(EXW_COL).updateOne({ userId: playerId },
@@ -315,6 +346,19 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         if (botIsBuyer) {
           await db.collection(EXW_COL).updateOne({ userId: playerId },
             { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
+          if (selfDeal) {
+            // 【v26.18 账本修复】自成交（吃自己的卖单）：买方=卖方=机器人，
+            // 灵气只是从「冻结」回到「可用」——原先漏记这一步，每自成交一单就凭空销毁 n 灵气
+            await db.collection(FUND_COL).updateOne({ _id: 'market' },
+              { $inc: { lingqiFrozen: -n, lingqi: n }, $set: { updatedAt: new Date() } }, { upsert: true });
+          }
+        } else if (selfDeal) {
+          // 【v26.18 账本修复】自成交（吃自己的买单）：买方付的钱在挂单时已冻结，
+          // 这里从冻结划走；灵气卖出方与买入方都是机器人 → 净额为零。
+          // 原实现既不扣冻结又多记 lingqi+n，等于每单凭空印钱印灵气
+          await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+            { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
+          await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
         }
         // 手续费只落在台账（deals.fee），不进主站 wallet_log
       } catch (e) {
@@ -329,7 +373,11 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         // 【2026-09-24 修复】残余退款按订单冻结位置退——
         // v26.4+ 的求购单（exLocked）钱冻在交易所钱包 frozen 里，应解冻退回交易所；
         // 原先一律 writeLog 写进主站 wallet_log：既没解冻（玩家的钱永远冻死）又给主站余额凭空加钱
-        if (residual > 0) {
+        // 【v26.18】机器人自己的求购单残余同样退回交易所钱包（原先会错退进机器人主站 wallet_log）
+        if (residual > 0 && target.userId === BOT_ID) {
+          await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+            { $inc: { frozen: -residual }, $set: { updatedAt: new Date() } });
+        } else if (residual > 0) {
           if (target.exLocked) {
             await db.collection(EXW_COL).updateOne(
               { userId: target.userId }, { $inc: { frozen: -residual }, $set: { updatedAt: new Date() } });
@@ -487,6 +535,13 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
           c = money4(c * (1 + pressure * 0.02));                             // 最大 ±2% 偏移
         }
       } catch (e) { }
+    }
+    // 【v26.18】单轮涨跌幅管控：中枢相对上一轮的变化量夹在 ±moveCapPct% 内。
+    // 插针（spike）是管理员显式导演的动作，不受此限；游走/回归/脉冲/买卖压力全部受限。
+    const capPct = Math.max(0.1, Math.min(50, Number(cfg.moveCapPct) || 5)) / 100;
+    if (saved && Number.isFinite(saved) && saved > 0) {
+      const hi2 = money4(saved * (1 + capPct)), lo2 = money4(saved * (1 - capPct));
+      c = money4(Math.max(lo2, Math.min(hi2, c)));
     }
     c = money4(Math.max(min, Math.min(max, c)));                           // ④ 夹逼
     patch.priceCenter = c;
@@ -746,6 +801,8 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       if (b.priceMax !== undefined) patch.priceMax = num(b.priceMax, 0.18, 0.0001, 9999, 4);
       if (b.spreadMin !== undefined) patch.spreadMin = num(b.spreadMin, 0.001, 0.0001, 9999, 4);
       if (b.volatility !== undefined) patch.volatility = num(b.volatility, 3, 0.1, 30, 1);
+      // 【v26.18】单轮最大涨跌幅管控（%），上限放宽到 50 方便做演示行情
+      if (b.moveCapPct !== undefined) patch.moveCapPct = num(b.moveCapPct, 5, 0.1, 50, 1);
       if (b.amountMin !== undefined) patch.amountMin = Math.round(num(b.amountMin, 20, 1, 999999, 0));
       if (b.amountMax !== undefined) patch.amountMax = Math.round(num(b.amountMax, 500, 1, 999999, 0));
       if (patch.tradesMin && patch.tradesMax && patch.tradesMin > patch.tradesMax) {
