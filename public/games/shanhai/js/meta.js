@@ -21,7 +21,7 @@ const META = (() => {
     const eq = p.equip || {};
     const V = k => (eq[k] ? (eq[k].val || 0) / 100 : 0);
     const atkMul = 1 + V("weapon");
-    return {
+    const out = {
       atkMul,
       hpMul: 1 + V("armor"),
       fireMul: atkMul + sl.fireline * 0.06,
@@ -34,6 +34,33 @@ const META = (() => {
       moveMul: 1 + V("boots"),                            // 鞋子：移速
       dmgMul: 1 + V("accessory"),                         // 配饰：全伤害
     };
+    // 【v26.11】流派天赋叠加：把已学节点的 eff 汇总进加成。
+    // 有现成通道的直接生效（攻击/移速/血量/拾取/经验）；暴击/闪避/护盾/攻速/玩法类
+    // 塞进 facRaw，由战斗引擎按需读取（crit 判定已接 hero.critBonus）。
+    try {
+      const fc = factionCache;
+      if (fc && fc.current) {
+        const f = (fc.factions || []).find(x => x.id === fc.current);
+        const my = (fc.talents || {})[fc.current] || {};
+        if (f) {
+          const acc = {};
+          for (const b of (f.branches || [])) {
+            for (const n of (b.nodes || [])) {
+              const lv = +my[n.id] || 0;
+              if (!lv) continue;
+              for (const [k, v] of Object.entries(n.eff || {})) acc[k] = (acc[k] || 0) + (+v) * lv;
+            }
+          }
+          out.dmgMul += (acc.atk || 0) / 100;
+          out.moveMul += (acc.moveSpd || 0) / 100;
+          out.hpMul += (acc.hp || 0) / 100;
+          out.pickupMul += (acc.pickRange || 0) / 100;
+          out.expMul += (acc.expRate || 0) / 100;
+          out.facRaw = acc;      // crit/dodge/shield/atkSpd/summon/… 交给对局按需消费
+        }
+      }
+    } catch (e) { }
+    return out;
   }
 
   async function shApi(url, body) {
@@ -51,6 +78,8 @@ const META = (() => {
   async function load() {
     const d = await shApi("/api/shanhai/profile");
     profile = d.profile;
+    // 【v26.11】流派数据预取：startRun() 里 bonus() 要叠加天赋加成，开局就得有
+    shApi("/api/shanhai/faction").then(x => { if (x && x.ok) factionCache = x; }).catch(() => { });
     if (d.stamina) stamina = d.stamina;   // 【v24.9】
     return profile;
   }
@@ -92,7 +121,12 @@ const META = (() => {
   async function exDeal(orderId, amount) { return shApi("/api/shanhai/exchange/deal", { orderId, amount }); }
   async function exCancel(orderId) { return shApi("/api/shanhai/exchange/cancel", { orderId }); }
   // 【v26.11】流派与天赋树
-  async function factionInfo() { return shApi("/api/shanhai/faction"); }
+  let factionCache = null;
+  async function factionInfo() {
+    const d = await shApi("/api/shanhai/faction");
+    if (d && d.ok) factionCache = d;               // 缓存给 bonus() 叠天赋用
+    return d;
+  }
   async function factionSelect(id) { return shApi("/api/shanhai/faction/select", { id }); }
   async function talentLearn(factionId, nodeId) { return shApi("/api/shanhai/talent/learn", { factionId, nodeId }); }
   // 【v26.9】价格走势（range: 1d / 7d / 30d / all）
@@ -113,6 +147,7 @@ const META = (() => {
 
   return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, consumeStamina, dismantle, dismantlePrice, bonus, exBoard, exPublish, exDeal, exCancel,
     exDeposit, exWithdraw, lingqiInfo, lingqiClaim, shopInfo, shopBuy, equipUpgrade, equipCompose, exChart, factionInfo, factionSelect, talentLearn,
+    get factionCache() { return factionCache; },
     get profile() { return profile; }, get stamina() { return stamina; }, set stamina(v) { stamina = v; },
     set stageStars(v) { stageStars = v; }, get stageStars() { return stageStars; } };
 })();
