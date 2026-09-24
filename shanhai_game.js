@@ -903,13 +903,13 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   // ==================== 【v26.25】活动系统（活动中心 + 维护锁 + 测试账号） ====================
   async function loadActSys(db) {
     const d = await db.collection('shanhai_config').findOne({ _id: 'activity_sys' });
-    const v = Object.assign({ locked: false, testAccounts: [] }, (d && d.value) || {});
+    const v = Object.assign({ locked: false, testAccounts: [], duiduileBeta: false }, (d && d.value) || {});
     if (!Array.isArray(v.testAccounts)) v.testAccounts = String(v.testAccounts || '').split(/[,，\s]+/).filter(Boolean);
     return v;
   }
   const actPub = a => ({
     id: String(a._id), title: a.title, tag: a.tag || '', content: a.content || '',
-    img: a.img || '', start: a.start || null, end: a.end || null,
+    img: a.img || '', start: a.start || null, end: a.end || null, type: a.type || '',
   });
 
   // 玩家端：活动列表 + 维护锁状态（测试账号不受锁限制；名单不下发）
@@ -947,6 +947,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         content: String(b.content || '').slice(0, 5000),
         start: b.start ? new Date(b.start) : null,
         end: b.end ? new Date(b.end) : null,
+        type: String(b.type || '').trim().slice(0, 20),
         enabled: b.enabled !== false,
         updatedAt: new Date(),
       };
@@ -960,7 +961,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       }
       await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'admin_activity_save', detail: { title: doc.title }, createdAt: new Date() }).catch(() => { });
       res.json({ ok: true });
-    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '保存失败，请稍后再试' }); }
+    } catch (e) { console.error('[api] activity/save', e); res.status(500).json({ ok: false, error: '保存失败：' + String((e && e.message) || e).slice(0, 100) }); }
   });
   app.post('/api/shanhai/admin/activities/del', auth, adminOnly, async (req, res) => {
     try {
@@ -988,11 +989,134 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       let accounts = b.testAccounts || [];
       if (typeof accounts === 'string') accounts = accounts.split(/[,，\s]+/).filter(Boolean);
       accounts = accounts.map(s => String(s).trim().slice(0, 30)).filter(Boolean).slice(0, 50);
-      const value = { locked: !!b.locked, testAccounts: accounts, updatedAt: new Date() };
+      const value = { locked: !!b.locked, testAccounts: accounts, duiduileBeta: !!b.duiduileBeta, updatedAt: new Date() };
       await db.collection('shanhai_config').updateOne({ _id: 'activity_sys' }, { $set: { value } }, { upsert: true });
-      await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'admin_activity_sys', detail: { locked: value.locked, testers: accounts.length }, createdAt: new Date() }).catch(() => { });
+      await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'admin_activity_sys', detail: { locked: value.locked, testers: accounts.length, duiduileBeta: value.duiduileBeta }, createdAt: new Date() }).catch(() => { });
       res.json({ ok: true, sys: value });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '保存失败，请稍后再试' }); }
+  });
+
+  // ==================== 【v26.26】灵气堆堆乐（中秋活动玩法） ====================
+  // 投入 100 灵气 → 按概率翻倍（90% 1~2倍 / 8% 2~3倍 / 1.9% 3~5倍 / 0.1% 5~10倍）→
+  // 奖励在活动结束次日起分 100 天每日发放（每天 reward/100，最后一天发尾差）。
+  // 次数：每人 1 次免费 → 每通关 10 关 +1 次 → 之后每次投入 100 灵气。
+  const DD_COL = 'shanhai_duiduile';
+  const DD_COST = 100;
+  const DD_DAYS = 100;
+  function rollDuiduileMult() {
+    const r = Math.random();
+    let mult;
+    if (r < 0.9) mult = 1 + Math.random();
+    else if (r < 0.98) mult = 2 + Math.random();
+    else if (r < 0.999) mult = 3 + Math.random() * 2;
+    else mult = 5 + Math.random() * 5;
+    return Math.round(mult * 100) / 100;
+  }
+  const ddTester = (sys, me) => sys.testAccounts.includes(me.username) || (me.uid && sys.testAccounts.includes(String(me.uid)));
+
+  async function ddInfo(db, sys, me) {
+    const act = await db.collection('shanhai_activities').findOne({ type: 'duiduile', enabled: { $ne: false } });
+    if (!act) return { open: false, reason: '活动未配置' };
+    const now = new Date();
+    const inWindow = (!act.start || new Date(act.start) <= now) && (!act.end || new Date(act.end) >= now);
+    const beta = !!sys.duiduileBeta && ddTester(sys, me);
+    const played = await db.collection(DD_COL).countDocuments({ userId: me.id, activityId: String(act._id) });
+    const prof = await ensureProfile(db, me.id, me.displayName || me.username);
+    const bonusTotal = Math.floor((prof.clearedStages || []).length / 10);
+    const bonusUsed = played > 0 ? played - 1 : 0;
+    const last = await db.collection(DD_COL).findOne({ userId: me.id, activityId: String(act._id) }, { sort: { createdAt: -1 } });
+    return {
+      open: true, inWindow, beta, title: act.title, start: act.start, end: act.end,
+      plays: played, cleared: (prof.clearedStages || []).length,
+      freeLeft: played > 0 ? 0 : 1,
+      bonusLeft: Math.max(0, bonusTotal - bonusUsed),
+      cost: DD_COST, days: DD_DAYS,
+      last: last ? { mult: last.mult, reward: last.reward, releasedDays: last.releasedDays, perDay: last.perDay } : null,
+    };
+  }
+  app.post('/api/shanhai/duiduile/info', auth, limit({ name: 'sh-dd-info', max: 60, windowMs: 60 * 1000, msg: '太快了' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const sys = await loadActSys(db);
+      res.json({ ok: true, info: await ddInfo(db, sys, req.user) });
+    } catch (e) { console.error('[api] duiduile/info', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+  app.post('/api/shanhai/duiduile/play', auth, limit({ name: 'sh-dd-play', max: 15, windowMs: 60 * 1000, msg: '操作太频繁' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const sys = await loadActSys(db);
+      const me = req.user;
+      const act = await db.collection('shanhai_activities').findOne({ type: 'duiduile', enabled: { $ne: false } });
+      if (!act) return res.status(400).json({ ok: false, error: '活动未开启' });
+      const now = new Date();
+      const inWindow = (!act.start || new Date(act.start) <= now) && (!act.end || new Date(act.end) >= now);
+      const beta = !!sys.duiduileBeta && ddTester(sys, me);
+      if (!inWindow && !beta) return res.status(400).json({ ok: false, error: '不在活动参与时间内' });
+      const played = await db.collection(DD_COL).countDocuments({ userId: me.id, activityId: String(act._id) });
+      await ensureProfile(db, me.id, me.displayName || me.username);
+      const bonusTotal = Math.floor((await db.collection('shanhai_profiles').findOne({ userId: me.id }, { projection: { clearedStages: 1 } }) || { clearedStages: [] }).clearedStages?.length / 10 || 0);
+      const bonusUsed = played > 0 ? played - 1 : 0;
+      let costType = 'free';   // 消耗顺序：免费 1 次 → 通关加成次数 → 投入 100 灵气
+      if (played > 0) costType = bonusUsed < bonusTotal ? 'bonus' : 'lingqi';
+      if (costType === 'lingqi') {
+        const r = await db.collection('shanhai_profiles').findOneAndUpdate(
+          { userId: me.id, lingqi: { $gte: DD_COST } },
+          { $inc: { lingqi: -DD_COST }, $set: { updatedAt: new Date() } });
+        if (!r || !(r.value || r)) return res.status(400).json({ ok: false, error: `灵气不足（参与需投入 ${DD_COST} 灵气）`, code: 'NO_LINGQI' });
+      }
+      const mult = rollDuiduileMult();
+      const reward = Math.round(DD_COST * mult * 10) / 10;
+      const perDay = Math.round(reward / DD_DAYS * 100) / 100;
+      const releaseStart = act.end ? new Date(new Date(act.end).getTime() + 86400e3) : new Date(now.getTime() + 86400e3);
+      const r2 = await db.collection(DD_COL).insertOne({
+        userId: me.id, activityId: String(act._id), costType,
+        base: DD_COST, mult, reward, totalDays: DD_DAYS,
+        perDay, releasedDays: 0, releasedAmount: 0, releaseStart, lastDay: null,
+        createdAt: new Date(),
+      });
+      await db.collection('shanhai_logs').insertOne({ userId: me.id, action: 'duiduile_play', detail: { costType, mult, reward }, createdAt: new Date() }).catch(() => { });
+      res.json({ ok: true, costType, mult, reward, perDay, days: DD_DAYS, releaseStart: releaseStart.toISOString(), recordId: String(r2.insertedId) });
+    } catch (e) { console.error('[api] duiduile/play', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+  // 每日释放任务：活动结束次日起每天发 reward/100（最后一天发尾差）；幂等（按天标记 + 条件更新）
+  async function processDuiduileRelease() {
+    const db = await getDb();
+    const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    const docs = await db.collection(DD_COL).find({
+      releasedDays: { $lt: DD_DAYS }, releaseStart: { $lte: new Date() }, lastDay: { $ne: today },
+    }).limit(300).toArray();
+    for (const d0 of docs) {
+      const isLast = d0.releasedDays + 1 >= DD_DAYS;
+      const amt = isLast
+        ? Math.max(0, Math.round((d0.reward - d0.perDay * (DD_DAYS - 1)) * 100) / 100)
+        : d0.perDay;
+      const r = await db.collection(DD_COL).updateOne(
+        { _id: d0._id, lastDay: { $ne: today }, releasedDays: d0.releasedDays },
+        { $inc: { releasedDays: 1, releasedAmount: amt }, $set: { lastDay: today } });
+      if (r.modifiedCount && amt > 0) {
+        await db.collection('shanhai_profiles').updateOne({ userId: d0.userId }, { $inc: { lingqi: amt } });
+        await db.collection('shanhai_logs').insertOne({ userId: d0.userId, action: 'duiduile_release', detail: { day: d0.releasedDays + 1, amt }, createdAt: new Date() }).catch(() => { });
+      }
+    }
+    return docs.length;
+  }
+  setInterval(() => { processDuiduileRelease().catch(e => console.error('[duiduile] 释放任务', e.message)); }, 30 * 60 * 1000);
+  setTimeout(() => { processDuiduileRelease().catch(() => { }); }, 90 * 1000);
+  // 管理端：清理参与记录（全部 / 指定用户名或工号）——内测数据重置用
+  app.post('/api/shanhai/admin/duiduile/cleanup', auth, adminOnly, async (req, res) => {
+    try {
+      const b = req.body || {};
+      const q = {};
+      const who = String(b.username || '').trim();
+      if (who) {
+        const u = await db.collection('users').findOne(/^\d{7}$/.test(who) ? { uid: who } : { username: who });
+        if (!u) return res.status(400).json({ ok: false, error: '未找到该用户' });
+        q.userId = u._id.toString();
+      }
+      const r = await db.collection(DD_COL).deleteMany(q);
+      await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'admin_dd_cleanup', detail: { deleted: r.deletedCount, who: who || 'ALL' }, createdAt: new Date() }).catch(() => { });
+      res.json({ ok: true, deleted: r.deletedCount });
+    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '清理失败，请稍后再试' }); }
   });
 
   // ==================== 体力（v24.9） ====================
