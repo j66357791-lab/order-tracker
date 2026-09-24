@@ -1247,9 +1247,45 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const prices = pts.map(p => p.price);
       const first = prices.length ? prices[0] : 0;
       const cur = prices.length ? prices[prices.length - 1] : 0;
+
+      // 【v26.12】K 线：先用**更细的桶**（1d/7d→分钟，30d→小时，all→天）做加权均价，
+      // 再把细桶聚合成蜡烛：开盘=桶内第一笔，收盘=最后一笔，高低=区间极值。
+      // 这样才能画出股票那种带上下影线的柱子，而不只是一条折线。
+      const fineMs = range === '1d' || range === '7d' ? 60000 : range === '30d' ? 3600000 : DAY;
+      const groupMs = range === '1d' ? 3600000 : range === '7d' ? 4 * 3600000 : range === '30d' ? DAY : 30 * DAY;
+      const fine = new Map();
+      for (const r of rows) {
+        const b = Math.floor(new Date(r.createdAt).getTime() / fineMs) * fineMs;
+        const c = fine.get(b) || { q: 0, v: 0, hi: 0, lo: Infinity, first: null, last: 0, at: new Date(r.createdAt).getTime() };
+        const p = Number(r.price) || 0;
+        if (c.first === null) c.first = p;
+        c.last = p;
+        c.q += Number(r.amount) || 0;
+        c.v += Number(r.total) || 0;
+        if (p > c.hi) c.hi = p;
+        if (p < c.lo) c.lo = p;
+        fine.set(b, c);
+      }
+      const hourMap = new Map();
+      for (const [t, c] of [...fine.entries()].sort((a, b) => a[0] - b[0])) {
+        if (!(c.q > 0)) continue;
+        const p = money4(c.v / c.q);
+        const g = Math.floor(t / groupMs) * groupMs;
+        const cur = hourMap.get(g) || { t: g, o: c.first, c: p, hi: 0, lo: Infinity, v: 0 };
+        cur.c = p;                                                          // 收盘 = 组内最后一笔
+        cur.hi = Math.max(cur.hi, c.hi === 0 ? p : c.hi, p);
+        cur.lo = Math.min(cur.lo, c.lo === Infinity ? p : c.lo, p);
+        cur.v += c.v;
+        hourMap.set(g, cur);
+      }
+      const candles = [...hourMap.values()].sort((a, b) => a.t - b.t)
+        .map(c => ({ t: c.t, o: money4(c.o), c: money4(c.c), hi: money4(c.hi), lo: money4(c.lo), v: money4(c.v) }))
+        .slice(-60);
+
       res.json({
         ok: true, range, label, bucketMs,
         points: pts.slice(-120),                       // 最多留 120 个点，前端画得动
+        candles,
         first, cur,
         hi: prices.length ? Math.max(...prices) : 0,
         lo: prices.length ? Math.min(...prices) : 0,
