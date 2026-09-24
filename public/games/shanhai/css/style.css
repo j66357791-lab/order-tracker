@@ -537,6 +537,9 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .ex-tag-me { background: #d9a93f; }
 .ex-tag-buy { background: #3f8a63; }
 .ex-tag-sell { background: #b8842a; }
+/* 【v26.19】做市机器人「灵傀」标记 + 行底色微亮（恢复原有设计的视觉痕迹） */
+.ex-tag-bot { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 4px; font: 700 9.5px/15px "PingFang SC", sans-serif; color: #fff; vertical-align: 1px; background: linear-gradient(180deg, #7a8fd4, #4a5e9e); }
+.ex-row.bot-row { background: rgba(122, 143, 212, .07); }
 /* 交易记录行 */
 .ex-deal-row { justify-content: space-between; }
 .ex-deal-time { flex-shrink: 0; font: 10.5px/1.4 sans-serif; color: #9c8b6b; text-align: right; }
@@ -644,8 +647,10 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
   display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px;
   background: rgba(217, 176, 97, .18); border: 1px solid rgba(122, 96, 48, .3);
 }
-/* 树画布：缩放/拖拽视口与工具条 */
-.fac-viewport { overflow: hidden; touch-action: pan-y; cursor: grab; }
+/* 树画布：缩放/拖拽视口与工具条（touch-action:none 保证触屏拖拽/双指缩放不被浏览器接管） */
+.fac-viewport { overflow: hidden; touch-action: none; cursor: grab; }
+/* 【v26.19】恢复核心→分支的连接竖线（原思维导图设计的视觉痕迹） */
+.fac-trunk::after { content: ""; display: block; width: 2px; height: 12px; margin: 5px auto 0; background: rgba(122, 96, 48, .4); border-radius: 1px; }
 .fac-viewport:active { cursor: grabbing; }
 .fac-zoombar { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; }
 .fac-zoombar button {
