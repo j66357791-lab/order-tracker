@@ -278,7 +278,7 @@ const Game = (() => {
         if (!e.alive || p.hitIds.includes(e)) continue;
         const d = Math.hypot(e.x - p.x, e.y - p.y);
         if (d < p.radius + e.effRadius()) {
-          const crit = Math.random() < CONFIG.critRate;
+          const crit = Math.random() < CONFIG.critRate + (hero.critBonus || 0);
           const dmg = Math.round(p.dmg * (crit ? CONFIG.critMul : 1));
           const killed = e.hurt(dmg, p.slow);
           stats.dmg += dmg;
@@ -302,7 +302,7 @@ const Game = (() => {
       if (p.alive && boss && boss.alive) {
         const d = Math.hypot(boss.x - p.x, boss.y - p.y);
         if (d < p.radius + CONFIG.boss.radius) {
-          const crit = Math.random() < CONFIG.critRate;
+          const crit = Math.random() < CONFIG.critRate + (hero.critBonus || 0);
           const dmg = Math.round(p.dmg * (crit ? CONFIG.critMul : 1));
           stats.dmg += dmg;
           boss.hurt(dmg);
@@ -404,10 +404,21 @@ const Game = (() => {
     if (S.spd < 5) pool.push({ key: "swordspd", kind: "sword", name: "剑御风行", desc: "飞剑攻击速度 +20%", icon: "疾" });
     if (S.lock < 1) pool.push({ key: "swordlock", kind: "sword", name: "锁妖剑诀", desc: "飞剑锁定敌人，弹道追踪（精英）", icon: "锁" });
     if (S.burst < 1) pool.push({ key: "swordburst", kind: "sword", name: "万剑归宗", desc: "每射50剑，齐发10剑轰向妖群（精英）", icon: "万" });
-    // 属性强化
-    pool.push({ key: "atk", kind: "stat", name: "煞气淬炼", desc: "攻击力 +12%", icon: "煞" });
-    pool.push({ key: "spd", kind: "stat", name: "御风步", desc: "移动速度 +8%", icon: "风" });
-    pool.push({ key: "hp", kind: "stat", name: "龟息吐纳", desc: "生命上限 +15 并回满", icon: "龟" });
+    // 【v26.11】基础能力池：白50/蓝25/紫15/金8/神话2 —— 局内不再选技能强化，只抽基础能力
+    const IB = (window.META && META.factionCache) ? META.factionCache.inborn : null;
+    if (IB) {
+      const r = Math.random() * 100;
+      let acc = 0, q = "white";
+      for (const k of ["white", "blue", "purple", "gold", "myth"]) { acc += IB[k].w; if (r < acc) { q = k; break; } }
+      const mods = IB[q].mods;
+      const m = mods[Math.floor(Math.random() * mods.length)];
+      pool.push({ key: m.k, kind: "inborn", q, vNum: m.v, name: IB[q].name + " · " + m.t, desc: IB[q].name + "品质加成", icon: IB[q].name[0] });
+    } else {
+      // 兜底：流派数据还没加载出来时保留原三条，不至于没得选
+      pool.push({ key: "atk", kind: "stat", name: "煞气淬炼", desc: "攻击力 +12%", icon: "煞" });
+      pool.push({ key: "spd", kind: "stat", name: "御风步", desc: "移动速度 +8%", icon: "风" });
+      pool.push({ key: "hp", kind: "stat", name: "龟息吐纳", desc: "生命上限 +15 并回满", icon: "龟" });
+    }
     // 抽 3 个不重复
     const out = [];
     const used = new Set();
@@ -444,6 +455,21 @@ const Game = (() => {
   }
 
   function applyChoice(p) {
+    // 【v26.11】基础能力（品质池抽出）：按 key 直接套到英雄属性
+    if (p.kind === "inborn") {
+      const v = p.vNum || 0;
+      if (p.key === "atk") hero.dmgMul += v / 100;
+      else if (p.key === "moveSpd") hero.speed *= 1 + v / 100;
+      else if (p.key === "hp") { hero.maxHpBase = Math.round(hero.maxHpBase * (1 + v / 100)); hero.hp = Math.min(hero.maxHp, hero.hp + hero.maxHpBase * v / 100); }
+      else if (p.key === "atkSpd") hero.atkSpdBuff = (hero.atkSpdBuff || 0) + v / 100;
+      else if (p.key === "crit") hero.critBonus = (hero.critBonus || 0) + v / 100;
+      else if (p.key === "dodge") hero.dodgeBonus = (hero.dodgeBonus || 0) + v / 100;
+      else if (p.key === "shield") hero.shieldHp = (hero.shieldHp || 0) + v;
+      else if (p.key === "pickRange") hero.pickupRadius *= 1 + v / 100;
+      else if (p.key === "expRate") hero.expMul *= 1 + v / 100;
+      if (window.SFX) SFX.levelUp();
+      return;
+    }
     if (p.kind === "sword") {
       const S = weapons.swordSkill;
       if (p.key === "swordcount") S.count++;
