@@ -202,6 +202,35 @@ export function mount(root) {
         <button class="btn-main" id="stSave">保存技能树</button>
       </div>
     </div>
+
+    <div class="card">
+      <style>
+        .act-row { border:1px solid #dde5ee; border-radius:8px; padding:8px 10px; margin-bottom:8px; background:#fafcfe; }
+        .act-row .line { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:5px; }
+        .act-row .line:last-child { margin-bottom:0; }
+        .act-row input, .act-row select, .act-row textarea { font:12px/1.5 sans-serif; padding:3px 5px; border:1px solid #cfd8e3; border-radius:5px; box-sizing:border-box; }
+        .act-row textarea { width:100%; }
+        .act-row label { font:600 11px/1.4 sans-serif; color:#5b6a7d; display:flex; align-items:center; gap:3px; }
+        .act-badge-on { font:700 10px/1 sans-serif; color:#2f7a5a; background:#eef8f1; border-radius:8px; padding:3px 8px; }
+        .act-badge-off { font:700 10px/1 sans-serif; color:#8a97a8; background:#eef1f5; border-radius:8px; padding:3px 8px; }
+      </style>
+      <h2 class="serif">活动管理</h2>
+      <div class="sub">维护锁打开后，玩家端活动入口显示上锁样式、无法进入；测试账号（用户名或工号，逗号分隔）不受限制，可正常打开测试。</div>
+      <div class="inline" style="margin-top:10px">
+        <label class="mini-lbl">维护锁
+          <select id="actLock"><option value="0">关闭（活动可正常访问）</option><option value="1">开启（玩家端上锁）</option></select>
+        </label>
+        <label class="mini-lbl" style="flex:1">测试账号（逗号分隔，用户名或工号）
+          <input id="actTesters" placeholder="如：admin,1000001,tester01" style="width:100%">
+        </label>
+        <button class="btn-main" id="actSysSave">保存维护设置</button>
+      </div>
+      <div style="margin-top:12px" id="actList"><div class="empty">加载中…</div></div>
+      <div class="inline" style="margin-top:8px">
+        <button class="btn-ghost" id="actAdd">＋ 新增活动</button>
+        <button class="btn-ghost" id="actReload">刷新</button>
+      </div>
+    </div>
   </div>
 
   <!-- ============ 区三：数据与日志 ============ -->
@@ -1079,7 +1108,109 @@ export function mount(root) {
     toast('已导入到编辑器，请检查无误后点「保存技能树」');
   };
 
-  $('gmRefresh').onclick = () => { loadStats(); loadShanhai(); loadCfg(); loadSkillTree(); };
-  loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle(); loadSkillTree();
-  return { refresh: () => { loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle(); loadSkillTree(); } };
+  // ==================== 【v26.25】活动管理（维护锁 + 测试账号 + 活动增删改排序） ====================
+  const dts = v => { const d = new Date(v); return isNaN(d) ? '' : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+  let ACTROWS = [];
+
+  async function loadActMgr() {
+    try {
+      const j = await api('/api/shanhai/admin/activities');
+      if (!j.ok) throw new Error(j.error || '加载失败');
+      $('actLock').value = j.sys.locked ? '1' : '0';
+      $('actTesters').value = (j.sys.testAccounts || []).join(',');
+      ACTROWS = j.list;
+      renderActRows();
+    } catch (e) { $('actList').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+  }
+
+  function renderActRows() {
+    $('actList').innerHTML = ACTROWS.length
+      ? ACTROWS.map((a, i) => `
+      <div class="act-row" data-i="${i}">
+        <div class="line">
+          <label>标题<input data-k="title" value="${esc(a.title)}" style="width:180px"></label>
+          <label>角标<input data-k="tag" value="${esc(a.tag || '')}" style="width:80px" title="列表里的小字，如：限时/新活动"></label>
+          <label>启用<input type="checkbox" data-k="enabled" ${a.enabled ? 'checked' : ''}></label>
+          <span class="${a.enabled ? 'act-badge-on' : 'act-badge-off'}">${a.enabled ? '展示中' : '已停用'}</span>
+          <span style="flex:1"></span>
+          <button class="st-mini" data-act="up" data-i="${i}" title="上移">↑</button>
+          <button class="st-mini" data-act="down" data-i="${i}" title="下移">↓</button>
+          <button class="st-mini" data-act="save" data-i="${i}">保存</button>
+          <button class="st-mini" data-act="del" data-i="${i}" style="color:#b3452f">删除</button>
+        </div>
+        <div class="line">
+          <label>图片地址（可选，活动页顶部横幅）<input data-k="img" value="${esc(a.img || '')}" placeholder="/games/shanhai/assets/activity/banner.png" style="flex:1;min-width:220px"></label>
+        </div>
+        <div class="line">
+          <label>开始<input data-k="start" type="datetime-local" value="${dts(a.start)}"></label>
+          <label>结束<input data-k="end" type="datetime-local" value="${dts(a.end)}"></label>
+          <span class="sub" style="flex:1">留空表示不限时间；时间未到/已结束的活动不会出现在玩家端</span>
+        </div>
+        <div class="line">
+          <label style="flex:1">活动内容（换行即分段，玩家端原样展示）<textarea data-k="content" rows="4">${esc(a.content || '')}</textarea></label>
+        </div>
+      </div>`).join('')
+      : '<div class="empty">还没有活动，点「＋ 新增活动」创建</div>';
+    // 行内编辑 → 内存
+    $('actList').querySelectorAll('.act-row').forEach(row => {
+      const i = +row.dataset.i;
+      row.querySelectorAll('[data-k]').forEach(el => {
+        const apply = () => {
+          if (el.dataset.k === 'enabled') ACTROWS[i][el.dataset.k] = el.checked;
+          else ACTROWS[i][el.dataset.k] = el.value;
+        };
+        el.onchange = apply;
+        if (el.type !== 'checkbox') el.oninput = apply;
+      });
+    });
+    $('actList').querySelectorAll('[data-act]').forEach(btn => {
+      btn.onclick = async () => {
+        const act = btn.dataset.act, i = +btn.dataset.i;
+        if (act === 'save') {
+          const a = ACTROWS[i];
+          try {
+            const j = await api('/api/shanhai/admin/activities/save', { method: 'POST', body: JSON.stringify(a) });
+            if (!j.ok) throw new Error(j.error || '保存失败');
+            toast('活动已保存'); loadActMgr();
+          } catch (e) { toast(e.message); }
+        } else if (act === 'del') {
+          if (!confirm('删除活动「' + (ACTROWS[i].title || '未命名') + '」？')) return;
+          if (!ACTROWS[i].id) { ACTROWS.splice(i, 1); renderActRows(); return; }
+          try {
+            const j = await api('/api/shanhai/admin/activities/del', { method: 'POST', body: JSON.stringify({ id: ACTROWS[i].id }) });
+            if (!j.ok) throw new Error(j.error || '删除失败');
+            toast('已删除'); loadActMgr();
+          } catch (e) { toast(e.message); }
+        } else if (act === 'up' || act === 'down') {
+          const j = act === 'up' ? i - 1 : i + 1;
+          if (j < 0 || j >= ACTROWS.length) return;
+          [ACTROWS[i], ACTROWS[j]] = [ACTROWS[j], ACTROWS[i]];
+          const ids = ACTROWS.map(x => x.id).filter(Boolean);
+          try { await api('/api/shanhai/admin/activities/reorder', { method: 'POST', body: JSON.stringify({ ids }) }); } catch (e) { }
+          renderActRows();
+        }
+      };
+    });
+  }
+
+  $('actSysSave').onclick = async () => {
+    try {
+      const j = await api('/api/shanhai/admin/activity-sys', {
+        method: 'POST',
+        body: JSON.stringify({ locked: $('actLock').value === '1', testAccounts: $('actTesters').value }),
+      });
+      if (!j.ok) throw new Error(j.error || '保存失败');
+      toast('维护设置已保存（玩家端入口立即生效）');
+    } catch (e) { toast(e.message); }
+  };
+  $('actAdd').onclick = () => {
+    ACTROWS.unshift({ id: '', title: '新活动', tag: '', img: '', content: '活动说明……', start: '', end: '', enabled: false });
+    renderActRows();
+    toast('已添加草稿（默认停用），填写后点该行的「保存」');
+  };
+  $('actReload').onclick = loadActMgr;
+
+  $('gmRefresh').onclick = () => { loadStats(); loadShanhai(); loadCfg(); loadSkillTree(); loadActMgr(); };
+  loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle(); loadSkillTree(); loadActMgr();
+  return { refresh: () => { loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle(); loadSkillTree(); loadActMgr(); } };
 }
