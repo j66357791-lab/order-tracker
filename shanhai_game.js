@@ -1439,9 +1439,22 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         cur.v += c.v;
         hourMap.set(g, cur);
       }
-      const candles = [...hourMap.values()].sort((a, b) => a.t - b.t)
-        .map(c => ({ t: c.t, o: money4(c.o), c: money4(c.c), hi: money4(c.hi), lo: money4(c.lo), v: money4(c.v) }))
-        .slice(-60);
+      const candleList = [...hourMap.values()].sort((a, b) => a.t - b.t)
+        .map(c => ({ t: c.t, o: money4(c.o), c: money4(c.c), hi: money4(c.hi), lo: money4(c.lo), v: money4(c.v) }));
+      // 【v26.21 修复】补齐无成交时段的空档蜡烛（开=收=高=低=上一根收盘价，量 0）——
+      // 原先 K 线只由"有成交的时段"聚合，稀疏交易时 24h 视图只有零星几根（"看不完整"），
+      // 且根数少于缩放下限时 ＋/－ 按钮被钳住"没反应"
+      let candles = [];
+      if (candleList.length) {
+        const firstT = candleList[0].t;
+        let idx = 0, prevClose = candleList[0].o;
+        for (let t = firstT; t <= now && candles.length < 400; t += groupMs) {
+          const c = (candleList[idx] && candleList[idx].t === t) ? candleList[idx++] : null;
+          if (c) prevClose = c.c;
+          candles.push(c || { t, o: prevClose, c: prevClose, hi: prevClose, lo: prevClose, v: 0 });
+        }
+        candles = candles.slice(-60);
+      }
 
       res.json({
         ok: true, range, label, bucketMs,
