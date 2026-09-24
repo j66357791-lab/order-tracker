@@ -36,21 +36,41 @@ const SFX = (() => {
     o.connect(g); g.connect(dest || master);
     o.start(t0); o.stop(t0 + dur + 0.05);
   }
+  // 【2026-09-24 性能优化】噪声 buffer 复用：原先每次 hit 都 createBuffer + 逐样本 Math.random
+  // 填充（高密度战斗每秒几十次命中 → 大量内存分配与 GC，低端机表现为打怪时卡顿）。
+  // 白噪声按 0.25s 预生成一条，播放时按需截取，衰减包络本来就在 Gain 上做。
+  let _noiseBuf = null;
+  function getNoiseBuf(c) {
+    if (!_noiseBuf) {
+      const len = Math.floor(c.sampleRate * 0.25);
+      _noiseBuf = c.createBuffer(1, len, c.sampleRate);
+      const d = _noiseBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    return _noiseBuf;
+  }
   function noise(dur, vol, filterType, freq, when, sweepTo) {
     if (!enabled) return;
     const c = ac(); if (!c) return;
     const t0 = c.currentTime + (when || 0);
-    const len = Math.floor(c.sampleRate * dur);
-    const buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-    const src = c.createBufferSource(); src.buffer = buf;
+    const src = c.createBufferSource();
+    src.buffer = getNoiseBuf(c);
     const f = c.createBiquadFilter(); f.type = filterType || "highpass"; f.frequency.setValueAtTime(freq, t0);
     if (sweepTo) f.frequency.exponentialRampToValueAtTime(Math.max(60, sweepTo), t0 + dur);
     const g = c.createGain();
     g.gain.setValueAtTime(vol, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     src.connect(f); f.connect(g); g.connect(master);
-    src.start(t0);
+    src.start(t0, 0, Math.min(dur + 0.02, 0.25));
+    src.stop(t0 + dur + 0.05);
+  }
+
+  // 【2026-09-24 性能优化】战斗音效限流：每 80ms 最多 1 条命中音（拾取音独立、更宽松）。
+  // 满屏弹幕时每秒几十次命中，全部合成会挤爆音频线程——听感上密集的"锵锵"本来就糊成一片。
+  let _lastHitSfx = 0, _lastOrbSfx = 0;
+  function hitThrottle(ms) {
+    const now = performance.now();
+    return now - _lastHitSfx < ms;
   }
 
   // ================= 战斗音效 =================
@@ -73,6 +93,8 @@ const SFX = (() => {
     // 旋风刃：更轻的擦身声
     galeHit() { noise(0.07, 0.09, "bandpass", 1800); tone(900, 0.06, "triangle", 0.07, 0, 620); },
     hit(kind, crit) {
+      if (hitThrottle(80)) return;   // 高密度战斗限流，防音频线程过载
+      _lastHitSfx = performance.now();
       if (kind === "fireline") return api.fireHit();
       if (kind === "icepick") return api.iceHit();
       if (kind === "gale") return api.galeHit();
@@ -80,8 +102,13 @@ const SFX = (() => {
     },
     // 玩家受伤：低沉短促
     hurt() { tone(180, 0.22, "sawtooth", 0.16, 0, 90); noise(0.10, 0.07, "lowpass", 500); },
-    // 拾取经验珠：极轻的"叮"（量大，音量必须小）
-    orb() { tone(1400, 0.05, "sine", 0.035); },
+    // 拾取经验珠：极轻的"叮"（量大，音量必须小 + 限流防刷屏）
+    orb() {
+      const now = performance.now();
+      if (now - _lastOrbSfx < 120) return;
+      _lastOrbSfx = now;
+      tone(1400, 0.05, "sine", 0.035);
+    },
     heal() { tone(700, 0.14, "sine", 0.10, 0, 1100); },
     // 升级三选一：上行三音
     levelUp() { [523, 659, 880].forEach((f, i) => tone(f, 0.16, "triangle", 0.13, i * 0.09)); },
