@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.32',  // 【v26.32】内测/管理员活动列表忽略开始时间(未开始也可测试,列表带"未开始"标记)
+  appVersion: '26.33',  // 【v26.33】页面脚本加版本参数强制刷新(微信等 webview 缓存旧页面导致调旧接口 404)
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.33', date: '2026-09-25', notes: [
+    '【修复·webview 缓存】"接口不存在"404：接口线上探测全部正常（401=已注册），404 来自手机内置浏览器缓存的旧页面在调旧接口。页面 css/js 全部加 ?v=32 版本参数强制刷新缓存；后续每次发版把该版本号+1 即可'] },
   { ver: '26.32', date: '2026-09-25', notes: [
     '【修复·内测看不到未开始活动】自检面板定位：数据与时间存储全部正确，活动只是"未到开始时间"被列表过滤——但测试员的活动列表没有跳过该过滤，导致内测无法提前进入。现测试员/管理员可见所有启用中的活动（未开始的带"未开始·内测可玩"标记），参与按钮仍受内测开关控制；普通玩家过滤不变'] },
   { ver: '26.31', date: '2026-09-25', notes: [
