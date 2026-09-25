@@ -1468,8 +1468,10 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         await db.collection(BT_COL).updateOne({ _id: bt._id }, { $set: { pHP, gHP, pSlow, round, defStance: !!bt.defStance } });
       }
       res.json({ ok: true, ...out0 });
-    } catch (e) { console.error('[api] chal/turn', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
-  });  app.post('/api/shanhai/challenge/leave', auth, async (req, res) => {
+    } catch (e) { console.error('[api] chal/turn', e); res.status(500).json({ ok: false, error: '结算失败：' + String((e && e.message) || e).slice(0, 120) }); }
+  });
+
+  app.post('/api/shanhai/challenge/leave', auth, async (req, res) => {
     try {
       const db = await getDb();
       const r = await db.collection(OCC_COL).deleteOne({ userId: req.user.id });
