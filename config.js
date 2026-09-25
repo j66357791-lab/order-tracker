@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.30',  // 【v26.30】活动管理检索用户一键锁定/解除测试员+玩家端锁提示带身份说明
+  appVersion: '26.31',  // 【v26.31】活动列表空时向测试员/管理员显示自检数据(库中条数/启用数/时间窗/各行起止)
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.31', date: '2026-09-25', notes: [
+    '【排障】玩家端活动列表为空时，测试员/管理员会看到自检面板（服务器时间、库中条数、启用数、时间窗内条数、每条活动的起止存值），一眼定位是启用状态还是时间窗过滤导致'] },
   { ver: '26.30', date: '2026-09-25', notes: [
     '【新增·检索用户】活动管理里输入用户名/工号即可查到玩家（显示名/工号/角色），一键「锁定为测试员」或移出名单（自动并入测试账号并保存），不用再手打名单猜名字',
     '【增强·锁提示】维护锁开启时玩家端点活动入口，会提示当前账号是否在测试名单，方便自查'] },
