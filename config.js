@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.27',  // 【v26.27】修活动入口桌面端定位(fixed→absolute,贴游戏面板左缘)
+  appVersion: '26.28',  // 【v26.28】修活动管理五个接口漏初始化db连接导致"保存失败：db is not defined"
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.28', date: '2026-09-25', notes: [
+    '【修复·活动管理保存失败】"db is not defined"：活动的保存/删除/排序/维护设置/清理共五个管理接口漏写数据库连接初始化（玩家端两个接口没漏，所以入口和中心能看、后台一保存就报错）。已全部补上。时间口径确认：09-25 10:00~09-26 20:00 为参与翻倍时间，09-27 起自动开始 100 天返还（代码按"结束日+1天"实现，与口径一致）'] },
   { ver: '26.27', date: '2026-09-25', notes: [
     '【修复·活动入口不显示】入口原先用 fixed 定位（相对浏览器窗口），桌面端游戏面板居中时挂轴跑到窗口最左边缘看不见。改为 absolute 相对游戏面板定位，始终贴在选关页左缘。玩家端刷新一次页面即可看到（游戏有版本自愈会自动重载）'] },
   { ver: '26.26', date: '2026-09-25', notes: [
