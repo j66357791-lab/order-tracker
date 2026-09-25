@@ -1119,7 +1119,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const en = document.getElementById("actEntry");
     if (en) en.onclick = () => showActCenter();
     const ce = document.getElementById("chalEntry");
-    if (ce) ce.onclick = () => showChallengeDiff();
+    if (ce) ce.onclick = () => { location.href = "/games/shanhai/challenge.html"; };
     loadActState();   // 页面加载即拉一次锁状态，维护时入口直接显示上锁样式
   })();
 
