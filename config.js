@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.58',  // 【v26.58】修守护者不可见(精灵div缺宽高)+修按钮无响应(战斗界面就绪后fighting未复位)
+  appVersion: '26.59',  // 【v26.59】修回合结算500(res0残留未定义)+防御姿态改单回合生效
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,9 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.59', date: '2026-09-25', notes: [
+    '【修复·回合结算500】"res0 is not defined"：战斗改版时新旧草稿混写，残留一行旧变量名引用。已修正',
+    '【修复·防御姿态永久生效】选一次防御后减伤被持久化到后续回合。改为单回合生效（回合结束自动重置）'] },
   { ver: '26.58', date: '2026-09-25', notes: [
     '【修复·守护者不可见】守护者精灵 div 只设置了背景尺寸变量、没设自身宽高 → 高度为 0 隐形。已按等级帧宽设置宽高',
     '【修复·按钮无响应】战斗界面打开后 fighting 标志未复位 → act() 永远被拦截。界面就绪后即复位，回合请求期间由 lock 控制防连点'] },
