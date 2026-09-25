@@ -962,7 +962,11 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       ACTC.data = d; ACTC.cur = 0;
       const lock = document.getElementById("actEntryLock");
       if (lock) lock.style.display = d.locked ? "" : "none";
-      if (d.locked) { closeAct(); toast("活动维护中，敬请期待"); return; }
+      if (d.locked) {
+        closeAct();
+        toast(d.tester ? "活动维护中" : "活动维护中（当前账号不在测试名单，让管理员用「检索用户」锁定）");
+        return;
+      }
       renderActCenter();
     } catch (e) { closeAct(); toast("活动加载失败：" + ((e && (e.error || e.message)) || "")); }
   }
