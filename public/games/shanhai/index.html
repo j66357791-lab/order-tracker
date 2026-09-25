@@ -101,6 +101,16 @@
         </div>
         <div class="daily-tip" id="stageTip">每局皆得仙玉 · 首通另有重赏</div>
 
+        <!-- 【v26.40】挑战模式入口：横条海报（灵脉争夺战） -->
+        <div id="chalEntry" title="挑战模式 · 灵脉争夺战">
+          <img src="/games/shanhai/assets/challenge/poster.png?v=1" alt="" onerror="this.style.display='none'">
+          <div class="chal-poster-fallback">
+            <b>⚔ 挑战模式</b>
+            <span>灵脉争夺战 · 击败守护者 占领灵脉 收获灵气</span>
+            <i>进入 ›</i>
+          </div>
+        </div>
+
         <!-- 【v26.25】活动入口：贴屏幕左侧的挂轴（商业游戏样式），维护时显示上锁样式 -->
         <div id="actEntry" title="活动">
           <svg viewBox="0 0 46 92" aria-hidden="true">
@@ -922,6 +932,29 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       const i = d.info;
       if (!i.open) { box.innerHTML = '<div class="act-empty">活动未开启</div>'; return; }
       DD.info = i;
+      // —— 活动结束：切换为「每日手动领取」面板 ——
+      if (i.ended || i.mine.pending > 0 || (i.last && i.last.releasedDays > 0)) {
+        box.innerHTML = `
+          <div class="dd-pool">
+            <div class="dd-pool-main"><span>🎊 我的奖励</span><b>${i.mine.total}</b><em>灵气</em></div>
+            <div class="dd-pool-sub">活动已结束 · 奖励分 100 天每日释放（每天 ${i.mine.daily} 灵气），每天 0 点后可手动领取</div>
+            <div class="dd-pool-mine">已领取 <b>${i.mine.claimed}</b> ｜ 待领取 <b>${i.mine.pending}</b></div>
+          </div>
+          <button class="dd-btn" id="ddClaim" ${i.mine.pending > 0 ? '' : 'disabled'}>${i.mine.pending > 0 ? '领取 ' + i.mine.pending + ' 灵气' : '今日份额已领取'}</button>
+          <div class="dd-note">每天凌晨 0 点释放当日份额，记得每天来领；漏领的会累积到待领取，不会消失。</div>`;
+        const cbtn = document.getElementById("ddClaim");
+        if (cbtn) cbtn.onclick = async () => {
+          cbtn.disabled = true; cbtn.textContent = '领取中…';
+          try {
+            const d2 = await shApi("/api/shanhai/duiduile/claim", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+            if (!d2.ok) throw new Error(d2.error || "领取失败");
+            toast(`已领取 ${d2.claimed} 灵气`);
+          } catch (e) { toast(e.message || "领取失败"); }
+          loadDdBox();
+        };
+        return;
+      }
+      // —— 活动进行中：参与面板 ——
       const canIn = i.inWindow || i.beta;
       const hasChance = i.freeLeft > 0 || i.bonusLeft > 0;
       const btnTxt = i.plays === 0 ? '免费参与' : (i.bonusLeft > 0 ? `使用通关加成参与（剩 ${i.bonusLeft} 次）` : '参与次数已用完');
@@ -998,8 +1031,115 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   (function () {
     const en = document.getElementById("actEntry");
     if (en) en.onclick = () => showActCenter();
+    const ce = document.getElementById("chalEntry");
+    if (ce) ce.onclick = () => showChallenge();
     loadActState();   // 页面加载即拉一次锁状态，维护时入口直接显示上锁样式
   })();
+
+  /* ==================== 【v26.40】挑战模式 · 灵脉争夺战（壳子） ====================
+     超大地图（1800×1300 逻辑坐标）随机分布 1~5 级灵脉；占领需击败守护者（建模占位）。
+     本轮为可玩壳子：浏览/缩放/拖拽 + 节点详情；战斗与占领产出后续接入。 */
+  const CHAL = { W: 1800, H: 1300, LV_COLOR: { 1: '#6fd8a0', 2: '#54b4e8', 3: '#b48af0', 4: '#f0b454', 5: '#f0546e' }, OUTPUT: { 1: '10', 2: '25', 3: '60', 4: '150', 5: '400' } };
+
+  function genVeins() {
+    const LV = [[1, 6], [2, 5], [3, 4], [4, 2], [5, 1]];
+    const pts = [];
+    for (const [lv, cnt] of LV) {
+      let placed = 0, guard = 0;
+      while (placed < cnt && guard++ < 600) {
+        const x = 130 + Math.random() * (CHAL.W - 260);
+        const y = 110 + Math.random() * (CHAL.H - 240);
+        if (pts.every(p => Math.hypot(p.x - x, p.y - y) > 210)) { pts.push({ x: Math.round(x), y: Math.round(y), lv }); placed++; }
+      }
+    }
+    return pts;
+  }
+
+  function veinSvg(lv, size) {
+    const c = CHAL.LV_COLOR[lv];
+    return `<svg viewBox="0 0 60 72" style="width:${size}px;height:${size * 1.2}px;display:block">
+      <ellipse cx="30" cy="64" rx="${10 + lv * 2}" ry="4" fill="rgba(0,0,0,.35)"/>
+      <polygon points="30,4 ${20 + lv},30 30,60 ${40 - lv},30" fill="${c}" opacity=".92"/>
+      <polygon points="30,4 30,60 ${40 - lv},30" fill="rgba(0,0,0,.22)"/>
+      <polygon points="30,4 ${20 + lv},30 30,60" fill="rgba(255,255,255,.28)"/>
+      <text x="30" y="70" text-anchor="middle" font-size="9" font-weight="700" fill="${c}">Lv.${lv}</text>
+    </svg>`;
+  }
+
+  function closeChallenge() {
+    const m = document.getElementById("chalMask");
+    if (m) m.remove();
+  }
+
+  function showChallenge() {
+    closeChallenge();
+    const mask = document.createElement("div");
+    mask.className = "ex-mask"; mask.id = "chalMask";
+    mask.onclick = e => { if (e.target === mask) closeChallenge(); };
+    const nodes = genVeins();
+    mask.innerHTML = `
+      <div class="ex-wrap" style="max-width:540px;width:96vw;height:88vh">
+        <div class="ex-head" style="padding-top:11px">
+          <div class="ex-sub">挑战模式 · 灵脉争夺战</div>
+          <div class="ex-close" id="chalClose">×</div>
+        </div>
+        <div class="chal-viewport" id="chalViewport">
+          <div class="chal-map" id="chalMap">
+            <div class="chal-map-bg"></div>
+            ${nodes.map((p, i) => `
+              <div class="chal-node" data-i="${i}" style="left:${p.x}px;top:${p.y}px">
+                ${veinSvg(p.lv, 44 + p.lv * 9)}
+              </div>`).join("")}
+          </div>
+          <div class="chal-zoombar">
+            <button data-z="in">＋</button><button data-z="out">－</button><button data-z="reset">⟲</button>
+            <i>拖动查看地图 · 点击灵脉查看详情</i>
+          </div>
+        </div>
+        <div class="chal-detail" id="chalDetail"><div class="act-empty">点击地图上的灵脉查看详情</div></div>
+      </div>`;
+    document.body.appendChild(mask);
+    document.getElementById("chalClose").onclick = closeChallenge;
+    // 拖拽 / 缩放
+    const vp = document.getElementById("chalViewport");
+    const map = document.getElementById("chalMap");
+    let scale = 1, tx = 0, ty = 0, drag = null, pinch0 = 0, scale0 = 1;
+    const apply = () => { map.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; };
+    const zoomAt = ns => {
+      ns = Math.max(0.55, Math.min(2, ns));
+      const k = ns / scale, r = vp.getBoundingClientRect();
+      const cx = r.width / 2, cy = r.height / 2;
+      tx = cx - (cx - tx) * k; ty = cy - (cy - ty) * k; scale = ns; apply();
+    };
+    vp.addEventListener("wheel", e => { e.preventDefault(); zoomAt(scale * (e.deltaY < 0 ? 1.12 : 0.9)); }, { passive: false });
+    vp.addEventListener("pointerdown", e => { if (e.target.closest('.chal-node')) return; drag = { x: e.clientX, y: e.clientY, tx, ty }; });
+    vp.addEventListener("pointermove", e => {
+      if (!drag) return;
+      tx = drag.tx + (e.clientX - drag.x); ty = drag.ty + (e.clientY - drag.y); apply();
+    });
+    vp.addEventListener("pointerup", () => { drag = null; });
+    vp.addEventListener("pointercancel", () => { drag = null; });
+    vp.addEventListener("touchstart", e => { if (e.touches.length === 2) { pinch0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); scale0 = scale; } }, { passive: true });
+    vp.addEventListener("touchmove", e => { if (e.touches.length === 2 && pinch0 > 0) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); zoomAt(scale0 * d / pinch0); e.preventDefault(); } }, { passive: false });
+    vp.addEventListener("touchend", () => { pinch0 = 0; });
+    vp.querySelectorAll(".chal-zoombar button").forEach(b => b.onclick = () => {
+      if (b.dataset.z === "in") zoomAt(scale * 1.2);
+      else if (b.dataset.z === "out") zoomAt(scale * 0.83);
+      else { scale = 1; tx = 0; ty = 0; apply(); }
+    });
+    // 节点详情
+    mask.querySelectorAll(".chal-node").forEach(nd => nd.onclick = () => {
+      const p = nodes[+nd.dataset.i];
+      const det = document.getElementById("chalDetail");
+      det.innerHTML = `
+        <div class="chal-d-head">${veinSvg(p.lv, 34)}<div><b>Lv.${p.lv} 灵脉</b><i>产出 ${CHAL.OUTPUT[p.lv]} 灵气/小时（占领后）</i></div>
+          <span class="chal-lv c${p.lv}">Lv.${p.lv}</span></div>
+        <div class="chal-d-row">需要击败 <b>Lv.${p.lv} 灵脉守护者</b> 后占领；占领期间持续产出灵气。</div>
+        <div class="chal-d-row">守护者形象与战斗玩法开发中，敬请期待。</div>
+        <button class="dd-btn" disabled>挑战守护者（即将开放）</button>`;
+    });
+  }
+  window.showChallenge = showChallenge;
 
   async function showMarketChart() {
     closeMkt();
