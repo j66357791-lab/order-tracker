@@ -6,7 +6,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>预览 · 灵脉争夺战壳子</title>
-<link rel="stylesheet" href="css/style.css?v=35">
+<link rel="stylesheet" href="css/style.css?v=36">
 <style>
   body { padding: 0 0 40px; overflow: auto; display: block; }
   .pv-note { max-width: 540px; margin: 0 auto; padding: 10px 14px; font: 12px/1.7 "PingFang SC", sans-serif; color: #cfe8d8; background: rgba(212,184,122,.12); border-bottom: 1px solid rgba(212,184,122,.3); }
@@ -133,6 +133,11 @@ function showChallenge() {
     if (e.touches.length === 1) { tDrag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty }; }
     else tDrag = null;
   });
+  // 【v26.47】document 级兜底
+  document.addEventListener("touchmove", e => {
+    if ((!drag && !tDrag) || !e.target.closest) return;
+    if (e.target.closest('.chal-viewport')) e.preventDefault();
+  }, { passive: false });
   vp.addEventListener("touchend", () => { pinch0 = 0; });
   vp.querySelectorAll(".chal-zoombar button").forEach(b => b.onclick = () => {
     if (b.dataset.z === "in") zoomAt(scale * 1.2);
