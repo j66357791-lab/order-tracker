@@ -103,7 +103,7 @@
 
         <!-- 【v26.40】挑战模式入口：横条海报（灵脉争夺战） -->
         <div id="chalEntry" title="挑战模式 · 灵脉争夺战">
-          <img src="/games/shanhai/assets/challenge/poster.png?v=1" alt="" onerror="this.style.display='none'">
+          <img src="/games/shanhai/assets/challenge/poster.jpg?v=1" alt="" onerror="this.style.display='none'">
           <div class="chal-poster-fallback">
             <b>⚔ 挑战模式</b>
             <span>灵脉争夺战 · 击败守护者 占领灵脉 收获灵气</span>
@@ -1105,6 +1105,11 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const map = document.getElementById("chalMap");
     let scale = 1, tx = 0, ty = 0, drag = null, pinch0 = 0, scale0 = 1;
     const apply = () => { map.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; };
+    // 初始视野居中
+    requestAnimationFrame(() => {
+      const r0 = vp.getBoundingClientRect();
+      tx = (r0.width - CHAL.W * scale) / 2; ty = (r0.height - CHAL.H * scale) / 2; apply();
+    });
     const zoomAt = ns => {
       ns = Math.max(0.55, Math.min(2, ns));
       const k = ns / scale, r = vp.getBoundingClientRect();
