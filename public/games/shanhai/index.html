@@ -854,7 +854,18 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
 
   function actStageHtml(c) {
-    if (!c) return '<div class="act-empty">暂无活动，敬请期待</div>';
+    if (!c) {
+      // 列表为空：测试员/管理员附带自检数据，便于定位是哪层过滤
+      const dbg = ACTC.data && ACTC.data.debug;
+      if (dbg) {
+        return `<div class="act-empty">暂无活动（自检）</div>
+          <div style="font:10px/1.8 monospace;color:#8a7a58;background:rgba(255,252,244,.6);border:1px solid rgba(122,96,48,.25);border-radius:8px;padding:8px;margin-top:6px;word-break:break-all">
+          服务器时间：${_escHtml(dbg.now)}<br>库中活动：${dbg.total} 条 ｜ 启用：${dbg.enabledCount} 条 ｜ 时间窗内：${dbg.shown} 条<br>
+          ${dbg.rows.map(r => `· ${_escHtml(r.title)}｜类型${_escHtml(r.type || '无')}｜启用${r.enabled ? '是' : '否'}｜起 ${r.start ? _escHtml(new Date(r.start).toISOString()) : '无'}｜止 ${r.end ? _escHtml(new Date(r.end).toISOString()) : '无'}`).join('<br>')}
+          </div>`;
+      }
+      return '<div class="act-empty">暂无活动，敬请期待</div>';
+    }
     let h = "";
     if (c.type === "duiduile") h += '<div class="dd-box" id="ddBox">加载中…</div>';
     if (c.img) h += `<div class="act-banner"><img src="${_escHtml(c.img)}" alt="" onerror="this.style.display='none'"></div>`;
