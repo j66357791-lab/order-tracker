@@ -1053,13 +1053,22 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       { $group: { _id: null, total: { $sum: '$reward' } } },
     ]).toArray();
     const mineTotal = Math.round(((mineAgg[0] && mineAgg[0].total) || 0) * 100) / 100;
+    const pendAgg = await db.collection(DD_COL).aggregate([
+      { $match: { userId: me.id } },
+      { $group: { _id: null, p: { $sum: { $ifNull: ['$pending', 0] } } } },
+    ]).toArray();
+    const pending = Math.round(((pendAgg[0] && pendAgg[0].p) || 0) * 100) / 100;
+    const ended = act.end ? now > new Date(act.end) : false;
     return {
-      open: true, inWindow, beta, title: act.title, start: act.start, end: act.end,
+      open: true, inWindow, beta, ended, title: act.title, start: act.start, end: act.end,
       plays: played, cleared: (prof.clearedStages || []).length,
       freeLeft: played > 0 ? 0 : 1,
       bonusLeft: Math.max(0, bonusTotal - bonusUsed),
       days: DD_DAYS,
-      mine: { total: mineTotal, daily: Math.round(mineTotal / DD_DAYS * 100) / 100 },
+      mine: {
+        total: mineTotal, daily: Math.round(mineTotal / DD_DAYS * 100) / 100,
+        pending, claimed: Math.round(Math.max(0, mineTotal - pending) * 100) / 100,
+      },
       last: last ? { mult: last.mult, reward: last.reward, releasedDays: last.releasedDays, perDay: last.perDay } : null,
     };
   }
@@ -1096,41 +1105,76 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const mult = rollDuiduileMult();
       const reward = Math.round(DD_COST * mult * 10) / 10;
       const perDay = Math.round(reward / DD_DAYS * 100) / 100;
-      const releaseStart = act.end ? new Date(new Date(act.end).getTime() + 86400e3) : new Date(now.getTime() + 86400e3);
+      // 释放从结束次日【北京时间 0 点】开始（每日手动领取）
+      let releaseStart = new Date(now.getTime() + 86400e3);
+      if (act.end) {
+        const cnDay = new Date(new Date(act.end).getTime() + 8 * 3600e3).toISOString().slice(0, 10);
+        releaseStart = new Date(cnDay + 'T00:00:00+08:00');
+      }
       const r2 = await db.collection(DD_COL).insertOne({
         userId: me.id, activityId: String(act._id), costType,
         base: DD_COST, mult, reward, totalDays: DD_DAYS,
-        perDay, releasedDays: 0, releasedAmount: 0, releaseStart, lastDay: null,
+        perDay, releasedDays: 0, releasedAmount: 0, pending: 0, releaseStart, lastDay: null,
         createdAt: new Date(),
       });
       await db.collection('shanhai_logs').insertOne({ userId: me.id, action: 'duiduile_play', detail: { costType, mult, reward }, createdAt: new Date() }).catch(() => { });
       res.json({ ok: true, costType, mult, reward, perDay, days: DD_DAYS, releaseStart: releaseStart.toISOString(), recordId: String(r2.insertedId) });
     } catch (e) { console.error('[api] duiduile/play', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
-  // 每日释放任务：活动结束次日起每天发 reward/100（最后一天发尾差）；幂等（按天标记 + 条件更新）
+  // 【v26.40 释放改版】每日份额不再自动入账，而是累积到「待领取」；玩家手动领取入账。
+  // 漏领不损失：按自然日补齐（dayIdx 计算，一次补多天）。
+  const ddCnToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+  async function accrueDuiduile(db, rec) {
+    if (rec.releasedDays >= DD_DAYS) return false;
+    const startMs = new Date(rec.releaseStart).getTime();
+    if (Number.isNaN(startMs) || Date.now() < startMs) return false;
+    const dayIdx = Math.floor((Date.now() - startMs) / 86400e3);   // 释放起点当天 = 第 0 天
+    const target = Math.min(DD_DAYS, dayIdx + 1);
+    if (target <= rec.releasedDays) return false;
+    let amt = 0;
+    for (let d = rec.releasedDays; d < target; d++) {
+      amt += (d >= DD_DAYS - 1) ? Math.max(0, Math.round((rec.reward - rec.perDay * (DD_DAYS - 1)) * 100) / 100) : rec.perDay;
+    }
+    amt = Math.round(amt * 100) / 100;
+    const r = await db.collection(DD_COL).updateOne(
+      { _id: rec._id, releasedDays: rec.releasedDays },
+      { $inc: { releasedDays: target - rec.releasedDays, releasedAmount: amt, pending: amt }, $set: { lastDay: ddCnToday() } });
+    return !!r.modifiedCount;
+  }
   async function processDuiduileRelease() {
     const db = await getDb();
-    const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    const today = ddCnToday();
     const docs = await db.collection(DD_COL).find({
       releasedDays: { $lt: DD_DAYS }, releaseStart: { $lte: new Date() }, lastDay: { $ne: today },
     }).limit(300).toArray();
-    for (const d0 of docs) {
-      const isLast = d0.releasedDays + 1 >= DD_DAYS;
-      const amt = isLast
-        ? Math.max(0, Math.round((d0.reward - d0.perDay * (DD_DAYS - 1)) * 100) / 100)
-        : d0.perDay;
-      const r = await db.collection(DD_COL).updateOne(
-        { _id: d0._id, lastDay: { $ne: today }, releasedDays: d0.releasedDays },
-        { $inc: { releasedDays: 1, releasedAmount: amt }, $set: { lastDay: today } });
-      if (r.modifiedCount && amt > 0) {
-        await db.collection('shanhai_profiles').updateOne({ userId: d0.userId }, { $inc: { lingqi: amt } });
-        await db.collection('shanhai_logs').insertOne({ userId: d0.userId, action: 'duiduile_release', detail: { day: d0.releasedDays + 1, amt }, createdAt: new Date() }).catch(() => { });
-      }
-    }
-    return docs.length;
+    let n = 0;
+    for (const rec of docs) { if (await accrueDuiduile(db, rec)) n++; }
+    return n;
   }
-  setInterval(() => { processDuiduileRelease().catch(e => console.error('[duiduile] 释放任务', e.message)); }, 30 * 60 * 1000);
+  setInterval(() => { processDuiduileRelease().catch(e => console.error('[duiduile] 释放任务', e.message)); }, 10 * 60 * 1000);
   setTimeout(() => { processDuiduileRelease().catch(() => { }); }, 90 * 1000);
+  // 手动领取：先补齐当日份额，再把待领取一次性入账
+  app.post('/api/shanhai/duiduile/claim', auth, limit({ name: 'sh-dd-claim', max: 30, windowMs: 60 * 1000, msg: '太快了' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const me = req.user;
+      const recs = await db.collection(DD_COL).find({ userId: me.id, releaseStart: { $lte: new Date() }, releasedDays: { $lt: DD_DAYS } }).toArray();
+      for (const rec of recs) await accrueDuiduile(db, rec);
+      const ready = await db.collection(DD_COL).find({ userId: me.id, pending: { $gt: 0 } }).toArray();
+      let total = 0;
+      for (const rec of ready) {
+        const amt = Math.round((rec.pending || 0) * 100) / 100;
+        if (amt <= 0) continue;
+        const r = await db.collection(DD_COL).updateOne({ _id: rec._id, pending: amt }, { $set: { pending: 0, lastClaimAt: new Date() } });
+        if (r.modifiedCount) total = Math.round((total + amt) * 100) / 100;
+      }
+      if (total > 0) {
+        await db.collection('shanhai_profiles').updateOne({ userId: me.id }, { $inc: { lingqi: total } });
+        await db.collection('shanhai_logs').insertOne({ userId: me.id, action: 'duiduile_claim', detail: { amount: total }, createdAt: new Date() }).catch(() => { });
+      }
+      res.json({ ok: true, claimed: total });
+    } catch (e) { console.error('[api] duiduile/claim', e); res.status(500).json({ ok: false, error: '领取失败，请稍后再试' }); }
+  });
   // 管理端：清理参与记录（全部 / 指定用户名或工号）——内测数据重置用
   app.post('/api/shanhai/admin/activities/finduser', auth, adminOnly, async (req, res) => {
     try {
