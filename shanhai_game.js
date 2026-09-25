@@ -1018,10 +1018,10 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '保存失败，请稍后再试' }); }
   });
 
-  // ==================== 【v26.26】灵气堆堆乐（中秋活动玩法） ====================
-  // 投入 100 灵气 → 按概率翻倍（90% 1~2倍 / 8% 2~3倍 / 1.9% 3~5倍 / 0.1% 5~10倍）→
+  // ==================== 【v26.26/37】灵气堆堆乐（中秋活动玩法） ====================
+  // 按固定 100 灵气额度翻倍（90% 1~2倍 / 8% 2~3倍 / 1.9% 3~5倍 / 0.1% 5~10倍）→
   // 奖励在活动结束次日起分 100 天每日发放（每天 reward/100，最后一天发尾差）。
-  // 次数：每人 1 次免费 → 每通关 10 关 +1 次 → 之后每次投入 100 灵气。
+  // 次数：每人 1 次免费 + 每通关 5 关 +1 次；无付费参与。
   const DD_COL = 'shanhai_duiduile';
   const DD_COST = 100;
   const DD_DAYS = 100;
@@ -1044,27 +1044,21 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     const beta = !!sys.duiduileBeta && ddTester(sys, me);
     const played = await db.collection(DD_COL).countDocuments({ userId: me.id, activityId: String(act._id) });
     const prof = await ensureProfile(db, me.id, me.displayName || me.username);
-    const bonusTotal = Math.floor((prof.clearedStages || []).length / 10);
+    const bonusTotal = Math.floor((prof.clearedStages || []).length / 5);
     const bonusUsed = played > 0 ? played - 1 : 0;
     const last = await db.collection(DD_COL).findOne({ userId: me.id, activityId: String(act._id) }, { sort: { createdAt: -1 } });
-    // 奖池统计：全服累计奖励 / 活动结束后每日发放 / 参与人数 / 我的累计
-    const poolAgg = await db.collection(DD_COL).aggregate([
-      { $group: { _id: null, total: { $sum: '$reward' } } },
-    ]).toArray();
+    // 我的累计（活动结束后分 100 天释放）
     const mineAgg = await db.collection(DD_COL).aggregate([
       { $match: { userId: me.id } },
       { $group: { _id: null, total: { $sum: '$reward' } } },
     ]).toArray();
-    const myPlayers = await db.collection(DD_COL).distinct('userId');
-    const totalPool = Math.round(((poolAgg[0] && poolAgg[0].total) || 0) * 100) / 100;
     const mineTotal = Math.round(((mineAgg[0] && mineAgg[0].total) || 0) * 100) / 100;
     return {
       open: true, inWindow, beta, title: act.title, start: act.start, end: act.end,
       plays: played, cleared: (prof.clearedStages || []).length,
       freeLeft: played > 0 ? 0 : 1,
       bonusLeft: Math.max(0, bonusTotal - bonusUsed),
-      cost: DD_COST, days: DD_DAYS,
-      pool: { total: totalPool, daily: Math.round(totalPool / DD_DAYS * 100) / 100, players: myPlayers.length },
+      days: DD_DAYS,
       mine: { total: mineTotal, daily: Math.round(mineTotal / DD_DAYS * 100) / 100 },
       last: last ? { mult: last.mult, reward: last.reward, releasedDays: last.releasedDays, perDay: last.perDay } : null,
     };
@@ -1089,15 +1083,15 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       if (!inWindow && !beta) return res.status(400).json({ ok: false, error: '不在活动参与时间内' });
       const played = await db.collection(DD_COL).countDocuments({ userId: me.id, activityId: String(act._id) });
       await ensureProfile(db, me.id, me.displayName || me.username);
-      const bonusTotal = Math.floor((await db.collection('shanhai_profiles').findOne({ userId: me.id }, { projection: { clearedStages: 1 } }) || { clearedStages: [] }).clearedStages?.length / 10 || 0);
+      // 【v26.37 定稿】次数 = 免费 1 次 + 每通关 5 关 +1 次；不做付费参与
+      const bonusTotal = Math.floor((await db.collection('shanhai_profiles').findOne({ userId: me.id }, { projection: { clearedStages: 1 } }) || { clearedStages: [] }).clearedStages?.length / 5 || 0);
       const bonusUsed = played > 0 ? played - 1 : 0;
-      let costType = 'free';   // 消耗顺序：免费 1 次 → 通关加成次数 → 投入 100 灵气
-      if (played > 0) costType = bonusUsed < bonusTotal ? 'bonus' : 'lingqi';
-      if (costType === 'lingqi') {
-        const r = await db.collection('shanhai_profiles').findOneAndUpdate(
-          { userId: me.id, lingqi: { $gte: DD_COST } },
-          { $inc: { lingqi: -DD_COST }, $set: { updatedAt: new Date() } });
-        if (!r || !(r.value || r)) return res.status(400).json({ ok: false, error: `灵气不足（参与需投入 ${DD_COST} 灵气）`, code: 'NO_LINGQI' });
+      let costType = 'free';   // 消耗顺序：免费 1 次 → 通关加成次数
+      if (played > 0) {
+        if (bonusUsed >= bonusTotal) {
+          return res.status(400).json({ ok: false, error: '参与次数已用完（每通关 5 关 +1 次）', code: 'NO_CHANCES' });
+        }
+        costType = 'bonus';
       }
       const mult = rollDuiduileMult();
       const reward = Math.round(DD_COST * mult * 10) / 10;
