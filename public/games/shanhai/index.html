@@ -888,9 +888,8 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     mask.innerHTML = `
       <div class="ex-wrap" style="max-width:520px;height:80vh">
         <div class="ex-head" style="padding-top:11px">
-          <div class="ex-title">活动中心</div>
-          <div class="ex-sub">限时活动 · 福利放送</div>
-          <div class="ex-close" id="actClose">×</div>
+          <div class="ex-sub">中秋活动</div>
+          <div class="ex-close" id="actClose" style="margin-left:auto">×</div>
         </div>
         <div class="act-body">
           <div class="act-nav">
@@ -924,23 +923,20 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       if (!i.open) { box.innerHTML = '<div class="act-empty">活动未开启</div>'; return; }
       DD.info = i;
       const canIn = i.inWindow || i.beta;
-      const btnTxt = i.plays === 0 ? '免费参与（投入 100 灵气额度）'
-        : (i.freeLeft > 0 ? '使用免费次数参与'
-        : (i.bonusLeft > 0 ? `使用通关加成参与（剩 ${i.bonusLeft} 次）`
-        : `投入 ${i.cost} 灵气 · 再来一局`));
+      const hasChance = i.freeLeft > 0 || i.bonusLeft > 0;
+      const btnTxt = i.plays === 0 ? '免费参与' : (i.bonusLeft > 0 ? `使用通关加成参与（剩 ${i.bonusLeft} 次）` : '参与次数已用完');
       const lp = DD.lastPlay;
       const resultHtml = lp
         ? `<div class="dd-final">×${lp.mult} ｜ 获得 <b>${lp.reward}</b> 灵气</div><div class="dd-sub">将于活动结束次日起分 ${lp.days} 天发放，每天约 ${lp.perDay} 灵气（最后一天发尾差）</div>`
         : (i.last ? `<div class="dd-sub">上次：×${i.last.mult} → ${i.last.reward} 灵气 ｜ 已释放 ${i.last.releasedDays}/100 天</div>` : '');
       box.innerHTML = `
         <div class="dd-pool">
-          <div class="dd-pool-main"><span>🎊 全服奖池</span><b>${i.pool.total}</b><em>灵气</em></div>
-          <div class="dd-pool-sub">活动结束后每天发放 <b>${i.pool.daily}</b> 灵气 ｜ ${i.pool.players} 人参与</div>
-          <div class="dd-pool-mine">我的累计 <b>${i.mine.total}</b> 灵气（结束后每天 +${i.mine.daily}）</div>
+          <div class="dd-pool-main"><span>🎊 我的奖励</span><b>${i.mine.total}</b><em>灵气</em></div>
+          <div class="dd-pool-sub">活动结束后每天发放 <b>${i.mine.daily}</b> 灵气，连发 100 天</div>
         </div>
-        <div class="dd-status">已参与 <b>${i.plays}</b> 次 ｜ 剩余：<b>${i.freeLeft > 0 ? '免费×1' : (i.bonusLeft > 0 ? '通关加成×' + i.bonusLeft : '无限（100 灵气/次）')}</b>${i.beta ? ' ｜ <em>内测模式</em>' : ''}</div>
-        <button class="dd-btn" id="ddPlay" ${canIn ? '' : 'disabled'}>${btnTxt}</button>
-        <div class="dd-note">投入 100 灵气触发翻倍：90% 1~2倍 · 8% 2~3倍 · 1.9% 3~5倍 · 0.1% 5~10倍。奖励在活动结束次日起分 100 天每日发放，想玩多少次都行，每次 100 灵气。每通关 10 关 +1 次免费机会（当前通关 ${i.cleared} 关）。</div>
+        <div class="dd-status">已参与 <b>${i.plays}</b> 次 ｜ 剩余：<b>${i.freeLeft > 0 ? '免费×1' : (i.bonusLeft > 0 ? '通关加成×' + i.bonusLeft : '0')}</b>${i.beta ? ' ｜ <em>内测模式</em>' : ''}</div>
+        <button class="dd-btn" id="ddPlay" ${canIn && hasChance ? '' : 'disabled'}>${btnTxt}</button>
+        <div class="dd-note">翻倍概率：90% 1~2倍 · 8% 2~3倍 · 1.9% 3~5倍 · 0.1% 5~10倍。奖励在活动结束次日起分 100 天每日发放。每通关 5 关 +1 次参与机会（当前通关 ${i.cleared} 关）。</div>
         <div class="dd-result" id="ddResult">${resultHtml}</div>`;
       const btn = document.getElementById("ddPlay");
       if (btn) btn.onclick = playDd;
