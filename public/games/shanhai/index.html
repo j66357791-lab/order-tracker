@@ -2054,7 +2054,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <div class="bag-item" style="border-color:${loot.color || "#cfd8dc"}">
           <div class="bag-q" style="color:${loot.color || "#666"}">${_escHtml(loot.qualityName || "")}</div>
           <div class="bag-n">${_escHtml(loot.name || "")}</div>
-          <div class="bag-a">${_escHtml(loot.affix || "")} +${loot.val}%</div>
+          <div class="bag-a">${_escHtml((AFFIX_DESC[loot.slot] || [""])[0] || loot.affix || "")} +${loot.val}%</div>
         </div>
         <div class="bag-sub">${r.first ? "首单特惠 " : "花费 "}<b>${r.cost}</b> 灵气　剩余 <b>${r.lingqi}</b></div>
         <div class="bag-sub2">已放入背包（${r.bagCount} 件），可在「装备」页穿上</div>
@@ -2107,7 +2107,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         <div style="padding:10px 14px 14px">
           <div class="up-eq" style="border-color:${it.color || "#ccc"}">
             <b style="color:${it.color}">${_escHtml(it.name || cfg.name + SLOT_NAME[slot])}</b>
-            <i>${cfg.name} · ${SLOT_NAME[slot]} · ${it.affix || ""} +${it.val || 0}${it.upAtk ? "（已强化 +" + it.upAtk + "）" : ""}</i>
+            <i>${cfg.name} · ${SLOT_NAME[slot]} · ${(AFFIX_DESC[slot] || [""])[0] || it.affix || ""} +${it.val || 0}${it.upAtk ? "（已强化 +" + it.upAtk + "）" : ""}</i>
           </div>
           <div class="up-row">消耗 <b>${cfg.cost}</b> 件${cfg.name}装备（背包有 <b id="upMats">${mats}</b> 件）</div>
           <div class="up-row">成功率 <b id="upRate">${cfg.rate}%</b>　成功得攻击 <b>${cfg.min}~${cfg.max}</b></div>
@@ -2247,7 +2247,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         ${ok ? `<div class="bag-item" style="border-color:${loot.color || "#ccc"}">
             <div class="bag-q" style="color:${loot.color}">${_escHtml(loot.qualityName || "")}</div>
             <div class="bag-n">${_escHtml(loot.name || "")}</div>
-            <div class="bag-a">${_escHtml(loot.affix || "")} +${loot.val}%</div>
+            <div class="bag-a">${_escHtml((AFFIX_DESC[loot.slot] || [""])[0] || loot.affix || "")} +${loot.val}%</div>
           </div>` : `<div class="bag-sub">5 件材料已销毁，再接再厉</div>`}
         <div class="bag-sub2">背包现有 ${r.bagCount} 件装备</div>
         <button class="ex-submit" id="cpResOk" style="margin-top:12px">知 道 了</button>
@@ -2906,7 +2906,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     mask.innerHTML = `<div class="eq-detail" onclick="event.stopPropagation()">
       <div class="eqd-title" style="color:${it.color || "#e8dcc8"}">${tierName(it)}</div>
       <div class="eqd-sub">${TIER_CN[tierOf(it)]} · ${it.qualityName || ""} · ${SLOT_NAME[slot]}${from === "equipped" ? " · 穿戴中" : ""}</div>
-      <div class="eqd-row"><span>${it.affix || meta[0]}</span><b style="color:${it.color || "#ffd76a"}">+${cur}${slot === "weapon" ? "" : "%"}</b></div>
+      <div class="eqd-row"><span>${meta[0]}</span><b style="color:${it.color || "#ffd76a"}">+${cur}${slot === "weapon" ? "" : "%"}</b></div>
       <div class="eqd-row"><span>对局内生效</span><b>${slot === "weapon" ? "攻击力 " + (5 + cur).toFixed(1) : (meta[0] + " " + cur + "%")}</b></div>
       ${cmp}
       ${from === "equipped" && sameSlotBest ? `<div class="eqd-desc" style="color:#8ef0a0">行囊里有更好的：${tierName(sameSlotBest)} +${sameSlotBest.val}${slot === "weapon" ? "" : "%"}</div>` : ""}
@@ -2980,7 +2980,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     mask.innerHTML = `<div class="eq-detail" onclick="event.stopPropagation()">
       <div class="eqd-title" style="color:${it.color || "#e8dcc8"}">${tierName(it)}</div>
       <div class="eqd-sub">${TIER_CN[tierOf(it)]} · ${it.qualityName || ""} · ${SLOT_NAME[slot]}</div>
-      <div class="eqd-row"><span>${it.affix || meta[0]}</span><b style="color:${it.color || "#ffd76a"}">+${cur}${slot === "weapon" ? "" : "%"}</b></div>
+      <div class="eqd-row"><span>${meta[0]}</span><b style="color:${it.color || "#ffd76a"}">+${cur}${slot === "weapon" ? "" : "%"}</b></div>
       <div class="eqd-row"><span>对局内生效</span><b>${slot === "weapon" ? "攻击力 " + (5 + cur).toFixed(1) : (meta[0] + " " + (cur) + "%")}</b></div>
       <div class="eqd-desc">${meta[1]}</div>
       ${bestInBag ? `<div class="eqd-desc" style="color:#8ef0a0">行囊里有更好的：${bestInBag.name} +${bestInBag.val}${slot === "weapon" ? "" : "%"}</div>` : ""}
