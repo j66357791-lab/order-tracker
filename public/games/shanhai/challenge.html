@@ -70,7 +70,7 @@
 <body>
 <div class="wrap">
   <div class="top">
-    <div class="back" onclick="location.href='/games/shanhai/index.html'">‹</div>
+    <div class="back" id="btnBack" title="返回游戏">‹</div>
     <b>灵脉争夺战</b>
     <span class="daily" id="dailyCnt">进攻 --</span>
   </div>
@@ -148,6 +148,12 @@ function toast(msg) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2200);
 }
+
+// 【v26.49】返回优先走 history.back（游戏页 bfcache 恢复，不重载加载页）；无历史才回游戏首页
+document.getElementById("btnBack").onclick = () => {
+  if (history.length > 1) history.back();
+  else location.href = "/games/shanhai/index.html";
+};
 
 async function boot() {
   try {
