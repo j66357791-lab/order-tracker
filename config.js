@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.47',  // 【v26.47】修手机端地图操作:资源版本号升36(裁webview旧缓存)+document级触摸拦截兜底+清理重复touchend
+  appVersion: '26.48',  // 【v26.48】挑战模式独立页(免缓存新URL)+回合制守护者战斗+占领每小时结算(1:100仙玉,不足自动结束)+每日1次进攻
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,10 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.48', date: '2026-09-25', notes: [
+    '【新增·独立挑战页】挑战模式迁移至独立页面 challenge.html（全新 URL 免 webview 缓存困扰）：难度选择 → 灵脉大地图（缩放/拖拽/双指）→ 点灵脉看守护者属性 → 回合制战斗',
+    '【新增·回合制战斗】平面互砍：玩家 vs 守护者自动互砍 30 回合（暴击/守护者特殊技能逐级解锁），服务端计算战报防作弊，客户端逐回合播放动画',
+    '【新增·占领与结算】胜利即占领：每小时产出灵气、每小时结算消耗 1:100 仙玉；仙玉不足自动结束占领并发邮件通知；每日进攻 1/1 次原子占位（次日刷新）；支持放弃占领'] },
   { ver: '26.47', date: '2026-09-25', notes: [
     '【修复·手机端地图操作】三管齐下：①页面 css/js 资源版本号升至 v=36（强制 webview 丢弃旧缓存——此前样式/脚本从 26.36 起版本号未变，手机可能一直在用旧缓存）；②document 级触摸拦截兜底（触摸起点在地图内时强制阻止浏览器默认滚动/缩放，webview 忽略 touch-action 也有效）；③清理重复的 touchend 监听。手机上请彻底关闭页面后重开一次'] },
   { ver: '26.46', date: '2026-09-25', notes: [
