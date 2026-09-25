@@ -941,13 +941,20 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     try {
       const db = await getDb();
       const b = req.body || {};
+      // 【v26.29 修复】datetime-local 的时间字符串不带时区，服务器在国外会按当地时区解析——
+      // 填"10:00"实际变成北京时间 22:00，活动被"未开始"过滤掉。统一按北京时间(+08:00)解析
+      const parseCn = s => {
+        if (!s) return null;
+        const str = String(s);
+        return new Date(/[zZ]$|[+-]\d{2}:?\d{2}$/.test(str) ? str : str + ':00+08:00');
+      };
       const doc = {
         title: String(b.title || '').trim().slice(0, 40),
         tag: String(b.tag || '').trim().slice(0, 10),
         img: String(b.img || '').trim().slice(0, 200),
         content: String(b.content || '').slice(0, 5000),
-        start: b.start ? new Date(b.start) : null,
-        end: b.end ? new Date(b.end) : null,
+        start: parseCn(b.start),
+        end: parseCn(b.end),
         type: String(b.type || '').trim().slice(0, 20),
         enabled: b.enabled !== false,
         updatedAt: new Date(),
