@@ -1336,7 +1336,8 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     const eq = prof.equip || {};
     const V = k => (eq[k] && Number(eq[k].val) || 0) / 100;
     const armorV = V("armor");
-    const hp = Math.round(100 * (1 + armorV) * (1 + (sl.body || 0) * 0.08 + armorV));
+    const bodyHpMul = 1 + (sl.body || 0) * 0.08 + armorV;
+  const hp = Math.round(100 * (1 + armorV) * bodyHpMul * bodyHpMul);   // 与 game.js startRun 完全同式（bodyHpMul 双计入是游戏现行行为）
     const atk = 5 + (eq.weapon && Number(eq.weapon.val) || 0);   // 【v26.55】与装备页"攻击力（飞剑）"完全一致
     const def = Math.round(10 * (1 + V("boots")));   // 防御来自鞋子（v26.53 鞋子词条=防御）
     return { hp, atk, def };
@@ -1370,6 +1371,12 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const me = req.user;
       const lv = Math.min(5, Math.max(1, Math.floor(Number((req.body || {}).veinLv) || 1)));
       const today = ddCnToday();
+      // 【v26.54】过期战斗会话清理 + 退还今日次数（战斗中超时放弃不再白扣）
+      const expired = await db.collection(BT_COL).deleteMany({ userId: me.id, expireAt: { $lt: new Date() } });
+      if (expired.deletedCount > 0) {
+        const dr0 = await db.collection(DAILY_COL).findOne({ userId: me.id, date: today });
+        if (dr0 && dr0.attacks >= 1) { await db.collection(DAILY_COL).deleteOne({ _id: dr0._id }); }
+      }
       const u = await db.collection(DAILY_COL).findOneAndUpdate(
         { userId: me.id, date: today, attacks: { $lt: 1 } },
         { $inc: { attacks: 1 } });
@@ -1454,7 +1461,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       out0.pHP = pHP; out0.gHP = gHP;
       if (gHP <= 0) { out0.over = true; out0.win = true; }
       else if (pHP <= 0) { out0.over = true; out0.win = false; }
-      else if (round >= 40) { out0.over = true; out0.win = false; out0.gNote = (out0.gNote ? out0.gNote + '·' : '') + '超时判负'; }
+      else if (round >= 20) { out0.over = true; out0.win = false; out0.gNote = (out0.gNote ? out0.gNote + '·' : '') + '20回合未击败守护者'; }
       if (out0.over) {
         await db.collection(BT_COL).deleteOne({ _id: bt._id });
         if (out0.win) {
