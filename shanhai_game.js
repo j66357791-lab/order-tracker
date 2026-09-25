@@ -920,11 +920,19 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const me = req.user;
       const isTester = sys.testAccounts.includes(me.username) || (me.uid && sys.testAccounts.includes(String(me.uid)));
       const now = new Date();
-      const list = (await db.collection('shanhai_activities').find({ enabled: { $ne: false } })
-        .sort({ sort: 1, createdAt: 1 }).limit(50).toArray())
-        .filter(a => (!a.start || new Date(a.start) <= now) && (!a.end || new Date(a.end) >= now))
+      const all = await db.collection('shanhai_activities').find({}).sort({ sort: 1, createdAt: 1 }).limit(50).toArray();
+      const list = all
+        .filter(a => a.enabled !== false && (!a.start || new Date(a.start) <= now) && (!a.end || new Date(a.end) >= now))
         .map(actPub);
-      res.json({ ok: true, locked: !!sys.locked && !isTester, tester: isTester, activities: list });
+      // 自检数据（仅测试员/管理员可见）：列表为空时一眼看出是哪层过滤掉的
+      const debug = (isTester || me.role === 'admin') ? {
+        now: now.toISOString(),
+        total: all.length,
+        enabledCount: all.filter(a => a.enabled !== false).length,
+        shown: list.length,
+        rows: all.slice(0, 5).map(a => ({ title: a.title, type: a.type || '', enabled: a.enabled !== false, start: a.start || null, end: a.end || null })),
+      } : undefined;
+      res.json({ ok: true, locked: !!sys.locked && !isTester, tester: isTester, activities: list, debug });
     } catch (e) { console.error('[api] activities', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
