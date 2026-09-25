@@ -1361,10 +1361,15 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const me = req.user;
       const lv = Math.min(5, Math.max(1, Math.floor(Number((req.body || {}).veinLv) || 1)));
       const today = ddCnToday();
+      // 【v26.51 修复】"条件更新+upsert"在今日文档已存在（此前点过挑战）时会尝试插入 →
+      // 撞唯一索引 E11000 抛 500。改为：先确保今日文档存在，再原子占位
+      await db.collection(DAILY_COL).updateOne(
+        { userId: me.id, date: today },
+        { $setOnInsert: { userId: me.id, date: today, attacks: 0 } },
+        { upsert: true });
       const u = await db.collection(DAILY_COL).findOneAndUpdate(
         { userId: me.id, date: today, attacks: { $lt: 1 } },
-        { $inc: { attacks: 1 }, $setOnInsert: { userId: me.id, date: today } },
-        { upsert: true });
+        { $inc: { attacks: 1 } });
       if (!u || !(u.value || u)) return res.status(400).json({ ok: false, error: '今日进攻次数已用完（次日刷新）', code: 'NO_ATTACK' });
       const prof = await ensureProfile(db, me.id, me.displayName || me.username);
       const cleared = (prof.clearedStages || []).length;
