@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.34',  // 【v26.34】接口报错带失败路径(404/5xx 显示具体接口)——用户报错即定位
+  appVersion: '26.35',  // 【v26.35】修堆堆乐404:游戏页内两套shApi签名不同,新代码误用导致GET打到POST-only接口
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.35', date: '2026-09-25', notes: [
+    '【修复·堆堆乐404】游戏页内存在两套同名 shApi：首块的签名是 (path, fetch选项)，新写的堆堆乐代码按 (url, body) 误用 → method 未传默认 GET，打到只注册了 POST 的接口上必然 404。已修正调用方式并把 info 改为 GET。感谢"报错带路径"功能，一次定位'] },
   { ver: '26.34', date: '2026-09-25', notes: [
     '【排障】接口 404/5xx 的报错现在会带上失败的接口路径（如"接口不存在 [404 /api/xxx]"），用户截图即可精确定位，不再来回猜'] },
   { ver: '26.33', date: '2026-09-25', notes: [
