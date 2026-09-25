@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.61',  // 【v26.61】装备抽取页UI改版:专属星云背景+神级发光装备轮播展览(6件神装自动切换/指示点)+底部单抽十连
+  appVersion: '26.62',  // 【v26.62】修抽取页轮播空白(esc未定义→_escHtml)
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.62', date: '2026-09-25', notes: [
+    '【修复·抽取页轮播空白】轮播渲染用了不存在的 esc() 转义函数（游戏页为 _escHtml）→ 注入即抛错展品全空。已修正'] },
   { ver: '26.61', date: '2026-09-25', notes: [
     '【UI改版·装备抽取】玄机宝阁全新视觉：专属星云背景（金色粒子斜纹+紫金辉光）、中部神级发光装备轮播展览（6件神装：斩妖古剑/天蚕圣袍/星辉金冠/乾坤灵绦/追风神履/太极玉珮，3秒自动切换+呼吸金光+指示点）、底部单抽（120仙玉）/十连抽（1200仙玉）按钮下移展示区之下'] },
   { ver: '26.60', date: '2026-09-25', notes: [
