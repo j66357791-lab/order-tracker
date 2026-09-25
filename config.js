@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.52',  // 【v26.52】战斗画面与游戏本体统一:英雄/山昊鬼/山臊王精灵帧动画+灵脉秘境战斗背景;去掉临时手绘形象
+  appVersion: '26.53',  // 【v26.53】挑战模式玩家数值与对局同口径(血量=基础100×装备×天赋体质,守护者等比缩至游戏尺度逐级倍增)
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.53', date: '2026-09-25', notes: [
+    '【数值定稿】挑战模式玩家数值与对局英雄完全同口径：血量=100×(1+衣服%)×(1+天赋体质×8%+衣服%)——与进对局看到的血量一致；攻击=300×(武器%+火/冰技能×6%)；守护者等比缩至游戏尺度（Lv1 石傀 HP 3,000/攻 12/防 20，逐级倍增至 Lv5 48,000），特殊技能不变'] },
   { ver: '26.52', date: '2026-09-25', notes: [
     '【美术·战斗统一】灵脉战斗画面改用游戏本体素材：玩家=英雄精灵帧动画（hero.png 6帧），守护者=山昊鬼精灵逐级放大（Lv5 用山臊王 BOSS 精灵），背景=灵脉秘境图+暗色遮罩；移除临时手绘形象，与游戏视觉完全一致'] },
   { ver: '26.51', date: '2026-09-25', notes: [
