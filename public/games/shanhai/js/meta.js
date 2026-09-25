@@ -70,6 +70,11 @@ const META = (() => {
       body: body ? JSON.stringify(body) : undefined,
     });
     if (r.status === 401) { location.href = "/login.html"; throw { error: "未登录" }; }
+    // 【v26.34】404/5xx 带上失败的接口路径
+    if (r.status === 404 || r.status >= 500) {
+      const d = await r.json().catch(() => ({}));
+      throw { error: (d.error || "请求失败") + " [" + r.status + " " + url + "]" };
+    }
     const d = await r.json();
     if (!d.ok) throw d;
     return d;
