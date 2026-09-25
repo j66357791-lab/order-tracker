@@ -356,6 +356,11 @@ function exitToWriter(){
 async function shApi(path, opt = {}) {
   const r = await fetch(path, { ...opt, headers: { "Content-Type": "application/json", Authorization: "Bearer " + SH_TOKEN, ...(opt.headers || {}) } });
   if (r.status === 401) { localStorage.removeItem("jdy_token"); localStorage.removeItem("jdy_user"); location.href = "/login.html"; throw new Error("未登录"); }
+  // 【v26.34】404/5xx 带上失败的接口路径——报错即定位，不用再猜是哪个请求出的问题
+  if (r.status === 404 || r.status >= 500) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error((d.error || "请求失败") + " [" + r.status + " " + path + "]");
+  }
   return r.json();
 }
 function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
