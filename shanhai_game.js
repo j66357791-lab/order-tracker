@@ -921,8 +921,11 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const isTester = sys.testAccounts.includes(me.username) || (me.uid && sys.testAccounts.includes(String(me.uid)));
       const now = new Date();
       const all = await db.collection('shanhai_activities').find({}).sort({ sort: 1, createdAt: 1 }).limit(50).toArray();
+      // 【v26.32 修复】内测/管理员忽略时间窗（未开始的也要能看到并测试）；
+      // 普通玩家维持原过滤（未开始/已结束不出现）
+      const staff = isTester || me.role === 'admin';
       const list = all
-        .filter(a => a.enabled !== false && (!a.start || new Date(a.start) <= now) && (!a.end || new Date(a.end) >= now))
+        .filter(a => a.enabled !== false && (staff || ((!a.start || new Date(a.start) <= now) && (!a.end || new Date(a.end) >= now))))
         .map(actPub);
       // 自检数据（仅测试员/管理员可见）：列表为空时一眼看出是哪层过滤掉的
       const debug = (isTester || me.role === 'admin') ? {
