@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.57',  // 【v26.57】修战斗页卡死:请求20秒超时+按钮保险丝+加载超时可重试
+  appVersion: '26.58',  // 【v26.58】修守护者不可见(精灵div缺宽高)+修按钮无响应(战斗界面就绪后fighting未复位)
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,9 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.58', date: '2026-09-25', notes: [
+    '【修复·守护者不可见】守护者精灵 div 只设置了背景尺寸变量、没设自身宽高 → 高度为 0 隐形。已按等级帧宽设置宽高',
+    '【修复·按钮无响应】战斗界面打开后 fighting 标志未复位 → act() 永远被拦截。界面就绪后即复位，回合请求期间由 lock 控制防连点'] },
   { ver: '26.57', date: '2026-09-25', notes: [
     '【修复·战斗页卡死】请求无超时机制，接口挂起时按钮永久锁死。现所有请求 20 秒超时自动恢复、按钮 20 秒保险丝强制解锁、状态加载超时给出"重新加载"按钮'] },
   { ver: '26.56', date: '2026-09-25', notes: [
