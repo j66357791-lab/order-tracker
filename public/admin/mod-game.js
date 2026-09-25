@@ -1119,7 +1119,8 @@ export function mount(root) {
   };
 
   // ==================== 【v26.25】活动管理（维护锁 + 测试账号 + 活动增删改排序） ====================
-  const dts = v => { const d = new Date(v); return isNaN(d) ? '' : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+  // 【v26.29】时间显示统一按北京时间（+8）格式化，与录入口径一致（此前用浏览器本地时区会偏移）
+  const dts = v => { const d = new Date(v); if (isNaN(d)) return ''; return new Date(d.getTime() + 8 * 3600e3).toISOString().slice(0, 16); };
   let ACTROWS = [];
 
   async function loadActMgr() {
