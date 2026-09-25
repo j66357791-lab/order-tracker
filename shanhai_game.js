@@ -1138,7 +1138,14 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     amt = Math.round(amt * 100) / 100;
     const r = await db.collection(DD_COL).updateOne(
       { _id: rec._id, releasedDays: rec.releasedDays },
-      { $inc: { releasedDays: target - rec.releasedDays, releasedAmount: amt, pending: amt }, $set: { lastDay: ddCnToday() } });
+      { $inc: { releasedDays: target - rec.releasedDays, releasedAmount: amt }, $set: { lastDay: ddCnToday() } });
+    // 【v26.46】每日份额改发邮件（玩家在头像-设置-邮箱里领取）；旧 pending 手动领取保留兼容
+    if (r.modifiedCount && amt > 0) {
+      await sendMails(db, [rec.userId],
+        `灵气堆堆乐 · 每日释放（第 ${rec.releasedDays + 1}/${DD_DAYS} 天）`,
+        `今日释放 ${amt} 灵气已附于本邮件，点击领取即可到账。`,
+        amt, 0);
+    }
     return !!r.modifiedCount;
   }
   async function processDuiduileRelease() {
@@ -1208,6 +1215,106 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'admin_dd_cleanup', detail: { deleted: r.deletedCount, who: who || 'ALL' }, createdAt: new Date() }).catch(() => { });
       res.json({ ok: true, deleted: r.deletedCount });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '清理失败，请稍后再试' }); }
+  });
+
+  // ==================== 【v26.46】站内邮箱（系统发放 / 活动奖励附件） ====================
+  const MAIL_COL = 'shanhai_mails';
+  let mailIdxReady = false;
+  const mailPub = m => ({
+    id: String(m._id), title: m.title, content: m.content || '',
+    lingqi: (m.attach && m.attach.lingqi) || 0, xianyu: (m.attach && m.attach.xianyu) || 0,
+    claimed: !!m.claimed, createdAt: m.createdAt,
+  });
+  async function sendMails(db, toIds, title, content, lingqi, xianyu) {
+    const now = new Date();
+    const docs = (toIds || []).map(uid => ({
+      to: String(uid), from: 'system',
+      title: String(title || '').slice(0, 60),
+      content: String(content || '').slice(0, 1000),
+      attach: { lingqi: Math.round((lingqi || 0) * 100) / 100, xianyu: Math.round(xianyu || 0) },
+      claimed: false, createdAt: now,
+      expireAt: new Date(now.getTime() + 30 * 86400e3),
+    }));
+    if (docs.length) await db.collection(MAIL_COL).insertMany(docs);
+    return docs.length;
+  }
+  app.get('/api/shanhai/mails', auth, async (req, res) => {
+    try {
+      const db = await getDb();
+      if (!mailIdxReady) {
+        mailIdxReady = true;
+        db.collection(MAIL_COL).createIndexes([
+          { key: { to: 1, createdAt: -1 } },
+          { key: { expireAt: 1 }, expireAfterSeconds: 0 },
+        ]).catch(e => console.warn('[mail] 索引', e.message));
+      }
+      const mails = await db.collection(MAIL_COL)
+        .find({ to: req.user.id, expireAt: { $gt: new Date() } })
+        .sort({ createdAt: -1 }).limit(50).toArray();
+      res.json({ ok: true, unclaimed: mails.filter(m => !m.claimed).length, mails: mails.map(mailPub) });
+    } catch (e) { console.error('[api] mails', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+  app.post('/api/shanhai/mails/claim', auth, limit({ name: 'mail-claim', max: 30, windowMs: 60 * 1000, msg: '太快了' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const id = String((req.body || {}).id || '');
+      if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: '参数无效' });
+      const m = await db.collection(MAIL_COL).findOne({ _id: new ObjectId(id), to: req.user.id });
+      if (!m) return res.status(404).json({ ok: false, error: '邮件不存在' });
+      if (m.claimed) return res.status(400).json({ ok: false, error: '该邮件已领取' });
+      const r = await db.collection(MAIL_COL).updateOne({ _id: m._id, claimed: false }, { $set: { claimed: true, claimedAt: new Date() } });
+      if (!r.modifiedCount) return res.status(409).json({ ok: false, error: '已被领取，请刷新' });
+      const inc = {};
+      if ((m.attach && m.attach.lingqi) > 0) inc.lingqi = m.attach.lingqi;
+      if ((m.attach && m.attach.xianyu) > 0) inc.xianyu = m.attach.xianyu;
+      if (Object.keys(inc).length) {
+        await db.collection('shanhai_profiles').updateOne({ userId: req.user.id }, { $inc: inc }, { upsert: true });
+      }
+      res.json({ ok: true, lingqi: (m.attach && m.attach.lingqi) || 0, xianyu: (m.attach && m.attach.xianyu) || 0 });
+    } catch (e) { console.error('[api] mails/claim', e); res.status(500).json({ ok: false, error: '领取失败，请稍后再试' }); }
+  });
+  app.post('/api/shanhai/mails/claimAll', auth, limit({ name: 'mail-claimall', max: 15, windowMs: 60 * 1000, msg: '太快了' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const mails = await db.collection(MAIL_COL).find({ to: req.user.id, claimed: false, expireAt: { $gt: new Date() } }).toArray();
+      let lingqi = 0, xianyu = 0, n = 0;
+      for (const m of mails) {
+        const r = await db.collection(MAIL_COL).updateOne({ _id: m._id, claimed: false }, { $set: { claimed: true, claimedAt: new Date() } });
+        if (r.modifiedCount) { n++; lingqi += (m.attach && m.attach.lingqi) || 0; xianyu += (m.attach && m.attach.xianyu) || 0; }
+      }
+      lingqi = Math.round(lingqi * 100) / 100; xianyu = Math.round(xianyu);
+      const inc = {};
+      if (lingqi > 0) inc.lingqi = lingqi;
+      if (xianyu > 0) inc.xianyu = xianyu;
+      if (Object.keys(inc).length) await db.collection('shanhai_profiles').updateOne({ userId: req.user.id }, { $inc: inc }, { upsert: true });
+      res.json({ ok: true, claimed: n, lingqi, xianyu });
+    } catch (e) { console.error('[api] mails/claimAll', e); res.status(500).json({ ok: false, error: '领取失败，请稍后再试' }); }
+  });
+  // 管理端发送：target = 'all' 或 用户名/工号
+  app.post('/api/shanhai/admin/mails/send', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const b = req.body || {};
+      const title = String(b.title || '').trim();
+      if (!title) return res.status(400).json({ ok: false, error: '请填写邮件标题' });
+      const lingqi = Math.round((Number(b.lingqi) || 0) * 100) / 100;
+      const xianyu = Math.round(Number(b.xianyu) || 0);
+      if (lingqi < 0 || xianyu < 0 || (!lingqi && !xianyu && !String(b.content || '').trim())) {
+        return res.status(400).json({ ok: false, error: '请填写正文或附件' });
+      }
+      let toIds = [];
+      const target = String(b.target || 'all').trim();
+      if (target === 'all') {
+        toIds = (await db.collection('users').find({}, { projection: { _id: 1 } }).limit(5000).toArray()).map(u => u._id.toString());
+      } else {
+        const u = await db.collection('users').findOne(/^\d{7}$/.test(target) ? { uid: target } : { username: target });
+        if (!u) return res.status(404).json({ ok: false, error: '未找到该用户' });
+        toIds = [u._id.toString()];
+      }
+      const n = await sendMails(db, toIds, title, String(b.content || '').slice(0, 1000), lingqi, xianyu);
+      await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'admin_mail_send', detail: { target, n, lingqi, xianyu }, createdAt: new Date() }).catch(() => { });
+      res.json({ ok: true, sent: n });
+    } catch (e) { console.error('[api] mails/send', e); res.status(500).json({ ok: false, error: '发送失败，请稍后再试' }); }
   });
 
   // ==================== 体力（v24.9） ====================
