@@ -101,16 +101,6 @@
         </div>
         <div class="daily-tip" id="stageTip">每局皆得仙玉 · 首通另有重赏</div>
 
-        <!-- 【v26.40】挑战模式入口：横条海报（灵脉争夺战） -->
-        <div id="chalEntry" title="挑战模式 · 灵脉争夺战">
-          <img src="/games/shanhai/assets/challenge/poster.jpg?v=1" alt="" onerror="this.style.display='none'">
-          <div class="chal-poster-fallback">
-            <b>⚔ 挑战模式</b>
-            <span>灵脉争夺战 · 击败守护者 占领灵脉 收获灵气</span>
-            <i>进入 ›</i>
-          </div>
-        </div>
-
         <!-- 【v26.25】活动入口：贴屏幕左侧的挂轴（商业游戏样式），维护时显示上锁样式 -->
         <div id="actEntry" title="活动">
           <svg viewBox="0 0 46 92" aria-hidden="true">
@@ -311,9 +301,17 @@
           </div>
         </div>
       </div>
-      <!-- 挑战（占位） -->
+      <!-- 挑战（【v26.43】正式面板：海报 → 难度选择 → 灵脉地图） -->
       <div class="home-tab" id="tabChallenge">
-        <div class="empty-tip" style="padding:60px 0">挑战模式敬请期待…</div>
+        <div id="chalEntry" title="挑战模式 · 灵脉争夺战">
+          <img src="/games/shanhai/assets/challenge/poster.jpg?v=1" alt="" onerror="this.style.display='none'">
+          <div class="chal-poster-fallback">
+            <b>⚔ 挑战模式</b>
+            <span>灵脉争夺战 · 击败守护者 占领灵脉 收获灵气</span>
+            <i>进入 ›</i>
+          </div>
+        </div>
+        <div class="chal-tab-note">挑战关卡消耗每日进攻次数（每天 1 次，次日刷新）。</div>
       </div>
     </div>
 
@@ -1032,23 +1030,23 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const en = document.getElementById("actEntry");
     if (en) en.onclick = () => showActCenter();
     const ce = document.getElementById("chalEntry");
-    if (ce) ce.onclick = () => showChallenge();
+    if (ce) ce.onclick = () => showChallengeDiff();
     loadActState();   // 页面加载即拉一次锁状态，维护时入口直接显示上锁样式
   })();
 
   /* ==================== 【v26.40】挑战模式 · 灵脉争夺战（壳子） ====================
      超大地图（1800×1300 逻辑坐标）随机分布 1~5 级灵脉；占领需击败守护者（建模占位）。
      本轮为可玩壳子：浏览/缩放/拖拽 + 节点详情；战斗与占领产出后续接入。 */
-  const CHAL = { W: 1800, H: 1300, LV_COLOR: { 1: '#6fd8a0', 2: '#54b4e8', 3: '#b48af0', 4: '#f0b454', 5: '#f0546e' }, OUTPUT: { 1: '10', 2: '25', 3: '60', 4: '150', 5: '400' } };
+  const CHAL = { LV_COLOR: { 1: '#6fd8a0', 2: '#54b4e8', 3: '#b48af0', 4: '#f0b454', 5: '#f0546e' }, OUTPUT: { 1: 10, 2: 25, 3: 60, 4: 150, 5: 400 } };
 
-  function genVeins() {
-    const LV = [[1, 6], [2, 5], [3, 4], [4, 2], [5, 1]];
+  function genVeins(map) {
+    const LV = map.LV;
     const pts = [];
     for (const [lv, cnt] of LV) {
       let placed = 0, guard = 0;
       while (placed < cnt && guard++ < 600) {
-        const x = 130 + Math.random() * (CHAL.W - 260);
-        const y = 110 + Math.random() * (CHAL.H - 240);
+        const x = 130 + Math.random() * (map.W - 260);
+        const y = 110 + Math.random() * (map.H - 240);
         if (pts.every(p => Math.hypot(p.x - x, p.y - y) > 210)) { pts.push({ x: Math.round(x), y: Math.round(y), lv }); placed++; }
       }
     }
@@ -1071,12 +1069,56 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     if (m) m.remove();
   }
 
-  function showChallenge() {
+  /* —— 【v26.43】难度选择：初级开放，其余暂未开放 —— */
+  const CHAL_DIFF = [
+    { id: 'chu', name: '初级灵脉矿', open: true, out: '10/小时', guard: 'Lv.1', settle: '1,000 仙玉/小时', map: { W: 1800, H: 1300, LV: [[1, 6], [2, 5], [3, 4], [4, 2], [5, 1]] } },
+    { id: 'zhong', name: '中级灵脉矿', open: false },
+    { id: 'gao', name: '高级灵脉矿', open: false },
+    { id: 'dian', name: '典藏灵脉矿', open: false },
+    { id: 'xian', name: '仙品灵脉矿', open: false },
+  ];
+  function closeChalDiff() {
+    const m = document.getElementById("chalDiffMask");
+    if (m) m.remove();
+  }
+  function showChallengeDiff() {
+    closeChalDiff();
+    const mask = document.createElement("div");
+    mask.className = "ex-mask"; mask.id = "chalDiffMask";
+    mask.onclick = e => { if (e.target === mask) closeChalDiff(); };
+    mask.innerHTML = `
+      <div class="ex-wrap" style="max-width:460px">
+        <div class="ex-head" style="padding-top:11px">
+          <div class="ex-sub">选择挑战难度</div>
+          <div class="ex-close" id="chalDiffClose">×</div>
+        </div>
+        <div class="chal-diff-list">
+          ${CHAL_DIFF.map(d => `
+            <div class="chal-diff-item${d.open ? '' : ' locked'}" data-id="${d.id}">
+              <span class="chal-lv ${d.open ? 'c1' : ''}" style="${d.open ? '' : 'background:#8a97a8'}">${d.open ? '开' : '🔒'}</span>
+              <div class="chal-diff-mid"><b>${d.name}</b><i>${d.open ? `灵气 ${d.out} ｜ 守护者 ${d.guard} ｜ 结算 ${d.settle}` : '暂未开放，敬请期待'}</i></div>
+              <em>${d.open ? '进入 ›' : ''}</em>
+            </div>`).join("")}
+        </div>
+        <div class="chal-d-note">每日进攻次数 1/1（次日刷新）；占领后每小时结算，仙玉不足自动结束占领。</div>
+      </div>`;
+    document.body.appendChild(mask);
+    document.getElementById("chalDiffClose").onclick = closeChalDiff;
+    mask.querySelectorAll(".chal-diff-item").forEach(it => it.onclick = () => {
+      const d = CHAL_DIFF.find(x => x.id === it.dataset.id);
+      if (!d.open) return toast(d.name + "暂未开放");
+      closeChalDiff();
+      showChallenge(d);
+    });
+  }
+
+  function showChallenge(diff) {
+    const DIFF = diff || CHAL_DIFF[0];
     closeChallenge();
     const mask = document.createElement("div");
     mask.className = "ex-mask"; mask.id = "chalMask";
     mask.onclick = e => { if (e.target === mask) closeChallenge(); };
-    const nodes = genVeins();
+    const nodes = genVeins(DIFF.map);
     mask.innerHTML = `
       <div class="ex-wrap" style="max-width:540px;width:96vw;height:88vh">
         <div class="ex-head" style="padding-top:11px">
@@ -1136,11 +1178,14 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     mask.querySelectorAll(".chal-node").forEach(nd => nd.onclick = () => {
       const p = nodes[+nd.dataset.i];
       const det = document.getElementById("chalDetail");
+      const out = CHAL.OUTPUT[p.lv];
       det.innerHTML = `
-        <div class="chal-d-head">${veinSvg(p.lv, 34)}<div><b>Lv.${p.lv} 灵脉</b><i>产出 ${CHAL.OUTPUT[p.lv]} 灵气/小时（占领后）</i></div>
+        <div class="chal-d-head">${veinSvg(p.lv, 34)}<div><b>Lv.${p.lv} 灵脉</b><i>占领后产出 ${out} 灵气/小时</i></div>
           <span class="chal-lv c${p.lv}">Lv.${p.lv}</span></div>
-        <div class="chal-d-row">需要击败 <b>Lv.${p.lv} 灵脉守护者</b> 后占领；占领期间持续产出灵气。</div>
-        <div class="chal-d-row">守护者形象与战斗玩法开发中，敬请期待。</div>
+        <div class="chal-d-row">需要击败 <b>Lv.${p.lv} 灵脉守护者</b> 后占领。</div>
+        <div class="chal-d-row">⏱ 每小时结算产出 ${out} 灵气，需消耗 <b>${(out * 100).toLocaleString()} 仙玉</b>（1:100）；<b>仙玉不足则不产出，自动结束占领</b>。</div>
+        <div class="chal-d-row">⚔ 每日进攻次数 <b>1/1</b>（次日刷新）。</div>
+        <div class="chal-d-row" style="color:#8fae9e">守护者形象与战斗玩法开发中，敬请期待。</div>
         <button class="dd-btn" disabled>挑战守护者（即将开放）</button>`;
     });
   }
