@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.59',  // 【v26.59】修回合结算500(res0残留未定义)+防御姿态改单回合生效
+  appVersion: '26.60',  // 【v26.60】20回合超时判负+战斗超时放弃退还每日次数+挑战血量公式与对局完全同式(体质双计入)
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,10 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.60', date: '2026-09-25', notes: [
+    '【定稿·失败条件】20 回合内未击败守护者判负',
+    '【优化】战斗超时/放弃后重新发起挑战时，退还被扣的每日进攻次数（不再白扣）',
+    '【数值】挑战血量公式与对局完全同式（天赋体质加成双重计入，与 game.js 一致——你此前看到的 170 就是该口径）'] },
   { ver: '26.59', date: '2026-09-25', notes: [
     '【修复·回合结算500】"res0 is not defined"：战斗改版时新旧草稿混写，残留一行旧变量名引用。已修正',
     '【修复·防御姿态永久生效】选一次防御后减伤被持久化到后续回合。改为单回合生效（回合结束自动重置）'] },
