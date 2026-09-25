@@ -1056,7 +1056,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       last: last ? { mult: last.mult, reward: last.reward, releasedDays: last.releasedDays, perDay: last.perDay } : null,
     };
   }
-  app.post('/api/shanhai/duiduile/info', auth, limit({ name: 'sh-dd-info', max: 60, windowMs: 60 * 1000, msg: '太快了' }), async (req, res) => {
+  app.get('/api/shanhai/duiduile/info', auth, limit({ name: 'sh-dd-info', max: 60, windowMs: 60 * 1000, msg: '太快了' }), async (req, res) => {
     try {
       const db = await getDb();
       const sys = await loadActSys(db);
