@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>山海斩妖录</title>
-<link rel="stylesheet" href="css/style.css?v=33">
+<link rel="stylesheet" href="css/style.css?v=34">
 </head>
 <body>
 <div id="app">
@@ -338,7 +338,7 @@
   <div id="overlay"></div>
 </div>
 
-<script src="js/config.js?v=33"></script>
+<script src="js/config.js?v=34"></script>
 <script>
 "use strict";
 // ===== 后端对接层 =====
@@ -365,15 +365,15 @@ async function shApi(path, opt = {}) {
 }
 function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
 </script>
-<script src="js/assets.js?v=33"></script>
-<script src="js/pool.js?v=33"></script>
-<script src="js/meta.js?v=33"></script>
-<script src="js/entities.js?v=33"></script>
-<script src="js/weapons.js?v=33"></script>
-<script src="js/effects.js?v=33"></script>
-<script src="js/audio.js?v=33"></script>
-<script src="js/ui.js?v=33"></script>
-<script src="js/game.js?v=33"></script>
+<script src="js/assets.js?v=34"></script>
+<script src="js/pool.js?v=34"></script>
+<script src="js/meta.js?v=34"></script>
+<script src="js/entities.js?v=34"></script>
+<script src="js/weapons.js?v=34"></script>
+<script src="js/effects.js?v=34"></script>
+<script src="js/audio.js?v=34"></script>
+<script src="js/ui.js?v=34"></script>
+<script src="js/game.js?v=34"></script>
 <script>
 "use strict";
 (async () => {
@@ -913,7 +913,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   }
 
   /* —— 灵气堆堆乐：参与按钮 + 数字翻滚动画 —— */
-  let DD = { busy: false };
+  let DD = { busy: false, lastPlay: null };
   async function loadDdBox() {
     const box = document.getElementById("ddBox");
     if (!box) return;
@@ -922,13 +922,26 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       if (!d.ok) throw new Error(d.error || "加载失败");
       const i = d.info;
       if (!i.open) { box.innerHTML = '<div class="act-empty">活动未开启</div>'; return; }
-      const leftTxt = i.freeLeft > 0 ? '免费×1' : (i.bonusLeft > 0 ? `通关加成×${i.bonusLeft}` : `灵气 ${i.cost}/次`);
+      DD.info = i;
       const canIn = i.inWindow || i.beta;
+      const btnTxt = i.plays === 0 ? '免费参与（投入 100 灵气额度）'
+        : (i.freeLeft > 0 ? '使用免费次数参与'
+        : (i.bonusLeft > 0 ? `使用通关加成参与（剩 ${i.bonusLeft} 次）`
+        : `投入 ${i.cost} 灵气 · 再来一局`));
+      const lp = DD.lastPlay;
+      const resultHtml = lp
+        ? `<div class="dd-final">×${lp.mult} ｜ 获得 <b>${lp.reward}</b> 灵气</div><div class="dd-sub">将于活动结束次日起分 ${lp.days} 天发放，每天约 ${lp.perDay} 灵气（最后一天发尾差）</div>`
+        : (i.last ? `<div class="dd-sub">上次：×${i.last.mult} → ${i.last.reward} 灵气 ｜ 已释放 ${i.last.releasedDays}/100 天</div>` : '');
       box.innerHTML = `
-        <div class="dd-status">已参与 <b>${i.plays}</b> 次 ｜ 剩余次数：<b>${leftTxt}</b>${i.beta ? ' ｜ <em>内测模式</em>' : ''}</div>
-        <div class="dd-note">投入 ${i.cost} 灵气触发翻倍：90% 1~2倍 · 8% 2~3倍 · 1.9% 3~5倍 · 0.1% 5~10倍。奖励在活动结束次日起分 100 天每日发放。每通关 10 关 +1 次参与机会（当前通关 ${i.cleared} 关）。</div>
-        <button class="dd-btn" id="ddPlay" ${canIn ? '' : 'disabled'}>${i.plays === 0 ? '免费参与' : (i.freeLeft > 0 || i.bonusLeft > 0 ? '使用次数参与' : '投入 ' + i.cost + ' 灵气 参与')}</button>
-        <div class="dd-result" id="ddResult">${i.last ? `上次：×${i.last.mult} → <b>${i.last.reward}</b> 灵气 ｜ 已释放 ${i.last.releasedDays}/100 天（每天约 ${i.last.perDay}）` : '还没有参与记录'}</div>`;
+        <div class="dd-pool">
+          <div class="dd-pool-main"><span>🎊 全服奖池</span><b>${i.pool.total}</b><em>灵气</em></div>
+          <div class="dd-pool-sub">活动结束后每天发放 <b>${i.pool.daily}</b> 灵气 ｜ ${i.pool.players} 人参与</div>
+          <div class="dd-pool-mine">我的累计 <b>${i.mine.total}</b> 灵气（结束后每天 +${i.mine.daily}）</div>
+        </div>
+        <div class="dd-status">已参与 <b>${i.plays}</b> 次 ｜ 剩余：<b>${i.freeLeft > 0 ? '免费×1' : (i.bonusLeft > 0 ? '通关加成×' + i.bonusLeft : '无限（100 灵气/次）')}</b>${i.beta ? ' ｜ <em>内测模式</em>' : ''}</div>
+        <button class="dd-btn" id="ddPlay" ${canIn ? '' : 'disabled'}>${btnTxt}</button>
+        <div class="dd-note">投入 100 灵气触发翻倍：90% 1~2倍 · 8% 2~3倍 · 1.9% 3~5倍 · 0.1% 5~10倍。奖励在活动结束次日起分 100 天每日发放，想玩多少次都行，每次 100 灵气。每通关 10 关 +1 次免费机会（当前通关 ${i.cleared} 关）。</div>
+        <div class="dd-result" id="ddResult">${resultHtml}</div>`;
       const btn = document.getElementById("ddPlay");
       if (btn) btn.onclick = playDd;
     } catch (e) { box.innerHTML = '<div class="act-empty">' + _escHtml(e.message || "") + '</div>'; }
@@ -954,14 +967,13 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         };
         requestAnimationFrame(tick);
       });
-      if (res) res.innerHTML = `<div class="dd-final">×${d.mult} ｜ 获得 <b>${d.reward}</b> 灵气</div><div class="dd-sub">将于活动结束次日起分 ${d.days} 天发放，每天约 ${d.perDay} 灵气（最后一天发尾差）</div>`;
+      DD.lastPlay = { mult: d.mult, reward: d.reward, perDay: d.perDay, days: d.days };
       toast(`翻倍 ×${d.mult}！获得 ${d.reward} 灵气`);
     } catch (e) {
       if (res) res.innerHTML = '<div class="act-empty">' + _escHtml(e.message || "") + '</div>';
     }
     DD.busy = false;
-    const b2 = document.getElementById("ddPlay");
-    if (b2) { b2.disabled = false; b2.textContent = '再玩一次'; }
+    await loadDdBox();   // 【v26.36】每次参与后即时刷新奖池/次数/按钮，可无限连续投入参与
   }
 
   async function showActCenter() {
