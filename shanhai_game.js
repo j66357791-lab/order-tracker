@@ -1445,7 +1445,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         if (lv === 5 && gHP < g.hp * 0.3) { mul *= 2; gNote = '灵脉共鸣'; }
         let gdmg = Math.max(1, Math.round(g.atk * mul * (0.85 + Math.random() * 0.3) - bt.def * 0.3));
         if (bt.defStance) gdmg = Math.max(1, Math.round(gdmg * 0.35));
-        res0.gDmg = gdmg;
+        out0.gDmg = gdmg;
         pHP = Math.max(0, pHP - gdmg);
         if (lv === 3 && Math.random() < 0.25) { pSlow = true; gNote = '石化凝视'; }
         if (lv === 4 && round % 3 === 0) { const heal = Math.round(g.hp * 0.05); gHP = Math.min(g.hp, gHP + heal); gNote = (gNote ? gNote + '·' : '') + '大地脉动'; }
@@ -1465,7 +1465,8 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         }
         await db.collection('shanhai_logs').insertOne({ userId: me.id, action: out0.win ? 'chal_win' : 'chal_lose', detail: { veinLv: lv, rounds: round }, createdAt: new Date() }).catch(() => { });
       } else {
-        await db.collection(BT_COL).updateOne({ _id: bt._id }, { $set: { pHP, gHP, pSlow, round, defStance: !!bt.defStance } });
+        // defStance 只在当回合生效：回合结束即重置，下回合由玩家动作重新设置
+        await db.collection(BT_COL).updateOne({ _id: bt._id }, { $set: { pHP, gHP, pSlow, round, defStance: false } });
       }
       res.json({ ok: true, ...out0 });
     } catch (e) { console.error('[api] chal/turn', e); res.status(500).json({ ok: false, error: '结算失败：' + String((e && e.message) || e).slice(0, 120) }); }
