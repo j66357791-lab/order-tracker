@@ -939,6 +939,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   });
   app.post('/api/shanhai/admin/activities/save', auth, adminOnly, async (req, res) => {
     try {
+      const db = await getDb();
       const b = req.body || {};
       const doc = {
         title: String(b.title || '').trim().slice(0, 40),
@@ -965,6 +966,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   });
   app.post('/api/shanhai/admin/activities/del', auth, adminOnly, async (req, res) => {
     try {
+      const db = await getDb();
       const id = String((req.body || {}).id || '');
       if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: '参数无效' });
       await db.collection('shanhai_activities').deleteOne({ _id: new ObjectId(id) });
@@ -973,6 +975,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   });
   app.post('/api/shanhai/admin/activities/reorder', auth, adminOnly, async (req, res) => {
     try {
+      const db = await getDb();
       const ids = (req.body || {}).ids || [];
       if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ ok: false, error: '参数无效' });
       for (let i = 0; i < ids.length; i++) {
@@ -985,6 +988,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   // 维护锁 + 测试账号（锁打开时普通玩家入口显示上锁样式，名单内账号不受限）
   app.post('/api/shanhai/admin/activity-sys', auth, adminOnly, async (req, res) => {
     try {
+      const db = await getDb();
       const b = req.body || {};
       let accounts = b.testAccounts || [];
       if (typeof accounts === 'string') accounts = accounts.split(/[,，\s]+/).filter(Boolean);
@@ -1105,6 +1109,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   // 管理端：清理参与记录（全部 / 指定用户名或工号）——内测数据重置用
   app.post('/api/shanhai/admin/duiduile/cleanup', auth, adminOnly, async (req, res) => {
     try {
+      const db = await getDb();
       const b = req.body || {};
       const q = {};
       const who = String(b.username || '').trim();
