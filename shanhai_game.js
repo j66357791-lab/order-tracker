@@ -1409,6 +1409,24 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       res.json({ ok: true, removed: r.deletedCount });
     } catch (e) { console.error('[api] chal/leave', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
+  // 管理端：重置每日进攻次数（指定用户名/工号，留空=全部玩家）——内测反复测试用
+  app.post('/api/shanhai/admin/challenge/reset-daily', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const b = req.body || {};
+      const today = ddCnToday();
+      const q = { date: today };
+      const who = String(b.username || '').trim();
+      if (who) {
+        const u = await db.collection('users').findOne(/^\d{7}$/.test(who) ? { uid: who } : { username: who });
+        if (!u) return res.status(404).json({ ok: false, error: '未找到该用户' });
+        q.userId = u._id.toString();
+      }
+      const r = await db.collection(DAILY_COL).deleteMany(q);
+      await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'admin_chal_reset', detail: { who: who || 'ALL', reset: r.deletedCount }, createdAt: new Date() }).catch(() => { });
+      res.json({ ok: true, reset: r.deletedCount });
+    } catch (e) { console.error('[api] chal/reset', e); res.status(500).json({ ok: false, error: '重置失败，请稍后再试' }); }
+  });
   // 每小时占领结算：扣 1:100 仙玉、产灵气；仙玉不足自动结束占领并发邮件通知
   async function processOccupations() {
     const db = await getDb();
