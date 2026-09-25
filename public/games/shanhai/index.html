@@ -420,6 +420,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           <div style="font-size:18px;font-weight:900;color:#3a5a4a;margin-bottom:16px">设置</div>
           <div style="display:flex;flex-direction:column;gap:10px">
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" id="sndToggle">${(window.SFX && SFX.enabled) ? "🔊 音效：开" : "🔇 音效：关"}</div>
+            <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer;position:relative" id="umMail">📮 邮箱<span id="umMailDot" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);width:9px;height:9px;border-radius:50%;background:#e8503c"></span></div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" onclick="exitToWriter()">🏠 返回网站</div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer;color:#c0392b" onclick="localStorage.removeItem('jdy_token');localStorage.removeItem('jdy_user');location.href='/login.html'">🚪 退出登录</div>
           </div>
@@ -434,8 +435,96 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       tg.textContent = on ? "🔊 音效：开" : "🔇 音效：关";
       toast(on ? "音效已开启" : "音效已关闭");
     };
+    // 【v26.46】邮箱：先查未领数显示红点，点进入邮件列表
+    const me = document.getElementById('umMail');
+    if (me) {
+      me.onclick = () => { const um = document.getElementById('userMenuMask'); if (um) um.remove(); showMails(); };
+      shApi("/api/shanhai/mails").then(d => {
+        const dot = document.getElementById('umMailDot');
+        if (dot && d && d.ok) dot.style.display = d.unclaimed > 0 ? '' : 'none';
+      }).catch(() => { });
+    }
   }
   window.showUserMenu = showUserMenu;
+
+  /* ==================== 【v26.46】邮箱：列表 / 单封领取 / 一键领取 ==================== */
+  async function refreshCur() {
+    // 领取后刷新顶部货币条
+    try {
+      const p = await META.load();
+      const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+      set("tbXianyu", Math.floor(p.xianyu || 0));
+      set("tbLingqi", Math.floor(p.lingqi || 0));
+    } catch (e) { }
+  }
+  function closeMails() {
+    const m = document.getElementById("mailsMask");
+    if (m) m.remove();
+  }
+  function showMails() {
+    let mask = document.getElementById("mailsMask");
+    if (mask) mask.remove();
+    mask = document.createElement("div");
+    mask.className = "ex-mask"; mask.id = "mailsMask";
+    mask.onclick = e => { if (e.target === mask) closeMails(); };
+    mask.innerHTML = `
+      <div class="ex-wrap" style="max-width:460px;height:74vh">
+        <div class="ex-head" style="padding-top:11px">
+          <div class="ex-title">📮 邮箱</div>
+          <div class="ex-sub">系统奖励 · 附件领取（30 天有效）</div>
+          <div class="ex-close" id="mailsClose">×</div>
+        </div>
+        <div class="mkt-body"><div id="mailsList"><div class="ex-empty">加载中…</div></div></div>
+      </div>`;
+    document.body.appendChild(mask);
+    document.getElementById("mailsClose").onclick = closeMails;
+    loadMails();
+  }
+  window.showMails = showMails;
+
+  async function loadMails() {
+    const box = document.getElementById("mailsList");
+    if (!box) return;
+    try {
+      const d = await shApi("/api/shanhai/mails");
+      if (!d.ok) throw new Error(d.error || "加载失败");
+      const list = d.mails || [];
+      if (!list.length) { box.innerHTML = '<div class="ex-empty">邮箱是空的</div>'; return; }
+      box.innerHTML = `
+        ${d.unclaimed > 1 ? '<div class="mail-claimall" id="mailClaimAll">📥 一键领取全部（' + d.unclaimed + ' 封未领）</div>' : ''}
+        ${list.map(m => `
+          <div class="mail-item${m.claimed ? ' claimed' : ''}">
+            <div class="mi-t"><b>💌 ${_escHtml(m.title)}</b>${m.claimed ? '<em>已领取</em>' : ''}</div>
+            <div class="mi-c">${_escHtml(m.content || "").replace(/\n/g, "<br>")}</div>
+            <div class="mi-a">
+              ${m.lingqi > 0 ? `<span>✦ 灵气 ×${m.lingqi}</span>` : ""}
+              ${m.xianyu > 0 ? `<span>◉ 仙玉 ×${m.xianyu}</span>` : ""}
+              ${(!m.lingqi && !m.xianyu) ? '<span>无附件</span>' : ""}
+              <i>${new Date(m.createdAt).toLocaleString("zh-CN", { hour12: false }).slice(5, 16)}</i>
+            </div>
+            ${m.claimed ? "" : `<button class="mail-claim" data-id="${m.id}">领取附件</button>`}
+          </div>`).join("")}`;
+      box.querySelectorAll(".mail-claim").forEach(btn => btn.onclick = async () => {
+        btn.disabled = true; btn.textContent = "领取中…";
+        try {
+          const d2 = await shApi("/api/shanhai/mails/claim", { method: "POST", body: JSON.stringify({ id: btn.dataset.id }) });
+          if (!d2.ok) throw new Error(d2.error || "领取失败");
+          toast(`已领取：灵气 +${d2.lingqi} 仙玉 +${d2.xianyu}`);
+          refreshCur(); loadMails();
+        } catch (e) { toast(e.message || "领取失败"); btn.disabled = false; btn.textContent = "领取附件"; }
+      });
+      const ca = document.getElementById("mailClaimAll");
+      if (ca) ca.onclick = async () => {
+        ca.textContent = "领取中…"; ca.style.pointerEvents = "none";
+        try {
+          const d2 = await shApi("/api/shanhai/mails/claimAll", { method: "POST", body: JSON.stringify({}) });
+          if (!d2.ok) throw new Error(d2.error || "领取失败");
+          toast(`已领取 ${d2.claimed} 封：灵气 +${d2.lingqi} 仙玉 +${d2.xianyu}`);
+          refreshCur(); loadMails();
+        } catch (e) { toast(e.message || "领取失败"); loadMails(); }
+      };
+    } catch (e) { box.innerHTML = '<div class="ex-empty">' + _escHtml(e.message || "") + '</div>'; }
+  }
 
   // 显示排行榜
   function showBoard() {
@@ -1192,16 +1281,19 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     vp.addEventListener("pointercancel", () => { drag = null; });
     // 【v26.45】单指拖动原生 touch 兜底：部分 webview（微信 X5 等）不触发 pointermove
     vp.addEventListener("touchstart", e => {
-      if (e.touches.length === 2) {
-        pinch0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); scale0 = scale; tDrag = null;
+      if (e.touches.length >= 2) {
+        pinch0 = 0; tDrag = null;   // 双指：进入捏合模式（touchmove 当场记录基准距，容错事件时序）
       } else if (e.touches.length === 1) {
         tDrag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty };
       }
     }, { passive: true });
     vp.addEventListener("touchmove", e => {
-      if (e.touches.length === 2 && pinch0 > 0) {
+      if (e.touches.length >= 2) {
+        e.preventDefault();
         const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        zoomAt(scale0 * d / pinch0); e.preventDefault(); return;
+        if (!(pinch0 > 0)) { pinch0 = d; scale0 = scale; return; }   // 【v26.46】当场记录基准距，容错双指事件时序
+        zoomAt(scale0 * d / pinch0);
+        return;
       }
       if (tDrag && e.touches.length === 1) {
         e.preventDefault();
@@ -1210,7 +1302,11 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
         apply();
       }
     }, { passive: false });
-    vp.addEventListener("touchend", () => { pinch0 = 0; tDrag = null; });
+    vp.addEventListener("touchend", e => {
+      if (e.touches.length < 2) pinch0 = 0;
+      if (e.touches.length === 1) { tDrag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty }; }   // 双指抬一指：剩余指继续拖
+      else tDrag = null;
+    });
     vp.addEventListener("touchend", () => { pinch0 = 0; });
     vp.querySelectorAll(".chal-zoombar button").forEach(b => b.onclick = () => {
       if (b.dataset.z === "in") zoomAt(scale * 1.2);
