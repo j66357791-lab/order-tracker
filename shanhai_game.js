@@ -924,7 +924,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         .sort({ sort: 1, createdAt: 1 }).limit(50).toArray())
         .filter(a => (!a.start || new Date(a.start) <= now) && (!a.end || new Date(a.end) >= now))
         .map(actPub);
-      res.json({ ok: true, locked: !!sys.locked && !isTester, activities: list });
+      res.json({ ok: true, locked: !!sys.locked && !isTester, tester: isTester, activities: list });
     } catch (e) { console.error('[api] activities', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
@@ -1114,6 +1114,23 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   setInterval(() => { processDuiduileRelease().catch(e => console.error('[duiduile] 释放任务', e.message)); }, 30 * 60 * 1000);
   setTimeout(() => { processDuiduileRelease().catch(() => { }); }, 90 * 1000);
   // 管理端：清理参与记录（全部 / 指定用户名或工号）——内测数据重置用
+  app.post('/api/shanhai/admin/activities/finduser', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const q = String((req.body || {}).q || '').trim();
+      if (!q) return res.status(400).json({ ok: false, error: '请输入用户名或工号' });
+      const u = await db.collection('users').findOne(/^\d{7}$/.test(q) ? { uid: q } : { username: q })
+        || await db.collection('users').findOne({ username: q.toLowerCase() });
+      if (!u) return res.json({ ok: true, found: false, q });
+      const sys = await loadActSys(db);
+      const inList = sys.testAccounts.includes(u.username) || (u.uid && sys.testAccounts.includes(String(u.uid)));
+      res.json({
+        ok: true, found: true,
+        user: { username: u.username, uid: u.uid || null, displayName: u.displayName || u.username, role: u.role || '' },
+        inList,
+      });
+    } catch (e) { console.error('[api] finduser', e); res.status(500).json({ ok: false, error: '查询失败，请稍后再试' }); }
+  });
   app.post('/api/shanhai/admin/duiduile/cleanup', auth, adminOnly, async (req, res) => {
     try {
       const db = await getDb();
