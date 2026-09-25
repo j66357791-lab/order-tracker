@@ -44,7 +44,7 @@
   .dhead b { font: 900 14px/1.4 "PingFang SC", sans-serif; color: #f0e8d0; }
   .dhead i { display: block; font: 10.5px/1.4 sans-serif; color: #8fae9e; font-style: normal; }
   .row { margin-bottom: 4px; }
-  .bt-mask { position: fixed; inset: 0; background: rgba(4,10,8,.96); z-index: 1200; display: flex; flex-direction: column; }
+  .bt-mask { position: fixed; inset: 0; background: rgba(4,10,8,.82); z-index: 1200; display: flex; flex-direction: column; }
   .bt-top { padding: 14px 16px 6px; display: flex; justify-content: space-between; align-items: center; }
   .bt-side { width: 44%; text-align: center; }
   .bt-side .nm { font: 900 13px/1.4 "PingFang SC", sans-serif; color: #f0e8d0; margin-bottom: 6px; }
@@ -52,11 +52,28 @@
   .hpbar i { display: block; height: 100%; background: linear-gradient(180deg, #62d89a, #2f8a5c); transition: width .4s; }
   .hpbar.foe i { background: linear-gradient(180deg, #e8735a, #b0402f); }
   .hpnum { font: 10px/1.6 monospace; color: #a8c8b8; }
-  .bt-stage { flex: 1; display: flex; align-items: center; justify-content: space-around; position: relative; }
-  .fig { transition: transform .18s; position: relative; }
-  .fig.lunge-l { transform: translateX(46px) scale(1.05); }
-  .fig.lunge-r { transform: translateX(-46px) scale(1.05); }
-  .fig.hit { filter: brightness(2.2) saturate(.3); }
+  /* 战斗背景：灵脉秘境 + 暗色遮罩 */
+  .bt-stage {
+    flex: 1; display: flex; align-items: flex-end; justify-content: space-around; position: relative;
+    background: linear-gradient(180deg, rgba(6,13,11,.55), rgba(6,13,11,.75)), url('/games/shanhai/assets/challenge/bg.jpg?v=1') center/cover no-repeat;
+    border-top: 1px solid rgba(212,184,122,.2); border-bottom: 1px solid rgba(212,184,122,.2);
+  }
+  /* 【v26.52】战斗形象与游戏本体一致：hero / 山昊鬼 / 山臊王 精灵帧动画 */
+  .fig { transition: transform .18s; position: relative; padding-bottom: 8px; }
+  .spr { image-rendering: pixelated; background-repeat: no-repeat; }
+  .spr-hero {
+    width: 112px; height: 112px; background-image: url('/games/shanhai/assets/sprites/hero.png?v=1'); background-size: 672px 112px;
+    animation: heroStep .7s steps(6) infinite;
+  }
+  @keyframes heroStep { from { background-position: 0 0; } to { background-position: -672px 0; } }
+  .spr-guard { background-image: url('/games/shanhai/assets/sprites/shanhaogt.png?v=1'); background-size: var(--gw) var(--gh); animation: gStep .9s steps(4) infinite; transform: scaleX(-1); }
+  @keyframes gStep { from { background-position: 0 0; } to { background-position: calc(var(--gw) * -1) 0; } }
+  .spr-guard.boss { background-image: url('/games/shanhai/assets/sprites/boss_shanhaoking.png?v=1'); background-size: var(--gw) var(--gh); animation: gStep6 1s steps(6) infinite; }
+  @keyframes gStep6 { from { background-position: 0 0; } to { background-position: calc(var(--gw) * -1) 0; } }
+  .fig.lunge-l { transform: translateX(56px) scale(1.05); }
+  .fig.lunge-r { transform: translateX(-56px) scale(1.05); }
+  .fig.hit { filter: brightness(2.4) saturate(.25); }
+  .fig.dead { filter: grayscale(1) brightness(.4); transform: rotate(78deg) translateY(18px); }
   .floater { position: absolute; font: 900 22px/1 "PingFang SC", sans-serif; pointer-events: none; animation: fl 1s ease-out forwards; }
   @keyframes fl { 0% { opacity: 0; transform: translateY(6px) scale(.7); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-44px) scale(1.15); } }
   .bt-log { height: 88px; overflow-y: auto; margin: 0 16px; padding: 8px 10px; border-radius: 10px; background: rgba(255,252,244,.06); font: 11px/1.8 monospace; color: #a8c8b8; }
@@ -147,6 +164,12 @@ function toast(msg) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2200);
+}
+/* 守护者精灵：Lv1-4 山昊鬼逐级放大，Lv5 山臊王 BOSS 精灵（与游戏本体一致） */
+function guardSprite(lv) {
+  const fw = 70 + lv * 14;
+  if (lv === 5) return '<div class="spr spr-guard boss" style="--gw:' + Math.round(fw * 1.3 * 6) + 'px;--gh:' + Math.round(fw * 1.3) + 'px"></div>';
+  return '<div class="spr spr-guard" style="--gw:' + Math.round(fw * 4) + 'px;--gh:' + fw + 'px"></div>';
 }
 
 // 【v26.49】返回优先走 history.back（游戏页 bfcache 恢复，不重载加载页）；无历史才回游戏首页
@@ -297,9 +320,9 @@ async function startFight(lv) {
     '<div class="bt-side"><div class="nm">你</div><div class="hpbar"><i id="pHp" style="width:100%"></i></div><div class="hpnum" id="pNum"></div></div>' +
     '<div style="font:900 18px/1 STKaiti,serif;color:#ffd76a">VS</div>' +
     '<div class="bt-side"><div class="nm">' + esc(d.guardian.name) + '</div><div class="hpbar foe"><i id="gHp" style="width:100%"></i></div><div class="hpnum" id="gNum"></div></div></div>' +
-    '<div class="bt-stage"><div class="fig" id="pFig">' + playerSvg(72) + '</div>' +
+    '<div class="bt-stage"><div class="fig" id="pFig"><div class="spr spr-hero"></div></div>' +
     '<div style="font:900 22px/1 STKaiti,serif;color:#ffd76a">⚔</div>' +
-    '<div class="fig" id="gFig">' + guardSvg(lv, 88) + '</div></div>' +
+    '<div class="fig" id="gFig">' + guardSprite(lv) + '</div></div>' +
     '<div class="bt-log" id="btLog"></div>' +
     '<div class="bt-foot"><button class="btn" disabled>回合制战斗进行中…</button></div>';
   document.body.appendChild(mask);
