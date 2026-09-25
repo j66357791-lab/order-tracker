@@ -107,16 +107,19 @@ function showChallenge() {
   vp.addEventListener("pointercancel", () => { drag = null; });
   // 【v26.45】单指拖动原生 touch 兜底
   vp.addEventListener("touchstart", e => {
-    if (e.touches.length === 2) {
-      pinch0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); scale0 = scale; tDrag = null;
+    if (e.touches.length >= 2) {
+      pinch0 = 0; tDrag = null;
     } else if (e.touches.length === 1) {
       tDrag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty };
     }
   }, { passive: true });
   vp.addEventListener("touchmove", e => {
-    if (e.touches.length === 2 && pinch0 > 0) {
+    if (e.touches.length >= 2) {
+      e.preventDefault();
       const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      zoomAt(scale0 * d / pinch0); e.preventDefault(); return;
+      if (!(pinch0 > 0)) { pinch0 = d; scale0 = scale; return; }
+      zoomAt(scale0 * d / pinch0);
+      return;
     }
     if (tDrag && e.touches.length === 1) {
       e.preventDefault();
@@ -125,7 +128,11 @@ function showChallenge() {
       apply();
     }
   }, { passive: false });
-  vp.addEventListener("touchend", () => { pinch0 = 0; tDrag = null; });
+  vp.addEventListener("touchend", e => {
+    if (e.touches.length < 2) pinch0 = 0;
+    if (e.touches.length === 1) { tDrag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty }; }
+    else tDrag = null;
+  });
   vp.addEventListener("touchend", () => { pinch0 = 0; });
   vp.querySelectorAll(".chal-zoombar button").forEach(b => b.onclick = () => {
     if (b.dataset.z === "in") zoomAt(scale * 1.2);
