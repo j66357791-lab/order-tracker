@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.46',  // 【v26.46】站内邮箱系统(设置入口/领取附件/一键领取/后台群发)+堆堆乐每日释放改发邮件;地图pinch容错加固
+  appVersion: '26.47',  // 【v26.47】修手机端地图操作:资源版本号升36(裁webview旧缓存)+document级触摸拦截兜底+清理重复touchend
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.47', date: '2026-09-25', notes: [
+    '【修复·手机端地图操作】三管齐下：①页面 css/js 资源版本号升至 v=36（强制 webview 丢弃旧缓存——此前样式/脚本从 26.36 起版本号未变，手机可能一直在用旧缓存）；②document 级触摸拦截兜底（触摸起点在地图内时强制阻止浏览器默认滚动/缩放，webview 忽略 touch-action 也有效）；③清理重复的 touchend 监听。手机上请彻底关闭页面后重开一次'] },
   { ver: '26.46', date: '2026-09-25', notes: [
     '【新增·站内邮箱】头像 → 设置 → 「📮 邮箱」：查看系统邮件、单封领取附件（灵气/仙玉）、一键全部领取；未领红点提示；30 天有效自动过期',
     '【新增·后台发邮件】活动管理里可向全体或指定玩家（用户名/工号）发送带附件邮件，用于公告/补偿/手动奖励',
