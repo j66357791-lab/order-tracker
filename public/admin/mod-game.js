@@ -234,6 +234,13 @@ export function mount(root) {
         <span id="ddFindOut" class="sub" style="flex:1"></span>
       </div>
       <div class="inline" style="margin-top:6px">
+        <label class="mini-lbl">重置灵脉每日进攻次数（内测）：用户名/工号
+          <input id="chalResetUser" placeholder="留空 = 重置全部玩家" style="width:200px">
+        </label>
+        <button class="btn-ghost" id="chalResetBtn">重置次数</button>
+        <span class="sub">重置后该玩家今日可再次挑战守护者</span>
+      </div>
+      <div class="inline" style="margin-top:6px">
         <label class="mini-lbl">清理堆堆乐参与记录（内测重置）：用户名/工号
           <input id="ddCleanUser" placeholder="留空 = 清空全部记录" style="width:200px">
         </label>
@@ -1252,6 +1259,16 @@ export function mount(root) {
       const j = await api('/api/shanhai/admin/duiduile/cleanup', { method: 'POST', body: JSON.stringify({ username: who }) });
       if (!j.ok) throw new Error(j.error || '清理失败');
       toast('已清理 ' + j.deleted + ' 条参与记录');
+    } catch (e) { toast(e.message); }
+  };
+  // 【v26.49】重置灵脉每日进攻次数
+  $('chalResetBtn').onclick = async () => {
+    const who = $('chalResetUser').value.trim();
+    if (!confirm(who ? `重置「${who}」今日的灵脉进攻次数？` : '确定重置【全部玩家】今日的灵脉进攻次数？')) return;
+    try {
+      const j = await api('/api/shanhai/admin/challenge/reset-daily', { method: 'POST', body: JSON.stringify({ username: who }) });
+      if (!j.ok) throw new Error(j.error || '重置失败');
+      toast('已重置 ' + j.reset + ' 人的今日进攻次数');
     } catch (e) { toast(e.message); }
   };
   // 【v26.30】检索用户 → 一键加入/移出测试名单（免去手打名单猜名字）
