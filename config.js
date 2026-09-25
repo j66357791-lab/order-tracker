@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.35',  // 【v26.35】修堆堆乐404:游戏页内两套shApi签名不同,新代码误用导致GET打到POST-only接口
+  appVersion: '26.36',  // 【v26.36】堆堆乐奖池面板(全服总发放/每日发放/我的累计)+连续参与即时刷新
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,9 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.36', date: '2026-09-25', notes: [
+    '【新增·奖池面板】堆堆乐页顶部展示：全服奖池（累计奖励灵气）、活动结束后每天发放额度、参与人数、我的累计与每日到账；每次参与后即时刷新',
+    '【增强·连续参与】不限参与次数：免费 1 次 + 通关加成用完后，每次投入 100 灵气即可再来一局，按钮文案随剩余次数自动变化，参与后状态即时更新'] },
   { ver: '26.35', date: '2026-09-25', notes: [
     '【修复·堆堆乐404】游戏页内存在两套同名 shApi：首块的签名是 (path, fetch选项)，新写的堆堆乐代码按 (url, body) 误用 → method 未传默认 GET，打到只注册了 POST 的接口上必然 404。已修正调用方式并把 info 改为 GET。感谢"报错带路径"功能，一次定位'] },
   { ver: '26.34', date: '2026-09-25', notes: [
