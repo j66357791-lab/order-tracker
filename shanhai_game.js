@@ -1348,7 +1348,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const dr = await db.collection(DAILY_COL).findOne({ userId: me.id, date: today });
       const occ = await db.collection(OCC_COL).findOne({ userId: me.id });
       res.json({
-        ok: true, cleared, stats: chalPlayerStats(cleared),
+        ok: true, cleared, stats: chalPlayerStats(prof),
         daily: { used: dr ? dr.attacks : 0, max: 1 },
         occupied: occ ? { veinLv: occ.veinLv, out: occ.out, settleCost: occ.settleCost, occupiedAt: occ.occupiedAt, lastSettleAt: occ.lastSettleAt } : null,
       });
@@ -1372,8 +1372,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         { $inc: { attacks: 1 } });
       if (!u || !(u.value || u)) return res.status(400).json({ ok: false, error: '今日进攻次数已用完（次日刷新）', code: 'NO_ATTACK' });
       const prof = await ensureProfile(db, me.id, me.displayName || me.username);
-      const cleared = (prof.clearedStages || []).length;
-      const ps = chalPlayerStats(cleared);
+      const ps = chalPlayerStats(prof);
       const g = CHAL_GUARDIANS[lv];
       const out = CHAL_OUT[lv];
       let pHP = ps.hp, gHP = g.hp, pSlow = false, win = false;
@@ -1381,14 +1380,14 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       for (let r = 1; r <= 30 && pHP > 0 && gHP > 0; r++) {
         const critC = Math.max(0.02, 0.10 - g.critRes / 100);
         const crit = Math.random() < critC;
-        const dmg = Math.max(1, Math.round(ps.atk * (0.85 + Math.random() * 0.3) * (pSlow ? 0.7 : 1) * (crit ? 1.8 : 1) - g.def * 0.25));
+        const dmg = Math.max(1, Math.round(ps.atk * (0.85 + Math.random() * 0.3) * (pSlow ? 0.7 : 1) * (crit ? 1.8 : 1) - g.def * 0.3));
         gHP = Math.max(0, gHP - dmg);
         rounds.push({ s: 'p', dmg, crit, ghp: gHP });
         if (gHP <= 0) { win = true; break; }
         let mul = 1, note = '';
         if (lv === 2 && Math.random() < 0.2) { mul = 1.5; note = '重击'; }
         if (lv === 5 && gHP < g.hp * 0.3) { mul *= 2; note = '灵脉共鸣'; }
-        const gdmg = Math.max(1, Math.round(g.atk * mul * (0.85 + Math.random() * 0.3) - ps.def * 0.5));
+        const gdmg = Math.max(1, Math.round(g.atk * mul * (0.85 + Math.random() * 0.3) - ps.def * 0.3));
         pHP = Math.max(0, pHP - gdmg);
         if (lv === 3 && Math.random() < 0.25) { pSlow = true; note = '石化凝视'; } else pSlow = false;
         if (lv === 4 && r % 3 === 0) { const heal = Math.round(g.hp * 0.05); gHP = Math.min(g.hp, gHP + heal); note = '大地脉动'; }
