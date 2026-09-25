@@ -2286,7 +2286,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     stopGachaShow();
     gShowIdx = 0;
     box.innerHTML = G_SHOWS.map((s, i) =>
-      `<div class="g-show-item${i === 0 ? " on" : ""}" data-i="${i}"><div class="ic">${s.ic}</div><b>${esc(s.n)}</b><i>${esc(s.a)}</i></div>`).join("") +
+      `<div class="g-show-item${i === 0 ? " on" : ""}" data-i="${i}"><div class="ic">${s.ic}</div><b>${_escHtml(s.n)}</b><i>${_escHtml(s.a)}</i></div>`).join("") +
       '<div class="g-show-dots">' + G_SHOWS.map((_, i) => `<i class="${i === 0 ? "on" : ""}" data-d="${i}"></i>`).join("") + "</div>";
     const items = box.querySelectorAll(".g-show-item"), dots = box.querySelectorAll(".g-show-dots i");
     gShowTimer = setInterval(() => {
