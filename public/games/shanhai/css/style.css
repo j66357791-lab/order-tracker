@@ -795,6 +795,23 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .chal-lv.c1 { background: #6fd8a0; } .chal-lv.c2 { background: #54b4e8; } .chal-lv.c3 { background: #b48af0; }
 .chal-lv.c4 { background: #f0b454; } .chal-lv.c5 { background: #f0546e; }
 .chal-d-row { margin-bottom: 5px; }
+/* ==================== 【v26.46】邮箱 ==================== */
+.mail-item { border: 1px solid rgba(122,96,48,.28); border-radius: 10px; padding: 9px 10px; margin-bottom: 8px; background: rgba(255,252,244,.6); }
+.mail-item.claimed { opacity: .55; }
+.mail-item .mi-t { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.mail-item .mi-t b { flex: 1; font: 700 12px/1.5 "PingFang SC", sans-serif; color: #3a2f1c; }
+.mail-item .mi-t em { font: 700 9.5px/1 sans-serif; color: #8a97a8; font-style: normal; }
+.mail-item .mi-c { font: 11px/1.7 "PingFang SC", sans-serif; color: #5a4a2c; }
+.mail-item .mi-a { display: flex; align-items: center; gap: 8px; margin-top: 5px; font: 10.5px/1.5 sans-serif; color: #2f7a5a; flex-wrap: wrap; }
+.mail-item .mi-a i { margin-left: auto; color: #9c8b6b; font-style: normal; }
+.mail-claim {
+  width: 100%; margin-top: 6px; padding: 7px 0; border: none; border-radius: 8px; cursor: pointer;
+  font: 900 12px/1 "PingFang SC", sans-serif; color: #fff; background: linear-gradient(180deg, #d0452c, #a03024);
+}
+.mail-claimall {
+  text-align: center; padding: 8px 0; margin-bottom: 8px; border-radius: 9px; cursor: pointer;
+  font: 900 12px/1.4 "PingFang SC", sans-serif; color: #fff; background: linear-gradient(180deg, #4a9a6e, #2f6b4c);
+}
 .chal-guard { display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,.25); border: 1px solid rgba(122,96,48,.3); border-radius: 10px; padding: 6px 8px; margin-bottom: 6px; }
 .chal-g-info { flex: 1; min-width: 0; }
 .chal-g-info b { font: 900 13px/1.4 "PingFang SC", sans-serif; color: #f0e8d0; }
