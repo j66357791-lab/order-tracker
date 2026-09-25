@@ -108,11 +108,11 @@ async function api(path, body) {
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = n => Number(n).toLocaleString("zh-CN");
 const G = {
-  1: { name: "石傀·初醒", hp: 3000, atk: 12, def: 20 },
-  2: { name: "石傀·撼地", hp: 6000, atk: 24, def: 40 },
-  3: { name: "石傀·碎岳", hp: 12000, atk: 48, def: 80 },
-  4: { name: "石傀·镇脉", hp: 24000, atk: 96, def: 160 },
-  5: { name: "石傀·灵脉之主", hp: 48000, atk: 192, def: 320 },
+  1: { name: "石傀·初醒", hp: 320, atk: 4, def: 3 },
+  2: { name: "石傀·撼地", hp: 640, atk: 6, def: 5 },
+  3: { name: "石傀·碎岳", hp: 1100, atk: 9, def: 7 },
+  4: { name: "石傀·镇脉", hp: 1700, atk: 12, def: 10 },
+  5: { name: "石傀·灵脉之主", hp: 2600, atk: 10, def: 14 },
 };
 const OUT = { 1: 10, 2: 25, 3: 60, 4: 150, 5: 400 };
 const LV_COLOR = { 1: "#6fd8a0", 2: "#54b4e8", 3: "#b48af0", 4: "#f0b454", 5: "#f0546e" };
