@@ -1317,6 +1317,119 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     } catch (e) { console.error('[api] mails/send', e); res.status(500).json({ ok: false, error: '发送失败，请稍后再试' }); }
   });
 
+  // ==================== 【v26.48】挑战模式 · 灵脉争夺战（回合制战斗 + 占领结算） ====================
+  const OCC_COL = 'shanhai_occupied';
+  const DAILY_COL = 'shanhai_challenge_daily';
+  let chalIdxReady = false;
+  // 守护者权威数值（Lv1 为基准，逐级倍增）
+  const CHAL_GUARDIANS = {
+    1: { name: '石傀·初醒', hp: 10000, atk: 500, def: 800, defRate: 20, critRes: 20, skill: '石肤：受到的伤害降低 10%' },
+    2: { name: '石傀·撼地', hp: 20000, atk: 1000, def: 1600, defRate: 25, critRes: 25, skill: '石肤+重击：20% 概率 1.5 倍伤害' },
+    3: { name: '石傀·碎岳', hp: 40000, atk: 2000, def: 3200, defRate: 30, critRes: 30, skill: '石肤+石化凝视：命中后减速' },
+    4: { name: '石傀·镇脉', hp: 80000, atk: 4000, def: 6400, defRate: 35, critRes: 35, skill: '石肤+大地脉动：每 3 回合回复 5% 生命' },
+    5: { name: '石傀·灵脉之主', hp: 160000, atk: 8000, def: 12800, defRate: 40, critRes: 40, skill: '石肤+灵脉共鸣：生命低于 30% 攻击翻倍' },
+  };
+  const CHAL_OUT = { 1: 10, 2: 25, 3: 60, 4: 150, 5: 400 };
+  function chalPlayerStats(cleared) {
+    return { hp: 2000 + cleared * 200, atk: 150 + cleared * 30, def: 100 + cleared * 15 };
+  }
+  app.get('/api/shanhai/challenge/state', auth, async (req, res) => {
+    try {
+      const db = await getDb();
+      if (!chalIdxReady) {
+        chalIdxReady = true;
+        db.collection(DAILY_COL).createIndexes([{ key: { userId: 1, date: 1 }, unique: true }])
+          .catch(e => console.warn('[chal] 索引', e.message));
+      }
+      const me = req.user;
+      const prof = await ensureProfile(db, me.id, me.displayName || me.username);
+      const cleared = (prof.clearedStages || []).length;
+      const today = ddCnToday();
+      const dr = await db.collection(DAILY_COL).findOne({ userId: me.id, date: today });
+      const occ = await db.collection(OCC_COL).findOne({ userId: me.id });
+      res.json({
+        ok: true, cleared, stats: chalPlayerStats(cleared),
+        daily: { used: dr ? dr.attacks : 0, max: 1 },
+        occupied: occ ? { veinLv: occ.veinLv, out: occ.out, settleCost: occ.settleCost, occupiedAt: occ.occupiedAt, lastSettleAt: occ.lastSettleAt } : null,
+      });
+    } catch (e) { console.error('[api] chal/state', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+  // 挑战守护者：每日 1 次（原子占位）；回合制自动互砍 30 回合，服务端计算战报
+  app.post('/api/shanhai/challenge/attack', auth, limit({ name: 'chal-attack', max: 10, windowMs: 60 * 1000, msg: '太快了' }), async (req, res) => {
+    try {
+      const db = await getDb();
+      const me = req.user;
+      const lv = Math.min(5, Math.max(1, Math.floor(Number((req.body || {}).veinLv) || 1)));
+      const today = ddCnToday();
+      const u = await db.collection(DAILY_COL).findOneAndUpdate(
+        { userId: me.id, date: today, attacks: { $lt: 1 } },
+        { $inc: { attacks: 1 }, $setOnInsert: { userId: me.id, date: today } },
+        { upsert: true });
+      if (!u || !(u.value || u)) return res.status(400).json({ ok: false, error: '今日进攻次数已用完（次日刷新）', code: 'NO_ATTACK' });
+      const prof = await ensureProfile(db, me.id, me.displayName || me.username);
+      const cleared = (prof.clearedStages || []).length;
+      const ps = chalPlayerStats(cleared);
+      const g = CHAL_GUARDIANS[lv];
+      const out = CHAL_OUT[lv];
+      let pHP = ps.hp, gHP = g.hp, pSlow = false, win = false;
+      const rounds = [];
+      for (let r = 1; r <= 30 && pHP > 0 && gHP > 0; r++) {
+        const critC = Math.max(0.02, 0.10 - g.critRes / 100);
+        const crit = Math.random() < critC;
+        const dmg = Math.max(1, Math.round(ps.atk * (0.85 + Math.random() * 0.3) * (pSlow ? 0.7 : 1) * (crit ? 1.8 : 1) - g.def * 0.25));
+        gHP = Math.max(0, gHP - dmg);
+        rounds.push({ s: 'p', dmg, crit, ghp: gHP });
+        if (gHP <= 0) { win = true; break; }
+        let mul = 1, note = '';
+        if (lv === 2 && Math.random() < 0.2) { mul = 1.5; note = '重击'; }
+        if (lv === 5 && gHP < g.hp * 0.3) { mul *= 2; note = '灵脉共鸣'; }
+        const gdmg = Math.max(1, Math.round(g.atk * mul * (0.85 + Math.random() * 0.3) - ps.def * 0.5));
+        pHP = Math.max(0, pHP - gdmg);
+        if (lv === 3 && Math.random() < 0.25) { pSlow = true; note = '石化凝视'; } else pSlow = false;
+        if (lv === 4 && r % 3 === 0) { const heal = Math.round(g.hp * 0.05); gHP = Math.min(g.hp, gHP + heal); note = '大地脉动'; }
+        rounds.push({ s: 'g', dmg: gdmg, note, php: pHP });
+        if (pHP <= 0) break;
+      }
+      win = gHP <= 0 && pHP > 0;
+      let occupied = null;
+      if (win) {
+        await db.collection(OCC_COL).deleteMany({ userId: me.id });   // 一人一条占领
+        const now = new Date();
+        await db.collection(OCC_COL).insertOne({ userId: me.id, veinLv: lv, out, settleCost: out * 100, occupiedAt: now, lastSettleAt: now });
+        occupied = { veinLv: lv, out, settleCost: out * 100 };
+      }
+      await db.collection('shanhai_logs').insertOne({ userId: me.id, action: win ? 'chal_win' : 'chal_lose', detail: { veinLv: lv, rounds: rounds.length }, createdAt: new Date() }).catch(() => { });
+      res.json({ ok: true, win, rounds, player: { hp: Math.max(0, pHP), maxHp: ps.hp }, guardian: { hp: Math.max(0, gHP), maxHp: g.hp, name: g.name }, occupied });
+    } catch (e) { console.error('[api] chal/attack', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+  app.post('/api/shanhai/challenge/leave', auth, async (req, res) => {
+    try {
+      const db = await getDb();
+      const r = await db.collection(OCC_COL).deleteOne({ userId: req.user.id });
+      res.json({ ok: true, removed: r.deletedCount });
+    } catch (e) { console.error('[api] chal/leave', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+  });
+  // 每小时占领结算：扣 1:100 仙玉、产灵气；仙玉不足自动结束占领并发邮件通知
+  async function processOccupations() {
+    const db = await getDb();
+    const now = new Date();
+    const occs = await db.collection(OCC_COL).find({ lastSettleAt: { $lte: new Date(now.getTime() - 3600e3) } }).limit(200).toArray();
+    for (const o of occs) {
+      const prof = await db.collection('shanhai_profiles').findOne({ userId: o.userId });
+      if (!prof || (prof.xianyu || 0) < o.settleCost) {
+        await db.collection(OCC_COL).deleteOne({ _id: o._id });
+        await sendMails(db, [o.userId], '灵脉占领结束', `仙玉不足（每小时结算需 ${o.settleCost} 仙玉），你的 Lv.${o.veinLv} 灵脉占领已自动结束。`, 0, 0);
+        continue;
+      }
+      await db.collection('shanhai_profiles').updateOne({ userId: o.userId }, { $inc: { xianyu: -o.settleCost, lingqi: o.out } });
+      await db.collection(OCC_COL).updateOne({ _id: o._id }, { $set: { lastSettleAt: now } });
+      await db.collection('shanhai_logs').insertOne({ userId: o.userId, action: 'vein_settle', detail: { out: o.out, cost: o.settleCost }, createdAt: new Date() }).catch(() => { });
+    }
+    return occs.length;
+  }
+  setInterval(() => { processOccupations().catch(e => console.error('[chal] 结算', e.message)); }, 10 * 60 * 1000);
+  setTimeout(() => { processOccupations().catch(() => { }); }, 120 * 1000);
+
   // ==================== 体力（v24.9） ====================
   // 上限 10 点，挑战一局消耗 1 点，每 2 小时恢复 1 点（服务端计时，客户端改不了）
   const STAMINA_CFG = { cap: 10, cost: 1, recoverSec: 7200, init: 10 };
