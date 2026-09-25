@@ -1191,7 +1191,6 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     vp.addEventListener("pointerup", () => { drag = null; });
     vp.addEventListener("pointercancel", () => { drag = null; });
     // 【v26.45】单指拖动原生 touch 兜底：部分 webview（微信 X5 等）不触发 pointermove
-    let tDrag = null;
     vp.addEventListener("touchstart", e => {
       if (e.touches.length === 2) {
         pinch0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); scale0 = scale; tDrag = null;
