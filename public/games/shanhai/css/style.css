@@ -612,7 +612,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 }
 .g-show-item.on { opacity: 1; }
 .g-show-item .ic { animation: gGlow 2.2s ease-in-out infinite; }
-.g-show-item .ic svg { filter: drop-shadow(0 0 12px rgba(255,215,106,.7)); }
+.g-show-item .ic img, .g-show-item .ic svg { width: 64px; height: 64px; object-fit: contain; filter: drop-shadow(0 0 12px rgba(255,215,106,.7)); }
 @keyframes gGlow { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
 .g-show-item b { font: 900 14.5px/1.4 "STKaiti", serif; color: #ffd76a; letter-spacing: 2px; text-shadow: 0 0 12px rgba(255,215,106,.55); }
 .g-show-item i { font: 10.5px/1.4 sans-serif; color: #cfe8d8; font-style: normal; }
