@@ -753,6 +753,46 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .act-content { color: #4a3a1c; font: 11.5px/1.9 "PingFang SC", sans-serif; word-break: break-all; }
 .act-time { margin-top: 10px; font: 10px/1.5 sans-serif; color: #9c8b6b; }
 .act-empty { text-align: center; color: #9c8b6b; padding: 20px 8px; font: 11.5px/1.6 sans-serif; }
+/* ==================== 【v26.40】挑战模式入口海报 + 灵脉地图 ==================== */
+#chalEntry {
+  position: relative; margin: 2px 0 12px; border-radius: 12px; overflow: hidden; cursor: pointer;
+  border: 1px solid rgba(212,184,122,.5); box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  background: linear-gradient(100deg, #1a2c26 0%, #274a3c 45%, #16302a 100%);
+}
+#chalEntry img { width: 100%; height: 68px; object-fit: cover; display: block; }
+.chal-poster-fallback { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+.chal-poster-fallback b { font: 900 16px/1 "STKaiti", serif; color: #ffd76a; letter-spacing: 2px; }
+.chal-poster-fallback span { flex: 1; font: 11px/1.5 "PingFang SC", sans-serif; color: #cfe8d8; }
+.chal-poster-fallback i { font: 900 11px/1 "PingFang SC", sans-serif; color: #ffd76a; font-style: normal; }
+/* 灵脉大地图 */
+.chal-viewport { position: relative; height: calc(88vh - 150px); overflow: hidden; border-radius: 10px; background: #0d1a16; touch-action: none; cursor: grab; }
+.chal-viewport:active { cursor: grabbing; }
+.chal-map { position: absolute; width: 1800px; height: 1300px; transform-origin: top left; }
+.chal-map-bg {
+  position: absolute; inset: 0; border-radius: 0;
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(84,180,232,.10), transparent 40%),
+    radial-gradient(ellipse at 75% 65%, rgba(111,216,160,.10), transparent 45%),
+    radial-gradient(ellipse at 55% 20%, rgba(180,138,240,.08), transparent 40%),
+    repeating-linear-gradient(0deg, rgba(111,216,160,.05) 0 1px, transparent 1px 80px),
+    repeating-linear-gradient(90deg, rgba(111,216,160,.05) 0 1px, transparent 1px 80px),
+    linear-gradient(160deg, #0e241d, #122b23 55%, #0b1d18);
+}
+.chal-map-bg::after { content: "灵 脉 秘 境"; position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%); font: 900 64px "STKaiti", serif; color: rgba(111,216,160,.07); letter-spacing: 30px; }
+.chal-node { position: absolute; cursor: pointer; transition: transform .12s; }
+.chal-node:hover { transform: scale(1.15); }
+.chal-zoombar { position: absolute; left: 8px; top: 8px; display: flex; align-items: center; gap: 5px; }
+.chal-zoombar button { width: 28px; height: 26px; border-radius: 7px; border: 1px solid rgba(212,184,122,.4); background: rgba(10,25,20,.8); color: #ffd76a; font: 900 12px/1 sans-serif; cursor: pointer; }
+.chal-zoombar i { font: 10px/1.4 sans-serif; color: #8fae9e; font-style: normal; }
+/* 详情卡 */
+.chal-detail { padding: 8px 12px 12px; font: 11.5px/1.7 "PingFang SC", sans-serif; color: #dcefe2; }
+.chal-d-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.chal-d-head b { font: 900 14px/1.4 "PingFang SC", sans-serif; color: #f0e8d0; }
+.chal-d-head i { display: block; font: 10.5px/1.4 sans-serif; color: #8fae9e; font-style: normal; }
+.chal-lv { margin-left: auto; font: 900 11px/1 sans-serif; padding: 4px 9px; border-radius: 9px; color: #0d1a16; }
+.chal-lv.c1 { background: #6fd8a0; } .chal-lv.c2 { background: #54b4e8; } .chal-lv.c3 { background: #b48af0; }
+.chal-lv.c4 { background: #f0b454; } .chal-lv.c5 { background: #f0546e; }
+.chal-d-row { margin-bottom: 5px; }
 /* —— 灵气堆堆乐 —— */
 .dd-box { margin-bottom: 10px; }
 .dd-status { font: 11px/1.7 "PingFang SC", sans-serif; color: #4a3a1c; background: rgba(217,176,97,.16); border: 1px solid rgba(122,96,48,.3); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; }
