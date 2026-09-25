@@ -108,11 +108,11 @@ async function api(path, body) {
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = n => Number(n).toLocaleString("zh-CN");
 const G = {
-  1: { name: "石傀·初醒", hp: 320, atk: 4, def: 3 },
-  2: { name: "石傀·撼地", hp: 640, atk: 6, def: 5 },
-  3: { name: "石傀·碎岳", hp: 1100, atk: 9, def: 7 },
-  4: { name: "石傀·镇脉", hp: 1700, atk: 12, def: 10 },
-  5: { name: "石傀·灵脉之主", hp: 2600, atk: 10, def: 14 },
+  1: { name: "石傀·初醒", hp: 960, atk: 12, def: 9 },
+  2: { name: "石傀·撼地", hp: 1920, atk: 18, def: 15 },
+  3: { name: "石傀·碎岳", hp: 3300, atk: 27, def: 21 },
+  4: { name: "石傀·镇脉", hp: 5100, atk: 36, def: 30 },
+  5: { name: "石傀·灵脉之主", hp: 7800, atk: 30, def: 42 },
 };
 const OUT = { 1: 10, 2: 25, 3: 60, 4: 150, 5: 400 };
 const LV_COLOR = { 1: "#6fd8a0", 2: "#54b4e8", 3: "#b48af0", 4: "#f0b454", 5: "#f0546e" };
@@ -299,20 +299,15 @@ function openMap(diff) {
   });
 }
 
-/* ===== 回合制战斗（平面互砍） ===== */
-let fighting = false;
+/* ===== 交互式回合制战斗（平面互砍）：每回合玩家选 攻击/重击/防御 ===== */
+let fighting = false, BT = null;
 async function startFight(lv) {
   if (fighting) return;
   fighting = true;
   let d;
-  try { d = await api("/api/shanhai/challenge/attack", { veinLv: lv }); }
-  catch (e) {
-    fighting = false;
-    toast(e.message);
-    // 次数类错误：后台可能刚重置过，立即刷新状态
-    if ((e.message || "").indexOf("次数") >= 0) boot();
-    return;
-  }
+  try { d = await api("/api/shanhai/challenge/fight", { veinLv: lv }); }
+  catch (e) { fighting = false; toast(e.message); return; }
+  BT = { id: d.battleId, lv, pMax: d.pMax, gMax: d.gMax };
   const mask = document.createElement("div");
   mask.className = "bt-mask";
   mask.innerHTML =
@@ -321,65 +316,84 @@ async function startFight(lv) {
     '<div style="font:900 18px/1 STKaiti,serif;color:#ffd76a">VS</div>' +
     '<div class="bt-side"><div class="nm">' + esc(d.guardian.name) + '</div><div class="hpbar foe"><i id="gHp" style="width:100%"></i></div><div class="hpnum" id="gNum"></div></div></div>' +
     '<div class="bt-stage"><div class="fig" id="pFig"><div class="spr spr-hero"></div></div>' +
-    '<div style="font:900 22px/1 STKaiti,serif;color:#ffd76a">⚔</div>' +
+    '<div style="font:900 22px/1 STKaiti,serif;color:#ffd76a">\u2694</div>' +
     '<div class="fig" id="gFig">' + guardSprite(lv) + '</div></div>' +
-    '<div class="bt-log" id="btLog"></div>' +
-    '<div class="bt-foot"><button class="btn" disabled>回合制战斗进行中…</button></div>';
+    '<div class="bt-log" id="btLog"><div>第 1 回合 · 选择你的行动</div></div>' +
+    '<div class="bt-foot"><div style="display:flex;gap:8px">' +
+    '<button class="btn green" id="btnAtk" style="flex:1">\u2694 攻击</button>' +
+    '<button class="btn green" id="btnHeavy" style="flex:1;background:linear-gradient(180deg,#d0912c,#a06a20)">\uD83D\uDCA5 重击</button>' +
+    '<button class="btn green" id="btnDef" style="flex:1;background:linear-gradient(180deg,#4a7a9a,#2f5470)">\uD83D\uDEE1 防御</button></div></div>';
   document.body.appendChild(mask);
   const set = (pid, gid) => {
-    document.getElementById("pHp").style.width = Math.max(0, pid / d.player.maxHp * 100) + "%";
-    document.getElementById("gHp").style.width = Math.max(0, gid / d.guardian.maxHp * 100) + "%";
-    document.getElementById("pNum").textContent = fmt(Math.max(0, pid)) + " / " + fmt(d.player.maxHp);
-    document.getElementById("gNum").textContent = fmt(Math.max(0, gid)) + " / " + fmt(d.guardian.maxHp);
+    document.getElementById("pHp").style.width = Math.max(0, pid / BT.pMax * 100) + "%";
+    document.getElementById("gHp").style.width = Math.max(0, gid / BT.gMax * 100) + "%";
+    document.getElementById("pNum").textContent = fmt(Math.max(0, pid)) + " / " + fmt(BT.pMax);
+    document.getElementById("gNum").textContent = fmt(Math.max(0, gid)) + " / " + fmt(BT.gMax);
   };
-  set(d.player.maxHp, d.guardian.maxHp);
-  const log = document.getElementById("btLog");
-  let i = 0;
-  const step = () => {
-    if (i >= d.rounds.length) return finish();
-    const r = d.rounds[i++];
-    if (r.s === "p") {
-      const pf = document.getElementById("pFig"), gf = document.getElementById("gFig");
-      pf.classList.add("lunge-l"); gf.classList.add("hit");
-      setTimeout(() => { pf.classList.remove("lunge-l"); gf.classList.remove("hit"); }, 200);
-      floatDmg(gf, r.dmg, r.crit);
-      log.innerHTML += '<div' + (r.crit ? ' class="hl"' : '') + '>你' + (r.crit ? " 暴击" : "") + '砍出 ' + fmt(r.dmg) + ' 伤害</div>';
-    } else {
-      const gf = document.getElementById("gFig"), pf = document.getElementById("pFig");
-      gf.classList.add("lunge-r"); pf.classList.add("hit");
-      setTimeout(() => { gf.classList.remove("lunge-r"); pf.classList.remove("hit"); }, 200);
-      floatDmg(pf, r.dmg, false);
-      log.innerHTML += '<div>' + esc(d.guardian.name) + (r.note ? "【" + r.note + "】" : "") + '反击造成 ' + fmt(r.dmg) + ' 伤害</div>';
+  set(d.pHP, d.gHP);
+  const lock = v => ["btnAtk", "btnHeavy", "btnDef"].forEach(id => { const e = document.getElementById(id); if (e) e.disabled = v; });
+  const act = async action => {
+    if (fighting) return;
+    fighting = true; lock(true);
+    const log = document.getElementById("btLog");
+    try {
+      const r = await api("/api/shanhai/challenge/turn", { battleId: BT.id, action });
+      if (r.heal > 0) floatDmg(document.getElementById("pFig"), "+" + r.heal, false, "#7fe0a8");
+      if (r.pDmg > 0) {
+        const pf = document.getElementById("pFig"), gf = document.getElementById("gFig");
+        pf.classList.add("lunge-l"); gf.classList.add("hit");
+        setTimeout(() => { pf.classList.remove("lunge-l"); gf.classList.remove("hit"); }, 200);
+        floatDmg(gf, r.pDmg, r.pCrit);
+        log.innerHTML += '<div' + (r.pCrit ? ' class="hl"' : '') + '>第' + r.round + '回合：你' + (action === "heavy" ? "【重击】" : "") + (r.pCrit ? "暴击" : "") + '造成 ' + fmt(r.pDmg) + ' 伤害' + (r.recoil ? '（反震 -' + fmt(r.recoil) + '）' : '') + '</div>';
+      } else if (r.heal > 0) {
+        log.innerHTML += '<div>第' + r.round + '回合：你转入防御，回复 ' + r.heal + ' 生命</div>';
+      }
+      if (r.gDmg > 0) {
+        const gf = document.getElementById("gFig"), pf = document.getElementById("pFig");
+        setTimeout(() => {
+          gf.classList.add("lunge-r"); pf.classList.add("hit");
+          setTimeout(() => { gf.classList.remove("lunge-r"); pf.classList.remove("hit"); }, 200);
+          floatDmg(pf, r.gDmg, false);
+          log.innerHTML += '<div>' + esc(d.guardian.name) + (r.gNote ? "【" + r.gNote + "】" : "") + '反击造成 ' + fmt(r.gDmg) + ' 伤害</div>';
+          log.scrollTop = log.scrollHeight;
+        }, 260);
+      }
+      set(r.pHP, r.gHP);
+      log.scrollTop = log.scrollHeight;
+      if (r.over) return finish(r.win, r.occupied);
+    } catch (e) {
+      toast(e.message || "结算失败");
+      if ((e.message || "").indexOf("超时") >= 0) return location.reload();
     }
-    set(r.php != null ? r.php : d.player.maxHp, r.ghp != null ? r.ghp : d.guardian.maxHp);
-    log.scrollTop = log.scrollHeight;
-    setTimeout(step, 620);
+    fighting = false; lock(false);
   };
-  function floatDmg(el, n, big) {
+  function floatDmg(el, txt, big, color) {
     const f = document.createElement("div");
-    f.className = "floater"; f.textContent = "-" + fmt(n);
-    f.style.color = big ? "#ffd76a" : "#ff8a70";
+    f.className = "floater"; f.textContent = (String(txt).startsWith("+") ? "" : "-") + txt;
+    f.style.color = color || (big ? "#ffd76a" : "#ff8a70");
     f.style.left = (30 + Math.random() * 40) + "%"; f.style.top = "30%";
     el.style.position = "relative"; el.appendChild(f);
     setTimeout(() => f.remove(), 1000);
   }
-  function finish() {
+  function finish(win, occupied) {
     setTimeout(() => {
       const vt = document.createElement("div");
       vt.className = "verdict";
-      if (d.win) {
+      if (win) {
         vt.innerHTML = '<div class="vt" style="color:#ffd76a">占 领 成 功</div>' +
-          '<div class="vd">击败 ' + esc(d.guardian.name) + '！<br>你已占领 Lv.' + lv + ' 灵脉：<br>每小时产出 ' + OUT[lv] + ' 灵气，每小时结算消耗 ' + fmt(OUT[lv] * 100) + ' 仙玉。<br><b>仙玉不足会自动结束占领</b>，可在挑战页放弃。</div>' +
+          '<div class="vd">击败 ' + esc(G[BT.lv].name) + '！<br>你已占领 Lv.' + BT.lv + ' 灵脉：<br>每小时产出 ' + OUT[BT.lv] + ' 灵气，每小时结算消耗 ' + fmt(OUT[BT.lv] * 100) + ' 仙玉。<br><b>仙玉不足会自动结束占领</b>（邮件通知），可在挑战页放弃。</div>' +
           '<button class="btn" style="width:auto;padding:11px 30px" onclick="location.reload()">返回挑战页</button>';
       } else {
         vt.innerHTML = '<div class="vt" style="color:#8a97a8">挑 战 失 败</div>' +
-          '<div class="vd">你被 ' + esc(d.guardian.name) + ' 击败。<br>提升通关数可增强你的攻击与生命，明日再战！</div>' +
+          '<div class="vd">你被 ' + esc(G[BT.lv].name) + ' 击败。<br>提升装备与通关数可增强攻防，明日再战！</div>' +
           '<button class="btn green" style="width:auto;padding:11px 30px" onclick="location.reload()">返回挑战页</button>';
       }
       mask.appendChild(vt);
-    }, 600);
+    }, 700);
   }
-  step();
+  document.getElementById("btnAtk").onclick = () => act("attack");
+  document.getElementById("btnHeavy").onclick = () => act("heavy");
+  document.getElementById("btnDef").onclick = () => act("defend");
 }
 boot();
 </script>
