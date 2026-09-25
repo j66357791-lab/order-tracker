@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.44',  // 【v26.44】守护者方案C傀儡石像系落地(Lv1万血/500攻/800防/20%防御率/20%抗暴,逐级倍增+技能表)+程序化石像建模动画+修挑战弹窗滑动
+  appVersion: '26.45',  // 【v26.45】修灵脉地图手机拖不动:补原生touch单指拖拽(部分webview不触发pointermove)
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.45', date: '2026-09-25', notes: [
+    '【修复·灵脉地图手机拖不动】地图拖拽原先只依赖 Pointer Events，部分手机 webview（微信 X5 等）触摸时不触发 pointermove → 地图拖不动。已补原生 touch 单指拖拽兜底（touchstart/touchmove+preventDefault），与双指缩放、桌面鼠标拖拽三者共存'] },
   { ver: '26.44', date: '2026-09-25', notes: [
     '【守护者·方案C定稿】傀儡石像系：Lv1 石傀·初醒（HP 10,000 / 攻 500 / 防 800 / 防御率 20% / 抗暴 20% / 石肤），Lv2-5 属性逐级倍增（HP/攻/防 ×2，防御率与抗暴每级+5%），技能逐级解锁：重击→石化凝视(减速)→大地脉动(回血)→灵脉共鸣(狂暴)；配置集中在 CHAL_GUARDIANS',
     '【建模】程序化石像胸像（SVG）：石躯+双臂+发光眼（颜色对应灵脉等级）+核心水晶+裂纹，呼吸/眼睛脉动动画由代码驱动（动态帧先程序化，建模后可换序列帧）',
