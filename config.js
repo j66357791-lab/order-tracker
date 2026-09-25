@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.33',  // 【v26.33】页面脚本加版本参数强制刷新(微信等 webview 缓存旧页面导致调旧接口 404)
+  appVersion: '26.34',  // 【v26.34】接口报错带失败路径(404/5xx 显示具体接口)——用户报错即定位
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.34', date: '2026-09-25', notes: [
+    '【排障】接口 404/5xx 的报错现在会带上失败的接口路径（如"接口不存在 [404 /api/xxx]"），用户截图即可精确定位，不再来回猜'] },
   { ver: '26.33', date: '2026-09-25', notes: [
     '【修复·webview 缓存】"接口不存在"404：接口线上探测全部正常（401=已注册），404 来自手机内置浏览器缓存的旧页面在调旧接口。页面 css/js 全部加 ?v=32 版本参数强制刷新缓存；后续每次发版把该版本号+1 即可'] },
   { ver: '26.32', date: '2026-09-25', notes: [
