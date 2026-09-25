@@ -1047,12 +1047,25 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     const bonusTotal = Math.floor((prof.clearedStages || []).length / 10);
     const bonusUsed = played > 0 ? played - 1 : 0;
     const last = await db.collection(DD_COL).findOne({ userId: me.id, activityId: String(act._id) }, { sort: { createdAt: -1 } });
+    // 奖池统计：全服累计奖励 / 活动结束后每日发放 / 参与人数 / 我的累计
+    const poolAgg = await db.collection(DD_COL).aggregate([
+      { $group: { _id: null, total: { $sum: '$reward' } } },
+    ]).toArray();
+    const mineAgg = await db.collection(DD_COL).aggregate([
+      { $match: { userId: me.id } },
+      { $group: { _id: null, total: { $sum: '$reward' } } },
+    ]).toArray();
+    const myPlayers = await db.collection(DD_COL).distinct('userId');
+    const totalPool = Math.round(((poolAgg[0] && poolAgg[0].total) || 0) * 100) / 100;
+    const mineTotal = Math.round(((mineAgg[0] && mineAgg[0].total) || 0) * 100) / 100;
     return {
       open: true, inWindow, beta, title: act.title, start: act.start, end: act.end,
       plays: played, cleared: (prof.clearedStages || []).length,
       freeLeft: played > 0 ? 0 : 1,
       bonusLeft: Math.max(0, bonusTotal - bonusUsed),
       cost: DD_COST, days: DD_DAYS,
+      pool: { total: totalPool, daily: Math.round(totalPool / DD_DAYS * 100) / 100, players: myPlayers.length },
+      mine: { total: mineTotal, daily: Math.round(mineTotal / DD_DAYS * 100) / 100 },
       last: last ? { mult: last.mult, reward: last.reward, releasedDays: last.releasedDays, perDay: last.perDay } : null,
     };
   }
