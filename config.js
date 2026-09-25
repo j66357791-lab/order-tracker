@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.50',  // 【v26.50】修重置后挑战页仍显示次数用完(bfcache恢复不刷新状态→pageshow/切前台自动重拉,按钮点击时服务端判定)
+  appVersion: '26.51',  // 【v26.51】修挑战500:每日次数占位在文档已存在时upsert撞唯一索引,改先确保文档再原子占位
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.51', date: '2026-09-25', notes: [
+    '【修复·挑战500】点击挑战报 500：每日次数占位用"条件更新+upsert"，今日文档已存在（此前点过）时 upsert 尝试插入撞唯一索引直接抛错。改为先确保文档存在（$setOnInsert 只在首插生效）再原子 $inc 占位'] },
   { ver: '26.50', date: '2026-09-25', notes: [
     '【修复·重置后仍显示次数用完】挑战页从 bfcache 恢复/切回前台时不会重新拉状态，后台重置后按钮仍按旧状态置灰。现 pageshow/切回前台自动重拉；挑战按钮改为点击时由服务端判定次数（不足提示并自动刷新状态）'] },
   { ver: '26.49', date: '2026-09-25', notes: [
