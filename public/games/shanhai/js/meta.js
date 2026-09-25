@@ -14,7 +14,7 @@ const META = (() => {
   }
 
   // —— 加成计算（战斗读这里） ——
-  // 装备词条：武器=攻击% 衣服=生命% 发冠=经验% 腰带=拾取范围% 鞋子=移速% 配饰=全伤害%
+  // 装备词条：【v26.53】武器=攻击% 衣服=生命% 发冠=经验% 腰带=拾取范围% 鞋子=防御%（灵脉挑战） 配饰=全伤害%
   function bonus() {
     const p = profile || {};
     const sl = p.skillLv || { fireline: 0, icepick: 0, body: 0 };
@@ -31,7 +31,8 @@ const META = (() => {
       iceCount: 1 + (sl.icepick >= 3 ? 1 : 0),            // 3层冰锥+1枚
       expMul: 1 + V("crown"),                             // 发冠：经验获取
       pickupMul: 1 + V("belt"),                           // 腰带：拾取范围
-      moveMul: 1 + V("boots"),                            // 鞋子：移速
+      moveMul: 1,                                         // 【v26.53】鞋子移速取消（改防御），移速仅来自天赋
+      defVal: Math.round(10 * (1 + V("boots"))),          // 【v26.53】鞋子：防御（灵脉挑战模式用）
       dmgMul: 1 + V("accessory"),                         // 配饰：全伤害
     };
     // 【v26.11】流派天赋叠加：把已学节点的 eff 汇总进加成。
