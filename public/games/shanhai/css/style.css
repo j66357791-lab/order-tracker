@@ -790,6 +790,19 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .chal-lv.c1 { background: #6fd8a0; } .chal-lv.c2 { background: #54b4e8; } .chal-lv.c3 { background: #b48af0; }
 .chal-lv.c4 { background: #f0b454; } .chal-lv.c5 { background: #f0546e; }
 .chal-d-row { margin-bottom: 5px; }
+/* 难度选择 */
+.chal-diff-list { padding: 0 14px 6px; }
+.chal-diff-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 7px;
+  border-radius: 10px; cursor: pointer; background: rgba(255,252,244,.55); border: 1px solid rgba(122,96,48,.28);
+}
+.chal-diff-item.locked { opacity: .55; cursor: not-allowed; background: rgba(238,241,245,.6); }
+.chal-diff-item em { margin-left: auto; font: 900 11px/1 "PingFang SC", sans-serif; color: #ffd76a; font-style: normal; }
+.chal-diff-mid { flex: 1; min-width: 0; }
+.chal-diff-mid b { display: block; font: 900 13px/1.4 "PingFang SC", sans-serif; color: #3a2f1c; }
+.chal-diff-mid i { display: block; font: 10px/1.5 sans-serif; color: #8a7a58; font-style: normal; }
+.chal-d-note { padding: 0 14px 12px; font: 10px/1.6 sans-serif; color: #9c8b6b; text-align: center; }
+.chal-tab-note { font: 10.5px/1.6 sans-serif; color: #9c8b6b; text-align: center; margin: -6px 0 10px; }
 /* —— 灵气堆堆乐 —— */
 .dd-box { margin-bottom: 10px; }
 .dd-status { font: 11px/1.7 "PingFang SC", sans-serif; color: #4a3a1c; background: rgba(217,176,97,.16); border: 1px solid rgba(122,96,48,.3); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; }
