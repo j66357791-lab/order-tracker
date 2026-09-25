@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.60',  // 【v26.60】20回合超时判负+战斗超时放弃退还每日次数+挑战血量公式与对局完全同式(体质双计入)
+  appVersion: '26.61',  // 【v26.61】装备抽取页UI改版:专属星云背景+神级发光装备轮播展览(6件神装自动切换/指示点)+底部单抽十连
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.61', date: '2026-09-25', notes: [
+    '【UI改版·装备抽取】玄机宝阁全新视觉：专属星云背景（金色粒子斜纹+紫金辉光）、中部神级发光装备轮播展览（6件神装：斩妖古剑/天蚕圣袍/星辉金冠/乾坤灵绦/追风神履/太极玉珮，3秒自动切换+呼吸金光+指示点）、底部单抽（120仙玉）/十连抽（1200仙玉）按钮下移展示区之下'] },
   { ver: '26.60', date: '2026-09-25', notes: [
     '【定稿·失败条件】20 回合内未击败守护者判负',
     '【优化】战斗超时/放弃后重新发起挑战时，退还被扣的每日进攻次数（不再白扣）',
