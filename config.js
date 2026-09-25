@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.62',  // 【v26.62】修抽取页轮播空白(esc未定义→_escHtml)
+  appVersion: '26.63',  // 【v26.63】抽取页轮播展品换真实装备图标(icon_weapon/armor/crown/belt/boots/accessory)
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.63', date: '2026-09-25', notes: [
+    '【UI·抽取页】轮播展品换用真实装备图标（资源库六槽 icon 系列：武器/衣服/发冠/腰带/鞋子/配饰），金光呼吸动画保留'] },
   { ver: '26.62', date: '2026-09-25', notes: [
     '【修复·抽取页轮播空白】轮播渲染用了不存在的 esc() 转义函数（游戏页为 _escHtml）→ 注入即抛错展品全空。已修正'] },
   { ver: '26.61', date: '2026-09-25', notes: [
