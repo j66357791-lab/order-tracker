@@ -84,7 +84,7 @@ function showChallenge() {
   document.getElementById("chalClose").onclick = closeChallenge;
   const vp = document.getElementById("chalViewport");
   const map = document.getElementById("chalMap");
-  let scale = 1, tx = 0, ty = 0, drag = null, pinch0 = 0, scale0 = 1;
+  let scale = 1, tx = 0, ty = 0, drag = null, pinch0 = 0, scale0 = 1, tDrag = null;
   const apply = () => { map.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; };
   // 初始视野居中
   requestAnimationFrame(() => {
@@ -105,8 +105,28 @@ function showChallenge() {
   });
   vp.addEventListener("pointerup", () => { drag = null; });
   vp.addEventListener("pointercancel", () => { drag = null; });
-  vp.addEventListener("touchstart", e => { if (e.touches.length === 2) { pinch0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); scale0 = scale; } }, { passive: true });
-  vp.addEventListener("touchmove", e => { if (e.touches.length === 2 && pinch0 > 0) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); zoomAt(scale0 * d / pinch0); e.preventDefault(); } }, { passive: false });
+  // 【v26.45】单指拖动原生 touch 兜底
+  let tDrag = null;
+  vp.addEventListener("touchstart", e => {
+    if (e.touches.length === 2) {
+      pinch0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); scale0 = scale; tDrag = null;
+    } else if (e.touches.length === 1) {
+      tDrag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty };
+    }
+  }, { passive: true });
+  vp.addEventListener("touchmove", e => {
+    if (e.touches.length === 2 && pinch0 > 0) {
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      zoomAt(scale0 * d / pinch0); e.preventDefault(); return;
+    }
+    if (tDrag && e.touches.length === 1) {
+      e.preventDefault();
+      const t = e.touches[0];
+      tx = tDrag.tx + (t.clientX - tDrag.x); ty = tDrag.ty + (t.clientY - tDrag.y);
+      apply();
+    }
+  }, { passive: false });
+  vp.addEventListener("touchend", () => { pinch0 = 0; tDrag = null; });
   vp.addEventListener("touchend", () => { pinch0 = 0; });
   vp.querySelectorAll(".chal-zoombar button").forEach(b => b.onclick = () => {
     if (b.dataset.z === "in") zoomAt(scale * 1.2);
