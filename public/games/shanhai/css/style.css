@@ -765,7 +765,12 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .chal-poster-fallback span { flex: 1; font: 11px/1.5 "PingFang SC", sans-serif; color: #cfe8d8; }
 .chal-poster-fallback i { font: 900 11px/1 "PingFang SC", sans-serif; color: #ffd76a; font-style: normal; }
 /* 灵脉大地图 */
-.chal-viewport { position: relative; height: calc(88vh - 150px); overflow: hidden; border-radius: 10px; background: #0d1a16; touch-action: none; cursor: grab; }
+.chal-viewport { position: relative; height: calc(88vh - 230px); min-height: 300px; overflow: hidden; border-radius: 10px; background: #0d1a16; touch-action: none; cursor: grab; }
+/* 守护者石像（程序动画：呼吸 + 眼睛发光脉动；建模完成后替换为序列帧） */
+.guard-bust { animation: guardBreathe 3s ease-in-out infinite; transform-origin: 50% 100%; }
+@keyframes guardBreathe { 0%,100% { transform: scaleY(1); } 50% { transform: scaleY(1.04); } }
+.guard-eye { animation: guardEye 2.4s ease-in-out infinite; }
+@keyframes guardEye { 0%,100% { opacity: .75; } 50% { opacity: 1; } }
 .chal-viewport:active { cursor: grabbing; }
 .chal-map { position: absolute; width: 1800px; height: 1300px; transform-origin: top left; }
 .chal-map-bg {
@@ -790,6 +795,11 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .chal-lv.c1 { background: #6fd8a0; } .chal-lv.c2 { background: #54b4e8; } .chal-lv.c3 { background: #b48af0; }
 .chal-lv.c4 { background: #f0b454; } .chal-lv.c5 { background: #f0546e; }
 .chal-d-row { margin-bottom: 5px; }
+.chal-guard { display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,.25); border: 1px solid rgba(122,96,48,.3); border-radius: 10px; padding: 6px 8px; margin-bottom: 6px; }
+.chal-g-info { flex: 1; min-width: 0; }
+.chal-g-info b { font: 900 13px/1.4 "PingFang SC", sans-serif; color: #f0e8d0; }
+.chal-g-stats { font: 10px/1.7 monospace; color: #a8c8b8; }
+.chal-g-skill { font: 10.5px/1.6 sans-serif; color: #ffd76a; background: rgba(217,176,97,.12); border: 1px dashed rgba(212,184,122,.4); border-radius: 7px; padding: 4px 8px; margin-bottom: 6px; }
 /* 难度选择 */
 .chal-diff-list { padding: 0 14px 6px; }
 .chal-diff-item {
