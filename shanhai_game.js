@@ -53,7 +53,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     armor:    { name: '御', base: 8 },    // 生命 +%
     crown:    { name: '慧', base: 5 },    // 经验获取 +%
     belt:     { name: '纳', base: 6 },    // 拾取范围 +%
-    boots:    { name: '迅', base: 4 },    // 移速 +%
+    boots:    { name: '御守', base: 10 },    // 【v26.53】防御 +%（原移速，挑战模式战斗用）
     accessory:{ name: '炁', base: 5 },    // 全伤害 +%
   };
   const randName = (slot, q) => {
@@ -1323,15 +1323,23 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   let chalIdxReady = false;
   // 守护者权威数值（Lv1 为基准，逐级倍增）
   const CHAL_GUARDIANS = {
-    1: { name: '石傀·初醒', hp: 10000, atk: 500, def: 800, defRate: 20, critRes: 20, skill: '石肤：受到的伤害降低 10%' },
-    2: { name: '石傀·撼地', hp: 20000, atk: 1000, def: 1600, defRate: 25, critRes: 25, skill: '石肤+重击：20% 概率 1.5 倍伤害' },
-    3: { name: '石傀·碎岳', hp: 40000, atk: 2000, def: 3200, defRate: 30, critRes: 30, skill: '石肤+石化凝视：命中后减速' },
-    4: { name: '石傀·镇脉', hp: 80000, atk: 4000, def: 6400, defRate: 35, critRes: 35, skill: '石肤+大地脉动：每 3 回合回复 5% 生命' },
-    5: { name: '石傀·灵脉之主', hp: 160000, atk: 8000, def: 12800, defRate: 40, critRes: 40, skill: '石肤+灵脉共鸣：生命低于 30% 攻击翻倍' },
+    1: { name: '石傀·初醒', hp: 3000, atk: 12, def: 20, defRate: 20, critRes: 20, skill: '石肤：受到的伤害降低 10%' },
+    2: { name: '石傀·撼地', hp: 6000, atk: 24, def: 40, defRate: 25, critRes: 25, skill: '石肤+重击：20% 概率 1.5 倍伤害' },
+    3: { name: '石傀·碎岳', hp: 12000, atk: 48, def: 80, defRate: 30, critRes: 30, skill: '石肤+石化凝视：命中后减速' },
+    4: { name: '石傀·镇脉', hp: 24000, atk: 96, def: 160, defRate: 35, critRes: 35, skill: '石肤+大地脉动：每 3 回合回复 5% 生命' },
+    5: { name: '石傀·灵脉之主', hp: 48000, atk: 192, def: 320, defRate: 40, critRes: 40, skill: '石肤+灵脉共鸣：生命低于 30% 攻击翻倍' },
   };
   const CHAL_OUT = { 1: 10, 2: 25, 3: 60, 4: 150, 5: 400 };
-  function chalPlayerStats(cleared) {
-    return { hp: 2000 + cleared * 200, atk: 150 + cleared * 30, def: 100 + cleared * 15 };
+  // 【v26.53 定稿】与对局英雄同口径：血量 = 100(基础) × (1+衣服%) × (1+天赋体质×8%+衣服%)
+  function chalPlayerStats(prof) {
+    const sl = prof.skillLv || {};
+    const eq = prof.equip || {};
+    const V = k => (eq[k] && Number(eq[k].val) || 0) / 100;
+    const armorV = V("armor");
+    const hp = Math.round(100 * (1 + armorV) * (1 + (sl.body || 0) * 0.08 + armorV));
+    const atk = Math.round(300 * (1 + V("weapon") + ((sl.fireline || 0) + (sl.icepick || 0)) * 0.06));
+    const def = Math.round(10 * (1 + V("boots")));   // 防御来自鞋子（v26.53 鞋子词条=防御）
+    return { hp, atk, def };
   }
   app.get('/api/shanhai/challenge/state', auth, async (req, res) => {
     try {
