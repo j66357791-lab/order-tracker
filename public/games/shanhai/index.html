@@ -891,7 +891,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
           <div class="act-nav">
             ${list.length ? list.map((a, i) => `
               <div class="act-nav-item${i === ACTC.cur ? " on" : ""}" data-i="${i}">
-                <b>${_escHtml(a.title)}</b>${a.tag ? `<i>${_escHtml(a.tag)}</i>` : ""}
+                <b>${_escHtml(a.title)}</b>${a.tag ? `<i>${_escHtml(a.tag)}</i>` : ""}${a.start && new Date(a.start) > new Date() ? '<i>未开始 · 内测可玩</i>' : ''}
               </div>`).join("") : '<div class="act-empty" style="padding:14px 6px">暂无活动</div>'}
           </div>
           <div class="act-stage" id="actStage">${actStageHtml(list[ACTC.cur])}</div>
