@@ -245,6 +245,25 @@ export function mount(root) {
         <button class="btn-ghost" id="actAdd">＋ 新增活动</button>
         <button class="btn-ghost" id="actReload">刷新</button>
       </div>
+
+      <div class="act-row" style="margin-top:12px">
+        <div class="line"><b style="font:900 13px/1.4 sans-serif;color:#1f4e79">📮 发送邮件（附件为灵气/仙玉，30 天有效）</b></div>
+        <div class="line">
+          <label>接收人<input id="mailTarget" placeholder="all=全体玩家；或填用户名/工号" style="width:220px"></label>
+        </div>
+        <div class="line">
+          <label>标题<input id="mailTitle" placeholder="如：灵气堆堆乐 · 每日释放" style="flex:1;min-width:220px"></label>
+        </div>
+        <div class="line">
+          <label>灵气附件<input id="mailLq" type="number" min="0" step="0.01" value="0" style="width:100px"></label>
+          <label>仙玉附件<input id="mailXy" type="number" min="0" value="0" style="width:100px"></label>
+        </div>
+        <div class="line"><textarea id="mailContent" rows="3" style="width:100%" placeholder="邮件正文（玩家在邮箱里看到的文字）"></textarea></div>
+        <div class="line" style="justify-content:flex-end">
+          <span class="sub" style="flex:1">堆堆乐每日释放已自动发邮件，无需手动操作；这里用于公告/补偿/手动奖励</span>
+          <button class="btn-main" id="mailSend">发送邮件</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1266,6 +1285,24 @@ export function mount(root) {
     toast('已添加草稿（默认停用），填写后点该行的「保存」');
   };
   $('actReload').onclick = loadActMgr;
+  // 【v26.46】发送邮件
+  $('mailSend').onclick = async () => {
+    const title = $('mailTitle').value.trim();
+    const target = $('mailTarget').value.trim() || 'all';
+    const lq = +$('mailLq').value || 0, xy = +$('mailXy').value || 0;
+    const content = $('mailContent').value.trim();
+    if (!title) return toast('请填写邮件标题');
+    if (target !== 'all' && !target) return toast('接收人填 all 或用户名/工号');
+    if (!content && !lq && !xy) return toast('请填写正文或附件');
+    if (!confirm(`发送邮件给「${target === 'all' ? '全体玩家' : target}」？\n附件：灵气 ${lq} / 仙玉 ${xy}`)) return;
+    try {
+      const j = await api('/api/shanhai/admin/mails/send', { method: 'POST', body: JSON.stringify({ target, title, content, lingqi: lq, xianyu: xy }) });
+      if (!j.ok) throw new Error(j.error || '发送失败');
+      toast(`已发送 ${j.sent} 封邮件`);
+      $('mailTitle').value = ''; $('mailContent').value = '';
+      $('mailLq').value = 0; $('mailXy').value = 0;
+    } catch (e) { toast(e.message); }
+  };
 
   $('gmRefresh').onclick = () => { loadStats(); loadShanhai(); loadCfg(); loadSkillTree(); loadActMgr(); };
   loadStats(); loadShanhai(); loadCfg(); loadDb(); loadIdle(); loadSkillTree(); loadActMgr();
