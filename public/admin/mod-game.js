@@ -229,6 +229,11 @@ export function mount(root) {
         <button class="btn-main" id="actSysSave">保存维护设置</button>
       </div>
       <div class="inline" style="margin-top:6px">
+        <label class="mini-lbl">检索用户（用户名/工号）<input id="ddFind" placeholder="输入要测试的玩家账号" style="width:170px"></label>
+        <button class="st-mini" id="ddFindBtn">查询</button>
+        <span id="ddFindOut" class="sub" style="flex:1"></span>
+      </div>
+      <div class="inline" style="margin-top:6px">
         <label class="mini-lbl">清理堆堆乐参与记录（内测重置）：用户名/工号
           <input id="ddCleanUser" placeholder="留空 = 清空全部记录" style="width:200px">
         </label>
@@ -1230,6 +1235,31 @@ export function mount(root) {
       toast('已清理 ' + j.deleted + ' 条参与记录');
     } catch (e) { toast(e.message); }
   };
+  // 【v26.30】检索用户 → 一键加入/移出测试名单（免去手打名单猜名字）
+  $('ddFindBtn').onclick = async () => {
+    const q = $('ddFind').value.trim();
+    if (!q) return toast('请输入用户名或工号');
+    const out = $('ddFindOut');
+    out.textContent = '查询中…';
+    try {
+      const j = await api('/api/shanhai/admin/activities/finduser', { method: 'POST', body: JSON.stringify({ q }) });
+      if (!j.ok) throw new Error(j.error || '查询失败');
+      if (!j.found) { out.innerHTML = `<span style="color:#b3452f">没找到「${esc(q)}」，确认是玩家登录的用户名或 7 位工号</span>`; return; }
+      const u = j.user;
+      out.innerHTML = `找到：<b>${esc(u.displayName)}</b>（用户名 ${esc(u.username)}${u.uid ? ' / 工号 ' + esc(u.uid) : ''} · ${u.role === 'admin' ? '管理员' : u.role === 'writer' ? '写手' : '用户'}）　` +
+        `<button class="st-mini" id="ddToggleTester">${j.inList ? '移出测试名单' : '✓ 锁定为测试员'}</button>`;
+      out.querySelector('#ddToggleTester').onclick = async () => {
+        let list = $('actTesters').value.split(/[,，\s]+/).filter(Boolean);
+        if (j.inList) list = list.filter(x => x !== u.username && x !== String(u.uid || ''));
+        else { list.push(u.username); if (u.uid) list.push(String(u.uid)); }
+        $('actTesters').value = list.join(',');
+        $('actSysSave').onclick();
+        j.inList = !j.inList;
+        $('ddFindBtn').onclick();
+      };
+    } catch (e) { out.textContent = e.message; }
+  };
+  $('ddFind').addEventListener('keydown', e => { if (e.key === 'Enter') $('ddFindBtn').onclick(); });
   $('actAdd').onclick = () => {
     ACTROWS.unshift({ id: '', title: '新活动', tag: '', img: '', content: '活动说明……', start: '', end: '', enabled: false });
     renderActRows();
