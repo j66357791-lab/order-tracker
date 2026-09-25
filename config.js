@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.40',  // 【v26.40】堆堆乐释放改每日手动领取(0点后可领,漏领累积)+挑战模式壳子:灵脉争夺战(横条海报入口+大地图+1-5级灵脉分布)
+  appVersion: '26.41',  // 【v26.41】挑战模式美术接入:海报/地图背景 PNG;堆堆乐每日领取
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,8 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.41', date: '2026-09-25', notes: [
+    '【美术】挑战模式三张设计图生成并接入：入口海报 poster.png（横条横幅）、灵脉地图背景 bg.png（叠暗色遮罩保证节点可读）、灵脉 1-5 级水晶设计稿 veins.png（节点暂用同色系矢量水晶，后续切图替换）'] },
   { ver: '26.40', date: '2026-09-25', notes: [
     '【改版·每日领取】堆堆乐活动结束后 UI 切换为「每日手动领取」：每天凌晨 0 点释放当日份额到待领取，玩家手动领取入账；漏领不损失会累积',
     '【新增·挑战模式壳子】选关页新增「挑战模式」横条海报入口 → 灵脉争夺战：1800×1300 超大地图随机分布 18 座 1~5 级灵脉（颜色/体型按等级区分），支持缩放拖拽；点击灵脉查看产出与守护者等级（战斗与建模占位，后续接入）'] },
