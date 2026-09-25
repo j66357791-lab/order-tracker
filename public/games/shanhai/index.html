@@ -1038,6 +1038,30 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
      超大地图（1800×1300 逻辑坐标）随机分布 1~5 级灵脉；占领需击败守护者（建模占位）。
      本轮为可玩壳子：浏览/缩放/拖拽 + 节点详情；战斗与占领产出后续接入。 */
   const CHAL = { LV_COLOR: { 1: '#6fd8a0', 2: '#54b4e8', 3: '#b48af0', 4: '#f0b454', 5: '#f0546e' }, OUTPUT: { 1: 10, 2: 25, 3: 60, 4: 150, 5: 400 } };
+  // 【v26.44】守护者（方案 C · 傀儡石像系）属性配置：Lv1 为基准，之后逐级倍增
+  const CHAL_GUARDIANS = {
+    1: { name: '石傀·初醒', hp: 10000, atk: 500, def: 800, defRate: 20, critRes: 20, skill: '石肤：受到的伤害降低 10%' },
+    2: { name: '石傀·撼地', hp: 20000, atk: 1000, def: 1600, defRate: 25, critRes: 25, skill: '石肤 + 重击：攻击有 20% 概率造成 1.5 倍伤害' },
+    3: { name: '石傀·碎岳', hp: 40000, atk: 2000, def: 3200, defRate: 30, critRes: 30, skill: '石肤 + 石化凝视：命中后使玩家减速 30%，持续 2 秒' },
+    4: { name: '石傀·镇脉', hp: 80000, atk: 4000, def: 6400, defRate: 35, critRes: 35, skill: '石肤 + 大地脉动：每 10 秒回复 5% 最大生命' },
+    5: { name: '石傀·灵脉之主', hp: 160000, atk: 8000, def: 12800, defRate: 40, critRes: 40, skill: '石肤 + 灵脉共鸣：生命低于 30% 时攻击翻倍' },
+  };
+  function guardSvg(lv, size) {
+    const c = CHAL.LV_COLOR[lv];
+    const s = 1 + (lv - 1) * 0.08;
+    return `<svg class="guard-bust" viewBox="0 0 80 84" style="width:${Math.round(size * s)}px;height:${Math.round(size * 1.05 * s)}px;display:block">
+      <ellipse cx="40" cy="78" rx="26" ry="5" fill="rgba(0,0,0,.35)"/>
+      <rect x="14" y="34" width="52" height="42" rx="10" fill="#5b6b66" stroke="#2c3a35" stroke-width="2"/>
+      <rect x="8" y="40" width="10" height="28" rx="4" fill="#57675f" stroke="#2c3a35" stroke-width="2"/>
+      <rect x="62" y="40" width="10" height="28" rx="4" fill="#57675f" stroke="#2c3a35" stroke-width="2"/>
+      <rect x="22" y="12" width="36" height="30" rx="9" fill="#667872" stroke="#2c3a35" stroke-width="2"/>
+      <rect x="30" y="27" width="20" height="5" rx="2" fill="#2c3a35"/>
+      <circle cx="31" cy="21" r="3.2" fill="${c}" class="guard-eye"/>
+      <circle cx="49" cy="21" r="3.2" fill="${c}" class="guard-eye"/>
+      <path d="M20 44 L26 52 M60 44 L54 52 M34 46 L38 60 M46 46 L42 60" stroke="#3c4a44" stroke-width="1.6"/>
+      <polygon points="40,40 ${34 + lv},40 40,54" fill="${c}" opacity=".55"/>
+    </svg>`;
+  }
 
   function genVeins(map) {
     const LV = map.LV;
@@ -1179,14 +1203,22 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       const p = nodes[+nd.dataset.i];
       const det = document.getElementById("chalDetail");
       const out = CHAL.OUTPUT[p.lv];
+      const g = CHAL_GUARDIANS[p.lv];
       det.innerHTML = `
         <div class="chal-d-head">${veinSvg(p.lv, 34)}<div><b>Lv.${p.lv} 灵脉</b><i>占领后产出 ${out} 灵气/小时</i></div>
           <span class="chal-lv c${p.lv}">Lv.${p.lv}</span></div>
-        <div class="chal-d-row">需要击败 <b>Lv.${p.lv} 灵脉守护者</b> 后占领。</div>
-        <div class="chal-d-row">⏱ 每小时结算产出 ${out} 灵气，需消耗 <b>${(out * 100).toLocaleString()} 仙玉</b>（1:100）；<b>仙玉不足则不产出，自动结束占领</b>。</div>
+        <div class="chal-guard">
+          <div class="chal-g-left">${guardSvg(p.lv, 56)}</div>
+          <div class="chal-g-info">
+            <b>${g.name}</b>
+            <div class="chal-g-stats">❤ ${g.hp.toLocaleString()} ｜ ⚔ ${g.atk.toLocaleString()} ｜ 🛡 ${g.def.toLocaleString()}<br>防御率 ${g.defRate}% ｜ 抗暴 ${g.critRes}%</div>
+          </div>
+        </div>
+        <div class="chal-g-skill">技能：${g.skill}</div>
+        <div class="chal-d-row">⏱ 占领期间每小时产出 ${out} 灵气，每小时结算需消耗 <b>${(out * 100).toLocaleString()} 仙玉</b>（1:100）；<b>仙玉不足则不产出，自动结束占领</b>。</div>
         <div class="chal-d-row">⚔ 每日进攻次数 <b>1/1</b>（次日刷新）。</div>
-        <div class="chal-d-row" style="color:#8fae9e">守护者形象与战斗玩法开发中，敬请期待。</div>
-        <button class="dd-btn" disabled>挑战守护者（即将开放）</button>`;
+        <div class="chal-d-row" style="color:#8fae9e">守护者战斗玩法下一步接入。</div>
+        <button class="dd-btn" disabled>挑战守护者（战斗开发中）</button>`;
     });
   }
   window.showChallenge = showChallenge;
