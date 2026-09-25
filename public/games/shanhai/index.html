@@ -2704,21 +2704,34 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     renderAttrs();
   }
   // 【v24.3】统一属性面板：数值与局内实际生效的完全一致（META.bonus 为唯一来源）
+  // 【v26.53】拓展：血量绝对值（与对局一致）+ 挑战模式防御 + 装备词条明细
   function renderAttrs() {
     const B = META.bonus();
     const p = META.profile || {};
     const eq = p.equip || {};
     const atk = 5 + (eq.weapon ? (eq.weapon.val || 0) : 0);   // 与 weapons.js swordParams 同式
     const pct = v => "+" + Math.round((v - 1) * 100) + "%";
+    const hpAbs = Math.round(100 * B.hpMul);                  // 对局内实际生命上限（进对局初始血量）
+    const defAbs = B.defVal || 0;                             // 挑战模式防御（鞋子）
     const rows = [
+      ["❤ 生命上限", hpAbs + "（对局初始）"],
       ["⚔ 攻击力（飞剑）", atk.toFixed(1)],
       ["🗡 全伤害", pct(B.dmgMul)],
-      ["❤ 生命上限", pct(B.hpMul)],
+      ["🛡 防御（灵脉挑战）", defAbs],
       ["✦ 经验获取", pct(B.expMul)],
       ["◎ 拾取范围", pct(B.pickupMul)],
       ["👟 移动速度", pct(B.moveMul)],
     ];
-    $("attrPanel").innerHTML = rows.map(r => `<div class="attr-row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
+    const SLOT_NAME2 = { weapon: "武器", armor: "衣服", crown: "发冠", belt: "腰带", boots: "鞋子", accessory: "配饰" };
+    const gearRows = Object.keys(SLOT_NAME2).map(k => {
+      const it = eq[k];
+      const aff = { weapon: "攻击", armor: "血量", crown: "经验", belt: "拾取", boots: "防御", accessory: "全伤害" }[k];
+      return `<div class="attr-row"><span>${SLOT_NAME2[k]}</span><b>${it ? aff + " +" + (it.val || 0) + "%" : "空"}</b></div>`;
+    }).join("");
+    $("attrPanel").innerHTML =
+      rows.map(r => `<div class="attr-row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("") +
+      `<div class="attr-row" style="margin-top:6px;border-top:1px dashed rgba(122,96,48,.3);padding-top:6px"><span style="color:#8a6a2a">—— 装备词条明细 ——</span><b></b></div>` +
+      gearRows;
   }
   // 【v24.3】装备页角色 = 局内同一序列帧形象（进入页签才启动动画，离开即停）
   let eqRAF = null, eqLast = 0, eqT = 0;
@@ -2754,7 +2767,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     armor:   ["生命", "提升生命上限（百分比），直接换算进你的气血总量"],
     crown:   ["经验", "提升经验获取速度，升级更快、三选一更多"],
     belt:    ["拾取", "扩大经验珠与掉落的拾取半径，走位更省心"],
-    boots:   ["移速", "提升移动速度，躲弹幕与风筝怪群的关键"],
+    boots:   ["防御", "提升防御力，灵脉挑战中减少守护者造成的伤害"],
     accessory:["全伤害", "提升所有技能造成的伤害（含火球、冰锥、旋风刃）"],
   };
   const SLOT_ICON = { weapon: "icon_weapon", armor: "icon_armor", crown: "icon_crown", belt: "icon_belt", boots: "icon_boots", accessory: "icon_accessory" };
