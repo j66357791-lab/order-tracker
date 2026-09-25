@@ -98,7 +98,18 @@
 const TOKEN = localStorage.getItem("jdy_token");
 if (!TOKEN) location.href = "/login.html";
 async function api(path, body) {
-  const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN }, body: body ? JSON.stringify(body) : undefined });
+  // 【v26.57】20 秒超时：请求挂起不再卡死页面
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  let r;
+  try {
+    r = await fetch(path, { method: body ? "POST" : "GET", headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN }, body: body ? JSON.stringify(body) : undefined, signal: ctrl.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === "AbortError") throw new Error("请求超时，请重试");
+    throw new Error("网络异常，请检查网络");
+  }
+  clearTimeout(timer);
   if (r.status === 401) { location.href = "/login.html"; throw new Error("未登录"); }
   const d = await r.json();
   if (r.status === 404 || r.status >= 500) throw new Error((d.error || "请求失败") + " [" + r.status + " " + path + "]");
@@ -181,6 +192,14 @@ document.getElementById("btnBack").onclick = () => {
 // 【v26.50】页面从 bfcache 恢复 / 切回前台时重新拉状态——后台重置次数后返回本页立即生效
 window.addEventListener("pageshow", e => { if (e.persisted) boot(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) boot(); });
+
+// 【v26.57】boot 保险丝：状态加载超过 8 秒显示可重试提示
+window.addEventListener("load", () => {
+  setTimeout(() => {
+    const b = document.getElementById("mainBody");
+    if (b && b.innerHTML.indexOf("加载中") >= 0) b.innerHTML = '<div class="sect-t">加载超时</div><button class="btn" onclick="location.reload()">重新加载</button>';
+  }, 8000);
+});
 
 async function boot() {
   try {
@@ -335,6 +354,8 @@ async function startFight(lv) {
   const act = async action => {
     if (fighting) return;
     fighting = true; lock(true);
+    // 【v26.57】保险丝：20 秒后强制解锁，任何异常都不会永久卡死按钮
+    setTimeout(() => { if (fighting) { fighting = false; lock(false); } }, 20000);
     const log = document.getElementById("btLog");
     try {
       const r = await api("/api/shanhai/challenge/turn", { battleId: BT.id, action });
