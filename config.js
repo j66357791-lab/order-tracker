@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.45',  // 【v26.45】修灵脉地图手机拖不动:补原生touch单指拖拽(部分webview不触发pointermove)
+  appVersion: '26.46',  // 【v26.46】站内邮箱系统(设置入口/领取附件/一键领取/后台群发)+堆堆乐每日释放改发邮件;地图pinch容错加固
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,11 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.46', date: '2026-09-25', notes: [
+    '【新增·站内邮箱】头像 → 设置 → 「📮 邮箱」：查看系统邮件、单封领取附件（灵气/仙玉）、一键全部领取；未领红点提示；30 天有效自动过期',
+    '【新增·后台发邮件】活动管理里可向全体或指定玩家（用户名/工号）发送带附件邮件，用于公告/补偿/手动奖励',
+    '【改版·堆堆乐每日释放】每日份额自动结算成附件邮件发到玩家邮箱（玩家手动领取），不再累积待领取；此前产生的待领取仍可在邮箱/旧入口领取',
+    '【加固·地图缩放】双指捏合改为当场记录基准距（容错双指事件时序），剩余单指自动转为拖拽'] },
   { ver: '26.45', date: '2026-09-25', notes: [
     '【修复·灵脉地图手机拖不动】地图拖拽原先只依赖 Pointer Events，部分手机 webview（微信 X5 等）触摸时不触发 pointermove → 地图拖不动。已补原生 touch 单指拖拽兜底（touchstart/touchmove+preventDefault），与双指缩放、桌面鼠标拖拽三者共存'] },
   { ver: '26.44', date: '2026-09-25', notes: [
