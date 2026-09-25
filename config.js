@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.41',  // 【v26.41】挑战模式美术接入:海报/地图背景 PNG;堆堆乐每日领取
+  appVersion: '26.43',  // 【v26.43】挑战模式移入导航栏挑战页签+难度选择(5档仅开初级)+产出/结算(1:100仙玉)/每日1次进攻规则预设;裁AI水印
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,10 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.43', date: '2026-09-25', notes: [
+    '【调整】挑战模式入口从战斗页移到导航栏「🏆 挑战」页签（原本就是占位）；点击先选难度：初级灵脉矿（开放）/ 中级 / 高级 / 典藏 / 仙品（暂未开放），初级进入灵脉地图',
+    '【规则预设·灵脉】占领后每小时产出灵气，结算按 1:100 消耗仙玉（如 Lv1 产 10 灵气/小时需 1000 仙玉/小时），仙玉不足不产出并自动结束占领；每日进攻次数 1/1，次日刷新。数值在 CHAL_DIFF/CHAL.OUTPUT 可调',
+    '【美术】海报与地图背景裁掉底部 AI 水印区（-12%）'] },
   { ver: '26.41', date: '2026-09-25', notes: [
     '【美术】挑战模式三张设计图生成并接入：入口海报 poster.png（横条横幅）、灵脉地图背景 bg.png（叠暗色遮罩保证节点可读）、灵脉 1-5 级水晶设计稿 veins.png（节点暂用同色系矢量水晶，后续切图替换）'] },
   { ver: '26.40', date: '2026-09-25', notes: [
