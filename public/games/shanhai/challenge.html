@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<!-- 【v26.48】挑战模式 · 灵脉争夺战（独立页面：难度选择 → 灵脉地图 → 回合制战斗 → 占领） -->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>挑战模式 · 灵脉争夺战</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; background: #060D0B; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { height: 100dvh; max-width: 480px; margin: 0 auto; background: #0E1F1A; display: flex; flex-direction: column; position: relative; box-shadow: 0 0 60px rgba(62,201,160,.15); }
+  .top { padding: 12px 14px 8px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(212,184,122,.25); }
+  .top .back { width: 34px; height: 34px; border-radius: 50%; background: rgba(212,184,122,.15); border: 1px solid rgba(212,184,122,.4); color: #f0e8d0; font-size: 18px; cursor: pointer; text-align: center; line-height: 32px; }
+  .top b { font: 900 16px/1 "STKaiti", serif; color: #f0e8d0; letter-spacing: 2px; }
+  .top .daily { margin-left: auto; font: 700 11px/1 sans-serif; color: #ffd76a; background: rgba(212,184,122,.12); border: 1px solid rgba(212,184,122,.35); padding: 6px 10px; border-radius: 12px; }
+  .body { flex: 1; overflow-y: auto; padding: 12px 14px 20px; }
+  .sect-t { font: 900 13px/1.5 "STKaiti", serif; color: #ffd76a; margin: 4px 0 8px; letter-spacing: 1px; }
+  .diff-item { display: flex; align-items: center; gap: 10px; padding: 11px 12px; margin-bottom: 8px; border-radius: 11px; cursor: pointer; background: rgba(255,252,244,.06); border: 1px solid rgba(212,184,122,.3); }
+  .diff-item.locked { opacity: .5; cursor: not-allowed; }
+  .diff-item .lv { font: 900 11px/1 sans-serif; padding: 5px 9px; border-radius: 9px; color: #0d1a16; background: #6fd8a0; }
+  .diff-item.locked .lv { background: #8a97a8; }
+  .diff-item .mid { flex: 1; min-width: 0; }
+  .diff-item .mid b { display: block; font: 900 14px/1.4 "PingFang SC", sans-serif; color: #f0e8d0; }
+  .diff-item .mid i { display: block; font: 10.5px/1.5 sans-serif; color: #8fae9e; font-style: normal; }
+  .diff-item em { font: 900 11px/1 "PingFang SC", sans-serif; color: #ffd76a; font-style: normal; }
+  .occ-card { border: 1px solid rgba(212,184,122,.45); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; background: rgba(212,184,122,.08); }
+  .occ-card b { color: #ffd76a; font-size: 13px; }
+  .occ-card .r { font: 11.5px/1.8 "PingFang SC", sans-serif; color: #dcefe2; }
+  .btn { width: 100%; padding: 11px 0; border: none; border-radius: 10px; cursor: pointer; font: 900 14px/1 "PingFang SC", sans-serif; color: #fff; background: linear-gradient(180deg, #d0452c, #a03024); }
+  .btn:disabled { background: linear-gradient(180deg, #55684f, #3c4f42); cursor: not-allowed; }
+  .note { font: 10.5px/1.8 sans-serif; color: #8fae9e; margin-top: 8px; }
+  .vp { position: relative; height: 60vh; overflow: hidden; border-radius: 12px; border: 1px solid rgba(212,184,122,.3); touch-action: none; cursor: grab; background: #0d1a16; }
+  .vp:active { cursor: grabbing; }
+  .map { position: absolute; width: 1800px; height: 1300px; transform-origin: top left; }
+  .mapbg { position: absolute; inset: 0; background: url('/games/shanhai/assets/challenge/bg.jpg?v=1') center/cover no-repeat; }
+  .mapbg::after { content: "灵 脉 秘 境"; position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%); font: 900 60px "STKaiti", serif; color: rgba(111,216,160,.08); letter-spacing: 26px; }
+  .node { position: absolute; cursor: pointer; transition: transform .12s; }
+  .node:hover { transform: scale(1.15); }
+  .zbar { position: absolute; left: 8px; top: 8px; display: flex; gap: 5px; align-items: center; z-index: 5; }
+  .zbar button { width: 30px; height: 28px; border-radius: 7px; border: 1px solid rgba(212,184,122,.4); background: rgba(10,25,20,.85); color: #ffd76a; font: 900 12px/1 sans-serif; cursor: pointer; }
+  .zbar i { font: 10px/1.4 sans-serif; color: #8fae9e; font-style: normal; }
+  .detail { margin-top: 10px; border: 1px solid rgba(212,184,122,.3); border-radius: 12px; padding: 10px 12px; font: 11.5px/1.8 "PingFang SC", sans-serif; color: #dcefe2; }
+  .dhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .dhead b { font: 900 14px/1.4 "PingFang SC", sans-serif; color: #f0e8d0; }
+  .dhead i { display: block; font: 10.5px/1.4 sans-serif; color: #8fae9e; font-style: normal; }
+  .row { margin-bottom: 4px; }
+  .bt-mask { position: fixed; inset: 0; background: rgba(4,10,8,.96); z-index: 1200; display: flex; flex-direction: column; }
+  .bt-top { padding: 14px 16px 6px; display: flex; justify-content: space-between; align-items: center; }
+  .bt-side { width: 44%; text-align: center; }
+  .bt-side .nm { font: 900 13px/1.4 "PingFang SC", sans-serif; color: #f0e8d0; margin-bottom: 6px; }
+  .hpbar { height: 12px; border-radius: 7px; background: rgba(255,255,255,.12); overflow: hidden; border: 1px solid rgba(212,184,122,.35); }
+  .hpbar i { display: block; height: 100%; background: linear-gradient(180deg, #62d89a, #2f8a5c); transition: width .4s; }
+  .hpbar.foe i { background: linear-gradient(180deg, #e8735a, #b0402f); }
+  .hpnum { font: 10px/1.6 monospace; color: #a8c8b8; }
+  .bt-stage { flex: 1; display: flex; align-items: center; justify-content: space-around; position: relative; }
+  .fig { transition: transform .18s; position: relative; }
+  .fig.lunge-l { transform: translateX(46px) scale(1.05); }
+  .fig.lunge-r { transform: translateX(-46px) scale(1.05); }
+  .fig.hit { filter: brightness(2.2) saturate(.3); }
+  .floater { position: absolute; font: 900 22px/1 "PingFang SC", sans-serif; pointer-events: none; animation: fl 1s ease-out forwards; }
+  @keyframes fl { 0% { opacity: 0; transform: translateY(6px) scale(.7); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-44px) scale(1.15); } }
+  .bt-log { height: 88px; overflow-y: auto; margin: 0 16px; padding: 8px 10px; border-radius: 10px; background: rgba(255,252,244,.06); font: 11px/1.8 monospace; color: #a8c8b8; }
+  .bt-log div.hl { color: #ffd76a; }
+  .bt-foot { padding: 10px 16px 18px; }
+  .verdict { position: absolute; inset: 0; background: rgba(4,10,8,.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 5; }
+  .verdict .vt { font: 900 30px/1 "STKaiti", serif; letter-spacing: 6px; margin-bottom: 12px; }
+  .verdict .vd { font: 12px/1.9 "PingFang SC", sans-serif; color: #cfe8d8; text-align: center; margin-bottom: 16px; padding: 0 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="back" onclick="location.href='/games/shanhai/index.html'">‹</div>
+    <b>灵脉争夺战</b>
+    <span class="daily" id="dailyCnt">进攻 --</span>
+  </div>
+  <div class="body" id="mainBody"><div class="sect-t">加载中…</div></div>
+</div>
+<script>
+"use strict";
+const TOKEN = localStorage.getItem("jdy_token");
+if (!TOKEN) location.href = "/login.html";
+async function api(path, body) {
+  const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401) { location.href = "/login.html"; throw new Error("未登录"); }
+  const d = await r.json();
+  if (r.status === 404 || r.status >= 500) throw new Error((d.error || "请求失败") + " [" + r.status + " " + path + "]");
+  if (!d.ok) throw new Error(d.error || "请求失败");
+  return d;
+}
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = n => Number(n).toLocaleString("zh-CN");
+const G = {
+  1: { name: "石傀·初醒", hp: 10000, atk: 500, def: 800 },
+  2: { name: "石傀·撼地", hp: 20000, atk: 1000, def: 1600 },
+  3: { name: "石傀·碎岳", hp: 40000, atk: 2000, def: 3200 },
+  4: { name: "石傀·镇脉", hp: 80000, atk: 4000, def: 6400 },
+  5: { name: "石傀·灵脉之主", hp: 160000, atk: 8000, def: 12800 },
+};
+const OUT = { 1: 10, 2: 25, 3: 60, 4: 150, 5: 400 };
+const LV_COLOR = { 1: "#6fd8a0", 2: "#54b4e8", 3: "#b48af0", 4: "#f0b454", 5: "#f0546e" };
+const DIFFS = [
+  { id: "chu", name: "初级灵脉矿", open: true, desc: "产出 10 灵气/小时 · 守护者 Lv.1 · 每小时结算 1,000 仙玉" },
+  { id: "zhong", name: "中级灵脉矿", open: false },
+  { id: "gao", name: "高级灵脉矿", open: false },
+  { id: "dian", name: "典藏灵脉矿", open: false },
+  { id: "xian", name: "仙品灵脉矿", open: false },
+];
+let STATE = null;
+
+function veinSvg(lv, size) {
+  const c = LV_COLOR[lv];
+  return '<svg viewBox="0 0 60 72" style="width:' + size + 'px;height:' + (size * 1.2) + 'px;display:block">' +
+    '<ellipse cx="30" cy="64" rx="' + (10 + lv * 2) + '" ry="4" fill="rgba(0,0,0,.35)"/>' +
+    '<polygon points="30,4 ' + (20 + lv) + ',30 30,60 ' + (40 - lv) + ',30" fill="' + c + '" opacity=".92"/>' +
+    '<polygon points="30,4 30,60 ' + (40 - lv) + ',30" fill="rgba(0,0,0,.22)"/>' +
+    '<polygon points="30,4 ' + (20 + lv) + ',30 30,60" fill="rgba(255,255,255,.28)"/>' +
+    '<text x="30" y="70" text-anchor="middle" font-size="9" font-weight="700" fill="' + c + '">Lv.' + lv + '</text></svg>';
+}
+function guardSvg(lv, size) {
+  const c = LV_COLOR[lv], s = 1 + (lv - 1) * 0.08;
+  return '<svg viewBox="0 0 80 84" style="width:' + Math.round(size * s) + 'px;height:' + Math.round(size * 1.05 * s) + 'px;display:block">' +
+    '<ellipse cx="40" cy="78" rx="26" ry="5" fill="rgba(0,0,0,.35)"/>' +
+    '<rect x="14" y="34" width="52" height="42" rx="10" fill="#5b6b66" stroke="#2c3a35" stroke-width="2"/>' +
+    '<rect x="8" y="40" width="10" height="28" rx="4" fill="#57675f" stroke="#2c3a35" stroke-width="2"/>' +
+    '<rect x="62" y="40" width="10" height="28" rx="4" fill="#57675f" stroke="#2c3a35" stroke-width="2"/>' +
+    '<rect x="22" y="12" width="36" height="30" rx="9" fill="#667872" stroke="#2c3a35" stroke-width="2"/>' +
+    '<rect x="30" y="27" width="20" height="5" rx="2" fill="#2c3a35"/>' +
+    '<circle cx="31" cy="21" r="3.2" fill="' + c + '"/><circle cx="49" cy="21" r="3.2" fill="' + c + '"/>' +
+    '<path d="M20 44 L26 52 M60 44 L54 52 M34 46 L38 60 M46 46 L42 60" stroke="#3c4a44" stroke-width="1.6"/>' +
+    '<polygon points="40,40 ' + (34 + lv) + ',40 40,54" fill="' + c + '" opacity=".55"/></svg>';
+}
+function playerSvg(size) {
+  return '<svg viewBox="0 0 60 84" style="width:' + size + 'px;height:' + (size * 1.4) + 'px;display:block">' +
+    '<ellipse cx="30" cy="78" rx="20" ry="4" fill="rgba(0,0,0,.35)"/>' +
+    '<circle cx="30" cy="12" r="8" fill="#f0d5a8" stroke="#3a2f1c" stroke-width="1.4"/>' +
+    '<path d="M30 4 L44 0 L40 10" fill="#2f6b4c"/>' +
+    '<rect x="20" y="22" width="20" height="30" rx="7" fill="#2f6b4c" stroke="#1c4433" stroke-width="1.6"/>' +
+    '<path d="M22 26 L10 40 M38 26 L50 40" stroke="#2f6b4c" stroke-width="6" stroke-linecap="round"/>' +
+    '<path d="M24 52 L20 74 M36 52 L40 74" stroke="#264a3a" stroke-width="7" stroke-linecap="round"/>' +
+    '<path d="M8 44 L14 20" stroke="#d0d8e0" stroke-width="3" stroke-linecap="round"/>' +
+    '<path d="M5 16 L17 18 L8 26 Z" fill="#e8eef4"/></svg>';
+}
+function toast(msg) {
+  const t = document.createElement("div");
+  t.style.cssText = "position:fixed;top:12%;left:50%;transform:translateX(-50%);background:rgba(14,26,22,.94);border:1px solid rgba(212,184,122,.45);color:#f0e8d0;font:13px/1.5 'PingFang SC',sans-serif;padding:10px 22px;border-radius:22px;z-index:2000";
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
+
+async function boot() {
+  try {
+    const d = await api("/api/shanhai/challenge/state");
+    STATE = d;
+    renderState();
+  } catch (e) {
+    document.getElementById("mainBody").innerHTML = '<div class="sect-t">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+function renderState() {
+  document.getElementById("dailyCnt").textContent = "进攻 " + STATE.daily.used + "/" + STATE.daily.max;
+  let occHtml = "";
+  if (STATE.occupied) {
+    const o = STATE.occupied;
+    occHtml = '<div class="sect-t">◈ 我的占领</div>' +
+      '<div class="occ-card"><b>Lv.' + o.veinLv + ' 灵脉 · 占领中</b>' +
+      '<div class="r">产出 ' + o.out + ' 灵气/小时 ｜ 每小时结算消耗 ' + fmt(o.settleCost) + ' 仙玉（1:100）</div>' +
+      '<div class="r" style="color:#ffb454">仙玉不足将自动结束占领（邮件通知）</div>' +
+      '<button class="btn" style="margin-top:8px;background:linear-gradient(180deg,#8a6a2a,#5c4a20)" onclick="leaveOcc()">放弃占领</button></div>';
+  }
+  const b = document.getElementById("mainBody");
+  b.innerHTML = occHtml +
+    '<div class="sect-t">◈ 选择挑战难度</div>' +
+    DIFFS.map(d =>
+      '<div class="diff-item' + (d.open ? "" : " locked") + '" data-id="' + d.id + '">' +
+      '<span class="lv">' + (d.open ? "开" : "🔒") + '</span>' +
+      '<div class="mid"><b>' + d.name + '</b><i>' + (d.open ? d.desc : "暂未开放，敬请期待") + '</i></div>' +
+      '<em>' + (d.open ? "进入 ›" : "") + '</em></div>').join("") +
+    '<div class="note">每日进攻次数 1/1（次日刷新）· 战斗为回合制自动互砍 · 胜利后占领灵脉持续产出（每小时结算需消耗仙玉）。</div>';
+  b.querySelectorAll(".diff-item").forEach(it => it.onclick = () => {
+    const d = DIFFS.find(x => x.id === it.dataset.id);
+    if (!d.open) return toast(d.name + "暂未开放");
+    openMap(d);
+  });
+}
+async function leaveOcc() {
+  if (!confirm("放弃当前灵脉占领？此后不再产出。")) return;
+  try { await api("/api/shanhai/challenge/leave", {}); toast("已放弃占领"); await boot(); } catch (e) { toast(e.message); }
+}
+
+/* ===== 难度 → 地图 ===== */
+let CUR_DIFF = null;
+function openMap(diff) {
+  CUR_DIFF = diff;
+  const W = 1800, H = 1300;
+  const LV = [[1, 6], [2, 5], [3, 4], [4, 2], [5, 1]];
+  const nodes = [];
+  for (const [lv, cnt] of LV) {
+    let placed = 0, guard = 0;
+    while (placed < cnt && guard++ < 600) {
+      const x = 130 + Math.random() * (W - 260), y = 110 + Math.random() * (H - 240);
+      if (nodes.every(p => Math.hypot(p.x - x, p.y - y) > 210)) { nodes.push({ x: Math.round(x), y: Math.round(y), lv }); placed++; }
+    }
+  }
+  const b = document.getElementById("mainBody");
+  b.innerHTML = '<div class="sect-t">◈ ' + diff.name + ' · 点击灵脉挑战守护者</div>' +
+    '<div class="vp" id="vp"><div class="map" id="map"><div class="mapbg"></div>' +
+    nodes.map((p, i) => '<div class="node" data-i="' + i + '" style="left:' + p.x + 'px;top:' + p.y + 'px">' + veinSvg(p.lv, 44 + p.lv * 9) + '</div>').join("") +
+    '</div><div class="zbar"><button data-z="in">＋</button><button data-z="out">－</button><button data-z="reset">⟲</button><i>拖动查看地图 · 点击灵脉挑战</i></div></div>' +
+    '<div class="detail" id="detail"><div class="note">点击地图上的灵脉查看详情</div></div>';
+  const vp = document.getElementById("vp"), map = document.getElementById("map");
+  let scale = Math.max(0.4, vp.getBoundingClientRect().width / W), tx = 0, ty = 8, drag = null, tDrag = null, pinch0 = 0, scale0 = 1;
+  const apply = () => { map.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + scale + ")"; };
+  const zoomAt = ns => {
+    ns = Math.max(0.4, Math.min(2, ns));
+    const k = ns / scale, r = vp.getBoundingClientRect();
+    tx = r.width / 2 - (r.width / 2 - tx) * k; ty = r.height / 2 - (r.height / 2 - ty) * k; scale = ns; apply();
+  };
+  requestAnimationFrame(() => { const r = vp.getBoundingClientRect(); tx = (r.width - W * scale) / 2; ty = 8; apply(); });
+  vp.addEventListener("wheel", e => { e.preventDefault(); zoomAt(scale * (e.deltaY < 0 ? 1.12 : 0.9)); }, { passive: false });
+  vp.addEventListener("pointerdown", e => { if (e.target.closest(".node")) return; drag = { x: e.clientX, y: e.clientY, tx, ty }; });
+  vp.addEventListener("pointermove", e => { if (!drag) return; tx = drag.tx + (e.clientX - drag.x); ty = drag.ty + (e.clientY - drag.y); apply(); });
+  vp.addEventListener("pointerup", () => { drag = null; });
+  vp.addEventListener("pointercancel", () => { drag = null; });
+  vp.addEventListener("touchstart", e => {
+    if (e.touches.length >= 2) { pinch0 = 0; tDrag = null; }
+    else if (e.touches.length === 1) { tDrag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty }; }
+  }, { passive: true });
+  vp.addEventListener("touchmove", e => {
+    if (e.touches.length >= 2) {
+      e.preventDefault();
+      const dd = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      if (!(pinch0 > 0)) { pinch0 = dd; scale0 = scale; return; }
+      zoomAt(scale0 * dd / pinch0); return;
+    }
+    if (tDrag && e.touches.length === 1) {
+      e.preventDefault();
+      const t = e.touches[0];
+      tx = tDrag.tx + (t.clientX - tDrag.x); ty = tDrag.ty + (t.clientY - tDrag.y); apply();
+    }
+  }, { passive: false });
+  vp.addEventListener("touchend", e => {
+    if (e.touches.length < 2) pinch0 = 0;
+    if (e.touches.length === 1) { tDrag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty }; } else tDrag = null;
+  });
+  document.addEventListener("touchmove", e => {
+    if ((!drag && !tDrag) || !e.target.closest) return;
+    if (e.target.closest(".vp")) e.preventDefault();
+  }, { passive: false });
+  vp.querySelectorAll(".zbar button").forEach(bt => bt.onclick = () => {
+    if (bt.dataset.z === "in") zoomAt(scale * 1.25);
+    else if (bt.dataset.z === "out") zoomAt(scale * 0.8);
+    else { scale = Math.max(0.4, vp.getBoundingClientRect().width / W); requestAnimationFrame(() => { const r = vp.getBoundingClientRect(); tx = (r.width - W * scale) / 2; ty = 8; apply(); }); }
+  });
+  vp.querySelectorAll(".node").forEach(nd => nd.onclick = () => {
+    const p = nodes[+nd.dataset.i];
+    document.getElementById("detail").innerHTML =
+      '<div class="dhead">' + veinSvg(p.lv, 34) + '<div><b>Lv.' + p.lv + ' 灵脉</b><i>占领后产出 ' + OUT[p.lv] + ' 灵气/小时</i></div>' +
+      '<span class="lv" style="font:900 11px/1 sans-serif;padding:5px 9px;border-radius:9px;color:#0d1a16;background:' + LV_COLOR[p.lv] + '">Lv.' + p.lv + '</span></div>' +
+      '<div class="row">需要击败 <b>Lv.' + p.lv + ' ' + G[p.lv].name + '</b>（HP ' + fmt(G[p.lv].hp) + ' ｜ 攻 ' + fmt(G[p.lv].atk) + ' ｜ 防 ' + fmt(G[p.lv].def) + '）后占领。</div>' +
+      '<div class="row">⏱ 每小时产出 ' + OUT[p.lv] + ' 灵气，结算消耗 <b>' + fmt(OUT[p.lv] * 100) + ' 仙玉</b>（1:100）；<b>仙玉不足自动结束占领</b>。</div>' +
+      '<div class="row">⚔ 消耗每日进攻次数 <b>1/1</b>（次日刷新）。</div>' +
+      '<button class="btn" id="btnFight" ' + (STATE.daily.used < STATE.daily.max ? "" : "disabled") + '>' +
+      (STATE.daily.used < STATE.daily.max ? "⚔ 挑战守护者" : "今日进攻次数已用完") + '</button>';
+    document.getElementById("btnFight").onclick = () => startFight(p.lv);
+  });
+}
+
+/* ===== 回合制战斗（平面互砍） ===== */
+let fighting = false;
+async function startFight(lv) {
+  if (fighting) return;
+  fighting = true;
+  let d;
+  try { d = await api("/api/shanhai/challenge/attack", { veinLv: lv }); }
+  catch (e) { fighting = false; toast(e.message); return; }
+  const mask = document.createElement("div");
+  mask.className = "bt-mask";
+  mask.innerHTML =
+    '<div class="bt-top">' +
+    '<div class="bt-side"><div class="nm">你</div><div class="hpbar"><i id="pHp" style="width:100%"></i></div><div class="hpnum" id="pNum"></div></div>' +
+    '<div style="font:900 18px/1 STKaiti,serif;color:#ffd76a">VS</div>' +
+    '<div class="bt-side"><div class="nm">' + esc(d.guardian.name) + '</div><div class="hpbar foe"><i id="gHp" style="width:100%"></i></div><div class="hpnum" id="gNum"></div></div></div>' +
+    '<div class="bt-stage"><div class="fig" id="pFig">' + playerSvg(72) + '</div>' +
+    '<div style="font:900 22px/1 STKaiti,serif;color:#ffd76a">⚔</div>' +
+    '<div class="fig" id="gFig">' + guardSvg(lv, 88) + '</div></div>' +
+    '<div class="bt-log" id="btLog"></div>' +
+    '<div class="bt-foot"><button class="btn" disabled>回合制战斗进行中…</button></div>';
+  document.body.appendChild(mask);
+  const set = (pid, gid) => {
+    document.getElementById("pHp").style.width = Math.max(0, pid / d.player.maxHp * 100) + "%";
+    document.getElementById("gHp").style.width = Math.max(0, gid / d.guardian.maxHp * 100) + "%";
+    document.getElementById("pNum").textContent = fmt(Math.max(0, pid)) + " / " + fmt(d.player.maxHp);
+    document.getElementById("gNum").textContent = fmt(Math.max(0, gid)) + " / " + fmt(d.guardian.maxHp);
+  };
+  set(d.player.maxHp, d.guardian.maxHp);
+  const log = document.getElementById("btLog");
+  let i = 0;
+  const step = () => {
+    if (i >= d.rounds.length) return finish();
+    const r = d.rounds[i++];
+    if (r.s === "p") {
+      const pf = document.getElementById("pFig"), gf = document.getElementById("gFig");
+      pf.classList.add("lunge-l"); gf.classList.add("hit");
+      setTimeout(() => { pf.classList.remove("lunge-l"); gf.classList.remove("hit"); }, 200);
+      floatDmg(gf, r.dmg, r.crit);
+      log.innerHTML += '<div' + (r.crit ? ' class="hl"' : '') + '>你' + (r.crit ? " 暴击" : "") + '砍出 ' + fmt(r.dmg) + ' 伤害</div>';
+    } else {
+      const gf = document.getElementById("gFig"), pf = document.getElementById("pFig");
+      gf.classList.add("lunge-r"); pf.classList.add("hit");
+      setTimeout(() => { gf.classList.remove("lunge-r"); pf.classList.remove("hit"); }, 200);
+      floatDmg(pf, r.dmg, false);
+      log.innerHTML += '<div>' + esc(d.guardian.name) + (r.note ? "【" + r.note + "】" : "") + '反击造成 ' + fmt(r.dmg) + ' 伤害</div>';
+    }
+    set(r.php != null ? r.php : d.player.maxHp, r.ghp != null ? r.ghp : d.guardian.maxHp);
+    log.scrollTop = log.scrollHeight;
+    setTimeout(step, 620);
+  };
+  function floatDmg(el, n, big) {
+    const f = document.createElement("div");
+    f.className = "floater"; f.textContent = "-" + fmt(n);
+    f.style.color = big ? "#ffd76a" : "#ff8a70";
+    f.style.left = (30 + Math.random() * 40) + "%"; f.style.top = "30%";
+    el.style.position = "relative"; el.appendChild(f);
+    setTimeout(() => f.remove(), 1000);
+  }
+  function finish() {
+    setTimeout(() => {
+      const vt = document.createElement("div");
+      vt.className = "verdict";
+      if (d.win) {
+        vt.innerHTML = '<div class="vt" style="color:#ffd76a">占 领 成 功</div>' +
+          '<div class="vd">击败 ' + esc(d.guardian.name) + '！<br>你已占领 Lv.' + lv + ' 灵脉：<br>每小时产出 ' + OUT[lv] + ' 灵气，每小时结算消耗 ' + fmt(OUT[lv] * 100) + ' 仙玉。<br><b>仙玉不足会自动结束占领</b>，可在挑战页放弃。</div>' +
+          '<button class="btn" style="width:auto;padding:11px 30px" onclick="location.reload()">返回挑战页</button>';
+      } else {
+        vt.innerHTML = '<div class="vt" style="color:#8a97a8">挑 战 失 败</div>' +
+          '<div class="vd">你被 ' + esc(d.guardian.name) + ' 击败。<br>提升通关数可增强你的攻击与生命，明日再战！</div>' +
+          '<button class="btn green" style="width:auto;padding:11px 30px" onclick="location.reload()">返回挑战页</button>';
+      }
+      mask.appendChild(vt);
+    }, 600);
+  }
+  step();
+}
+boot();
+</script>
+</body>
+</html>
