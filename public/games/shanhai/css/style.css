@@ -589,7 +589,36 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 }
 /* 抽卡大厅弹窗 */
 .gacha-hall { max-width: 420px; }
-.gacha-hall-body { padding: 6px 12px 14px; overflow-y: auto; flex: 1; }
+/* 【v26.61】抽取页专属背景 + 神装轮播 */
+.gacha-hall-body { padding: 6px 12px 14px; overflow-y: auto; flex: 1;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255,215,106,.10), transparent 55%),
+    radial-gradient(ellipse at 15% 85%, rgba(122,90,220,.10), transparent 45%),
+    repeating-linear-gradient(45deg, rgba(255,215,106,.025) 0 2px, transparent 2px 14px),
+    linear-gradient(180deg, #101828, #171230 70%, #0d1020);
+}
+.gacha-show {
+  position: relative; height: 148px; border-radius: 14px; overflow: hidden; margin-bottom: 10px;
+  background:
+    radial-gradient(ellipse at 50% 32%, rgba(255,215,106,.20), transparent 58%),
+    radial-gradient(ellipse at 80% 80%, rgba(122,90,220,.18), transparent 50%),
+    linear-gradient(180deg, #131c2e, #191430 65%, #0e1120);
+  border: 1px solid rgba(212,184,122,.4);
+  box-shadow: inset 0 0 30px rgba(255,215,106,.06);
+}
+.g-show-item {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  opacity: 0; transition: opacity .5s;
+}
+.g-show-item.on { opacity: 1; }
+.g-show-item .ic { animation: gGlow 2.2s ease-in-out infinite; }
+.g-show-item .ic svg { filter: drop-shadow(0 0 12px rgba(255,215,106,.7)); }
+@keyframes gGlow { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.g-show-item b { font: 900 14.5px/1.4 "STKaiti", serif; color: #ffd76a; letter-spacing: 2px; text-shadow: 0 0 12px rgba(255,215,106,.55); }
+.g-show-item i { font: 10.5px/1.4 sans-serif; color: #cfe8d8; font-style: normal; }
+.g-show-dots { position: absolute; bottom: 6px; left: 0; right: 0; display: flex; justify-content: center; gap: 5px; }
+.g-show-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,215,106,.3); transition: background .3s; cursor: pointer; }
+.g-show-dots i.on { background: #ffd76a; }
 .gacha-hall-cur { display: flex; justify-content: center; gap: 10px; margin-bottom: 8px; }
 .cur-chip.stone { display: inline-flex; align-items: center; gap: 3px; }
 .stone-ico { width: 18px; height: 18px; display: block; }
