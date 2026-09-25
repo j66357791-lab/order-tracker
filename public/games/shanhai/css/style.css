@@ -769,6 +769,18 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .dd-final { font: 900 18px/1.5 "PingFang SC", sans-serif; color: #2f7a5a; }
 .dd-final b { font-size: 24px; color: #a03024; }
 .dd-sub { font: 10.5px/1.7 sans-serif; color: #8a7a58; margin-top: 4px; }
+/* 【v26.36】奖池面板 */
+.dd-pool {
+  border-radius: 10px; padding: 8px 10px; margin-bottom: 8px;
+  background: linear-gradient(180deg, #fdf3d5, #f3e3b8);
+  border: 1px solid rgba(184, 138, 42, .45);
+}
+.dd-pool-main { display: flex; align-items: baseline; gap: 5px; }
+.dd-pool-main span { font: 700 11px/1.4 "PingFang SC", sans-serif; color: #6b4a10; }
+.dd-pool-main b { font: 900 20px/1.2 "PingFang SC", sans-serif; color: #a03024; margin-left: auto; }
+.dd-pool-main em { font: 700 10.5px/1.4 sans-serif; color: #8a6a2a; font-style: normal; }
+.dd-pool-sub { font: 10px/1.6 sans-serif; color: #8a6a2a; margin-top: 2px; }
+.dd-pool-mine { font: 10.5px/1.6 sans-serif; color: #5a4a2c; border-top: 1px dashed rgba(122,96,48,.3); margin-top: 4px; padding-top: 4px; }
 .fac-node .fn-lv { font: 900 10px/1.3 "PingFang SC", sans-serif; color: #b8641a; }
 .fac-node b { display: block; font: 900 11px/1.4 "PingFang SC", sans-serif; color: #3a2f1c; }
 .fac-node i { display: block; font: 8.5px/1.4 sans-serif; color: #8a6a2a; font-style: normal; }
