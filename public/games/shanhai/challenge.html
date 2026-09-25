@@ -155,6 +155,10 @@ document.getElementById("btnBack").onclick = () => {
   else location.href = "/games/shanhai/index.html";
 };
 
+// 【v26.50】页面从 bfcache 恢复 / 切回前台时重新拉状态——后台重置次数后返回本页立即生效
+window.addEventListener("pageshow", e => { if (e.persisted) boot(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) boot(); });
+
 async function boot() {
   try {
     const d = await api("/api/shanhai/challenge/state");
@@ -267,8 +271,7 @@ function openMap(diff) {
       '<div class="row">需要击败 <b>Lv.' + p.lv + ' ' + G[p.lv].name + '</b>（HP ' + fmt(G[p.lv].hp) + ' ｜ 攻 ' + fmt(G[p.lv].atk) + ' ｜ 防 ' + fmt(G[p.lv].def) + '）后占领。</div>' +
       '<div class="row">⏱ 每小时产出 ' + OUT[p.lv] + ' 灵气，结算消耗 <b>' + fmt(OUT[p.lv] * 100) + ' 仙玉</b>（1:100）；<b>仙玉不足自动结束占领</b>。</div>' +
       '<div class="row">⚔ 消耗每日进攻次数 <b>1/1</b>（次日刷新）。</div>' +
-      '<button class="btn" id="btnFight" ' + (STATE.daily.used < STATE.daily.max ? "" : "disabled") + '>' +
-      (STATE.daily.used < STATE.daily.max ? "⚔ 挑战守护者" : "今日进攻次数已用完") + '</button>';
+      '      <button class="btn" id="btnFight">⚔ 挑战守护者</button>';
     document.getElementById("btnFight").onclick = () => startFight(p.lv);
   });
 }
@@ -280,7 +283,13 @@ async function startFight(lv) {
   fighting = true;
   let d;
   try { d = await api("/api/shanhai/challenge/attack", { veinLv: lv }); }
-  catch (e) { fighting = false; toast(e.message); return; }
+  catch (e) {
+    fighting = false;
+    toast(e.message);
+    // 次数类错误：后台可能刚重置过，立即刷新状态
+    if ((e.message || "").indexOf("次数") >= 0) boot();
+    return;
+  }
   const mask = document.createElement("div");
   mask.className = "bt-mask";
   mask.innerHTML =
