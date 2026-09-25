@@ -3,7 +3,7 @@
 //   必填：MONGO_URI   —— 数据库连接串
 //   建议：JWT_SECRET  —— 登录令牌密钥（见 lib/core.js）
 export const CONFIG = {
-  appVersion: '26.48',  // 【v26.48】挑战模式独立页(免缓存新URL)+回合制守护者战斗+占领每小时结算(1:100仙玉,不足自动结束)+每日1次进攻
+  appVersion: '26.49',  // 【v26.49】挑战页返回走bfcache不重载+后台重置每日进攻次数(内测)
   mongoUri: process.env.MONGO_URI || '',
   dbName: process.env.MONGO_DB || 'invest-jiedanyuan',
   collection: 'orders',
@@ -43,6 +43,9 @@ export const localToday = () => {
 
 // 【2026-09-15】版本与更新日志（/api/version 供前端检查更新）
 export const CHANGELOG = [
+  { ver: '26.49', date: '2026-09-25', notes: [
+    '【优化·返回】挑战页返回按钮改走 history.back（游戏页 bfcache 恢复，不再弹回游戏加载页重新加载）',
+    '【新增·内测重置】活动管理新增「重置灵脉每日进攻次数」：按用户名/工号或全量重置，测试员可反复挑战'] },
   { ver: '26.48', date: '2026-09-25', notes: [
     '【新增·独立挑战页】挑战模式迁移至独立页面 challenge.html（全新 URL 免 webview 缓存困扰）：难度选择 → 灵脉大地图（缩放/拖拽/双指）→ 点灵脉看守护者属性 → 回合制战斗',
     '【新增·回合制战斗】平面互砍：玩家 vs 守护者自动互砍 30 回合（暴击/守护者特殊技能逐级解锁），服务端计算战报防作弊，客户端逐回合播放动画',
