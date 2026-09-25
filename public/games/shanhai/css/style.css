@@ -771,11 +771,8 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .chal-map-bg {
   position: absolute; inset: 0; border-radius: 0;
   background:
-    radial-gradient(ellipse at 20% 30%, rgba(84,180,232,.10), transparent 40%),
-    radial-gradient(ellipse at 75% 65%, rgba(111,216,160,.10), transparent 45%),
-    radial-gradient(ellipse at 55% 20%, rgba(180,138,240,.08), transparent 40%),
-    repeating-linear-gradient(0deg, rgba(111,216,160,.05) 0 1px, transparent 1px 80px),
-    repeating-linear-gradient(90deg, rgba(111,216,160,.05) 0 1px, transparent 1px 80px),
+    linear-gradient(180deg, rgba(10,26,21,.25), rgba(10,26,21,.35)),
+    url('/games/shanhai/assets/challenge/bg.png?v=1') center/cover no-repeat,
     linear-gradient(160deg, #0e241d, #122b23 55%, #0b1d18);
 }
 .chal-map-bg::after { content: "灵 脉 秘 境"; position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%); font: 900 64px "STKaiti", serif; color: rgba(111,216,160,.07); letter-spacing: 30px; }
