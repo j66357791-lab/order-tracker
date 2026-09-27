@@ -38,7 +38,7 @@ export function mount(root) {
     </div>
     <div class="inline" style="margin-top:18px">
       <select id="wdStatus">
-        <option value="">全部状态</option><option>待处理</option><option>已打款</option><option>已驳回</option>
+        <option value="">全部状态</option><option>待处理</option><option>处理中</option><option>已打款</option><option>已驳回</option>
       </select>
       <select id="wdType">
         <option value="">全部类型</option><option value="bonus">激励奖励</option><option value="order">单子奖励</option>
@@ -74,11 +74,17 @@ export function mount(root) {
 
   function paintPayStats() {
     const pending = ALL.filter(w => w.status === '待处理');
+    const inflight = ALL.filter(w => w.status === '处理中');
     const sum = pending.reduce((s, w) => s + (Number(w.amount) || 0), 0);
+    // 原先取本月已打金额写的是 `(x || 0).toFixed ? '¥'+ALL[0].stats.paidMonthAmount.toFixed(2) : ''`
+    // —— 判空判的是 A 对象、取值却直接下标访问 B，一旦 paintPayStats 在列表为空时被调用就是 TypeError
+    const st = (ALL[0] && ALL[0].stats) || {};
+    const paidAmt = Number(st.paidMonthAmount) || 0;
     $('wdPayStats').innerHTML = `
       <div class="stat plain warn"><b>${pending.length}</b><span>待打款笔数</span></div>
+      ${inflight.length ? `<div class="stat plain warn"><b>${inflight.length}</b><span>正在核销中</span></div>` : ''}
       <div class="stat plain"><b>¥${sum.toFixed(2)}</b><span>待打款合计</span></div>
-      <div class="stat plain"><b>${(ALL[0] && ALL[0].stats && ALL[0].stats.paidMonthCount) || '-'}</b><span>本月已打 ${((ALL[0] && ALL[0].stats && ALL[0].stats.paidMonthAmount) || 0).toFixed ? '¥' + ALL[0].stats.paidMonthAmount.toFixed(2) : ''}</span></div>`;
+      <div class="stat plain"><b>${st.paidMonthCount != null ? st.paidMonthCount : '-'}</b><span>本月已打 ¥${paidAmt.toFixed(2)}</span></div>`;
   }
 
   function paintSel() {
@@ -102,9 +108,13 @@ export function mount(root) {
     if (!rows.length) { box.innerHTML = '<div class="empty">没有匹配的提现申请</div>'; return; }
 
     box.innerHTML = rows.map(w => {
+      // 【2026-09-26 批次2 配套】后端新增了「处理中」瞬态（打款抢锁中，防双击双付）。
+      // 它不是待打款、也不能再点一次，必须在这里显式区分，否则一笔正在处理的申请
+      // 会被渲染成"已驳回"样式（st-bad），管理员看到就可能又去手动转一次账。
+      const inflight = w.status === '处理中';
       const pending = w.status === '待处理';
       const id = String(w._id);
-      const stCls = pending ? 'st-wait' : (w.status === '已打款' ? 'st-ok' : 'st-bad');
+      const stCls = inflight ? 'st-warn' : (pending ? 'st-wait' : (w.status === '已打款' ? 'st-ok' : 'st-bad'));
       const stTxt = w.status + (w.status === '已驳回' && w.reason ? '（' + w.reason + '）' : '');
       const voucher = w.voucherNo ? ' · 凭证：' + esc(w.voucherNo) : '';
       const acts = pending
@@ -116,7 +126,12 @@ export function mount(root) {
            </div>`
         : (w.status === '已打款'
           ? `<div class="meta">打款时间 ${cnTime(w.paidAt)}${w.paidCards ? ' · 结清派单卡 ' + w.paidCards + ' 张' : ''}${voucher}${w.note ? ' · 备注：' + esc(w.note) : ''}</div>`
-          : '');
+          : (inflight
+            // 「处理中」= 后端已抢锁、正在结卡与解冻红包。这里不出现任何按钮，
+            // 但必须说明原因 —— 否则管理员只看到一条不能点的单子，很自然会去支付宝手动转账，
+            // 那正是这次改造要防的"双重打款"。
+            ? `<div class="meta" style="color:#b0642c">⏳ 该笔正在核销处理中（约几秒），请刷新查看结果，<b>不要另行手动转账</b>。${w.payError ? '上次异常：' + esc(w.payError) : ''}</div>`
+            : (w.payError ? `<div class="meta" style="color:#b0642c">上次处理异常：${esc(w.payError)}</div>` : '')));
       return `<div class="item-card">
         <div class="hd">
           <div class="who">${pending ? `<input type="checkbox" data-sel="${id}" ${SEL.has(id) ? 'checked' : ''} style="margin-right:8px">` : ''}${esc(w.displayName || '')}</div>
