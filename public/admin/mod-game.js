@@ -629,8 +629,15 @@ export function mount(root) {
       const u = await api('/api/admin/find-user/' + encodeURIComponent(key));
       return { id: u.user._id, label: (u.user.name || u.user.phone || '玩家') + (u.user.uid ? '（工号 ' + u.user.uid + '）' : '') };
     } catch (e) {
-      // 不是手机号/工号：当作用户 ID 原样使用
-      return { id: key, label: '玩家 ID：' + key };
+      // 【v26.71】原来这里不分原因地 catch 掉一切异常，直接把输入当作用户 ID 用。
+      // 结果是「查询接口 500 / 网络断了」也会走到这条兜底路上：管理员输入手机号 13800138000，
+      // 发放请求就带着这个字符串发给后端，而后端原本是按字符串 upsert 的 ——
+      // 界面报「发放成功，档案已更新」，道具其实落进了一条谁也查不到的孤儿档案。
+      // 现在只有「确实查无此人」且输入长得像 ID 时才允许按 ID 走，其余情况一律把错误抛给管理员看。
+      const looksLikeId = /^[0-9a-fA-F]{24}$/.test(key);
+      if (e.status === 404 && looksLikeId) return { id: key, label: '玩家 ID：' + key };
+      if (e.status === 404) throw new Error('没查到这个手机号/工号对应的玩家。要按用户 ID 发放，请输入 24 位 ID');
+      throw e;   // 500 / 网络故障 / 权限不足：报出来，绝不猜测身份
     }
   }
   function profileTable(label, p) {
