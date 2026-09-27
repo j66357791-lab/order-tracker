@@ -1282,8 +1282,17 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         if (r.modifiedCount) total = Math.round((total + amt) * 100) / 100;
       }
       if (total > 0) {
-        await db.collection('shanhai_profiles').updateOne({ userId: me.id }, { $inc: { lingqi: total } });
-        await db.collection('shanhai_logs').insertOne({ userId: me.id, action: 'duiduile_claim', detail: { amount: total }, createdAt: new Date() }).catch(() => { });
+        // 【2026-09-28 修复·灵气小数点】堆堆乐按天拆分的释放金额是两位小数（总量除以天数除不尽），
+        // 原先把小数直接累加进档案灵气：灵气在产品语义上是整数资产（交易所只交易整数数量），
+        // 累加浮点数后垃圾位越积越长（用户看到"小数点比银行卡号还长"）。
+        // 改为整数入账，不足 1 点的零头退回最后一条记录的 pending 滚到下次领取，总量分毫不差。
+        const whole = Math.floor(total);
+        const back = Math.round((total - whole) * 100) / 100;
+        await db.collection('shanhai_profiles').updateOne({ userId: me.id }, { $inc: { lingqi: whole } });
+        if (back > 0 && ready.length) {
+          await db.collection(DD_COL).updateOne({ _id: ready[ready.length - 1]._id }, { $inc: { pending: back } });
+        }
+        await db.collection('shanhai_logs').insertOne({ userId: me.id, action: 'duiduile_claim', detail: { amount: total, credited: whole }, createdAt: new Date() }).catch(() => { });
       }
       res.json({ ok: true, claimed: total });
     } catch (e) { console.error('[api] duiduile/claim', e); res.status(500).json({ ok: false, error: '领取失败，请稍后再试' }); }
