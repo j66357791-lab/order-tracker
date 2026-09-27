@@ -6,7 +6,7 @@
 "use strict";
 const SFX = (() => {
   let ctx = null, master = null, bgmGain = null;
-  let enabled = localStorage.getItem("sh_snd") !== "0";
+  let enabled = LS.get("sh_snd", "1") !== "0";
   let bgmTimer = null, bgmBar = 0, bgmOn = false;
 
   function ac() {
@@ -77,7 +77,7 @@ const SFX = (() => {
   const api = {
     get enabled() { return enabled; },
     unlock() { try { ac(); } catch (e) {} },   // 首次手势后调用（自动播放策略）
-    setEnabled(on) { enabled = !!on; localStorage.setItem("sh_snd", enabled ? "1" : "0"); if (!enabled) api.bgmStop(); return enabled; },
+    setEnabled(on) { enabled = !!on; LS.set("sh_snd", enabled ? "1" : "0"); if (!enabled) api.bgmStop(); return enabled; },
     toggle() { return api.setEnabled(!enabled); },
 
     // 飞剑命中：脆金属"锵"（三角波下滑 + 高通噪声瞬态）
