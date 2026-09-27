@@ -5,6 +5,9 @@ const Game = (() => {
   const cv = document.getElementById("game");
   const ctx = cv.getContext("2d");
   let W = 0, H = 0;
+  // 【P1-2】地块离屏画布：tileBase 记录当前预渲染覆盖的格子范围，跨界才重拼
+  let tileCanvas = null, tileCtx = null;
+  let tileBase = { x0: 0, y0: 0, cols: 0, rows: 0 };
 
   // —— 状态 ——
   let state = "title";      // title / playing / levelup / over / win
@@ -170,11 +173,11 @@ const Game = (() => {
   // ============ 弹幕发射桥 ============
   let lastDt = 0.016;   // 供弹道动画用
   function fire(kind, x, y, dx, dy, params) {
-    const prm = { ...params };
-    if (kind === "fireline" || kind === "icepick") prm.speed = params.speed;
-    projPool.spawn(kind, x, y, dx, dy, prm);
+    // 【2026-09-27 审查修复 P2-18】去掉 { ...params } 浅拷贝：参数对象要么是当帧新建的只读物、
+    // 要么是只读共享参数表，Projectile.reset 只读字段不保存引用——直接透传即可，
+    // 高攻速下每秒少创建几十个临时对象（GC 压力）。原先的 prm.speed = params.speed 是无效冗余。
+    projPool.spawn(kind, x, y, dx, dy, params);
   }
-  window.Game && (Game.lastDt = 0.016);
 
   const bossApi = {
     spawnBullet(x, y, dx, dy, dmg, kind) {
@@ -196,14 +199,21 @@ const Game = (() => {
 
   // ============ 主循环 ============
   let last = 0;
+  // 【2026-09-27 审查修复 P2-17】非战斗状态按需渲染：主页/升级/结算的画面被 DOM 覆盖，
+  // 原先 rAF 仍每帧全屏重绘，纯耗 GPU/CPU。改为只在状态切换/窗口变化后补画一帧。
+  let needsRender = true;
+  function invalidate() { needsRender = true; }
   function loop(ts) {
     const dt = Math.min(0.033, (ts - last) / 1000 || 0.016);
     last = ts;
     if (state === "playing") {
       try { update(dt); }
       catch (ex) { console.error("update error:", ex); }   // 单帧异常不冻结游戏
+      render(dt);
+    } else if (needsRender) {
+      render(dt);
+      needsRender = false;
     }
-    render(dt);
     requestAnimationFrame(loop);
   }
 
@@ -358,6 +368,7 @@ const Game = (() => {
     // 玩家明明通关却看到自己死了。票据制度下第二次上报还会被服务端拒（成绩已入账，看着像出错）。
     if (state === "playing" && hero.hp <= 0) {
       state = "over";
+      invalidate();   // 【P2-17】
       if (window.SFX) { SFX.hurt(); SFX.gameOver(); }   // 【v26.13】BGM 不停了：主页和战斗共用同一条背景乐，连续不断
       UI.gameOver(stats, hero);
     }
@@ -397,6 +408,7 @@ const Game = (() => {
     UI.toast(`山臊王 已被斩杀！`);
     boss = null;
     state = "win";
+    invalidate();   // 【P2-17】
     if (window.SFX) { SFX.victory(); }   // 【v26.13】BGM 连续，不再战斗一结束就静音
     UI.victory(stats, hero);
   }
@@ -467,6 +479,7 @@ const Game = (() => {
   function openLevelUp() {
     if (boss && !boss.alive) return;   // Boss 已亡：胜利结算优先，不再弹升级
     state = "levelup";
+    invalidate();   // 【P2-17】暂停期间仍需补画一帧定格画面
     if (window.SFX) SFX.levelUp();
     fxPool.spawn("levelup", hero.x, hero.y, 1.4);
     const choices = buildChoices();
@@ -543,7 +556,10 @@ const Game = (() => {
     }
     ctx.translate(Math.round(W / 2 - camera.x + sx), Math.round(H / 2 - camera.y + sy));
 
-    // —— 地块（视口平铺）——
+    // —— 地块（离屏预渲染）——
+    // 【2026-09-27 审查修复 P1-2】原先每帧把视口内约 300~700 格草地逐格 drawImage + 哈希选变体，
+    // 是战斗中最大的单项绘制开销（比全部怪物+弹幕加起来还多）。地块图案是静态的，
+    // 改为预渲染到一张离屏画布：每帧只做 1 次 drawImage；摄像机跨过格子边界时才重拼一次。
     const tile = Assets.get("tile");
     if (tile) {
       const TS = 64;
@@ -551,13 +567,20 @@ const Game = (() => {
       const y0 = Math.floor((camera.y - H / 2) / TS) - 1;
       const x1 = Math.ceil((camera.x + W / 2) / TS) + 1;
       const y1 = Math.ceil((camera.y + H / 2) / TS) + 1;
-      for (let ty = y0; ty <= y1; ty++) {
-        for (let tx = x0; tx <= x1; tx++) {
-          // 稳定伪随机变体（同格永远同图）
-          const v = Math.abs((tx * 73856093) ^ (ty * 19349663)) % tile.frames;
-          ctx.drawImage(tile.img, v * tile.fw, 0, tile.fw, tile.fh, tx * TS, ty * TS, TS, TS);
+      const cols = x1 - x0 + 1, rows = y1 - y0 + 1;
+      if (!tileCanvas || tileBase.x0 !== x0 || tileBase.y0 !== y0 || tileBase.cols !== cols || tileBase.rows !== rows) {
+        if (!tileCanvas) { tileCanvas = document.createElement("canvas"); tileCtx = tileCanvas.getContext("2d"); }
+        tileCanvas.width = cols * TS; tileCanvas.height = rows * TS;
+        tileBase = { x0, y0, cols, rows };
+        for (let ty = y0; ty <= y1; ty++) {
+          for (let tx = x0; tx <= x1; tx++) {
+            // 稳定伪随机变体（同格永远同图）
+            const v = Math.abs((tx * 73856093) ^ (ty * 19349663)) % tile.frames;
+            tileCtx.drawImage(tile.img, v * tile.fw, 0, tile.fw, tile.fh, (tx - x0) * TS, (ty - y0) * TS, TS, TS);
+          }
         }
       }
+      ctx.drawImage(tileCanvas, x0 * TS, y0 * TS);
     }
 
     // —— 装饰（y 排序已做，直接画在实体前；树按底部 y 与实体一起排序更好，M1 简化：先画装饰）——
@@ -589,7 +612,24 @@ const Game = (() => {
 
     // —— 特效 + 伤害数字 ——
     for (const f of fxPool.active) { if (inView(f.x, f.y)) f.draw(ctx); }
-    for (const d of dmgTextPool.active) { if (inView(d.x, d.y)) d.draw(ctx); }
+    // 【2026-09-27 审查修复 P2-20】伤害数字的公共状态只设一次、按字号切换；
+    // DamageText.draw 只负责 alpha 与文字本体（原先每条每帧 save/restore + 拼 font，满屏时 120 次文字绘制）
+    if (dmgTextPool.active.length) {
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(20,20,20,0.8)";
+      let lastBig = null;
+      for (const d of dmgTextPool.active) {
+        if (!inView(d.x, d.y)) continue;
+        if (lastBig !== d.big) {
+          ctx.font = (d.big ? "bold 15px" : "bold 12px") + " 'SimHei', sans-serif";
+          lastBig = d.big;
+        }
+        d.draw(ctx);
+      }
+      ctx.restore();
+    }
 
     // —— 拾取半径提示（低透明圈）——
     ctx.save();
@@ -658,7 +698,7 @@ const Game = (() => {
   const api = {
     start() {
       resize();
-      window.addEventListener("resize", resize);
+      window.addEventListener("resize", () => { resize(); invalidate(); });   // 【P2-17】窗口变化补一帧
       // 【2026-09-24 稳定性】客户端全局错误兜底：
       // ① 未捕获异常/rejection 不再静默丢掉，记入 window.__err（结算页/客服可查，便于定位"闪退"）；
       // ② 页面切后台再回来时强制一帧小步长，避免超长 dt 造成瞬移/穿模（rAF 暂停期间 last 停在旧时间戳）
@@ -674,7 +714,10 @@ const Game = (() => {
         console.error("[game] unhandledRejection:", r);
       });
       document.addEventListener("visibilitychange", () => {
-        if (!document.hidden && state === "playing") last = 0;   // 回前台第一帧按 0.016 起步
+        if (!document.hidden) {
+          if (state === "playing") last = 0;   // 回前台第一帧按 0.016 起步
+          invalidate();   // 【P2-17】切回前台补一帧，避免非战斗画面停在旧内容
+        }
       });
       requestAnimationFrame(loop);
     },
@@ -685,7 +728,7 @@ const Game = (() => {
     get hero() { return hero; },
     get __weapons() { return weapons; },
     get waveIdx() { return waveIdx; },
-    pause() { state = "title"; },
+    pause() { state = "title"; invalidate(); },   // 【P2-17】
     get __boss() { return boss; },
     get stageMul() { return MUL; },   // 【v24.4】供 entities 读取关卡倍率
     __debug: {
