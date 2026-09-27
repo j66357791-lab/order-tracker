@@ -150,6 +150,8 @@ export async function mount(host) {
     $('tabUnread').textContent = totalUnread > 99 ? '99+' : totalUnread;
   }
   function adminOps(c) {
+    // 【v26.71】顺手登记这张卡，确认打款时要拿真实的金额与收款人（见 actPay）
+    if (c && c._id) cardsAll[String(c._id)] = c;
     const s = c.status;
     if (s === '待审核') return `<button class="btn btn-g btn-sm" onclick="actApprove('${c._id}')">✔ 审核通过</button><button class="btn btn-r btn-sm" onclick="actReject('${c._id}')">✖ 驳回</button>`;
     if (s === '待打款' || s === '已交付') return `<button class="btn btn-cy btn-sm" onclick="actPay('${c._id}')">💸 确认打款 ¥${c.reward}</button>`;
@@ -273,10 +275,16 @@ export async function mount(host) {
     cardAct(id, 'reject', { reason }, '已驳回，写手可重新做单');
   };
   window.actPay = id => {
-    const row = (window._ovRows || []).find(r => r._id === id)
-      || ((window._reconItems || []).find(i => i.card._id === id) || {}).card || {};
-    const ali = alipayOf(row.to);
-    let msg = '确认已打款 ¥' + row.reward + ' 给 ' + row.toName + '？\n台账订单将自动变为「已结算」';
+    // 【v26.71 修金流可见性】这里原来读的是 window._ovRows / window._reconItems ——
+    // 全仓库没有任何一处给这两个全局赋值（是重构前独立页留下的），于是 row 恒为 {}，
+    // 确认框永远显示「确认已打款 ¥undefined 给 undefined？」，而点确定依旧会提交打款。
+    // 打款前的这道人工核对等于被完全摘掉了：管理员在对不出账的情况下按了确认。
+    // 改回用本模块的 cardsAll（挂载时由 /api/dispatch/overview 全量灌入，另有 socket 增量更新）。
+    const c = cardsAll[String(id)] || cardsAll[id];
+    if (!c) { toast('找不到这张派单卡的明细，请刷新后在「派单总览」里重新进入再确认打款'); return; }
+    if (c.reward == null || c.toName == null) { toast('这张卡缺少报酬或收款人字段，已阻止打款提交，请先核对数据'); return; }
+    const ali = alipayOf(c.to);
+    let msg = '确认已打款 ¥' + c.reward + ' 给 ' + c.toName + '？\n台账订单将自动变为「已结算」';
     if (ali) msg = '💸 打款前请核对收款方式：\n\n收款人：' + ali.name + '\n支付宝账号：' + ali.account + '\n\n' + msg;
     else msg = '⚠️ 该写手未绑定收款方式，请线下与其确认。\n\n' + msg;
     if (confirm(msg)) cardAct(id, 'pay', {}, '打款完成 💸');
