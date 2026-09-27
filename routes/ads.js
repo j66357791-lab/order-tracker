@@ -45,13 +45,45 @@ app.get('/api/ads', async (req, res) => {
     res.json({ ok: true, ad: DEFAULT_AD });
   }
 });
+// 【2026-09-27 审查修复 P2-14】广告富文本服务端白名单净化：
+// content 会在写手端（writer.html）与用户端以 innerHTML 渲染，等于把管理员账号当作
+// 存储型 XSS 的跳板（管理员账号一旦被盗或被钓鱼粘贴恶意代码，脚本就在全部写手工作台执行）。
+// 只保留展示类标签；剥掉 script/style/iframe 等整段、所有 on* 事件属性与 javascript/vbscript/data: 链接。
+// 正则净化不是 100% 密不透风，但把"原样注入"收紧为"过滤后注入"，攻击面已经完全不同。
+const AD_ALLOWED_TAGS = new Set(['p', 'br', 'b', 'i', 'u', 's', 'strong', 'em', 'span', 'div', 'a', 'img', 'h3', 'h4', 'ul', 'ol', 'li', 'blockquote', 'hr']);
+function sanitizeAdHtml(html) {
+  let s = String(html || '');
+  // ① 危险元素整段剥除（含内容），自闭合/孤立开标签也一并处理
+  s = s.replace(/<(script|style|iframe|object|embed|svg|math|form|link|meta)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '');
+  s = s.replace(/<\/?(script|style|iframe|object|embed|svg|math|form|link|meta)\b[^>]*>/gi, '');
+  // ② 注释剥除（条件注释可能藏 payload）
+  s = s.replace(/<!--[\s\S]*?-->/g, '');
+  // ③ 逐标签过滤：白名单外的整标签剥掉；白名单内的剥危险属性
+  s = s.replace(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)((?:"[^"]*"|'[^']*'|[^"'>])*)>/g, (m, slash, tag, attrs) => {
+    const t = tag.toLowerCase();
+    if (!AD_ALLOWED_TAGS.has(t)) return '';
+    const clean = String(attrs)
+      .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+      .replace(/\s(href|src)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, (m2, attr, val) => {
+        const v = String(val).replace(/^["']|["']$/g, '').replace(/[\s\x00-\x1f]/g, '');
+        if (/^(javascript|vbscript):/i.test(v)) return '';
+        if (/^data:/i.test(v) && !/^data:image\/(?:png|jpe?g|gif|webp);/i.test(v)) return '';
+        return m2;
+      });
+    return `<${slash}${t}${clean}>`;
+  });
+  return s.slice(0, 20000);
+}
+
 app.post('/api/ads', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
     const { title, content } = req.body;
+    const cleanTitle = String(title || '').replace(/<[^>]*>/g, '').trim().slice(0, 120);
+    const cleanContent = sanitizeAdHtml(content);
     await db.collection('ads').updateOne(
       { _id: 'main' },
-      { $set: { title: String(title || ''), content: String(content || ''), updatedAt: new Date() } },
+      { $set: { title: cleanTitle, content: cleanContent, updatedAt: new Date() } },
       { upsert: true }
     );
     res.json({ ok: true });
