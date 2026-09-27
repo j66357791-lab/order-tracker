@@ -5,6 +5,8 @@ import crypto from 'crypto';
 
 export default function mount(ctx) {
 
+  let warnedNoRealnameKey = false;   // 实名盐未配置的告警只在首次认证时打一次，不刷屏
+
   const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
 
 app.get('/api/captcha', (req, res) => {
@@ -84,6 +86,13 @@ app.put('/api/me/realname', auth, async (req, res) => {
     const idCard = String(req.body?.idCard || '').trim().toUpperCase();
     if (!/^[\u4e00-\u9fa5·]{2,30}$/.test(name)) return res.status(400).json({ ok: false, error: '请输入真实中文姓名' });
     if (!/^\d{17}[\dX]$/.test(idCard)) return res.status(400).json({ ok: false, error: '身份证号应为18位（最后一位可为X）' });
+    // 【2026-09-26 修复】实名原本可以无限次自助改绑，且下面 109 行还会 updateMany 把已签合同
+    // 的签署人改名 —— 组合起来的后果是：收款人一致性的约束（"收款支付宝必须是实名本人"）
+    // 被事后失效：先用自己的身份认证 → 拿到等级/资格 → 换成他人身份 → 再绑他人支付宝收款，
+    // 而合同证据链显示"本人签署"。改为：已认证不得自助改绑，需要变更走管理员。
+    if (req.user.realname && req.user.realname.verifiedAt && req.user.role !== 'admin') {
+      return res.status(403).json({ ok: false, error: '实名信息已认证，不可自行变更；如确需修改请联系管理员' });
+    }
     // 【2026-09-24 安全修复】身份证号输入空间高度结构化，无盐 SHA-256 可被离线彩虹表枚举。
     // 配置了 REALNAME_HASH_KEY（32 位以上随机串）时改用 HMAC-SHA256（密钥仅在服务端）；
     // 未配置时保持原 sha256hex，保证与存量数据、realname.idHash 唯一索引的兼容性。
@@ -92,6 +101,11 @@ app.put('/api/me/realname', auth, async (req, res) => {
     if (rnKey.length >= 16) {
       idHash = crypto.createHmac('sha256', rnKey).update(idCard).digest('hex');
     } else {
+      if (!warnedNoRealnameKey) {
+        warnedNoRealnameKey = true;
+        console.warn('[实名] 未配置 REALNAME_HASH_KEY，身份证号正在使用**无盐 SHA-256** 存储哈希（每次启动都会提示，配好后消失）。'
+          + '配好后需一次性迁移存量哈希，否则新旧口径会混用（见 .env.example 第 10 项）。');
+      }
       idHash = sha256hex(idCard);
     }
     const dup = await db.collection('users').findOne({ 'realname.idHash': idHash, _id: { $ne: new ObjectId(req.user.id) } });
@@ -152,8 +166,15 @@ app.get('/api/notify', auth, async (req, res) => {
 });
 app.post('/api/notify/:id/read', auth, async (req, res) => {
   try {
+    if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ ok: false, error: '参数不合法' });
     const db = await getDb();
-    await db.collection('announcements').updateOne({ _id: new ObjectId(req.params.id) }, { $addToSet: { readBy: req.user.id } });
+    // 【2026-09-26 批次2】必须限定"这条是发给我的"。原先条件只有 _id：
+    // 任何人都能把别人的定向公告（含违约通知、结算规则告知）标成已读，
+    // 既污染管理端的送达统计，也让"写手是否已读结算规则"这条合规留痕自失效。
+    const r = await db.collection('announcements').updateOne(
+      { _id: new ObjectId(req.params.id), targets: req.user.id },
+      { $addToSet: { readBy: req.user.id } });
+    if (!r.matchedCount) return res.status(404).json({ ok: false, error: '公告不存在或未发给你' });
     res.json({ ok: true });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
