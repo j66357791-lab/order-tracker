@@ -159,10 +159,17 @@ app.post('/api/cards/:id/reject', auth, adminOnly, async (req, res) => {
     if (!card) return res.status(404).json({ ok: false, error: '派单卡不存在' });
     if (card.status !== '待审核') return res.status(400).json({ ok: false, error: '只有待审核的卡片才能驳回' });
     const reason = String(req.body?.reason || '').slice(0, 300).trim() || '未通过';
+    // 【2026-09-26 批次2】状态条件压进更新：上面那句 if 只是读后判断，两个管理员并发时
+    // （或同页两个页签）A 刚审核通过把卡推到"待打款"、台账推到"待结算"，
+    // B 这条无条件的 updateOne 仍会把卡改回"已驳回" —— 结果卡=已驳回、台账=待结算，
+    // 而对账接口只检查 待打款/待审核/已完成 三种状态，错配被静默藏住。
     const r = await db.collection('cards').findOneAndUpdate(
-      { _id: card._id }, { $set: { status: '已驳回', rejectReason: reason, rejectedAt: new Date() } }, { returnDocument: 'after' });
-    notify(card.to, 'card', r); notify(req.user.id, 'card', r);
-    res.json({ ok: true, card: r });
+      { _id: card._id, status: '待审核' },
+      { $set: { status: '已驳回', rejectReason: reason, rejectedAt: new Date() } }, { returnDocument: 'after' });
+    const rr = r && (r.value || r);
+    if (!rr) return res.status(409).json({ ok: false, error: '该卡片状态已变化（可能刚被其他管理员处理），请刷新后重试' });
+    notify(card.to, 'card', rr); notify(req.user.id, 'card', rr);
+    res.json({ ok: true, card: rr });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 管理员：确认打款（待打款 → 已完成）；联动同步原单（状态→已结算）
@@ -174,8 +181,13 @@ async function payHandler(req, res) {
     if (card.status !== '待打款' && card.status !== '已交付') {
       return res.status(400).json({ ok: false, error: '只有待打款的卡片才能确认打款' });
     }
+    // 【2026-09-26 批次2】同上：抢状态而非覆盖状态。并发双击"确认打款"时只有一个能赢，
+    // 另一个明确拿到 409，不会两边都继续去同步台账、解冻红包。
     const r = await db.collection('cards').findOneAndUpdate(
-      { _id: card._id }, { $set: { status: '已完成', paidAt: new Date() } }, { returnDocument: 'after' });
+      { _id: card._id, status: { $in: ['待打款', '已交付'] } },
+      { $set: { status: '已完成', paidAt: new Date() } }, { returnDocument: 'after' });
+    const rr = r && (r.value || r);
+    if (!rr) return res.status(409).json({ ok: false, error: '该卡片已被处理（可能刚被其他管理员打款），请刷新核对' });
     let syncedOrder = null;
     if (card.orderId && ObjectId.isValid(card.orderId)) {
       syncedOrder = await db.collection(CONFIG.collection).findOneAndUpdate(
@@ -187,8 +199,8 @@ async function payHandler(req, res) {
     // 【2026-09-14 需求】关联订单完结（打款/台账已结算）→ 该写手冻结红包自动解冻入账
     let unlockedRedpackets = 0;
     try { unlockedRedpackets = await unfreezeRedpackets(db, card.to); } catch (e) { console.warn('[红包] 打款自动解冻失败:', e.message); }
-    notify(card.to, 'card', r); notify(req.user.id, 'card', r);
-    res.json({ ok: true, card: r, syncedOrder: syncedOrder ? syncedOrder.value || syncedOrder : null, unlockedRedpackets });
+    notify(card.to, 'card', rr); notify(req.user.id, 'card', rr);
+    res.json({ ok: true, card: rr, syncedOrder: syncedOrder ? syncedOrder.value || syncedOrder : null, unlockedRedpackets });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 }
 app.post('/api/cards/:id/pay', auth, adminOnly, payHandler);
