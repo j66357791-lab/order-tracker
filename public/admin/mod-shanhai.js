@@ -303,7 +303,11 @@ export function mount(root) {
           : (r.bot
             ? `<span style="display:inline-block;padding:0 6px;border-radius:5px;background:#efe6d2;color:#8a6a2a;font-size:11px">做市</span>`
             : `<span style="display:inline-block;padding:0 6px;border-radius:5px;background:#e3f0e8;color:#2f6b4c;font-size:11px">玩家</span>`);
-        const name = (n, id) => bot && (id === '__market__')
+        // 【v26.71】原来这里写的是 `bot && id === '__market__'`，而本作用域内根本没有 bot 这个变量
+        // （上一行只有 bo = s.bot）—— 引用未声明的标识符是 ReferenceError，一进 for 循环就抛，
+        // 下面的 $('exTable').innerHTML 永远执行不到：只要有任何一条成交记录，整张流水表就是空白。
+        // 做市账户在服务端就是固定 ID __market__（routes/shanhai_market.js 的 BOT_ID），按 id 判断即可。
+        const name = (n, id) => id === '__market__'
           ? `<b style="color:#8a6a2a">灵傀</b>`
           : `${esc(n || '-')}`;
         // 【v26.10】单价改 4 位：交易所允许 0.0001 级定价，toFixed(2) 会把 0.0810 显示成 ¥0.08、
