@@ -177,9 +177,10 @@ $('btnLogin').onclick = async () => {
   err('');
   try {
     const plain = $('lPass').value;
+    // 【2026-09-27 审查修复 P2-13】不再向服务端发送密码原文（原先为老账号静默升级每次登录都带
+    // passwordPlain——明文常态化上线，会流经日志/调试工具）。所有账号均已升级为指纹校验；
+    // 服务端兼容窗口保留一个版本（authx.js okLegacy），老账号如登录异常由管理员重置密码即可。
     const body = { username: $('lUser').value.trim(), password: await sha256hex(plain) };
-    // 兼容旧账号静默升级：仅在密码哈希不匹配时服务端才会用到原文
-    body.passwordPlain = plain;
     const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error);
