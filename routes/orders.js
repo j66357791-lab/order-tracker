@@ -94,6 +94,103 @@ app.get('/api/orders', auth, adminOnly, async (req, res) => {
   }
 });
 
+// ============ 【v26.66】分成比例：默认值配置 + 批量修改 ============
+// 路由都挂在 /api/orders/xxx 上且只用 GET/POST —— 已存在的 PUT/DELETE /api/orders/:id 会
+// 吃掉 /api/orders/<单个词> 的形态（Express 按注册顺序匹配），所以这里不用 PUT，避免抢路由。
+const SHARE_CFG_KEY = 'ledger_share_rate';
+// 2026-09-27 起新单默认分成比例 40% → 45%（历史订单不自动追溯改动，需要调的用下面的批量接口）
+const DEFAULT_SHARE_RATE = 45;
+const SETTLED = '已结算';
+
+async function readShareDefault(db) {
+  const d = await db.collection('config').findOne({ key: SHARE_CFG_KEY });
+  const v = d && Number(d.value && d.value.shareRate);
+  return isFinite(v) && v > 0 && v <= 100 ? Math.round(v * 100) / 100 : DEFAULT_SHARE_RATE;
+}
+
+// 前端读取默认比例（新增/快捷录入表单的预填值从这里来，不再写死在页面里）
+app.get('/api/orders/share-default', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    res.json({ ok: true, shareRate: await readShareDefault(db), fallback: DEFAULT_SHARE_RATE });
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+});
+
+// 修改默认比例（只影响之后新建的订单，不动历史数据）
+app.post('/api/orders/share-default', auth, adminOnly, async (req, res) => {
+  try {
+    const rate = Number((req.body || {}).shareRate);
+    if (!isFinite(rate) || rate <= 0 || rate > 100) return res.status(400).json({ ok: false, error: '分成比例必须是 1-100 之间的数字（%）' });
+    const r = Math.round(rate * 100) / 100;
+    const db = await getDb();
+    await db.collection('config').updateOne({ key: SHARE_CFG_KEY },
+      { $set: { value: { shareRate: r }, updatedBy: req.user.username, updatedAt: new Date() }, $setOnInsert: { key: SHARE_CFG_KEY } },
+      { upsert: true });
+    await db.collection('order_audit').insertOne({
+      by: req.user.id, actor: req.user.username, action: 'set_default_share_rate', to: r, createdAt: new Date(),
+    }).catch(e => console.warn('[台账] 审计写入失败:', e.message));
+    res.json({ ok: true, shareRate: r });
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+});
+
+// 批量修改分成比例
+//   body: { ids?: string[], all?: boolean, shareRate: number, includeSettled?: boolean }
+//   ids = 手动勾选的那批；all = 按"全部/仅未结算"整体调整。二者必给其一。
+app.post('/api/orders/share-batch', auth, adminOnly, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const rate = Number(b.shareRate);
+    if (!isFinite(rate) || rate <= 0 || rate > 100) return res.status(400).json({ ok: false, error: '分成比例必须是 1-100 之间的数字（%）' });
+    const to = Math.round(rate * 100) / 100;
+    const includeSettled = !!b.includeSettled;
+
+    const filter = {};
+    if (Array.isArray(b.ids) && b.ids.length) {
+      const valid = b.ids.filter(x => ObjectId.isValid(String(x)));
+      if (!valid.length) return res.status(400).json({ ok: false, error: '勾选的订单号无效' });
+      if (valid.length !== b.ids.length) return res.status(400).json({ ok: false, error: '有 ' + (b.ids.length - valid.length) + ' 个订单号不合法，已拒绝整批' });
+      filter._id = { $in: valid.map(x => new ObjectId(String(x))) };
+    } else if (b.all === true) {
+      // 全量模式：刻意不给"按当前筛选条件"的服务端猜测空间 —— 前端筛选口径（跨期接单/完单）
+      // 与查询条件不是一回事，让调用方把实际要改的 _id 传过来，避免"以为改了 20 条其实改了 2000 条"
+    } else {
+      return res.status(400).json({ ok: false, error: '请指定要修改的订单（勾选若干条，或明确选择整体调整）' });
+    }
+    if (!includeSettled) filter.status = { $ne: SETTLED };
+
+    const db = await getDb();
+    // 先取快照：一是给"改了多少、从多少改到多少"的预览与留痕，二是历史可回滚
+    const targets = await db.collection(CONFIG.collection).find(filter, {
+      projection: { orderNo: 1, amount: 1, shareRate: 1, status: 1, dispatch: 0 },
+    }).toArray();
+    const need = targets.filter(o => Math.round(Number(o.shareRate) * 100) / 100 !== to);
+    if (!need.length) {
+      return res.json({ ok: true, updated: 0, skippedUnchanged: targets.length,
+        message: targets.length ? '所选订单的分成比例已经都是 ' + to + '%，无需修改' : '没有符合条件的订单' });
+    }
+    if (need.length > 5000) return res.status(400).json({ ok: false, error: '一次最多改 5000 条，请分批操作' });
+
+    const before = need.map(o => ({ id: String(o._id), orderNo: o.orderNo || '', from: o.shareRate, to, amount: o.amount || 0, status: o.status }));
+    const r = await db.collection(CONFIG.collection).updateMany(
+      { _id: { $in: need.map(o => o._id) } },
+      { $set: { shareRate: to, updatedAt: new Date() } }
+    );
+    // 审计：整批一条记录，保留逐条原值，便于事后回滚与对账
+    await db.collection('order_audit').insertOne({
+      by: req.user.id, actor: req.user.username, action: 'batch_share_rate',
+      to, includeSettled, matched: targets.length, updated: r.modifiedCount,
+      before, createdAt: new Date(),
+    }).catch(e => console.warn('[台账] 审计写入失败:', e.message));
+    cacheClearPrefix('orders:');
+    const delta = need.reduce((s, o) => s + (o.amount || 0) * (to - (Number(o.shareRate) || 0)) / 100, 0);
+    res.json({
+      ok: true, updated: r.modifiedCount, skippedUnchanged: targets.length - need.length,
+      amountDelta: Math.round(delta * 100) / 100,
+      message: '已把 ' + r.modifiedCount + ' 条订单的分成比例改为 ' + to + '%',
+    });
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+});
+
 // 新增
 app.post('/api/orders', auth, adminOnly, async (req, res) => {
   const { doc, errors } = parseOrder(req.body || {});
