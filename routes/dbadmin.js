@@ -1,6 +1,8 @@
 // routes/dbadmin.js — 【v24.0】数据库占用查看与可清理项管理（管理员）
 // 开发阶段用：看每个集合占了多少空间、哪些历史数据可以清，按钮式清理带确认。
 // 只开放白名单集合的清理，且全部带时间下限（days），避免误删线上活跃数据。
+import { jobLeaseStatus } from '../lib/jobs.js';
+
 export default function mount(ctx) {
   const { app, auth, adminOnly, getDb } = ctx;
 
@@ -33,7 +35,10 @@ export default function mount(ctx) {
       }
       out.sort((a, b) => (b.storage || 0) - (a.storage || 0));
       const total = out.reduce((t, x) => t + (x.storage || 0), 0);
-      res.json({ ok: true, collections: out, totalStorage: total, totalText: fmt(total) });
+      // 【v26.74】顺带把定时任务租约的归属报出来：可以直接看出「哪台实例在跑哪个任务、跑过多少轮」，
+      // 这是多实例排查唯一的现场证据。
+      const jobLeases = await jobLeaseStatus(getDb).catch(() => []);
+      res.json({ ok: true, collections: out, totalStorage: total, totalText: fmt(total), jobLeases });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '读取失败' }); }
   });
 
