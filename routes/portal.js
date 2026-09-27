@@ -3,6 +3,7 @@
 import { ObjectId } from 'mongodb';
 import bcrypt from 'bcryptjs';
 import { limit, limitPass } from '../lib/ratelimit.js';
+import { cleanNick } from '../lib/core.js';
 
 export default function mountPortal(app, ctx = {}) {
   const { auth, getDb, signToken, publicUser, selfUser, notify, adminOnly, verifyCaptcha,
@@ -38,7 +39,7 @@ export default function mountPortal(app, ctx = {}) {
       }
       const doc = {
         username: String(username), phone: String(phone), passwordHash: await bcrypt.hash(String(password), 8),   // password 已是前端 SHA-256
-        displayName: String(displayName || '').slice(0, 20) || (role === 'writer' ? '写手' : '用户') + String(username).slice(0, 4),
+        displayName: cleanNick(displayName) || (role === 'writer' ? '写手' : '用户') + String(username).slice(0, 4),
         role, createdAt: new Date(), portalLeads: 0, shift: false, sockOnline: false, email: '', level: 0,
       };
       let r;
@@ -127,7 +128,7 @@ export default function mountPortal(app, ctx = {}) {
   app.put('/api/portal/profile', auth, async (req, res) => {
     try {
       if (req.user.role !== 'client') return res.status(403).json({ ok: false, error: '仅用户端账号' });
-      const name = String((req.body || {}).displayName || '').trim().slice(0, 20);
+      const name = cleanNick((req.body || {}).displayName);
       if (!name) return res.status(400).json({ ok: false, error: '昵称不能为空' });
       const db = await getDb();
       await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { displayName: name } });
