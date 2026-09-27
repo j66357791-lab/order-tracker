@@ -1,6 +1,29 @@
 // 实体层：英雄/怪物/Boss/拾取/特效（数值全部来自 CONFIG）
 "use strict";
 
+// 【2026-09-27 审查修复 P2-19】受击白闪用"白色剪影"缓存：按 (精灵,帧) 惰性生成一张
+// source-atop 填白的剪影画布并复用。原实现同一精灵画两遍（群怪受击时双倍 drawImage），
+// 且 globalCompositeOperation 写在 restore 之前从未生效——白闪实际是"半透明重画"，
+// 视觉和性能都不对。精灵种类有限（21 张表 × 每张几帧），缓存体积可忽略。
+const _whiteCache = new Map();
+function whiteSprite(anim, f) {
+  const s = Assets.sheets[anim];
+  if (!s) return null;
+  const key = anim + "#" + f;
+  let c = _whiteCache.get(key);
+  if (!c) {
+    c = document.createElement("canvas");
+    c.width = s.fw; c.height = s.fh;
+    const cc = c.getContext("2d");
+    cc.drawImage(s.img, f * s.fw, 0, s.fw, s.fh, 0, 0, s.fw, s.fh);
+    cc.globalCompositeOperation = "source-atop";
+    cc.fillStyle = "#FFFFFF";
+    cc.fillRect(0, 0, s.fw, s.fh);
+    _whiteCache.set(key, c);
+  }
+  return c;
+}
+
 // ================= 英雄 =================
 class Hero {
   constructor() {
@@ -149,16 +172,18 @@ class Enemy {
   draw(ctx) {
     const f = Assets.frame(this.def.anim, this.animT, 7);
     if (this.hitFlash > 0) {
-      // 受击白闪：临时 canvas 滤镜太贵，用 globalAlpha 叠画一帧白色矩形近似
-      ctx.save();
-      ctx.globalAlpha = 0.85;
-      Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, this.scale, this.facing < 0);
-      ctx.globalCompositeOperation = "source-atop";
-      ctx.restore();
-      ctx.save();
-      ctx.globalAlpha = 0.5;
-      Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, this.scale, this.facing < 0);
-      ctx.restore();
+      // 【P2-19】受击白闪：画预生成的白色剪影，单次 drawImage（原先画两遍且特效从未生效）
+      const w = whiteSprite(this.def.anim, f);
+      if (w) {
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.translate(this.x, this.y - 6);
+        ctx.scale(this.facing < 0 ? -this.scale : this.scale, this.scale);
+        ctx.drawImage(w, -w.width / 2, -w.height / 2);
+        ctx.restore();
+      } else {
+        Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, this.scale, this.facing < 0);
+      }
     } else {
       Assets.draw(ctx, this.def.anim, f, this.x, this.y - 6, this.scale, this.facing < 0);
     }
