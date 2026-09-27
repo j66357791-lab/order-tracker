@@ -3196,19 +3196,22 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   /* ============ 战斗 ============ */
   let curStage = 1;
   async function enterBattle(stage) {
-    // 【v24.9】挑战消耗 1 点体力（服务端扣，客户端只做同步与提示）
+    // 【v26.67 批次3】体力不再单独扣：开局接口一并完成「校验关卡合法 + 扣 1 点体力 + 发本局结算票据」。
+    // 票据必须在进战场前拿到，否则这一局打完了也换不到奖励。
     const btn = document.getElementById("btnEnterBattle");
     btn.disabled = true;
     try {
-      const d = await META.consumeStamina();
+      const d = await META.startRun(stage);
       staminaLocal = d.stamina;
       renderStamina();
     } catch (e) {
       renderStamina();
-      toast(e.error || "体力不足");
+      toast(e.error || "开局失败");
       if (e.stamina) { staminaLocal = e.stamina; renderStamina(); }
+      btn.disabled = false;
       return;
     }
+    btn.disabled = false;
     curStage = stage;
     showScreen("scrBattle");
     window.dispatchEvent(new Event("resize"));
@@ -3241,6 +3244,15 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       }
     });
     const r = _win(stats, hero); addHomeBtn(); return r;
+  };
+  // 【v26.67 批次3】结算页的「再入山海 / 再战一轮」原先走 Game.restart()：
+  // 一是会退回第 1 关却把成绩记到 curStage 上（关卡串档），二是绕过了体力消耗（体力经济失效），
+  // 三是在票据制度下这一局根本拿不到票据、打完白打。改为回到宿主层重新开局：
+  // 仍然打刚才那一关，并且必须经过 enterBattle 扣体力 + 领票据。
+  UI.retry = () => {
+    const ov = document.getElementById("overlay");
+    if (ov) ov.style.display = "none";
+    enterBattle(curStage);
   };
   function addHomeBtn() {
     setTimeout(() => {
