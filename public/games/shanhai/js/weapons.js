@@ -1,6 +1,9 @@
 // 技能系统：御剑术（初始飞剑）/ 火球术 / 寒冰锥 / 敌方弹幕
 "use strict";
 
+// 【2026-09-27 审查修复 P2-18】索敌候选数组的模块级复用（每帧填空，不再 concat 新数组）
+const _cand = [];
+
 // —— 玩家武器总控 ——
 class WeaponSystem {
   constructor(hero) {
@@ -91,11 +94,16 @@ class WeaponSystem {
   update(dt, enemies, fire, boss) {
     for (const s of Object.values(this.slots)) s.t -= dt;
     // 索敌候选 = 小怪池 + Boss（修复：Boss 战小怪清空后停火）
-    const cand = enemies.active.concat(boss && boss.alive ? [boss] : []);
+    // 【2026-09-27 审查修复 P2-18】候选数组模块级复用，不再每帧 concat 出新数组
+    _cand.length = 0;
+    for (const e of enemies.active) _cand.push(e);
+    if (boss && boss.alive) _cand.push(boss);
+    const cand = _cand;
     // —— 御剑术：飞剑射向最近之敌 ——
-    const sp = this.swordParams();
     const sslot = this.slots.sword;
     if (sslot && sslot.t <= 0) {
+      // 【P2-18】参数表只在真正开火时构建（原先每帧 4 个 *Params() 新对象，多数是白算）
+      const sp = this.swordParams();
       const targets = nearestEnemies(cand, this.hero, Math.max(sp.count, 1));
       if (targets.length) {
         sslot.t = sp.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】天赋/基础能力的攻速加成生效
@@ -120,9 +128,9 @@ class WeaponSystem {
       }
     }
     // 火球术：射最近敌人
-    const fp = this.firelineParams();
     const slot = this.slots.fireline;
     if (slot && slot.t <= 0) {
+      const fp = this.firelineParams();   // 【P2-18】开火时才构建
       const targets = nearestEnemies(cand, this.hero, fp.count);
       if (targets.length) {
         slot.t = fp.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】攻速加成生效
@@ -134,28 +142,32 @@ class WeaponSystem {
       }
     }
     // 寒冰锥
-    const ip = this.icepickParams();
     const islot = this.slots.icepick;
-    if (ip && islot && islot.t <= 0) {
-      const targets = nearestEnemies(cand, this.hero, ip.count);
-      if (targets.length) {
-        islot.t = ip.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】攻速加成生效
-        for (const tgt of targets) {
-          const dx = tgt.x - this.hero.x, dy = tgt.y - this.hero.y;
-          const d = Math.hypot(dx, dy) || 1;
-          fire("icepick", this.hero.x, this.hero.y - 8, dx / d, dy / d, ip);
+    if (islot && islot.t <= 0) {
+      const ip = this.icepickParams();   // 【P2-18】开火时才构建（保留原有"参数缺失即跳过"的语义）
+      if (ip) {
+        const targets = nearestEnemies(cand, this.hero, ip.count);
+        if (targets.length) {
+          islot.t = ip.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】攻速加成生效
+          for (const tgt of targets) {
+            const dx = tgt.x - this.hero.x, dy = tgt.y - this.hero.y;
+            const d = Math.hypot(dx, dy) || 1;
+            fire("icepick", this.hero.x, this.hero.y - 8, dx / d, dy / d, ip);
+          }
         }
       }
     }
     // 【v24.3】旋风刃：绕体灵刃（不索敌，纯环绕，接触即伤，带个体冷却）
-    const gp = this.galeParams();
     const gslot = this.slots.galeorb;
-    if (gp && gslot && gslot.t <= 0) {
-      gslot.t = gp.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】攻速加成生效
-      for (let i = 0; i < gp.blades; i++) {
-        fire("gale", this.hero.x, this.hero.y, 0, 0, {
-          ...gp, hero: this.hero, ang: (i / gp.blades) * Math.PI * 2,
-        });
+    if (gslot && gslot.t <= 0) {
+      const gp = this.galeParams();   // 【P2-18】开火时才构建（保留原有"参数缺失即跳过"的语义）
+      if (gp) {
+        gslot.t = gp.cd / (1 + (this.hero.atkSpdBuff || 0));   // 【v26.23】攻速加成生效
+        for (let i = 0; i < gp.blades; i++) {
+          fire("gale", this.hero.x, this.hero.y, 0, 0, {
+            ...gp, hero: this.hero, ang: (i / gp.blades) * Math.PI * 2,
+          });
+        }
       }
     }
   }
@@ -184,7 +196,9 @@ class Projectile {
     this.radius = params.radius ?? 6;
     this.pierce = params.pierce ?? 0;
     this.slow = params.slow || null;
-    this.hitIds = [];
+    // 【2026-09-27 审查修复 P2-18】复用数组（length=0），不再每发弹幕新建一个；
+    // gale 分支早就是正确写法，这里对齐
+    if (this.hitIds) this.hitIds.length = 0; else this.hitIds = [];
     this.animT = Math.random() * 2;
     this.alive = true;
     this.life = 3.2;        // 寿命
