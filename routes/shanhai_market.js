@@ -302,8 +302,14 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
 
       const playerId = target.userId;
       const prof = db.collection('shanhai_profiles');
-      const sellerId = botIsBuyer ? BOT_ID : playerId;
-      const buyerId = botIsBuyer ? playerId : BOT_ID;
+      // 【2026-09-28 紧急修复·收款方反转】这两个变量在旧代码里就是反着命名的（旧代码只拿它们写
+      // 台账元数据，钱走的是显式分支所以无恙）；v26.78 重写结算时把它们用进了真实资金流转——
+      // 机器人买入玩家的灵气时货款进了机器人自己钱包（玩家白卖）、机器人卖出时玩家付了钱还收到
+      // 等额"退款"（等于只花手续费拿灵气）。现纠正为真实交易角色，台账的 buyerId/sellerId 也随之
+      // 首次与 buyerName/sellerName 一致。v26.78 上线窗口内被错误入账的货款由启动自愈
+      // fixMarketCredit2678 自动调回（见本文件底部）。
+      const sellerId = botIsBuyer ? playerId : BOT_ID;   // 机器人买入→卖家是玩家；机器人卖出→卖家是机器人
+      const buyerId = botIsBuyer ? BOT_ID : playerId;
       const exw = db.collection(EXW_COL);
       const fundCol = db.collection(FUND_COL);
       // 【2026-09-27 审查修复 P2-2/P2-3】对齐玩家侧吃单路径（shanhai_game.js deal）的写法：
@@ -496,6 +502,66 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     return report;
   }
   mountShanhaiMarket.cleanupOldData = cleanupOldData;
+
+  // ==================== 【2026-09-28 紧急自愈】v26.78 收款方反转的存量纠错 ====================
+  // v26.78（2026-09-27T15:38Z 前后上线）重写做市结算时，把 sellerId/buyerId 这两个【命名本来就是
+  // 反的】旧变量用进了真实资金流转：bot_take 成交的货款（total-fee）进了错误的一方——
+  //   机器人买入玩家的卖单 → 货款错进机器人钱包（玩家白卖）；
+  //   机器人卖出被玩家的买单吃 → 玩家付了钱还收到等额"退款"（只花手续费拿灵气）。
+  // 本自愈部署后自动跑一次（FUND_COL 占位标记保证全平台只跑一次），做两件事：
+  //   ① 扫描错误窗口内的成交台账，把 sellerGet 从"错收方"原子调回"真卖家"，台账 (kind,refId)
+  //      幂等 + 订单标记位认领，进程中途被杀最多漏半笔（日志留 dealId 可人工补），绝不重复划账；
+  //   ② 玩家档案灵气一次性取整（清除堆堆乐两位小数释放累加出的浮点垃圾位，领取侧已改为零头滚存）。
+  // 窗口下限 = config.js 升到 26.78 的仓库提交时间（2026-09-27T15:37:59Z）+ 4 分钟
+  // （Render 部署通常 1-3 分钟，宁可少纠不可错纠；漏网单据后台按 shanhai_logs 的 mkt_fix_2678 流水人工核对）。
+  const MARKET_FIX_SINCE = new Date('2026-09-27T15:42:00Z');
+  async function fixMarketCredit2678() {
+    const db = await getDb();
+    const seeded = await db.collection(FUND_COL).findOneAndUpdate(
+      { _id: 'market_credit_fix_v2678' },
+      { $setOnInsert: { at: new Date() } }, { upsert: true, returnDocument: 'before' });
+    if (seeded && (seeded.value || seeded)) return;   // 已有标记 = 本平台已跑过，跳过
+    const summary = { deals: 0, moved: 0, skipped: 0, lingqiRounded: 0, ranAt: new Date() };
+    const dealCol = db.collection(DEAL_COL);
+    try {
+      // ① 收款方纠错
+      const deals = await dealCol.find({
+        mode: 'bot_take', bot: true, fixedV2678: { $ne: true }, createdAt: { $gte: MARKET_FIX_SINCE },
+      }).toArray();
+      for (const d of deals) {
+        const sellerGet = money4((d.total || 0) - (d.fee || 0));
+        const wrong = d.sellerId;                                     // v26.78 窗口内被错误入账的一方
+        const trueSeller = d.botSide === 'buy' ? d.buyerId : BOT_ID;  // 真正该收货款的一方
+        if (!wrong || !trueSeller || String(wrong) === String(trueSeller) || !(sellerGet > 0)) {
+          await dealCol.updateOne({ _id: d._id }, { $set: { fixedV2678: true } });
+          summary.skipped++; continue;
+        }
+        // 认领后再动钱：标记位保证同一笔最多纠一次；失败只可能是"漏纠"（日志留 dealId），不会重复划账
+        const claim = await dealCol.updateOne({ _id: d._id, fixedV2678: { $ne: true } }, { $set: { fixedV2678: true } });
+        if (!claim.modifiedCount) continue;
+        const rOut = await addLedgerEntry(db, { userId: wrong, kind: 'mkt_fix_2678', refId: 'mktfix:' + d._id + ':out',
+          amount: -sellerGet, note: 'v26.78 做市收款方向纠正（调出）', extra: { dealId: String(d._id) } });
+        if (rOut === 'ok') await db.collection(EXW_COL).updateOne({ userId: wrong },
+          { $inc: { balance: -sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
+        const rIn = await addLedgerEntry(db, { userId: trueSeller, kind: 'mkt_fix_2678', refId: 'mktfix:' + d._id + ':in',
+          amount: sellerGet, note: 'v26.78 做市收款方向纠正（调入）', extra: { dealId: String(d._id) } });
+        if (rIn === 'ok') await db.collection(EXW_COL).updateOne({ userId: trueSeller },
+          { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
+        summary.deals++; summary.moved = money4(summary.moved + sellerGet);
+        console.log('[market] 收款纠错 #%s: %s -> %s ¥%s', d._id, wrong, trueSeller, sellerGet);
+      }
+      // ② 档案灵气取整（lingqiFrozen 全程只加减整数，无需处理）
+      const rr = await db.collection('shanhai_profiles').updateMany({}, [
+        { $set: { lingqi: { $round: [{ $ifNull: ['$lingqi', 0] }, 0] } } }]);
+      summary.lingqiRounded = rr.modifiedCount || 0;
+      await db.collection(FUND_COL).updateOne({ _id: 'market_credit_fix_v2678' }, { $set: summary });
+      console.log('[market] v26.78 收款纠错完成:', JSON.stringify(summary));
+    } catch (e) {
+      console.error('[market] v26.78 收款纠错执行失败，删除标记待下次启动重试:', (e && e.message) || e);
+      await db.collection(FUND_COL).deleteOne({ _id: 'market_credit_fix_v2678' }).catch(() => { });
+    }
+  }
+  fixMarketCredit2678().catch(e => console.error('[market] 自愈任务启动失败:', (e && e.message) || e));
 
   // ==================== 【v26.9】价格中枢：随机游走 + 均值回归 ====================
   // 之前中枢固定 = 区间中点，行情永远是一条平线，玩家一眼看出是假的。
