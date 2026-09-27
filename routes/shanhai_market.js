@@ -12,6 +12,7 @@
 //   4) 每笔成交都写 shanhai_ex_deals，带 bot 标记 —— 后台台账一眼分得清哪些是玩家的、哪些是机器人的
 //   5) 优先吃玩家的挂单（给真实挂单兜底），市场上没单时才自己挂单补流动性
 import { ObjectId } from 'mongodb';
+import { addLedgerEntry } from '../lib/ledger.js';
 
 const PLATFORM_ID = '__platform__';
 const BOT_ID = '__market__';
@@ -137,9 +138,11 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     await db.collection(DEAL_COL).insertOne(Object.assign({ createdAt: new Date() }, d)).catch(() => { });
   }
   async function writeLog(db, userId, amount, kind, note, orderId, extra) {
-    await db.collection('wallet_log').insertOne(Object.assign({
-      userId, amount: money2(amount), kind, note: note || '', orderId: orderId || null, createdAt: new Date(),
-    }, extra || {}));
+    // 【2026-09-26 批次2】走统一账本入口，带 (kind, refId) 幂等键。
+    // 做市机器人每分钟一轮、且与玩家撮合共用这套资金写入，重复写入=凭空造钱（余额是流水求和）。
+    await addLedgerEntry(db, { userId, kind, refId: orderId || null, amount: money2(amount), note: note || '',
+      // orderId 字段原本每条都写（哪怕为 null），后台台账按它反查 —— 保持口径不变
+      extra: Object.assign({ orderId: orderId || null }, extra || {}) });
   }
 
   // 【v26.3.2】回收机器人自己挂了太久没成交的单：卖单退冻结灵气、买单退冻结余额，
