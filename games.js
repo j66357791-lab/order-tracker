@@ -465,7 +465,8 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
   }));
 
   // 拆福袋：随机现金入钱包流水
-  app.post('/api/game/bag/open', auth, wrap(async (req, res) => {
+  // 【2026-09-27 审查修复 P2-7】补频率闸（有原子扣袋兜底，但脚本高频打接口仍浪费资源）
+  app.post('/api/game/bag/open', auth, limit({ name: 'bag-open', max: 10, windowMs: 60 * 1000, msg: '开袋太频繁，稍等片刻' }), wrap(async (req, res) => {
     const db = await getDb();
     const size = r2(req.body && req.body.size);
     if (!BAG_RANGE[size]) return bad(res, 400, '无效的福袋类型');
