@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import multer from 'multer';
 import { recognize, pickAmount, parseAmounts, primaryAmount, status as ocrStatus } from '../lib/ocr.js';
 import { limit } from '../lib/ratelimit.js';
+import { writerOnly } from '../lib/core.js';
 import { addLedgerEntry, ledgerSumOfRef } from '../lib/ledger.js';
 import { indexGuardOk, indexGuardReport } from '../lib/db.js';
 
@@ -145,7 +146,7 @@ export default function mountRecharge(app, ctx) {
   // 【2026-09-26】限流改按用户维度：原先 keyOf 里的 body.username 在 multipart 下取不到
   //（限流中间件挂在 upload.single 之前，此时 req.body 还是 undefined），退化成纯 IP 桶 ——
   // 移动网络 CGNAT 后多个写手共用出口 IP 互相顶号，而攻击者换 IP 即无限。
-  app.post('/api/recharge', auth,
+  app.post('/api/recharge', auth, writerOnly,   // 【v26.73】资金入口只开放给写手
     ctx.limit ? ctx.limit({ name: 'recharge-submit', max: 8, windowMs: 60 * 1000, byUser: true, msg: '提交太频繁，请稍后再试' })
               : limit({ name: 'recharge-submit', max: 8, windowMs: 60 * 1000, byUser: true, msg: '提交太频繁，请稍后再试' }),
     shotUpload.single('file'),
