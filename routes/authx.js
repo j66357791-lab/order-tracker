@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { ObjectId, GridFSBucket } from 'mongodb';
 
 import { limit, limitPass } from '../lib/ratelimit.js';
-import { INLINE_SAFE_TYPES } from '../lib/core.js';
+import { INLINE_SAFE_TYPES, selfUser } from '../lib/core.js';
 
 // 【2026-09-24 安全修复】登录时序侧信道兜底：对不存在的用户也执行一次同价 bcrypt 比较。
 // 哈希值对应随机口令「不可能被任何真实口令命中」（bcrypt 哈希本身无法逆推口令）。
@@ -176,7 +176,11 @@ app.post('/api/auth/register', limit({ name: 'reg-internal', max: 10, windowMs: 
     console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
   }
 });
-app.get('/api/me', auth, (req, res) => res.json({ ok: true, user: req.user }));
+// 【2026-09-26 隐私修复】原先直接回 req.user（auth 从库里带的原对象），
+// 里面含 realname.idHash —— 全量身份证号的 SHA-256。前端只用 name/idMask/verifiedAt，
+// 但把 idHash 下发到浏览器等于：① 客户端脚本/XSS 可直接拿它离线碰撞验证身份证号；
+// ② 与 misc.js 里 selfUser 的裁剪口径不一致（2026-09-24 那次修复就是为对齐它，本处漏网）。
+app.get('/api/me', auth, (req, res) => res.json({ ok: true, user: selfUser(req.user) }));
 
 // ---------- 邀请码（管理员） ----------
 app.post('/api/invites', auth, adminOnly, async (req, res) => {
