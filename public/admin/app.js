@@ -29,6 +29,8 @@ export function guardAdmin() {
 export async function api(path, opt = {}) {
   let r;
   try {
+    // 【2026-09-27 审查修复 P2-15】默认 60 秒超时（后台存在批量清理/群发类慢操作，故放宽；不误杀即可）
+    if (!opt.signal && window.AbortSignal && AbortSignal.timeout) opt = { ...opt, signal: AbortSignal.timeout(60000) };
     r = await fetch(path, { ...opt, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN, ...(opt.headers || {}) } });
   } catch (e) {
     throw new Error('网络请求失败（连接中断或被拦截），请重试');
