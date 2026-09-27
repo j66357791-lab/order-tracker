@@ -205,7 +205,9 @@ if (!TOKEN) location.href = '/login.html';
 async function api(path, opt = {}) {
   opt.headers = Object.assign({}, opt.headers, { 'Authorization': 'Bearer ' + TOKEN });
   if (opt.body && typeof opt.body !== 'string') { opt.body = JSON.stringify(opt.body); opt.headers['Content-Type'] = 'application/json'; }
-  const r = await fetch(path, opt);
+  // 【2026-09-27 审查修复 P2-15】默认 15 秒超时
+  if (!opt.signal && window.AbortSignal && AbortSignal.timeout) opt.signal = AbortSignal.timeout(15000);
+  const r = await fetch(path, opt).catch(e => { if (e && e.name === 'TimeoutError') throw new Error('网络超时，请重试'); throw e; });
   if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; throw new Error('未登录'); }
   const j = await r.json();
   if (!j.ok) throw new Error(j.error || '请求失败');
@@ -635,7 +637,10 @@ const FX = (() => {
 // 并且"已下载"的判定以 Cache Storage 里真的能查到全部资源为准（不再只看 localStorage 标记）。
 (function () {
   var KEY = 'fanfanle_cache_version', VER = 'v2.0-20260918';
-  var CACHE = 'fanfanle-assets-v2';
+  // 【2026-09-27 审查修复 P2-11】缓存名带版本：必须与 public/service-worker.js 的 GAME_CACHE
+  // 保持同一个字符串（美术包内容有变时两处一起改名，旧缓存由 SW activate 清掉——
+  // 原先写死 v2 且 SW cache-first，换图后老用户永远看旧图）。
+  var CACHE = 'fanfanle-assets-v3';
   var ASSETS = [
     '/assets/game/bg_main.jpg',
     '/assets/game/card_back.png', '/assets/game/card_front.png', '/assets/game/card_escape.png',
@@ -665,6 +670,21 @@ const FX = (() => {
   }
 
   (async function boot() {
+    // 【P2-11 配套】旧版 v2 缓存里的资源原样迁移到 v3——美术内容没变，不让老用户白下 0.6MB；
+    // 迁移完删除 v2，避免每次打开都重新创建一个空壳缓存（SW 的 activate 只清白名单外缓存一次）
+    try {
+      if (window.caches) {
+        var oc = await caches.open('fanfanle-assets-v2'), nc = await caches.open(CACHE);
+        var reqs = await oc.keys();
+        for (var i = 0; i < reqs.length; i++) {
+          if (!(await nc.match(reqs[i]))) {
+            var hit = await oc.match(reqs[i]);
+            if (hit) await nc.put(reqs[i].url, hit.clone());
+          }
+        }
+        if (reqs.length) await caches.delete('fanfanle-assets-v2');
+      }
+    } catch (e) { }
     var done = false;
     try { done = localStorage.getItem(KEY) === VER && await allCached(); } catch (e) {}
     if (done) return;                       // 真的全部在缓存里：不弹窗、不下载
@@ -708,8 +728,13 @@ const FX = (() => {
     }
     var go = document.getElementById('ffGo');
     if (go) go.onclick = function () { this.style.display = 'none'; var s = document.getElementById('ffSkip'); if (s) s.style.display = 'none'; run(); };
-    // 【保留】进入游戏自动开始下载（可切后台）；"暂不"也只延后到下次进入
-    if (go) go.click();
+    // 【2026-09-27 审查修复 P2-16】「暂不」原先没有任何处理器（点了没反应），现在真正生效：
+    // 关闭弹窗，本次不再自动开始（下次进入若仍未缓存会再提示）。
+    var skip = document.getElementById('ffSkip');
+    if (skip) skip.onclick = function () { m.remove(); };
+    // 【P2-16】不再进页即替用户开始下载（原先 go.click() 直接开跑，未同意就消耗 0.6MB 流量）：
+    // 弹窗停留 3 秒无操作才自动开始；点「暂不」会移除弹窗，自动开始随即失效。
+    setTimeout(function () { if (document.body.contains(m) && go) go.click(); }, 3000);
   })();
 })();
 </script>
