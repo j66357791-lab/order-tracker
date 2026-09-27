@@ -28,10 +28,12 @@ async function evalAttendance(db, userId) {
   let att = await db.collection('attendance').findOne({ userId, date });
   if (!att) {
     if (nowMin > startMin + GRACE) {
+      // 【2026-09-27 审查修复 P2-8】并发首次访问会同时走到这里，第二条撞 (userId,date)
+      // 唯一索引：撞上说明别人已经补记了，当无事发生即可（原先直接抛错走 500）
       await db.collection('attendance').insertOne({
         userId, date, planStart: day.start, planEnd: day.end,
         clockIn: null, clockOut: null, status: '旷工', updatedAt: new Date(),
-      });
+      }).catch(e => { if (e && e.code !== 11000) throw e; });
       // 旷工自动下线（在班标识不残留）
       const u = await db.collection('users').findOneAndUpdate(
         { _id: new ObjectId(userId), shift: true }, { $set: { shift: false } }, { returnDocument: 'after' });
