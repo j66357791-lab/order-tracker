@@ -13,6 +13,7 @@ import { ObjectId, GridFSBucket } from 'mongodb';
 
 import { CONFIG, CHANGELOG, assertConfig } from './config.js';
 import { getDb } from './lib/db.js';
+import { INSTANCE_ID } from './lib/jobs.js';   // 【v26.74】多实例可观测：/api/version 回显实例标识
 import {
   JWT_SECRET, signToken, publicUser, selfUser, auth, adminOnly,
   cacheGet, cacheSet, cacheClear, cacheClearPrefix, cnDayStr, cnMonthStr, cnNow, cnDateStr,
@@ -116,7 +117,7 @@ const DEPLOY_CHECK_FILES = [
   'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js', 'lib/ocr.js', 'lib/ocr-child.mjs', 'lib/tessdata/eng.traineddata.gz',
   // 【v26.65 批次2】账本唯一写入口：漏传这个文件，充值/签到/红包/福袋/交易所的**所有**资金写入都会报错，
   // 而部署自检原先不认识它，仍会报"全部在线"——必须纳入核验清单
-  'lib/ledger.js',
+  'lib/ledger.js', 'lib/jobs.js',
   'routes/portal.js', 'routes/authx.js', 'routes/user.js', 'routes/orders.js',
   'routes/recharge.js', 'public/admin/mod-recharge.js',
   'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js', 'routes/dbadmin.js',
@@ -163,7 +164,9 @@ app.get('/api/deploy-check/detail', auth, adminOnly, async (req, res) => {
 });
 
 // ---- 版本信息（前端进入时自动检查更新） ----
-app.get('/api/version', (req, res) => res.json({ ok: true, version: CONFIG.appVersion, changelog: CHANGELOG }));
+// 【v26.74】带上实例标识：多实例部署下，连刷这个接口看到不同 instance 就证明请求没有粘滞到同一实例，
+// 内存态（验证码 / 限流 / OCR 熔断）不共享的问题会真实影响用户 —— 这是一行就能拿到的证据。
+app.get('/api/version', (req, res) => res.json({ ok: true, version: CONFIG.appVersion, instance: INSTANCE_ID, changelog: CHANGELOG }));
 
 // ---- PWA / 深链 ----
 app.get('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, 'public/manifest.json')));
