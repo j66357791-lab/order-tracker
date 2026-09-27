@@ -358,20 +358,89 @@ export function mount(host) {
     return orders.filter(o => RATE_SEL.has(String(o._id)) && unsettled(o));
   }
 
+  // 预览必须由服务端按真实 filter 计算：本地 orders 只是当前页，
+  // 用当前页的条数去确认「全部未结算」的改动，金额和条数都会严重偏小。
+  let RATE_PREVIEW = null;
+  let RATE_PREVIEW_TIMER = null;
+  let RATE_PREVIEW_SEQ = 0;
+
+  async function fetchRatePreview(mode, to) {
+    const body = { shareRate: to, dryRun: true };
+    if (mode === 'all') body.all = true;
+    else {
+      const list = rateTargets(mode);
+      if (!list.length) return null;
+      body.ids = list.map(o => o._id);
+    }
+    const r = await fetch('/api/orders/share-batch', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, AH()), body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
+    if (!r.ok || !j.ok) throw new Error(j.error || ('请求失败 ' + r.status));
+    return j;
+  }
+
+  function rateFallbackStats(list, to) {
+    const before = list.reduce((s, o) => s + share(o), 0);
+    const after = list.reduce((s, o) => s + o.amount * to / 100, 0);
+    return {
+      willUpdate: list.length, skippedUnchanged: 0, estimated: true,
+      amountTotal: r2(list.reduce((s, o) => s + (o.amount || 0), 0)),
+      shareBefore: r2(before), shareAfter: r2(after), delta: r2(after - before),
+    };
+  }
+
+  function paintRatePreview(pv, mode, to) {
+    const box = shDoc.getElementById('ratePreview');
+    const btn = shDoc.getElementById('rateSave');
+    if (!pv) { box.textContent = '没有匹配到要修改的订单（已结算的订单默认不动，需要连它们一起改请先改状态或逐条编辑）。'; btn.disabled = true; return; }
+    if (pv.overLimit) {
+      box.innerHTML = `符合条件的有 <b>${pv.willUpdate}</b> 条，超过单次 5000 条上限，请分批操作。`;
+      btn.disabled = true; return;
+    }
+    if (!pv.willUpdate && !pv.unavailable) { box.textContent = `这些订单的分成比例已经都是 ${to}%，本次不会有改动。`; btn.disabled = true; return; }
+    if (pv.unavailable) {
+      box.innerHTML = '预览请求没成功，暂时给不出准确条数。'
+        + (mode === 'all' ? '<br><span style="color:#b0642c">本次仍会按「数据库里全部未结算订单」执行，条数与金额以提交结果为准 —— 请确认你接受这个范围。</span>' : '');
+      btn.disabled = false; return;
+    }
+    const bits = [];
+    if (Array.isArray(pv.byRate) && pv.byRate.length) {
+      bits.push('现状：' + pv.byRate.map(g => `${g.from}% 有 ${g.n} 单`).join('、'));
+    }
+    box.innerHTML = `将修改 <b>${pv.willUpdate}</b> 条订单${pv.matched && pv.skippedUnchanged ? `（另 ${pv.skippedUnchanged} 条已是 ${to}%，不动）` : ''}`
+      + `，涉及接单金额 ${fmt(pv.amountTotal)} 元<br>`
+      + `你的分成收入 ${fmt(pv.shareBefore)} 元 → <b>${fmt(pv.shareAfter)} 元</b>`
+      + `（<b>${pv.delta >= 0 ? '多 ' + fmt(pv.delta) : '少 ' + fmt(Math.abs(pv.delta))} 元</b>）`
+      + (bits.length ? `<br><span style="color:#64748b">${bits.join(' ')}</span>` : '')
+      + (pv.estimated ? '<br><span style="color:#b0642c">预览服务暂时没应答，上面按当前页估算，实际条数以提交结果为准。</span>' : '')
+      + (mode === 'all' ? '<br><span style="color:#b0642c">范围是「全部未结算订单」（已按数据库核对），不是当前筛选出来的这些。</span>' : '');
+    btn.disabled = false;
+  }
+
   function renderRatePreview() {
     const mode = shDoc.getElementById('rateScope').value;
     const to = parseFloat(shDoc.getElementById('rateNew').value);
     const box = shDoc.getElementById('ratePreview');
+    const seq = ++RATE_PREVIEW_SEQ;
+    RATE_PREVIEW = null;
+    clearTimeout(RATE_PREVIEW_TIMER);
+    if (!(to > 0 && to <= 100)) { box.textContent = '请先填一个 1~100 之间的比例。'; shDoc.getElementById('rateSave').disabled = true; return; }
     const list = rateTargets(mode);
-    if (!(to > 0 && to <= 100)) { box.textContent = '请先填一个 1~100 之间的比例。'; return; }
-    if (!list.length) { box.textContent = '没有匹配到要修改的订单（已结算的订单默认不动，需要连它们一起改请先改状态或逐条编辑）。'; return; }
-    const before = list.reduce((s, o) => s + share(o), 0);
-    const after = list.reduce((s, o) => s + o.amount * to / 100, 0);
-    const diff = after - before;
-    box.innerHTML = `将修改 <b>${list.length}</b> 条订单：分成合计 ${fmt(r2(before))} 元 → <b>${fmt(r2(after))} 元</b>`
-      + `（${diff >= 0 ? '多' : '少'} ${fmt(Math.abs(r2(diff)))} 元）`
-      + (mode === 'all' ? '<br><span style="color:#b0642c">范围是「全部未结算订单」，不是当前筛选出来的这些，请确认。</span>' : '');
-    shDoc.getElementById('rateSave').disabled = false;
+    if (!list.length) { paintRatePreview(null, mode, to); return; }
+    box.textContent = '正在按数据库核对影响范围…';
+    shDoc.getElementById('rateSave').disabled = true;
+    RATE_PREVIEW_TIMER = setTimeout(() => {
+      fetchRatePreview(mode, to)
+        .then(pv => { if (seq === RATE_PREVIEW_SEQ) { RATE_PREVIEW = pv; paintRatePreview(pv, mode, to); } })
+        .catch(() => {
+          if (seq !== RATE_PREVIEW_SEQ) return;
+          // 「全部未结算」不能退回按当前页估算（那正是最危险的错觉），只说"取不到准确数字"；
+          // 勾选模式本来就是把这批 id 交给服务端，退回本地估算是同一批数据，可信。
+          RATE_PREVIEW = mode === 'all' ? { unavailable: true } : rateFallbackStats(list, to);
+          paintRatePreview(RATE_PREVIEW, mode, to);
+        });
+    }, 280);
   }
 
   function openRateModal() {
@@ -404,9 +473,16 @@ export function mount(host) {
     err.textContent = '';
     if (!(to > 0 && to <= 100)) { err.textContent = '分成比例须为 1-100'; return; }
     if (!list.length) { err.textContent = '没有要修改的订单'; return; }
+    const pv = RATE_PREVIEW || {};
+    // RATE_PREVIEW 为 null 只可能是「预览还在路上」（失败分支也会写一个值进来）
+    if (!RATE_PREVIEW) { err.textContent = '正在按数据库核对影响范围，稍等一下再提交'; return; }
+    if (pv.overLimit) { err.textContent = '超过单次 5000 条上限，请分批操作'; return; }
     // 这一步会改写历史台账的收入口径，必须二次确认并写清影响金额
-    const tip = `确认把 ${list.length} 条订单的分成比例改为 ${to}%？\n分成合计将变化 ${
-      fmt(r2(list.reduce((s, o) => s + o.amount * to / 100 - share(o), 0)))} 元。\n已结算订单不在本次范围内。`;
+    // 确认框里的条数/金额一律用服务端预览：本地只有当前页，全量模式下会小一个数量级
+    const tip = pv.unavailable
+      ? `确认把分成比例改为 ${to}%？\n预览未成功，${mode === 'all' ? '本次将按数据库里全部未结算订单执行，条数与金额以提交结果为准' : '将按勾选的 ' + list.length + ' 条执行'}。\n已结算订单不在本次范围内。`
+      : `确认把 ${pv.willUpdate || list.length} 条订单的分成比例改为 ${to}%？\n你的分成收入将变化 ${
+        fmt(r2((pv.shareAfter != null ? pv.shareAfter - pv.shareBefore : list.reduce((s, o) => s + o.amount * to / 100 - share(o), 0))))} 元。\n已结算订单不在本次范围内。`;
     if (!confirm(tip)) return;
     btn.disabled = true; btn.textContent = '提交中…';
     try {
@@ -422,7 +498,10 @@ export function mount(host) {
       const ids = new Set(list.map(o => String(o._id)));
       orders = orders.map(o => ids.has(String(o._id)) ? Object.assign({}, o, { shareRate: to }) : o);
       RATE_SEL.clear();
-      cpyToast(j.message || ('已修改 ' + j.updated + ' 条'));
+      RATE_PREVIEW = null;
+      const got = Number(j.amountDelta);
+      cpyToast((j.message || ('已修改 ' + j.updated + ' 条'))
+        + (Number.isFinite(got) ? `，你的分成收入${got >= 0 ? '多 ' : '少 '}${fmt(Math.abs(got))} 元` : ''));
       closeRateModal();
       render();
       loadOrders();   // 再与服务端核对一遍，避免本地推算与库内不一致
