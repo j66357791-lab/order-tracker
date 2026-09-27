@@ -212,7 +212,13 @@ if (guardAdmin()) {
         const r = await mod.mount(host);   // 支持 async mount（派单聊天要先加载 socket.io）
         if (r && typeof r.refresh === 'function') mounted[key].refresh = r.refresh;
       } catch (e) {
-        host.innerHTML = '<div class="empty">模块加载失败（' + esc(String((e && e.message) || e)) + '）</div>';
+        // 【v26.71】必须把占位撤掉：207 行先写了 mounted[key] 占位防重复挂载，
+        // 而 202 行「已挂载就直接返回」——占位不撤的话，一次网络抖动让 import 失败之后，
+        // 这个模块在本页剩余时间里点多少次都只走早退分支，永远停在这句「模块加载失败」上，
+        // 只能整页 F5 才恢复。撤掉占位后，再点一次就是重新挂载。
+        delete mounted[key];
+        host.innerHTML = '<div class="empty">模块加载失败（' + esc(String((e && e.message) || e)) + '）'
+          + '<br><br><button class="btn" onclick="navGo(\'' + esc(key) + '\')">重试</button></div>';
       }
       return;
     }
