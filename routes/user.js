@@ -1,7 +1,7 @@
 // routes/user.js — 写手资料/等级/钱包/提现/在班/好友
 // 【2026-09-14 ES6 重构】自 server.js 原样迁出，行为不变
 import { ObjectId } from 'mongodb';
-import { cleanNick } from '../lib/core.js';
+import { cleanNick, writerOnly } from '../lib/core.js';
 
 export default function mount(ctx) {
   const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
@@ -13,7 +13,7 @@ export default function mount(ctx) {
 // 「实名 → 收款姓名 → 实际打款对象」三者才真正锁死在同一个身份上。
 // 注意：这里的"实名"是用户自报 + 本地格式校验 + 身份证哈希唯一（一个号只能绑一个账号），
 // 不是公安三要素核验，所以它的定位是**提高批量套现的成本并留下可追溯身份**，不是硬核验。
-app.put('/api/me/alipay', auth, async (req, res) => {
+app.put('/api/me/alipay', auth, writerOnly, async (req, res) => {   // 【v26.73】绑收款账号只开放给写手
   try {
     const db = await getDb();
     const name = String(req.body?.name || '').slice(0, 40).trim();
@@ -245,7 +245,7 @@ app.delete('/api/friends/:id', auth, async (req, res) => {
 });
 
 // ---------- 提现申请（线下打款登记） ----------
-app.post('/api/withdraw', auth, async (req, res) => {
+app.post('/api/withdraw', auth, writerOnly, async (req, res) => {   // 【v26.73】提现只开放给写手
   try {
     const db = await getDb();
     const type = String(req.body?.type || '');
