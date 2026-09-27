@@ -101,3 +101,46 @@ const CONFIG = {
   critMul: 1.5,      // 暴击倍率
 };
 window.CONFIG = CONFIG;
+
+// 【v26.70】localStorage 安全封装
+// 原来全站 12 处直接读写 localStorage。它在下面这些真实场景里会**抛异常**：
+//   · Safari 无痕浏览（setItem 直接抛 QuotaExceededError）
+//   · 浏览器设置里禁用本地存储 / 隐私插件拦截
+//   · 本页被第三方上下文内嵌时的 SecurityError
+// 后果最重的一处是结算面板：UI.gameOver 里 setItem 一抛，整个函数在渲染出面板之前就中断，
+// 玩家看到的是画面定格、没有结算框、也没有返回按钮的死页面（状态已是 over，也不会恢复战斗）。
+// 现在统一走 LS：读失败回退默认值，写失败静默降级为「本机记不住而已」，绝不再打断玩法流程。
+window.LS = (function () {
+  let mem = null, broken = false;
+  try {
+    const k = "__sh_ls_probe__";
+    window.localStorage.setItem(k, "1");
+    window.localStorage.removeItem(k);
+    mem = window.localStorage;
+  } catch (e) {
+    broken = true;
+    mem = null;   // 退回一次性内存：本页仍然能记账，只是关页即失
+  }
+  const fallback = Object.create(null);
+  return {
+    get(k, dflt) {
+      const d = dflt === undefined ? null : dflt;
+      let v;
+      try { v = broken ? undefined : mem.getItem(k); }
+      catch (e) { broken = true; v = undefined; }
+      if (v === undefined || v === null) v = fallback[k];
+      return v === undefined ? d : v;
+    },
+    set(k, v) {
+      if (broken) { fallback[k] = String(v); return false; }
+      try { mem.setItem(k, String(v)); return true; }
+      catch (e) { broken = true; fallback[k] = String(v); return false; }
+    },
+    remove(k) {
+      if (broken) { delete fallback[k]; return; }
+      try { mem.removeItem(k); } catch (e) { broken = true; }
+      delete fallback[k];
+    },
+    get broken() { return broken; },
+  };
+})();
