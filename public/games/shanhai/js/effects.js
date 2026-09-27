@@ -84,16 +84,13 @@ class DamageText {
     if (this.t > 0.7) this.alive = false;
   }
   draw(ctx) {
-    ctx.save();
+    // 【2026-09-27 审查修复 P2-20】公共状态（font/textAlign/描边样式/alpha 复位）由 game.js
+    // 渲染循环统一设置并按字号切换，这里不再每条每帧 save/restore + 拼接 font 字符串，
+    // 只写自己的透明度与两次文字绘制（满屏 60 条时每帧省约 60 次状态切换与 60 次字体解析）
     ctx.globalAlpha = Math.max(0, 1 - this.t / 0.7);
-    ctx.font = (this.big ? "bold 15px" : "bold 12px") + " 'SimHei', sans-serif";
-    ctx.textAlign = "center";
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(20,20,20,0.8)";
     ctx.strokeText(this.text, this.x, this.y);
     ctx.fillStyle = this.color;
     ctx.fillText(this.text, this.x, this.y);
-    ctx.restore();
   }
 }
 
