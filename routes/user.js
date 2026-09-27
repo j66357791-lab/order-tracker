@@ -2,6 +2,8 @@
 // 【2026-09-14 ES6 重构】自 server.js 原样迁出，行为不变
 import { ObjectId } from 'mongodb';
 import { cleanNick, writerOnly } from '../lib/core.js';
+// 【2026-09-27 审查修复 P2-7】提现/好友/领班次补限流（原先仅靠唯一索引防重，挡不住脚本高频打）
+import { limit } from '../lib/ratelimit.js';
 
 export default function mount(ctx) {
   const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
@@ -103,19 +105,30 @@ app.get('/api/wallet', auth, async (req, res) => {
     const db = await getDb();
     const { level, st } = await ensureLevel(db, req.user);
     await ensureBonus(db, req.user, level);
-    const grants = (await db.collection('wallet_log').find({ userId: req.user.id }).sort({ month: -1 }).toArray())
+    // 【2026-09-27 审查修复 P2-5】原先把该用户全部流水拉进内存求和+展示（流水过千后钱包页
+    // 全量传输+内存+CPU 线性变慢）。余额改为库端 $group 聚合（与 shanhai_game.js:walletBalanceOf
+    // 同款写法），展示列表只取最近 120 条。
+    const sumAgg = await db.collection('wallet_log').aggregate([
+      { $match: { userId: req.user.id } },
+      { $group: { _id: null, sum: { $sum: { $cond: [{ $isNumber: '$amount' }, '$amount', 0] } } } },
+    ]).toArray();
+    const balance = Math.round(((sumAgg[0] && sumAgg[0].sum) || 0) * 100) / 100;
+    const grants = (await db.collection('wallet_log').find({ userId: req.user.id }).sort({ month: -1 }).limit(120).toArray())
       .map(g => ({ month: g.month, amount: g.amount, note: g.note || null, base: g.base || null }));
-    const balance = Math.round(grants.reduce((s, g) => s + g.amount, 0) * 100) / 100;
     // 【2026-09-14 需求】单单拆红包冻结金额：钱包页展示 总金额（其中xx待解冻）
     const frozenRows = (await db.collection('redpacket_records').find({ userId: req.user.id, status: '冻结' }).sort({ createdAt: 1 }).toArray())
       .map(r => ({ cardId: String(r.cardId), amount: r.amount, title: r.title, createdAt: r.createdAt }));
     const frozenAmount = Math.round(frozenRows.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100;
     const total = Math.round((balance + frozenAmount) * 100) / 100;
     // 本月预计奖励
+    // 【2026-09-27 审查修复 P2-5】月份过滤下推到查询：原先拉该用户全部"已完成"订单
+    // 进内存再挑本月（订单累计越多越慢），现在只取本月已打款的
     const ym = ymOf(cnNow());
-    const cards = await db.collection('cards').find({ to: req.user.id, status: '已完成' }).toArray();
-    const paidThisMonth = cards.filter(c => c.paidAt && ymOf(new Date(new Date(c.paidAt).getTime() + 8 * 3600 * 1000)) === ym)
-      .reduce((s, c) => s + (c.reward || 0), 0);
+    const monthStart = new Date(ym + '-01T00:00:00+08:00');
+    const cards = await db.collection('cards').find({
+      to: req.user.id, status: '已完成', paidAt: { $gte: monthStart },
+    }).toArray();
+    const paidThisMonth = cards.reduce((s, c) => s + (c.reward || 0), 0);
     res.json({
       ok: true, level, balance, frozenAmount, total, frozen: frozenRows, stats: st,
       estBonus: level >= 1 ? Math.round(paidThisMonth * BONUS_RATE * 100) / 100 : 0,
@@ -162,12 +175,13 @@ app.post('/api/shifts', auth, adminOnly, async (req, res) => {
 app.delete('/api/shifts/:id', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
-    await db.collection('shifts').deleteOne({ _id: new ObjectId(req.params.id) });
+    if (!ObjectId.isValid(String(req.params.id))) return res.status(400).json({ ok: false, error: '无效的班次 ID' });   // 【P3-7】
+    await db.collection('shifts').deleteOne({ _id: new ObjectId(String(req.params.id)) });
     res.json({ ok: true });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 写手抢班：抢占后自动写入单日排班
-app.post('/api/shifts/:id/claim', auth, async (req, res) => {
+app.post('/api/shifts/:id/claim', auth, limit({ name: 'shift-claim', max: 10, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
   try {
     const db = await getDb();
     const sh = await db.collection('shifts').findOne({ _id: new ObjectId(req.params.id) });
@@ -211,7 +225,7 @@ app.get('/api/friends', auth, async (req, res) => {
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 添加好友：发送申请，对方确认后互为好友
-app.post('/api/friends', auth, async (req, res) => {
+app.post('/api/friends', auth, limit({ name: 'friends-add', max: 5, windowMs: 60 * 1000, msg: '申请太频繁，稍等片刻' }), async (req, res) => {
   try {
     const db = await getDb();
     const q = String(req.body?.query || '').trim();
@@ -245,7 +259,7 @@ app.delete('/api/friends/:id', auth, async (req, res) => {
 });
 
 // ---------- 提现申请（线下打款登记） ----------
-app.post('/api/withdraw', auth, writerOnly, async (req, res) => {   // 【v26.73】提现只开放给写手
+app.post('/api/withdraw', auth, writerOnly, limit({ name: 'withdraw', max: 6, windowMs: 60 * 1000, msg: '提现操作太频繁，请一分钟后再试' }), async (req, res) => {   // 【v26.73】提现只开放给写手
   try {
     const db = await getDb();
     const type = String(req.body?.type || '');
