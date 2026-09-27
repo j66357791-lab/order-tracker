@@ -1286,6 +1286,7 @@ export function mount(root) {
       const a = j.act;
       let h = `<div style="margin:2px 0">活动「${esc((a && a.title) || '未配置')}」· ${esc((a && a.state) || '')}`
         + (a && a.endCn ? ` · 结束于 ${esc(a.endCn)}` : '') + `　<span style="color:#8a8578">对账时刻 ${esc(j.nowCn)}（北京）· 共 ${j.total} 条参与记录</span></div>`
+        + (j.pendingStart ? `<div style="color:#8a6a2a">${j.pendingStart} 条记录还没到释放起点，最早 <b>${esc(j.nextReleaseCn || '?')}</b> 开始发第 1 天（起点由活动结束时间推出）</div>` : '')
         + `<div>应发灵气合计 <b>${j.shouldTotal}</b> ｜ 账上已推进 <b>${j.doneTotal}</b> ｜ 差额 `
         + `<b style="color:${j.gapTotal > 0.5 ? '#b3452f' : '#2f6b4c'}">${j.gapTotal}</b></div>`
         + `<div style="color:#8a8578">` + Object.keys(s).map(k => `${k} ${s[k]}`).join('　｜　') + `</div>`;
@@ -1295,9 +1296,12 @@ export function mount(root) {
       }
       if (j.rows && j.rows.length) {
         h += `<table style="margin-top:6px"><tr><th>玩家</th><th>释放起点</th><th>应到</th><th>实到</th><th>差</th><th>应发</th><th>已推进</th><th>邮件</th><th>判定</th></tr>`
-          + j.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.startCn)}</td><td>第 ${r.target} 天</td><td>第 ${r.released} 天</td>`
-            + `<td style="color:${r.gap > 0 ? '#b3452f' : ''}">${r.gap}</td><td>${r.shouldAmt}</td><td>${r.releasedAmt}</td>`
-            + `<td>${r.mailN} 封 / ${r.mailAttach}</td><td>${esc(r.kind)}</td></tr>`).join('') + `</table>`;
+          + j.rows.map(r => {
+            const wait = r.kind === '未到期';   // 未到起点的记录没有"应到第几天"可言，填 0 会被误读成漏发 100 天
+            return `<tr><td>${esc(r.name)}</td><td>${esc(r.startCn)}</td><td>${wait ? '—' : '第 ' + r.target + ' 天'}</td><td>第 ${r.released} 天</td>`
+              + `<td style="color:${r.gap > 0 ? '#b3452f' : ''}">${wait ? '—' : r.gap}</td><td>${wait ? '—' : r.shouldAmt}</td><td>${r.releasedAmt}</td>`
+              + `<td>${wait ? '—' : r.mailN + ' 封 / ' + r.mailAttach}</td><td>${esc(r.kind)}</td></tr>`;
+          }).join('') + `</table>`;
       } else if (!j.lostMail || !j.lostMail.length) {
         h += `<div style="color:#2f6b4c;margin-top:4px">✓ 没有发现进度落后或丢件的记录</div>`;
       }
