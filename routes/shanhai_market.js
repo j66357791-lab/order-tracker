@@ -13,6 +13,8 @@
 //   5) 优先吃玩家的挂单（给真实挂单兜底），市场上没单时才自己挂单补流动性
 import { ObjectId } from 'mongodb';
 import { addLedgerEntry } from '../lib/ledger.js';
+// 【v26.74 多实例必修】做市机器人每轮先抢跨实例租约
+import { claimLease } from '../lib/jobs.js';
 
 const PLATFORM_ID = '__platform__';
 const BOT_ID = '__market__';
@@ -717,9 +719,14 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
   let timer = null;
   async function startTimer() {
     const tick = async () => {
-      await runRound();
       let sec = DEFAULT_CFG.intervalSec;
       try { const db = await getDb(); sec = (await loadCfg(db)).intervalSec || 60; } catch (e) { }
+      // 【v26.74】做市机器人在每个实例里各跑一份：N 个实例 = 同一个 60 秒窗口挂 N 轮单，
+      // 「每侧最多 N 张」这类上限被放大 N 倍，市场深度与机器人自有资金都会被顶穿。
+      // 每轮先抢租约（窗口=本轮间隔），抢不到就只是等下一轮，不会漏单（别的实例已经挂了）。
+      if (await claimLease('market:bot', Math.max(15, sec) * 1000, getDb)) {
+        try { await runRound(); } catch (e) { console.error('[shanhai_market] 本轮失败:', (e && e.message) || e); }
+      }
       timer = setTimeout(tick, Math.max(15, sec) * 1000);
       if (timer.unref) timer.unref();
     };
