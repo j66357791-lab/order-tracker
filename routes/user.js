@@ -5,15 +5,26 @@ import { ObjectId } from 'mongodb';
 export default function mount(ctx) {
   const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
 // 写手绑定收款方式（支付宝：姓名+账号）
+// 【2026-09-26 门槛】必须先完成实名认证才能绑收款。
+// 原先的顺序是反的：只有"恰好已实名"的人才会被校验姓名一致（下面 15 行的 ?. 判断），
+// 未实名的人可以随意填任意姓名+账号 —— 于是《合作协议》里"收款人须为实名本人"这条约束
+// 对最需要它的账号完全不生效。配合本轮另一条改动（misc.js：已认证不得自助改绑），
+// 「实名 → 收款姓名 → 实际打款对象」三者才真正锁死在同一个身份上。
+// 注意：这里的"实名"是用户自报 + 本地格式校验 + 身份证哈希唯一（一个号只能绑一个账号），
+// 不是公安三要素核验，所以它的定位是**提高批量套现的成本并留下可追溯身份**，不是硬核验。
 app.put('/api/me/alipay', auth, async (req, res) => {
   try {
     const db = await getDb();
     const name = String(req.body?.name || '').slice(0, 40).trim();
     const account = String(req.body?.account || '').slice(0, 60).trim();
     if (!name || !account) return res.status(400).json({ ok: false, error: '姓名和支付宝账号都必填' });
+    const rn = req.user.realname;
+    if (!rn || !rn.verifiedAt || !rn.name) {
+      return res.status(400).json({ ok: false, error: '请先完成实名认证，再绑定收款方式（收款人须与实名一致）' });
+    }
     // 收款人与实名必须为同一人（自动关联）
-    if (req.user.realname?.name && name !== req.user.realname.name) {
-      return res.status(400).json({ ok: false, error: '已实名认证，收款姓名必须与实名姓名一致（' + req.user.realname.name + '）' });
+    if (name !== rn.name) {
+      return res.status(400).json({ ok: false, error: '收款姓名必须与实名姓名一致（' + rn.name + '）' });
     }
     await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { alipay: { name, account, updatedAt: new Date() } } });
     res.json({ ok: true });
@@ -238,8 +249,16 @@ app.post('/api/withdraw', auth, async (req, res) => {
     const db = await getDb();
     const type = String(req.body?.type || '');
     if (!['bonus', 'order'].includes(type)) return res.status(400).json({ ok: false, error: '提现类型无效' });
+    // 【2026-09-26 门槛】提现侧再校验一次实名：绑定环节已经要求实名，但**存量账号**里
+    // 存在"早就绑了收款方式、却从未实名"的（历史上这条链路上没有实名要求），
+    // 只在入口加门槛会留下这批绕过口。资金离站前的最后一道检查放在这里才闭环。
+    const rn = req.user.realname;
+    if (!rn || !rn.verifiedAt || !rn.name) {
+      return res.status(400).json({ ok: false, error: '请先完成实名认证后再申请提现' });
+    }
     const alipay = req.user.alipay;
     if (!alipay || !alipay.account) return res.status(400).json({ ok: false, error: '请先在我的-钱包里绑定收款方式' });
+    if (alipay.name !== rn.name) return res.status(400).json({ ok: false, error: '收款姓名与实名不一致，请重新绑定收款方式（应为 ' + rn.name + '）' });
     const doc = {
       userId: req.user.id, displayName: req.user.displayName, type,
       status: '待处理', alipay: { name: alipay.name, account: alipay.account },
@@ -253,7 +272,9 @@ app.post('/api/withdraw', auth, async (req, res) => {
           { $group: { _id: null, sum: { $sum: { $cond: [{ $isNumber: '$amount' }, '$amount', 0] } } } },
         ]).toArray(),
         db.collection('withdrawals').aggregate([
-          { $match: { userId: req.user.id, type: 'bonus', status: { $in: ['待处理', '已打款'] } } },
+          // 【2026-09-26 批次2】'处理中' 也要扣减可用余额：打款请求正在执行时，
+          // 用户再申请一次若不看这笔在途金额，就会按全额重复申请，最终双付
+          { $match: { userId: req.user.id, type: 'bonus', status: { $in: ['待处理', '处理中', '已打款'] } } },
           { $group: { _id: null, sum: { $sum: '$amount' } } },
         ]).toArray(),
       ]);
@@ -298,7 +319,7 @@ app.get('/api/admin/withdrawals', auth, adminOnly, async (req, res) => {
     const type = String(req.query.type || '');
     const q = String(req.query.q || '').trim().toLowerCase();
     const filter = {};
-    if (['待处理', '已打款', '已驳回'].includes(status)) filter.status = status;
+    if (['待处理', '处理中', '已打款', '已驳回'].includes(status)) filter.status = status;
     if (['bonus', 'order'].includes(type)) filter.type = type;
     const rows = (await db.collection('withdrawals').find(filter).sort({ createdAt: -1 }).limit(300).toArray());
     let list = rows;
@@ -308,7 +329,9 @@ app.get('/api/admin/withdrawals', auth, adminOnly, async (req, res) => {
     const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
     const [pending, paid, rejected,
       paidMonthCount, paidMonthAgg] = await Promise.all([
-      db.collection('withdrawals').countDocuments({ status: '待处理' }),
+      // 【2026-09-26 批次2】'处理中' 计入待办数：它只应是几秒的瞬态，
+      // 一旦有单子停留在这里就是异常（进程中途被杀），必须在工作台上看得见而不是隐身
+      db.collection('withdrawals').countDocuments({ status: { $in: ['待处理', '处理中'] } }),
       db.collection('withdrawals').countDocuments({ status: '已打款' }),
       db.collection('withdrawals').countDocuments({ status: '已驳回' }),
       // 【v24.0】打款工作台：本月已打款笔数与金额
@@ -326,54 +349,82 @@ app.get('/api/admin/withdrawals', auth, adminOnly, async (req, res) => {
 app.post('/api/admin/withdrawals/:id/pay', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
-    const w = await db.collection('withdrawals').findOne({ _id: new ObjectId(req.params.id) });
-    if (!w) return res.status(404).json({ ok: false, error: '提现申请不存在' });
-    if (w.status !== '待处理') return res.status(400).json({ ok: false, error: '该申请已处理过（' + w.status + '）' });
     const note = String(req.body?.note || '').slice(0, 120);
-    let paidCards = 0, paidAmount = null;
-    if (w.type === 'order') {
-      // 快照对应的派单卡 → 逐张结清（仍处于待打款的才结）
-      const ids = (w.cardIds || []).filter(x => ObjectId.isValid(x)).map(x => new ObjectId(x));
-      const cards = ids.length ? await db.collection('cards').find({ _id: { $in: ids }, status: '待打款' }).toArray() : [];
-      // 【2026-09-24 资金安全修复】打款前按"当前仍待打款"的卡重算实际金额。
-      // 申请后管理员可能驳回了部分卡，若仍按申请快照 w.amount 全额打款会多付；
-      // 实际结清金额记入 paidAmount 供对账，响应里带回差额提醒。
-      const actual = Math.round(cards.reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
-      if (!cards.length) return res.status(400).json({ ok: false, error: '快照内的派单卡已全部不在待打款状态（可能已被驳回），请直接驳回该提现单' });
-      paidAmount = actual;
-      for (const c of cards) {
-        await db.collection('cards').updateOne(
-          { _id: c._id, status: '待打款' },
-          { $set: { status: '已完成', paidAt: new Date(), paidVia: 'withdrawal:' + w._id.toString() } });
-        if (c.orderId && ObjectId.isValid(c.orderId)) {
-          // 【2026-09-17 修复】原代码第一张卡打款就把整单标"已结算"，
-          // 一个订单绑多张派单卡时其余卡状态错位——改为该订单下已无待打款卡时才结单
-          const remain = await db.collection('cards').countDocuments({ orderId: c.orderId, status: '待打款' });
-          if (remain === 0) {
-            await db.collection(CONFIG.collection).updateOne(
-              { _id: new ObjectId(c.orderId) },
-              { $set: { status: '已结算', updatedAt: new Date() } });
-          }
-        }
-        notify(c.to, 'card', { ...c, status: '已完成' });
-        paidCards++;
-      }
-      if (paidCards) cacheClear();
-      // 关联订单完结 → 红包自动解冻
-      try { await unfreezeRedpackets(db, w.userId); } catch (e) { console.warn('[红包] 提现审批解冻失败:', e.message); }
-    }
-    const r = await db.collection('withdrawals').findOneAndUpdate(
-      { _id: w._id, status: '待处理' },
-      { $set: { status: '已打款', paidAt: new Date(), note, paidCards,
-        paidAmount: paidAmount == null ? w.amount : paidAmount,
-        // 【v24.0】打款工作台：记录打款凭证号（支付宝流水号）与渠道，便于对账
-        voucherNo: String(req.body?.voucherNo || '').slice(0, 64), paidVia: 'alipay' } },
+    // 【2026-09-26 批次2 关键修复】先抢锁，再产生任何资金性副作用。
+    // 原顺序是「结卡 → 结台账 → 解冻红包 → 最后才条件更新 withdrawals」：
+    // 管理员双击"确认打款"时，A、B 两个请求都会跑完前面那串副作用，只有一个赢得最后的状态更新，
+    // 另一个返回 409「该申请已被处理」。操作员看到 409 自然以为这次没生效，于是**再手动转一次支付宝**
+    // —— 线下真金双重打款。把抢占提到最前面之后，落败方在碰任何数据之前就被挡下。
+    const claim = await db.collection('withdrawals').findOneAndUpdate(
+      { _id: new ObjectId(req.params.id), status: '待处理' },
+      { $set: { status: '处理中', processingAt: new Date() } },
       { returnDocument: 'after' });
-    // 【二次复核补充】并发双击时条件更新落空要明确报错，不能返回 ok:true + withdrawal:null
-    if (!r) return res.status(409).json({ ok: false, error: '该申请已被处理，请刷新列表' });
-    res.json({ ok: true, withdrawal: r, paidCards,
-      // 【2026-09-24】实际结清金额与申请金额不一致时明确提示（如申请后有卡被驳回）
-      amountDiff: paidAmount != null && Math.abs(paidAmount - w.amount) > 0.009 ? { applied: w.amount, actual: paidAmount } : null });
+    const w = claim && (claim.value || claim);
+    if (!w) {
+      const cur = await db.collection('withdrawals').findOne({ _id: new ObjectId(req.params.id) });
+      if (!cur) return res.status(404).json({ ok: false, error: '提现申请不存在' });
+      return res.status(409).json({ ok: false, error: '该申请已被处理（当前状态：' + cur.status + '），请刷新列表核对，**不要重复线下转账**' });
+    }
+    // 抢到锁后若中途抛错，必须把状态退回"待处理"，否则这笔会永久卡在"处理中"没人看得见
+    const rollback = async (why) => {
+      await db.collection('withdrawals').updateOne({ _id: w._id, status: '处理中' },
+        { $set: { status: '待处理', payError: String(why || '').slice(0, 200) } }).catch(() => { });
+    };
+    try {
+      let paidCards = 0, paidAmount = null;
+      if (w.type === 'order') {
+        // 快照对应的派单卡 → 逐张结清（仍处于待打款的才结）
+        const ids = (w.cardIds || []).filter(x => ObjectId.isValid(x)).map(x => new ObjectId(x));
+        const cards = ids.length ? await db.collection('cards').find({ _id: { $in: ids }, status: '待打款' }).toArray() : [];
+        // 【2026-09-24 资金安全修复】打款前按"当前仍待打款"的卡重算实际金额。
+        // 申请后管理员可能驳回了部分卡，若仍按申请快照 w.amount 全额打款会多付；
+        // 实际结清金额记入 paidAmount 供对账，响应里带回差额提醒。
+        const actual = Math.round(cards.reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
+        if (!cards.length) {
+          await rollback('快照内的派单卡均已不在待打款状态');
+          return res.status(400).json({ ok: false, error: '快照内的派单卡已全部不在待打款状态（可能已被驳回），已退回待处理，请直接驳回该提现单' });
+        }
+        paidAmount = actual;
+        for (const c of cards) {
+          // 【2026-09-26 批次2】只统计真正结清的卡：原先无条件 paidCards++，
+          // 并发驳回时会出现"卡没结、台账数字却记了"的账实不符
+          const cr = await db.collection('cards').updateOne(
+            { _id: c._id, status: '待打款' },
+            { $set: { status: '已完成', paidAt: new Date(), paidVia: 'withdrawal:' + w._id.toString() } });
+          if (!cr.modifiedCount) continue;
+          if (c.orderId && ObjectId.isValid(c.orderId)) {
+            // 【2026-09-17 修复】原代码第一张卡打款就把整单标"已结算"，
+            // 一个订单绑多张派单卡时其余卡状态错位——改为该订单下已无待打款卡时才结单
+            const remain = await db.collection('cards').countDocuments({ orderId: c.orderId, status: '待打款' });
+            if (remain === 0) {
+              await db.collection(CONFIG.collection).updateOne(
+                { _id: new ObjectId(c.orderId) },
+                { $set: { status: '已结算', updatedAt: new Date() } });
+            }
+          }
+          notify(c.to, 'card', { ...c, status: '已完成' });
+          paidCards++;
+        }
+        if (paidCards) cacheClear();
+        // 关联订单完结 → 红包自动解冻
+        try { await unfreezeRedpackets(db, w.userId); } catch (e) { console.warn('[红包] 提现审批解冻失败:', e.message); }
+      }
+      const finalAmount = paidAmount == null ? w.amount : paidAmount;
+      await db.collection('withdrawals').updateOne({ _id: w._id, status: '处理中' },
+        { $set: { status: '已打款', paidAt: new Date(), note, paidCards,
+          paidAmount: finalAmount,
+          // 【v24.0】打款工作台：记录打款凭证号（支付宝流水号）与渠道，便于对账
+          voucherNo: String(req.body?.voucherNo || '').slice(0, 64), paidVia: 'alipay' } });
+      const done = await db.collection('withdrawals').findOne({ _id: w._id });
+      // 【2026-09-26】实际打款对象（收款账号）落档：财务对账要能回答"这笔钱打给了哪个支付宝"，
+      // 原先只有申请时的快照，一旦用户在审批过程中改了绑卡就没法追溯
+      const obj = done && { ...done, status: '已打款' };
+      res.json({ ok: true, withdrawal: obj, amount: finalAmount, paidCards,
+        amountDiff: Math.abs((finalAmount || 0) - (w.amount || 0)) > 0.009 ? Math.round(((w.amount || 0) - finalAmount) * 100) / 100 : 0 });
+    } catch (e) {
+      await rollback((e && e.message) || e);
+      throw e;
+    }
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 驳回：写明原因（写手端可见），激励型余额随之释放可再次发起
