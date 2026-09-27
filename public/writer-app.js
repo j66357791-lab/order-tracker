@@ -1,0 +1,1868 @@
+const $ = id => document.getElementById(id);
+const TOKEN = localStorage.getItem('jdy_token');
+// 【2026-09-27 审查修复 P2-9】jdy_user 一旦损坏（写坏/被污染），裸 JSON.parse 会让首屏脚本
+// 直接中断、连跳回登录页都执行不到，整页白屏无法自救。改为安全解析：坏档即清除并跳登录。
+let USER = null;
+try { USER = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) { USER = null; }
+if (!TOKEN || !USER) {
+  try { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); } catch (e) { }
+  location.href = '/login.html';
+}
+// 【2026-09-27 审查修复 P2-12】签发文件下载用 HttpOnly Cookie（一次会话一次即可，失败不影响主流程）：
+// 聊天里的 <img>/<a> 附件链接带不了 Authorization 头，原先 token 被拼进 URL。
+try { fetch('/api/auth/cookie', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, keepalive: true }).catch(() => { }); } catch (e) { }
+let ME = null;
+
+// URL参数：?tab=game 直接切游戏tab
+// 【v24.1】游戏退出返回：sessionStorage.writer_return_tab === 'atGame' 时同样切到活动页
+// （覆盖两种情况：bfcache 恢复在 pageshow 里处理；整页重载在这里处理）
+(function(){
+  const p = new URLSearchParams(location.search);
+  if(p.get('tab')==='game' || sessionStorage.getItem('writer_return_tab')==='atGame'){
+    sessionStorage.removeItem('writer_return_tab');
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const t = document.querySelector('.act-tab[data-at="atGame"]');
+        if(t) t.click();
+      }, 1000);
+    });
+  }
+})();
+
+// ===== 游戏资源预缓存弹窗 =====
+const GAME_CACHE_KEY = 'writer_ui_cache_version';
+const GAME_CACHE_VER = 'v1.6-20260914'; // 更新版本号就会触发重新下载
+// 【2026-09-14 修复】预下载范围改为写手端基础UI资源（游戏资源包改由各游戏页自己下载）
+// 旧版问题：①下载列表里manifest.js不存在、bg路径错误 ②fetch未消费响应体，浏览器不会真正缓存
+
+function showGameCacheModal() {
+  const modal = document.createElement('div');
+  modal.id = 'gameCacheModal';
+  modal.style = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = `
+    <div style="background:linear-gradient(180deg,#1a3a2e,#0e1f1a);border:1px solid #3ec9a0;border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center">
+      <div style="font-size:48px;margin-bottom:12px">🎮</div>
+      <h3 style="color:#ffd76a;font-size:18px;margin-bottom:12px">界面资源预载</h3>
+      <p style="color:#8AF0CE;font-size:13px;line-height:1.6;margin-bottom:20px">
+        提前缓存写手端基础界面资源（约 1MB），下次打开秒开不耗流量。<br>
+        游戏美术包较大，进入对应游戏时会单独提示下载。
+      </p>
+      <div style="margin-bottom:16px">
+        <div style="height:6px;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden">
+          <div id="gameCacheProgress" style="height:100%;width:0%;background:linear-gradient(90deg,#3ec9a0,#ffd76a);transition:width .3s;border-radius:99px"></div>
+        </div>
+        <div id="gameCacheTip" style="font-size:12px;color:rgba(255,255,255,.6);margin-top:8px">准备下载…</div>
+      </div>
+      <button id="gameCacheConfirm" style="background:linear-gradient(135deg,#3ec9a0,#2ca88a);color:#0e2420;border:none;border-radius:10px;padding:12px 32px;font-size:15px;font-weight:700;cursor:pointer;margin-right:8px">立即下载</button>
+      <button id="gameCacheLater" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:12px 24px;font-size:14px;cursor:pointer">稍后再说</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const gameAssets = [
+    '/assets/banner-fanfanle.jpg',
+    '/assets/banner-shanhai.jpg',
+    '/assets/game-banner.jpg',
+    '/icon-192.png',
+    '/icon-512.png',
+  ];
+
+  let downloaded = 0;
+  let paused = false;
+
+  async function downloadNext() {
+    if (paused) return;
+    if (downloaded >= gameAssets.length) {
+      // 下载完成
+      localStorage.setItem(GAME_CACHE_KEY, GAME_CACHE_VER);
+      document.getElementById('gameCacheTip').textContent = '下载完成！下次游戏秒进 🎉';
+      document.getElementById('gameCacheProgress').style.width = '100%';
+      setTimeout(() => modal.remove(), 1500);
+      return;
+    }
+    try {
+      document.getElementById('gameCacheTip').textContent = `下载中… ${downloaded + 1}/${gameAssets.length}`;
+      // 【2026-09-14 修复】必须消费响应体（r.blob()）浏览器才会真正写入HTTP缓存
+      const r = await fetch(gameAssets[downloaded]);
+      if (!r.ok) throw new Error(r.status);
+      await r.blob();
+      downloaded++;
+      document.getElementById('gameCacheProgress').style.width = Math.round(downloaded / gameAssets.length * 100) + '%';
+      setTimeout(downloadNext, 60);
+    } catch(e) {
+      // 单个失败继续下一个（不计完成，进度条如实反映）
+      downloaded++;
+      console.warn('[预载] 失败:', gameAssets[downloaded - 1], e.message);
+      document.getElementById('gameCacheTip').textContent = `部分资源下载失败（${downloaded}/${gameAssets.length}）…`;
+      setTimeout(downloadNext, 60);
+    }
+  }
+
+  document.getElementById('gameCacheConfirm').onclick = () => {
+    paused = false;
+    document.getElementById('gameCacheConfirm').style.display = 'none';
+    document.getElementById('gameCacheLater').textContent = '后台下载中…';
+    downloadNext();
+  };
+
+  // 【2026-09-15】强制预载：界面资源小（~1MB），首次进入自动下载
+  setTimeout(() => { try { document.getElementById('gameCacheConfirm') ? document.getElementById('gameCacheConfirm').click() : downloadNext(); } catch (e) { downloadNext(); } }, 300);
+  document.getElementById('gameCacheLater').onclick = () => {
+    modal.remove();   // 关掉弹窗后下载仍在后台继续
+  };
+}
+
+// 检查是否需要预缓存
+(function checkGameCache() {
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      const cached = localStorage.getItem(GAME_CACHE_KEY);
+      if (cached !== GAME_CACHE_VER) {
+        // 版本不一致，弹窗提醒
+        showGameCacheModal();
+      }
+    }, 2000);
+  });
+})();
+
+/* ================= 【2026-09-15】应用维护：更新检查 / 缓存清理 / 资源包下载 ================= */
+const APP_RES_PACK_KEY = 'res_pack_done_v1';
+// 整合资源清单（主站UI + 翻翻乐 + 山海核心美术）
+const ALL_RES = [
+  '/assets/banner-fanfanle.jpg', '/assets/banner-shanhai.jpg', '/assets/game-banner.jpg',
+  '/icon-192.png', '/icon-512.png',
+  '/assets/game/bg_main.jpg', '/assets/game/card_back.png', '/assets/game/card_front.png', '/assets/game/card_escape.png',
+  '/assets/game/icon_key.png', '/assets/game/icon_ball.png', '/assets/game/icon_frag.png', '/assets/game/icon_revive.png',
+  '/assets/game/bag_s.png', '/assets/game/bag_m.png', '/assets/game/bag_l.png',
+  '/games/shanhai/assets/cover_new.jpg', '/games/shanhai/assets/home-bg-new.jpg',
+  '/games/shanhai/assets/stage-mountain-new.png', '/games/shanhai/assets/stage-bar-new.png', '/games/shanhai/assets/stage-card-bg.jpg',
+  '/games/shanhai/assets/hero_full.png', '/games/shanhai/assets/sword_big.png',
+  '/games/shanhai/assets/icon_weapon.png', '/games/shanhai/assets/icon_armor.png', '/games/shanhai/assets/icon_crown.png',
+  '/games/shanhai/assets/icon_belt.png', '/games/shanhai/assets/icon_boots.png', '/games/shanhai/assets/icon_accessory.png',
+  '/games/shanhai/assets/sprites/hero.png', '/games/shanhai/assets/sprites/zheng.png', '/games/shanhai/assets/sprites/bifang.png',
+  '/games/shanhai/assets/sprites/xuangui.png', '/games/shanhai/assets/sprites/boss_shanhaoking.png',
+  '/games/shanhai/assets/sprites/sword.png', '/games/shanhai/assets/sprites/sword_spin.png',
+  '/assets/portal/poster.png?v=1', '/assets/portal/gallery1.jpg', '/assets/portal/gallery2.jpg',
+  '/assets/portal/gallery3.jpg', '/assets/portal/gallery4.jpg',
+];
+
+async function checkUpdate(silent) {
+  try {
+    const r = await fetch('/api/version');
+    const j = await r.json();
+    const ver = j.version || '1.1.0';
+    localStorage.setItem('app_latest_ver', ver);
+    const seen = localStorage.getItem('app_seen_ver');
+    if ($('curVer')) $('curVer').textContent = 'v' + ver;
+    if ($('topVer')) $('topVer').textContent = 'v' + ver;
+    if ($('verState')) {
+      const mine = seen || ver;
+      $('verState').textContent = seen === ver ? '已是最新 ✓' : '有新版本 v' + ver + '（重启应用生效）';
+      $('verState').style.color = seen === ver ? 'var(--green)' : 'var(--amber,#d97706)';
+    }
+    if (!silent && seen !== ver) showChangelog(j.changelog || [], ver);
+    // 【2026-09-17 修复】原来无条件把 seen 写成最新版本，导致"有新版本"提示与更新日志弹窗永远不触发；
+    // 现在只在用户点过更新弹窗的"知道了"后才落 seen（见 showChangelog）
+    return j;
+  } catch (e) { if ($('verState')) $('verState').textContent = '版本服务暂不可达'; return null; }
+}
+function showChangelog(logs, ver) {
+  const html = (logs || []).map(l => `<div style="margin-bottom:12px"><b style="color:var(--green)">v${esc(l.ver)}</b> <span style="font-size:11px;color:var(--sub)">${esc(l.date)}</span><div style="font-size:12.5px;color:var(--fg,#333);line-height:1.7;margin-top:4px">${(l.notes || []).map(n => '· ' + esc(n)).join('<br>')}</div></div>`).join('');
+  const m = document.createElement('div');
+  m.id = 'verModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:340px;width:100%;padding:20px;max-height:70vh;overflow:auto">
+    <h3 style="margin-bottom:8px">🎉 更新到最新版本</h3>${html || '<div style="font-size:12.5px;color:var(--sub)">例行更新</div>'}
+    <button class="btn" style="width:100%;margin-top:6px">知道了</button></div>`;
+  document.body.appendChild(m);
+  m.querySelector('button.btn').onclick = () => {
+    try { localStorage.setItem('app_seen_ver', String(ver || '')); } catch (e) {}
+    m.remove();
+  };
+}
+if ($('btnCheckUpdate')) $('btnCheckUpdate').onclick = () => { if ($('verState')) $('verState').textContent = '检查中…'; checkUpdate(false); };
+
+// —— 缓存清理（识别大小 → 二次确认 → 清理）——
+if ($('btnClearCache')) $('btnClearCache').onclick = async () => {
+  let usage = 0, cnt = 0;
+  try {
+    if (navigator.storage && navigator.storage.estimate) { const est = await navigator.storage.estimate(); usage = est.usage || 0; }
+    // 【2026-09-17 修复】原来 (keys()).length ? 0 : 0 恒等于加 0，缓存条目数从未统计生效
+    if (window.caches) { const ks = await caches.keys(); cnt = ks.length; for (const k of ks) { const c = await caches.open(k); cnt += (await c.keys()).length; } }
+  } catch (e) {}
+  const sz = usage > 1048576 ? (usage / 1048576).toFixed(1) + ' MB' : (usage / 1024).toFixed(0) + ' KB';
+  const m = document.createElement('div');
+  m.id = 'cacheModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:320px;width:100%;padding:20px;text-align:center">
+    <h3>🧹 清理缓存</h3>
+    <p style="font-size:13px;color:#666;margin:12px 0;line-height:1.7">当前缓存占用约 <b style="color:var(--amber,#d97706)">${sz}</b><br>清理后页面与图片资源将重新下载<br>（不影响账号登录与聊天记录）</p>
+    <div style="display:flex;gap:10px"><button class="btn btn-r" style="flex:1" id="ccGo">确认清理</button><button class="btn btn-gh" style="flex:1" onclick="this.closest('#cacheModal').remove()">取消</button></div></div>`;
+  document.body.appendChild(m);
+  m.querySelector('#ccGo').onclick = async () => {
+    m.remove();
+    try {
+      if (window.caches) { const ks = await caches.keys(); for (const k of ks) await caches.delete(k); }
+      const keep = { t: localStorage.getItem('jdy_token'), u: localStorage.getItem('jdy_user') };
+      localStorage.clear();
+      if (keep.t) localStorage.setItem('jdy_token', keep.t);
+      if (keep.u) localStorage.setItem('jdy_user', keep.u);
+      localStorage.removeItem(APP_RES_PACK_KEY);   // 缓存清了，资源包标记同步重置
+      toast('缓存已清理 ✨ 资源将按需重新加载');
+    } catch (e) { toast('清理失败：' + e.message); }
+  };
+};
+
+// —— 资源包主动下载（真实逐个下载 + 进度）——
+async function downloadResPack() {
+  const box = $('resPackBox'); if (!box) return;
+  box.style.display = 'block';
+  let done = 0, fail = 0, bytes = 0;
+  for (const url of ALL_RES) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.status);
+      const b = await r.blob();
+      bytes += b.size;
+    } catch (e) { fail++; }
+    done++;
+    const pct = Math.round(done / ALL_RES.length * 100);
+    if ($('rpBar')) $('rpBar').style.width = pct + '%';
+    if ($('rpPct')) $('rpPct').textContent = pct + '%';
+    if ($('rpTip')) $('rpTip').textContent = fail ? '下载中…（' + fail + ' 个失败）' : '下载中…';
+    if ($('rpDetail')) $('rpDetail').textContent = done + ' / ' + ALL_RES.length + ' 项 · 已获取 ' + (bytes / 1048576).toFixed(1) + ' MB';
+  }
+  localStorage.setItem(APP_RES_PACK_KEY, '1');
+  if ($('rpTip')) $('rpTip').textContent = fail ? '完成（' + fail + ' 项失败，可重试）' : '全部完成 ✓ 下次进入秒开';
+  if ($('btnResPack')) $('btnResPack').textContent = '📦 资源包已就绪';
+  toast('资源包' + (fail ? '下载完成（部分失败）' : '下载完成 ✓'));
+}
+if ($('btnResPack')) $('btnResPack').onclick = () => {
+  if (localStorage.getItem(APP_RES_PACK_KEY) === '1' && $('resPackBox').style.display === 'none') {
+    toast('资源包已是最新 ✓'); return;
+  }
+  downloadResPack();
+};
+// 进入时：自动检查更新 + 顶栏版本
+checkUpdate(true);
+setTimeout(() => { if (localStorage.getItem(APP_RES_PACK_KEY) !== '1' && $('btnResPack')) $('btnResPack').style.borderColor = 'var(--green)'; }, 1500);
+
+function toast(t, ms = 2200) { const el = $('toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', ms); }
+const fmt = n => Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const cnNow = () => new Date(Date.now() + 8 * 3600 * 1000);
+const cnDateStr = d => d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+const cnHm = () => { const d = cnNow(); return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
+const fmtT = d => d ? (new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ')) : '';
+const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.round(n / 1024) + 'KB';
+const dl = id => '/api/files/' + id + '/download';   // 【2026-09-27 审查修复 P2-12】token 不再进 URL（改由 HttpOnly Cookie 携带，见 bootCookie()）
+const stPill = st => '<span class="pill st-' + esc(st) + '">' + esc(st) + '</span>';
+
+async function authFetch(url, opt = {}) {
+  opt.headers = Object.assign({}, opt.headers, { 'Authorization': 'Bearer ' + TOKEN });
+  if (opt.body && !(opt.body instanceof FormData) && !opt.headers['Content-Type']) opt.headers['Content-Type'] = 'application/json';
+  // 【2026-09-27 审查修复 P2-15】默认 15 秒超时（弱网不再无限转圈）；上传等慢调用传 opt.timeout:0 关闭
+  if (opt.timeout !== 0 && !opt.signal && window.AbortSignal && AbortSignal.timeout) opt.signal = AbortSignal.timeout(opt.timeout || 15000);
+  delete opt.timeout;
+  const r = await fetch(url, opt).catch(e => { if (e && e.name === 'TimeoutError') throw new Error('网络超时，请重试'); throw e; });
+  if (r.status === 401) { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); location.href = '/login.html'; throw new Error('未登录'); }
+  const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
+  if (!j.ok) throw new Error(j.error || '请求失败');
+  return j;
+}
+
+/* ================= 聊天 ================= */
+let chats = [], currentPeer = null, msgs = [], cardsMap = {};
+function cacheKey() { return 'jdy_msg_' + (ME ? ME.id : USER.id) + '_' + (currentPeer || 'none'); }
+function loadCache() { try { return JSON.parse(localStorage.getItem(cacheKey()) || '[]'); } catch (e) { return []; } }
+function saveCache(arr) { try { localStorage.setItem(cacheKey(), JSON.stringify(arr.slice(-600))); } catch (e) {} }
+// 统一的消息入列：按 _id 去重（防止 socket 推送与请求响应竞态导致消息显示两条）
+function addMsg(m) {
+  if (!m || !m._id) return false;
+  if (msgs.find(x => String(x._id) === String(m._id))) return false;
+  msgs.push(m); saveCache(msgs);
+  return true;
+}
+
+/* ================= 引用回复 ================= */
+let quoteTarget = null;
+function msgPreview(m) {
+  if (!m) return '';
+  if (m.type === 'text') return m.text || '';
+  if (m.type === 'file') return '[文件] ' + (m.fileName || '');
+  if (m.type === 'card') return '[派单卡] ' + ((cardsMap[m.cardId] || {}).title || '');
+  return '';
+}
+function setQuote(m) {
+  quoteTarget = m;
+  $('quoteTxt').textContent = (m.fromName || '') + '：' + msgPreview(m).slice(0, 60);
+  $('quoteBar').classList.add('show');
+  $('chatInput').focus();
+}
+function clearQuote() { quoteTarget = null; $('quoteBar').classList.remove('show'); }
+function jumpToMsg(id) {
+  const el = document.querySelector('.msg[data-mid="' + id + '"]');
+  if (!el) return toast('原消息不在当前记录里');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+}
+// 图片灯箱预览
+function openImg(src) {
+  $('imgBig').src = src;
+  $('imgDl').href = src;
+  $('imgMask').classList.add('show');
+}
+// 文件在线预览：图片/pdf/txt类/音视频 浏览器直开，其他格式转下载
+const previewIndex = {};   // fileId -> {url, name}
+const fileIcon = name => {
+  const n = (name || '').toLowerCase();
+  if (/\.(pdf)$/.test(n)) return '📕';
+  if (/\.(docx?|wps|odt)$/.test(n)) return '📘';
+  if (/\.(xlsx?|csv|et)$/.test(n)) return '📗';
+  if (/\.(pptx?|dps)$/.test(n)) return '📙';
+  if (/\.(zip|rar|7z|tar|gz)$/.test(n)) return '🗜️';
+  if (/\.(mp4|mov|avi|mkv|webm)$/.test(n)) return '🎬';
+  if (/\.(mp3|wav|m4a|flac)$/.test(n)) return '🎵';
+  if (/\.(psd|ai|cdr|sketch)$/.test(n)) return '🎨';
+  return '📄';
+};
+function openPreview(fileId) {
+  const f = previewIndex[fileId];
+  if (!f) return;
+  const name = (f.name || '').toLowerCase();
+  const mask = $('imgMask'), frame = $('pvFrame'), img = $('imgBig');
+  $('imgDl').href = f.url;
+  mask.classList.remove('pv'); img.style.display = '';
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name)) {
+    frame.src = 'about:blank';
+    img.src = f.url; img.style.display = '';
+    mask.classList.add('show');
+  } else if (/\.(pdf|txt|md|csv|log|json|html?|xml|mp4|webm|mp3|wav|m4a|ogg)$/i.test(name)) {
+    img.src = '';
+    frame.src = f.url + '&inline=1';
+    mask.classList.add('show', 'pv');
+  } else {
+    toast('该格式暂不支持在线预览，已为你打开下载');
+    const a = document.createElement('a'); a.href = f.url; a.download = f.name || ''; a.click();
+  }
+}
+function closePreview() {
+  const mask = $('imgMask');
+  mask.classList.remove('show', 'pv');
+  $('pvFrame').src = 'about:blank';
+  $('imgBig').src = '';
+}
+
+
+// 增量更新单个会话（收到新消息时调用，不重建整个列表）
+function updateConvItem(peerId) {
+  const idx = chats.findIndex(c => String(c.user.id) === String(peerId));
+  if (idx < 0) return;
+  const c = chats[idx];
+  const el = document.querySelector('.conv[data-id="' + CSS.escape(String(peerId)) + '"]');
+  if (!el) { renderConvList(); return; } // 找不到就重建
+
+  // 更新最后一条消息预览
+  const lastEl = el.querySelector('.last');
+  if (lastEl) {
+    lastEl.textContent = c.last ? (c.last.type === 'text' ? (c.last.text || '').slice(0, 18) : c.last.type === 'file' ? '[文件]' : '[派单卡]') : '开始沟通';
+  }
+  // 更新未读数
+  const oldUnread = el.querySelector('.unread');
+  if (c.unread) {
+    if (oldUnread) oldUnread.textContent = c.unread > 99 ? '99+' : c.unread;
+    else {
+      const badge = document.createElement('div');
+      badge.className = 'unread';
+      badge.textContent = c.unread > 99 ? '99+' : c.unread;
+      el.appendChild(badge);
+    }
+  } else if (oldUnread) oldUnread.remove();
+
+  // 移到最上面（搜索框下面）
+  // 【二次复核修正】原来 insertBefore(el, searchBox.nextSibling) 中 searchBox 是 input 本身、
+  // 其 nextSibling 恒为 null，等价于把会话追加到列表末尾（与设计相反）——
+  // 改为插到搜索框包裹层 div 之后
+  const convList = $('convList');
+  const searchWrap = convList.querySelector('input')?.parentElement;
+  if (convList.firstElementChild !== el) {
+    if (searchWrap && searchWrap.parentElement === convList) {
+      convList.insertBefore(el, searchWrap.nextSibling);
+    } else {
+      convList.insertBefore(el, convList.firstChild);
+    }
+  }
+  updateUnreadBadge();
+}
+
+function renderConvList() {
+  const pins = pinnedPeers();
+  const sorted = [...chats].sort((a, b) => (pins.includes(b.user.id) ? 1 : 0) - (pins.includes(a.user.id) ? 1 : 0));
+  const searchBox = '<div style="padding:8px;border-bottom:1px solid var(--line)"><input id="convSearch" placeholder="🔍 搜索联系人" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px"></div>';
+  $('convList').innerHTML = searchBox + sorted.filter(c => !convSearchQ || (c.user.displayName||'').toLowerCase().includes(convSearchQ)).map(c => {
+    const u = c.user;
+    return `<div class="conv ${u.id === currentPeer ? 'on' : ''}" data-id="${u.id}" title="${esc(u.displayName)}">
+      <div class="avatar">${esc((u.displayName || '?')[0])}<span class="dot ${u.sockOnline ? 'd-on' : 'd-off'}"></span></div>
+      <div class="info"><div class="nm"><span>${pins.includes(u.id) ? '📌 ' : ''}${esc(u.displayName)}</span>${u.shift ? '<span class="sh">在班</span>' : ''}</div>
+      <div class="last">${c.last ? (c.last.type === 'text' ? esc(c.last.text).slice(0, 18) : c.last.type === 'file' ? '[文件]' : '[派单卡]') : '开始沟通'}</div></div>
+      ${c.unread ? '<div class="unread">' + (c.unread > 99 ? '99+' : c.unread) + '</div>' : ''}
+    </div>`;
+  }).join('') || '<div class="empty">暂无会话</div>';
+  const si = document.getElementById('convSearch');
+  if (si) { si.value = convSearchQ; si.oninput = () => { convSearchQ = si.value.toLowerCase().trim(); renderConvList(); const ni=document.getElementById('convSearch'); if(ni){ni.focus();ni.setSelectionRange(ni.value.length,ni.value.length);} }; }
+  document.querySelectorAll('.conv').forEach(el => el.onclick = () => openChat(el.dataset.id));
+  const totalUnread = chats.reduce((s, c) => s + (c.unread || 0), 0);
+  $('tabUnread').style.display = totalUnread ? 'flex' : 'none';
+  $('tabUnread').textContent = totalUnread > 99 ? '99+' : totalUnread;
+}
+function renderCardBub(c) {
+  const s = c.status;
+  let ops = '';
+  if (s === '待接单') ops = `<button class="btn btn-g btn-sm" onclick="actAccept('${c._id}')">接单</button><button class="btn btn-gh btn-sm" onclick="actDecline('${c._id}')">不接</button>`;
+  else if (s === '已接单') ops = `<button class="btn btn-g btn-sm" onclick="actSubmit('${c._id}')">提交审核</button>`;
+  else if (s === '已驳回') ops = `<button class="btn btn-r btn-sm" onclick="actRedo('${c._id}')">重新做单</button>`;
+  else if (s === '待审核') ops = `<span style="font-size:11px;color:var(--purple)">⏳ 等待管理员审核</span>`;
+  else if (s === '待打款') ops = `<span style="font-size:11px;color:var(--cyan)">✅ 审核通过 · 等待打款</span>`;
+  // 【二次复核修正】卡片气泡外层的 .msg 绑了 openMsgOps（消息操作面板），
+  // 卡内按钮/详情链接点击会冒泡过去把内容覆盖掉——整卡内容拦截冒泡
+  return `<div class="card-bub" onclick="event.stopPropagation()">
+    <div class="cb-hd">🃏 <span class="cb-t">${esc(c.title)}</span>${stPill(s)}</div>
+    <div class="cb-meta"><span>报酬 <b>¥${c.reward}</b></span>${c.deadline ? '<span>截止 ' + esc(c.deadline) + '</span>' : ''}${c.orderNo ? '<span>单号 ' + esc(c.orderNo) + '</span>' : ''}</div>
+    ${c.requirement ? '<div class="cb-req">' + esc(c.requirement) + '</div>' : ''}
+    ${s === '已驳回' && c.rejectReason ? '<div class="order-card note warn" style="margin-bottom:6px">❌ 驳回原因：' + esc(c.rejectReason) + '</div>' : ''}
+    ${c.fileId ? '<div style="font-size:12px;margin-bottom:6px"><a href="' + dl(c.fileId) + '" target="_blank">📎 ' + esc(c.fileName || '附件') + '</a>（附件云端保留3天）</div>' : ''}
+    ${ops ? '<div class="cb-ops">' + ops + '</div>' : ''}
+    <div style="text-align:right;margin-top:6px"><a href="javascript:void(0)" onclick="openCard('${c._id}')" style="font-size:11px;color:var(--blue);text-decoration:none">查看详情 ›</a></div>
+  </div>`;
+}
+// 旧数据乱码文件名修复：latin1 误读的 utf8 中文，反向还原
+function fixName(n) {
+  if (!n || !/[\u00C0-\u00FF]/.test(n)) return n || '';
+  try {
+    const bytes = new Uint8Array([...n].map(c => c.charCodeAt(0) & 0xFF));
+    const s = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (/[\u4e00-\u9fff]/.test(s)) return s;
+  } catch (e) {}
+  return n;
+}
+function renderMsgs(list) {
+  if (!currentPeer) return;
+  if (!list.length) { $('chatBox').innerHTML = '<div class="empty">还没有消息，打个招呼吧</div>'; return; }
+  $('chatBox').innerHTML = list.map(m => {
+    const mine = m.from === ME.id;
+    const qref = m.replyTo && m.replyTo.id ? '<div class="qref" onclick="jumpToMsg(\'' + m.replyTo.id + '\')">↩ ' + esc(m.replyTo.fromName || '') + '：' + esc(m.replyTo.preview || '') + '</div>' : '';
+    // 已读/未读水印：只标自己发的消息
+    const watermark = mine && !m.recalled ? '<span style="margin-left:6px;color:' + (m.read ? 'var(--blue)' : 'var(--sub)') + '">' + (m.read ? '已读' : '未读') + '</span>' : '';
+    if (m.recalled) {
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}"><div class="bub" style="background:transparent;border:1px dashed var(--line);color:var(--sub);font-size:12px;font-style:italic;box-shadow:none"><div class="tm" style="margin-top:0">${mine ? '你' : (m.fromName || '对方')}撤回了一条消息 · ${fmtT(m.createdAt)}</div></div></div>`;
+    }
+    if (m.type === 'card') {
+      const c = cardsMap[m.cardId];
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}" onclick="openMsgOps('${m._id}')">${c ? renderCardBub(c) : '<div class="bub">🃏 [派单卡]（详情见「单子」页）</div>'}</div>`;
+    }
+    if (m.type === 'file') {
+      m.fileName = fixName(m.fileName);
+      const isImg = /\.(png|jpe?g|gif|webp|bmp)$/i.test(m.fileName || '');
+      previewIndex[m.fileId] = { url: dl(m.fileId), name: m.fileName || '' };
+      const body = isImg
+        ? `${qref}<img class="imgmsg" src="${dl(m.fileId)}" loading="lazy" decoding="async" onload="this.classList.add('ld')" onclick="event.stopPropagation();openPreview('${m.fileId}')"><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}${watermark}</div>`
+        : `${qref}<div class="filecard"><div class="fic">${fileIcon(m.fileName)}</div><div class="fbody">
+            <div class="fn">${esc(m.fileName)}</div><div class="fs">${fmtSize(m.fileSize)}</div>
+            <div class="fo"><button class="fc-prev" onclick="event.stopPropagation();openPreview('${m.fileId}')">预览</button><a class="fc-dl" href="${dl(m.fileId)}" download="${esc(m.fileName)}" onclick="event.stopPropagation()">下载</a></div>
+          </div></div><div class="tm" style="margin-top:4px">${fmtT(m.createdAt)}${watermark}</div>`;
+      return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}" onclick="openMsgOps('${m._id}')"><div class="bub hasfile">${body}</div></div>`;
+    }
+    return `<div class="msg ${mine ? 'mine' : ''}" data-mid="${m._id}" onclick="openMsgOps('${m._id}')"><div class="bub">${qref}${esc(m.text)}<div class="tm">${fmtT(m.createdAt)}${watermark}</div></div></div>`;
+  }).join('');
+  $('chatBox').scrollTop = $('chatBox').scrollHeight;
+}
+/* 点击消息 → 弹出操作（引用 / 2分钟内撤回） */
+window.openMsgOps = function (mid) {
+  const m = msgs.find(x => String(x._id) === mid);
+  if (!m || m.recalled) return;
+  const mine = m.from === ME.id;
+  const canRecall = mine && !m.recalled && (Date.now() - new Date(m.createdAt).getTime() <= 2 * 60 * 1000);
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>💬 消息操作</h3>
+    <div class="req-box" style="margin-top:4px">${esc((m.type === 'text' ? m.text : '[' + (m.type === 'file' ? '文件' : '派单卡') + '] ' + (m.fileName || '')).slice(0, 60))}</div>
+    <div class="ops" style="flex-direction:column">
+      ${m.type !== 'card' ? '<button class="btn btn-o" onclick="setQuote(msgs.find(x=>String(x._id)===\'' + m._id + '\'));closeSheet()">↩ 引用这条消息</button>' : ''}
+      ${canRecall ? '<button class="btn btn-r" onclick="recallMsg(\'' + m._id + '\')">🗑 撤回（2分钟内）</button>' : (mine ? '<button class="btn btn-gh" disabled>撤回（超过2分钟）</button>' : '')}
+    </div>`;
+  $('mask').classList.add('show');
+};
+window.recallMsg = async function (mid) {
+  if (!confirm('确定撤回这条消息吗？')) return;
+  try {
+    await authFetch('/api/messages/recall', { method: 'POST', body: JSON.stringify({ id: mid }) });
+    const m = msgs.find(x => String(x._id) === mid);
+    if (m) { m.recalled = true; m.text = ''; m.fileName = null; renderMsgs(msgs); }
+    closeSheet();
+    toast('已撤回');
+  } catch (e) { toast(e.message); }
+};
+let convSearchQ = '';
+async function loadChats() {
+  const j = await authFetch('/api/chats');
+  chats = j.chats;
+  renderConvList();
+  if (!currentPeer && chats.length) openChat(chats[0].user.id);
+  if (currentPeer) {
+    const c = chats.find(x => x.user.id === currentPeer);
+    if (c) { $('peerDot').className = 'dot ' + (c.user.sockOnline ? 'd-on' : 'd-off'); $('peerSt').textContent = (c.user.sockOnline ? '在线' : '离线') + (c.user.shift ? ' · 在班' : ''); }
+  }
+}
+let openChatVersion = 0;
+async function openChat(peer) {
+  currentPeer = peer;
+  const myVer = ++openChatVersion;
+  const c = chats.find(x => x.user.id === peer);
+  $('peerName').textContent = c ? c.user.displayName : '会话';
+  $('peerDot').className = 'dot ' + (c && c.user.sockOnline ? 'd-on' : 'd-off');
+  $('peerSt').textContent = c ? ((c.user.sockOnline ? '在线' : '离线') + (c.user.shift ? ' · 在班' : '')) : '';
+  msgs = loadCache();
+  renderMsgs(msgs);
+  // 只更新active状态，不重新渲染整个列表
+  document.querySelectorAll('.conv').forEach(el => el.classList.toggle('on', el.dataset.id === String(peer)));
+  try {
+    const j = await authFetch('/api/messages?peer=' + peer);
+    // 检查是否已经切换到别的会话了，是的话丢弃这次结果
+    if (myVer !== openChatVersion) return;
+    const map = new Map(msgs.map(m => [m._id, m]));
+    j.messages.forEach(m => map.set(m._id, m));
+    msgs = [...map.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    saveCache(msgs);
+    renderMsgs(msgs);
+    const ch = chats.find(x => x.user.id === peer); if (ch) { ch.unread = 0; updateUnreadBadge(); }
+  } catch (e) { if (myVer === openChatVersion) toast(e.message); }
+  // 卡片数据只在第一次加载时拉取
+  if (!cardsMap._loaded) {
+    try { const cj = await authFetch('/api/mycards'); cj.cards.forEach(c => cardsMap[c._id] = c); cardsMap._loaded = true; if (myVer === openChatVersion) renderMsgs(msgs); } catch (e) {}
+  }
+}
+// 只更新未读角标，不重新渲染列表
+function updateUnreadBadge() {
+  const totalUnread = chats.reduce((s, c) => s + (c.unread || 0), 0);
+  const tu = $('tabUnread'); if (tu) { tu.style.display = totalUnread ? 'flex' : 'none'; tu.textContent = totalUnread > 99 ? '99+' : totalUnread; }
+}
+async function sendText() {
+  const t = $('chatInput').value.trim();
+  if (!t || !currentPeer) return;
+  $('chatInput').value = ''; autoGrow();
+  const replyTo = quoteTarget ? { id: String(quoteTarget._id), fromName: quoteTarget.fromName || '', preview: msgPreview(quoteTarget).slice(0, 80), type: quoteTarget.type || 'text' } : null;
+  clearQuote();
+  try {
+    const j = await authFetch('/api/messages', { method: 'POST', body: JSON.stringify({ peer: currentPeer, text: t, replyTo }) });
+    if (addMsg(j.message)) renderMsgs(msgs);
+  } catch (e) { toast(e.message); $('chatInput').value = t; }
+}
+// 【2026-09-15】发送前自动压缩：图片>200KB 缩放到1280px + JPEG82（省流量防卡顿）
+async function compressMedia(f) {
+  if (f.type && f.type.startsWith('image/') && f.size > 200 * 1024) {
+    try {
+      const bmp = await createImageBitmap(f);
+      const sc = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+      const w = Math.round(bmp.width * sc), h = Math.round(bmp.height * sc);
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+      const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.82));
+      if (blob && blob.size < f.size) {
+        toast('已压缩 ' + (f.size / 1048576).toFixed(1) + 'MB → ' + (blob.size / 1048576).toFixed(1) + 'MB');
+        return new File([blob], f.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+      }
+    } catch (e) {}
+  }
+  return f;
+}
+async function sendFile(f) {
+  if (!f || !currentPeer) return;
+  f = await compressMedia(f);   // 压缩后再走限制与上传
+  const isMedia = f.type && (f.type.startsWith('image/') || f.type.startsWith('video/'));
+  if (isMedia && f.size > 30 * 1024 * 1024) return toast('图片/视频不能超过30MB（图片会自动压缩）');
+  if (!isMedia && f.size > 100 * 1024 * 1024) return toast('文件不能超过100MB');
+  toast('上传中：' + f.name + '…', 8000);
+  const replyTo = quoteTarget ? { id: String(quoteTarget._id), fromName: quoteTarget.fromName || '', preview: msgPreview(quoteTarget).slice(0, 80), type: quoteTarget.type || 'text' } : null;
+  clearQuote();
+  const fd = new FormData(); fd.append('file', f); fd.append('peer', currentPeer);
+  try {
+    const up = await authFetch('/api/files', { method: 'POST', body: fd, timeout: 0 });   // 【P2-15】上传不限时
+    const j = await authFetch('/api/messages/file', { method: 'POST', body: JSON.stringify({ peer: currentPeer, fileId: up.fileId, fileName: up.fileName, fileSize: up.fileSize, replyTo }) });
+    if (addMsg(j.message)) renderMsgs(msgs);
+    toast('发送成功');
+  } catch (e) { toast('上传失败：' + e.message); }
+}
+
+/* ================= 派单卡（写手侧操作） ================= */
+let cardFilterSt = '';
+async function reloadCards() {
+  try {
+    const j = await authFetch('/api/mycards');
+    cardsMap = {}; j.cards.forEach(c => cardsMap[c._id] = c);
+    window._cards = j.cards;
+    paintCardChips();
+    renderCardList();
+    loadWorkbench();
+    renderMsgs(msgs);
+  } catch (e) { toast(e.message); }
+}
+function paintCardChips() {
+  const cards = window._cards || [];
+  const sts = ['全部', '待接单', '已接单', '待审核', '待打款', '已完成', '已驳回'];
+  const cnt = {};
+  cards.forEach(c => cnt[c.status] = (cnt[c.status] || 0) + 1);
+  $('cardChips').innerHTML = sts.map(s => {
+    const n = s === '全部' ? cards.length : (cnt[s] || 0);
+    return `<button class="btn btn-sm ${cardFilterSt === s ? 'btn-g' : 'btn-gh'}" onclick="cardFilterSt='${s}';paintCardChips();renderCardList()">${s}${n ? ' ' + n : ''}</button>`;
+  }).join('');
+}
+function filteredCards() {
+  const q = ($('cardQ').value || '').trim().toLowerCase();
+  return (window._cards || []).filter(c => {
+    if (cardFilterSt !== '全部' && c.status !== cardFilterSt) return false;
+    if (!q) return true;
+    return [c.title, c.requirement, c.orderNo].some(x => String(x || '').toLowerCase().includes(q));
+  });
+}
+function renderCardList() {
+  const list = filteredCards();
+  $('cardList').innerHTML = list.length ? list.map(c => cardRow(c)).join('') : '<div class="empty">没有符合条件的单子</div>';
+}
+$('cardQ').addEventListener('input', renderCardList);
+/* ================= 工作台：汇总 + 接单日历 ================= */
+let wbDaily = [];
+async function loadWorkbench() {
+  const ym = $('wbMonth').value || cnDateStr(cnNow()).slice(0, 7);
+  try {
+    const j = await authFetch('/api/workbench?ym=' + ym);
+    $('wbPending').textContent = j.pendingCount;
+    $('wbAccepted').textContent = '¥' + fmt(j.monthAccepted);
+    $('wbPendingPay').textContent = '¥' + fmt(j.pendingPay);
+    wbDaily = j.daily || [];
+    paintWbCal(ym);
+  } catch (e) { toast(e.message); }
+}
+$('wbMonth').onchange = loadWorkbench;
+function paintWbCal(ym) {
+  if (!$('wbMonth').value) $('wbMonth').value = ym;
+  const grid = $('wbCal');
+  const [y, m] = ym.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const firstWd = new Date(ym + '-01T00:00:00+08:00').getUTCDay();
+  const today = cnDateStr(cnNow());
+  const byDay = Object.fromEntries(wbDaily.map(d => [d.date, d]));
+  let html = ['一', '二', '三', '四', '五', '六', '日'].map(w => `<div class="wd">${w}</div>`).join('');
+  html += Array.from({ length: (firstWd + 6) % 7 }, () => '<div class="cell blank"></div>').join('');
+  for (let i = 1; i <= daysInMonth; i++) {
+    const date = ym + '-' + String(i).padStart(2, '0');
+    const d = byDay[date];
+    const hasAmt = d && (d.accepted > 0 || d.completed > 0);
+    html += `<div class="cell ${date === today ? 'today' : ''}" onclick="openWbDay('${date}')" style="cursor:${hasAmt ? 'pointer' : 'default'}">
+      <span class="dnum">${i}</span>
+      ${hasAmt ? `<span class="wb-amt${d.completed > 0 ? ' done' : ''}">¥${d.accepted >= 1000 ? (d.accepted / 1000).toFixed(1) + 'k' : d.accepted}</span>` : ''}
+      ${d && d.completedCount ? '<span class="wb-done">✓' + d.completedCount + '</span>' : ''}</div>`;
+  }
+  grid.innerHTML = html;
+}
+window.openWbDay = function (date) {
+  const d = wbDaily.find(x => x.date === date);
+  const cards = (window._cards || []);
+  const cnDay = c => c.createdAt ? cnDateStr(new Date(new Date(c.createdAt).getTime() + 8 * 3600 * 1000)).slice(0, 10) : '';
+  const cnPayDay = c => c.paidAt ? cnDateStr(new Date(new Date(c.paidAt).getTime() + 8 * 3600 * 1000)).slice(0, 10) : '';
+  const accepted = cards.filter(c => cnDay(c) === date);
+  const completed = cards.filter(c => c.status === '已完成' && cnPayDay(c) === date);
+  if (!d && !accepted.length) return toast(date + ' 没有接单记录');
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>📅 ${date} 接单情况</h3>
+    ${d ? `<div class="stats" style="margin-bottom:10px">
+      <div class="stat v-green"><div class="v">¥${fmt(d.accepted)}</div><div class="l">当日接单 ${d.acceptedCount} 单</div></div>
+      <div class="stat v-cyan"><div class="v">¥${fmt(d.completed)}</div><div class="l">当日完结 ${d.completedCount} 单</div></div>
+    </div>` : '<div class="empty" style="padding:12px 0">当日无接单</div>'}
+    ${accepted.length ? '<div style="font-size:12px;color:var(--sub);margin:6px 0 4px">▼ 当日接的单子</div>' + accepted.map(c => cardRow(c)).join('') : ''}
+    ${completed.length && completed.some(c => cnDay(c) !== date) ? '<div style="font-size:12px;color:var(--sub);margin:10px 0 4px">▼ 当日完结（此前接的单）</div>' + completed.filter(c => cnDay(c) !== date).map(c => cardRow(c)).join('') : ''}`;
+  $('mask').classList.add('show');
+};
+function cardRow(c) {
+  let note = '';
+  if (c.status === '已驳回' && c.rejectReason) note = '<div class="note warn">❌ 驳回原因：' + esc(c.rejectReason) + '</div>';
+  else if (c.status === '已接单' && c.rejectReason) note = '<div class="note">↩️ 上次被驳回：' + esc(c.rejectReason) + '</div>';
+  let ops = '';
+  if (c.status === '待接单') ops = `<button class="btn btn-g btn-sm" onclick="actAccept('${c._id}')">接单</button><button class="btn btn-gh btn-sm" onclick="actDecline('${c._id}')">不接</button>`;
+  else if (c.status === '已接单') ops = `<button class="btn btn-g btn-sm" onclick="actSubmit('${c._id}')">提交审核</button>`;
+  else if (c.status === '已驳回') ops = `<button class="btn btn-r btn-sm" onclick="actRedo('${c._id}')">重新做单</button>`;
+  return `<div class="order-card">
+    <div class="hd"><span class="t">${esc(c.title)}</span>${stPill(c.status)}</div>
+    <div class="meta"><span>报酬 <b>¥${c.reward}</b></span>${c.deadline ? '<span>📅 截止 ' + esc(c.deadline) + '</span>' : ''}${c.orderNo ? '<span>🔗 台账单 ' + esc(c.orderNo) + '</span>' : ''}<span>${fmtT(c.createdAt)}</span></div>
+    ${note}
+    <div class="ops">${ops}<button class="btn btn-gh btn-sm" onclick="openCard('${c._id}')">详情</button></div>
+  </div>`;
+}
+window.openCard = id => {
+  const c = cardsMap[id]; if (!c) return;
+  let ops = '';
+  if (c.status === '待接单') ops = `<button class="btn btn-g" onclick="actAccept('${id}')">接单</button><button class="btn btn-gh" onclick="actDecline('${id}')">不接</button>`;
+  else if (c.status === '已接单') ops = `<button class="btn btn-g" onclick="actSubmit('${id}')">提交审核</button>`;
+  else if (c.status === '已驳回') ops = `<button class="btn btn-r" onclick="actRedo('${id}')">重新做单</button>`;
+  else if (c.status === '待审核') ops = '<span style="color:var(--purple);font-size:13px">⏳ 已提交，等待管理员审核</span>';
+  else if (c.status === '待打款') ops = '<span style="color:var(--cyan);font-size:13px">✅ 审核已通过，等待管理员打款</span>';
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>${esc(c.title)} ${stPill(c.status)}</h3>
+    <div class="kv"><span class="k">报酬</span><span class="v" style="color:var(--amber);font-weight:700">¥${c.reward}</span></div>
+    ${c.deadline ? '<div class="kv"><span class="k">截止日期</span><span class="v">' + esc(c.deadline) + '</span></div>' : ''}
+    ${c.orderNo ? '<div class="kv"><span class="k">关联台账单</span><span class="v">' + esc(c.orderNo) + '（' + esc(c.orderDate || '') + '）</span></div>' : ''}
+    ${c.requirement ? '<div style="margin-top:10px;font-size:12px;color:var(--sub)">任务要求</div><div class="req-box">' + esc(c.requirement) + '</div>' : ''}
+    ${c.status === '已驳回' && c.rejectReason ? '<div class="req-box" style="background:var(--red-bg);color:var(--red)">❌ 驳回原因：' + esc(c.rejectReason) + '</div>' : ''}
+    ${c.fileId ? '<div class="kv"><span class="k">附件</span><span class="v"><a href="' + dl(c.fileId) + '" target="_blank" style="color:var(--blue)">📎 ' + esc(c.fileName || '下载附件') + '</a></span></div>' : ''}
+    <div class="ops">${ops || ''}</div>`;
+  $('mask').classList.add('show');
+};
+window.closeSheet = () => $('mask').classList.remove('show');
+if($('mask'))$('mask').onclick = e => { if (e.target === $('mask')) closeSheet(); };
+
+async function cardAct(id, path, body) {
+  try {
+    const j = await authFetch('/api/cards/' + id + '/' + path, { method: 'POST', body: JSON.stringify(body || {}) });
+    cardsMap[id] = j.card;
+    closeSheet(); toast('操作成功');
+    await Promise.all([reloadCards(), loadChats()]);
+  } catch (e) { toast(e.message); }
+}
+window.actAccept = id => {
+  if (!ME.realname) { openRealname(); return toast('接单前请先完成实名认证'); }
+  cardAct(id, 'accept');
+};
+window.actDecline = id => { if (confirm('确定不接这个单子吗？')) cardAct(id, 'decline'); };
+window.actSubmit = id => {
+  const note = prompt('给管理员捎句话（选填，如完成说明）：') ?? '';
+  cardAct(id, 'submit', { note });
+};
+window.actRedo = id => cardAct(id, 'redo');
+
+/* ================= 考勤 ================= */
+const WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+let sched = {};
+async function loadShiftAndSched() {
+  try {
+    const sj = await authFetch('/api/schedule');
+    sched = sj.schedule || {};
+    renderSched();
+    if (!$('calMonth').value) $('calMonth').value = cnDateStr(cnNow()).slice(0, 7);
+    await Promise.all([loadAtt(), loadCal()]);
+  } catch (e) { toast(e.message); }
+}
+function renderSched() {
+  $('schedRows').innerHTML = WD.map((w, i) => {
+    const d = sched[String(i)] || {};
+    return `<div class="sched-row"><span class="dy">${w}</span>
+      <input type="checkbox" data-day="${i}" ${d.start ? 'checked' : ''}>
+      <input type="time" data-s="${i}" value="${d.start || '09:00'}" ${d.start ? '' : 'disabled'}>
+      <span style="color:var(--sub)">至</span>
+      <input type="time" data-e="${i}" value="${d.end || '18:00'}" ${d.start ? '' : 'disabled'}>
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#schedRows input[type=checkbox]').forEach(cb => cb.onchange = () => {
+    document.querySelector(`[data-s="${cb.dataset.day}"]`).disabled = !cb.checked;
+    document.querySelector(`[data-e="${cb.dataset.day}"]`).disabled = !cb.checked;
+  });
+}
+if($('btnSched'))$('btnSched').onclick = async () => {
+  const days = {};
+  for (let i = 0; i < 7; i++) {
+    if (document.querySelector(`#schedRows input[data-day="${i}"]`).checked) {
+      days[String(i)] = { start: document.querySelector(`[data-s="${i}"]`).value, end: document.querySelector(`[data-e="${i}"]`).value };
+    }
+  }
+  try { await authFetch('/api/schedule', { method: 'POST', body: JSON.stringify({ days }) }); toast('班表已保存'); loadShiftAndSched(); } catch (e) { toast(e.message); }
+};
+async function loadAtt() {
+  try {
+    const j = await authFetch('/api/attendance?month=' + $('attMonth').value);
+    const today = cnDateStr(cnNow());
+    const t = j.rows.find(r => r.date === today);
+    const b = $('btnClock');
+    if (t && t.clockIn && !t.clockOut) { b.textContent = '打卡下班'; b.onclick = doClockout; $('shiftState').textContent = '🟢 在班中 · 上班 ' + t.clockIn + (t.status !== '出勤' ? '（' + t.status + '）' : ''); }
+    else if (t && t.clockOut) { b.textContent = '今日已签退'; b.disabled = true; $('shiftState').textContent = '今日 ' + t.clockIn + ' ~ ' + t.clockOut + '（' + t.status + '）'; }
+    else { b.textContent = '打卡上班'; b.disabled = false; b.onclick = doClockin; $('shiftState').textContent = t ? ('当前状态：' + t.status) : '未打卡'; }
+    const tag = s => s === '出勤' ? '<span class="tag tg-ok">出勤</span>' : s === '迟到' || s === '早退' || s === '未签退' ? '<span class="tag tg-warn">' + s + '</span>' : s === '旷工' ? '<span class="tag tg-bad">旷工</span>' : '<span class="tag tg-grey">' + esc(s || '待定') + '</span>';
+    $('attRows').innerHTML = j.rows.length ? '<table class="rec"><tr><th>日期</th><th>班段</th><th>上班</th><th>下班</th><th>状态</th></tr>' +
+      j.rows.map(r => `<tr><td>${esc(r.date)}${r.date === today ? ' <span style="color:var(--green-dk)">今</span>' : ''}</td><td>${esc(r.planStart || '--')}~${esc(r.planEnd || '--')}</td><td>${esc(r.clockIn || '—')}</td><td>${esc(r.clockOut || '—')}</td><td>${tag(r.status)}</td></tr>`).join('') + '</table>'
+      : '<div class="empty">本月暂无考勤记录</div>';
+    // 供排班日历渲染打卡结果
+    window._attMap = {};
+    j.rows.forEach(r => window._attMap[r.date] = r);
+    if ($('calGrid')) paintCal();
+  } catch (e) { toast(e.message); }
+}
+async function doClockin() {
+  try { await authFetch('/api/attendance/clockin', { method: 'POST', body: '{}' }); toast('已打卡上班 ✅'); ME.shift = true; paintMe(); loadShiftAndSched(); } catch (e) { toast(e.message); }
+}
+async function doClockout() {
+  try { const j = await authFetch('/api/attendance/clockout', { method: 'POST', body: '{}' }); toast('已签退（' + j.status + '）'); ME.shift = false; paintMe(); loadShiftAndSched(); } catch (e) { toast(e.message); }
+}
+if($('attMonth'))$('attMonth').onchange = loadAtt;
+
+/* ================= 排班日历 ================= */
+let dayOverrides = {};   // date -> {start,end}
+async function loadCal() {
+  const ym = $('calMonth').value;
+  if (!ym) return;
+  try {
+    const j = await authFetch('/api/schedule/days?ym=' + ym);
+    dayOverrides = {};
+    (j.days || []).forEach(d => dayOverrides[d.date] = d);
+    paintCal();
+  } catch (e) { toast(e.message); }
+}
+function paintCal() {
+  const ym = $('calMonth').value;
+  const grid = $('calGrid');
+  const [y, m] = ym.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const firstWd = (new Date(ym + '-01T00:00:00+08:00').getUTCDay());
+  const today = cnDateStr(cnNow());
+  const attMap = window._attMap || {};
+  const dowNames = ['一', '二', '三', '四', '五', '六', '日'];
+  let html = dowNames.map(w => `<div class="wd">${w}</div>`).join('');
+  html += Array.from({ length: (firstWd + 6) % 7 }, () => '<div class="cell blank"></div>').join('');
+  for (let i = 1; i <= daysInMonth; i++) {
+    const date = ym + '-' + String(i).padStart(2, '0');
+    const ov = dayOverrides[date];
+    const att = attMap[date];
+    let badge = '', cls = '';
+    if (att) {
+      if (att.status === '出勤') { badge = att.clockIn + '~' + (att.clockOut || '…'); cls = 'sh-att-ok'; }
+      else if (att.status === '迟到') { badge = '迟到 ' + (att.clockIn || ''); cls = 'sh-att-warn'; }
+      else if (att.status === '旷工') { badge = '旷工'; cls = 'sh-att-bad'; }
+      else if (att.status === '未签退') { badge = '未签退'; cls = 'sh-att-warn'; }
+      else { badge = att.status; cls = 'sh-att-warn'; }
+    } else if (ov) {
+      badge = ov.start + '~' + ov.end; cls = 'sh-plan';
+    } else if (date >= today) {
+      const d = sched[String(new Date(ym + '-' + String(i).padStart(2, '0') + 'T00:00:00+08:00').getUTCDay())];
+      if (d && d.start) { badge = d.start + '~' + d.end; cls = 'sh-plan'; }
+      else badge = '休';
+    } else badge = '';
+    const future = date > today;
+    html += `<div class="cell ${date === today ? 'today' : ''}" onclick="calClick('${date}',${future})" title="${date}${future ? '（点击排班）' : ''}">
+      <span class="dnum">${i}</span>${badge ? `<span class="sh ${cls}">${badge}</span>` : (date >= today ? '<span class="sh sh-rest">休</span>' : '')}</div>`;
+  }
+  grid.innerHTML = html;
+}
+function calClick(date, future) {
+  const sheet = $('sheet'), mask = $('mask');
+  const ov = dayOverrides[date];
+  if (!future) {
+    const att = (window._attMap || {})[date];
+    sheet.innerHTML = `<button class="close-x" onclick="document.getElementById('mask').classList.remove('show')">✕</button>
+      <h3>📋 ${date} 考勤详情</h3>
+      ${att ? `<div class="kv"><span class="k">状态</span><span class="v">${att.status}</span></div>
+        <div class="kv"><span class="k">计划班段</span><span class="v">${att.planStart || '—'} ~ ${att.planEnd || '—'}</span></div>
+        <div class="kv"><span class="k">实际上班</span><span class="v">${att.clockIn || '未打卡'}</span></div>
+        <div class="kv"><span class="k">实际下班</span><span class="v">${att.clockOut || '未签退'}</span></div>`
+        : '<div class="empty">当天没有考勤记录（未排班或还没到）</div>'}`;
+    mask.classList.add('show');
+    return;
+  }
+  sheet.innerHTML = `<button class="close-x" onclick="document.getElementById('mask').classList.remove('show')">✕</button>
+    <h3>📅 ${date} 排班</h3>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <input type="time" id="dayStart" value="${ov ? ov.start : '09:00'}">
+      <input type="time" id="dayEnd" value="${ov ? ov.end : '18:00'}">
+    </div>
+    <div class="flow-tip">清空时间并保存 = 取消当天排班（按每周默认表）</div>
+    <div class="ops">
+      <button class="btn btn-g" onclick="saveDay('${date}')">保存排班</button>
+      <button class="btn btn-r" onclick="clearDay('${date}')">取消排班</button>
+    </div>`;
+  mask.classList.add('show');
+}
+async function saveDay(date) {
+  try {
+    await authFetch('/api/schedule/day', { method: 'POST', body: JSON.stringify({ date, start: $('dayStart').value, end: $('dayEnd').value }) });
+    $('mask').classList.remove('show');
+    toast('已保存 ' + date + ' 的班次');
+    loadCal();
+  } catch (e) { toast(e.message); }
+}
+async function clearDay(date) {
+  try {
+    await authFetch('/api/schedule/day', { method: 'POST', body: JSON.stringify({ date, start: '', end: '' }) });
+    $('mask').classList.remove('show');
+    toast('已取消 ' + date + ' 的排班');
+    loadCal();
+  } catch (e) { toast(e.message); }
+}
+if($('calMonth'))$('calMonth').onchange = loadCal;
+
+/* ================= 薪酬 ================= */
+async function loadPay() {
+  try {
+    const j = await authFetch('/api/payroll?month=' + $('payMonth').value);
+    $('pyPaid').textContent = j.totals.paid; $('pyPending').textContent = j.totals.pending; $('pyOngoing').textContent = j.totals.ongoing;
+    $('payList').innerHTML = j.cards.length ? j.cards.map(c => cardRow(c)).join('') : '<div class="empty">本月暂无派单记录</div>';
+    // 每日到账柱状图（按 paidAt 归日）
+    const ym = j.month;
+    const [yy, mm] = ym.split('-').map(Number);
+    const daysCnt = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+    const byDay = {}, pendDay = {};
+    j.cards.forEach(c => {
+      if (c.status === '已完成' && c.paidAt) {
+        const d = cnDateStr(new Date(new Date(c.paidAt).getTime() + 8 * 3600 * 1000));
+        if (d.startsWith(ym)) byDay[d] = (byDay[d] || 0) + c.reward;
+      }
+      if (c.status === '待打款' && (c.approvedAt || c.submittedAt)) {
+        const d = cnDateStr(new Date(new Date(c.approvedAt || c.submittedAt).getTime() + 8 * 3600 * 1000));
+        if (d.startsWith(ym)) pendDay[d] = (pendDay[d] || 0) + c.reward;
+      }
+    });
+    const max = Math.max(...Object.values(byDay), 0.01);
+    const W = 620, H = 130, bw = W / daysCnt;
+    let svg = `<svg viewBox="0 0 ${W} ${H + 22}" width="100%" style="display:block">`;
+    for (let i = 1; i <= daysCnt; i++) {
+      const d = ym + '-' + String(i).padStart(2, '0');
+      const v = byDay[d] || 0;
+      const h = v > 0 ? Math.max(4, v / max * (H - 10)) : 0;
+      const x = (i - 1) * bw + bw * 0.15, w = bw * 0.7;
+      if (v > 0) svg += `<rect x="${x}" y="${H - h}" width="${w}" height="${h}" rx="3" fill="#07c160"><title>${d} 到账 ¥${v}</title></rect>
+        <text x="${x + w / 2}" y="${H - h - 4}" font-size="8.5" fill="#059a4e" text-anchor="middle">${v >= 1000 ? (v / 1000).toFixed(1) + 'k' : Math.round(v)}</text>`;
+      if (pendDay[d]) svg += `<circle cx="${x + w / 2}" cy="${H + 10}" r="3.5" fill="#0891b2"><title>${d} 有 ¥${pendDay[d]} 进入待打款</title></circle>`;
+      if (daysCnt <= 31 && (i % 5 === 0 || i === daysCnt)) svg += `<text x="${x + w / 2}" y="${H + 20}" font-size="8.5" fill="#94a3b8" text-anchor="middle">${i}</text>`;
+    }
+    svg += '</svg>';
+    $('payChart').innerHTML = j.cards.length ? svg : '<div class="empty">本月暂无数据</div>';
+  } catch (e) { toast(e.message); }
+}
+$('payMonth').onchange = loadPay;
+
+/* ================= 顶栏状态 ================= */
+function paintMe() {
+  $('whoami').textContent = ME.displayName || ME.username;
+  $('selfDot').className = 'dot d-on';
+  const sb = $('shiftBadge');
+  sb.textContent = ME.shift ? '在班' : '离班';
+  sb.className = 'shift-tag ' + (ME.shift ? 'st-on' : 'st-off');
+  paintMeExtras().catch(()=>{});
+}
+async function paintMeExtras() {
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('meName', ME.displayName || ME.username);
+  set('meUsername', ME.username || '');
+  set('meUid', ME.uid || '补号中…');
+  const lv = $('meLv'); if (lv) { lv.textContent = ME.level >= 1 ? 'LV' + ME.level : (ME.level === 0 ? 'LV0 试用期' : 'LV' + ME.level); lv.className = 'lvbadge' + (ME.level >= 1 ? ' lv1' : ''); }
+  // 实名 V 标：黄色=已认证，灰色=未认证
+  const vn = $('meV'); if (vn) { vn.className = 'vbadge' + (ME.realname ? ' on' : ''); vn.textContent = 'V'; vn.title = ME.realname ? '已实名：' + ME.realname.name : '未实名认证'; }
+  /* 月度结算预览 */
+  // 【二次复核修正】/api/payroll 返回的已到账在 j.totals.paid（1569 行 loadPay 读法正确），
+  // 磁贴这里原来读 j.paid（不存在）永远显示 ¥0
+  try { const pj = await authFetch('/api/payroll?month=' + cnDateStr(cnNow()).slice(0,7)); const pa = $('payTileAmt'); if(pa) pa.textContent = '¥' + ((pj.totals && pj.totals.paid) || 0); } catch(e){}
+  /* 合同状态 */
+  try { const cj = await authFetch('/api/contract'); const ct = $('ctTileStatus'); if(ct) { ct.textContent = cj.signed ? '已签署' : '待签署'; ct.style.color = cj.signed ? 'var(--green-dk)' : 'var(--amber)'; } } catch(e){}
+  const rnT = $('rnTileStatus'); if (rnT) { rnT.textContent = ME.realname ? '已认证 ' + ME.realname.name : '未认证'; rnT.style.color = ME.realname ? 'var(--green-dk)' : 'var(--amber)'; }
+  const tb = $('tbLv'); if (tb) { tb.textContent = 'LV' + (ME.level || 0); tb.style.display = 'inline-block'; }
+}
+/* ================= 实名认证 ================= */
+function openRealname() {
+  if (ME.realname) {
+    $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+      <h3>🪪 实名认证</h3>
+      <div class="req-box">✅ 已完成实名认证\n\n姓名：${esc(ME.realname.name)}\n身份证：${esc(ME.realname.idMask)}\n\n实名信息已自动关联合同与收款方式，无需重复认证。</div>`;
+    $('mask').classList.add('show');
+    return;
+  }
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>🪪 实名认证</h3>
+    <div class="flow-tip">接单前必须完成实名认证。平台仅做<b>18位位数校验</b>与唯一性识别，不对接第三方数据库；认证后自动关联合同签署与收款绑定（须为同一人）。</div>
+    <input id="rnName" placeholder="真实姓名（与身份证一致）" maxlength="30" style="margin-bottom:9px">
+    <input id="rnId" placeholder="18位身份证号码" maxlength="18" style="margin-bottom:12px">
+    <button class="btn btn-g" id="btnRealname" style="width:100%">提交认证</button>`;
+  $('mask').classList.add('show');
+  if($('btnRealname'))$('btnRealname').onclick = async () => {
+    const name = $('rnName').value.trim(), idCard = $('rnId').value.trim();
+    if (!name || !idCard) return toast('姓名和身份证号都要填');
+    if (!/^\d{17}[\dXx]$/.test(idCard)) return toast('身份证号应为18位（最后一位可为X）');
+    try {
+      const j = await authFetch('/api/me/realname', { method: 'PUT', body: JSON.stringify({ name, idCard }) });
+      ME.realname = { name, idMask: j.realname.idMask, verifiedAt: j.realname.verifiedAt };
+      paintMeExtras().catch(()=>{});
+      closeSheet();
+      toast('实名认证成功 🎉 已关联合同与收款方式');
+    } catch (e) { toast(e.message); }
+  };
+}
+/* ================= 站内信 ================= */
+async function loadMail() {
+  try {
+    const j = await authFetch('/api/notify');
+    // 【二次复核清理】顶栏邮箱按钮已改为广告入口，#mailDot 元素不存在，以下两行恒抛错（死代码）
+    return j.rows;
+  } catch (e) { return []; }
+}
+if($('btnMail'))$('btnMail').onclick = async () => {
+  // 【2026-09-15】原站内信入口改为广告：点开即看广告配置内容
+  try {
+    const j = await authFetch('/api/ads');
+    const ad = j.ad || {};
+    $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+      <h3>📢 ${esc(ad.title || '广告')}</h3>
+      <div style="font-size:12px;color:var(--sub);margin:2px 0 10px">更新于 ${ad.updatedAt ? new Date(new Date(ad.updatedAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10) : '-'}</div>
+      <div>${ad.content || '<div class="empty">暂无广告内容</div>'}</div>`;
+    $('mask').classList.add('show');
+    return;
+  } catch (e) { toast(e.message); return; }
+};
+window.readMail = async function (id) {
+  try { await authFetch('/api/notify/' + id + '/read', { method: 'POST', body: '{}' }); } catch (e) {}
+  $('btnMail').click();
+};
+/* ================= 等级 / 钱包 ================= */
+/* ================= 我的页：卡组 + 二级页 ================= */
+function openSub(secId, title) {
+  $('spTitle').textContent = title;
+  document.querySelectorAll('.sp-sec').forEach(x => x.hidden = true);
+  const sec = $(secId);
+  sec.hidden = false;
+  $('subPage').classList.add('on');
+  $('subPage').scrollTop = 0;
+  if (secId === 'subLv') loadWallet();
+  if (secId === 'subWallet') { loadWallet(); loadWithdraw(); }
+  if (secId === 'subRecharge') loadRechargePage();   // 【v25.0】充值页
+  if (secId === 'subPay') { if (!$('payMonth').value) $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadPay(); }
+  if (secId === 'subFriends') { loadFriends(); loadFriendRequests(); }
+  if (secId === 'subContract') loadContracts();
+}
+function closeSub() { $('subPage').classList.remove('on'); }
+if($('spBack'))$('spBack').onclick = closeSub;
+const LVNAMES = { 0: '试用期写手', 1: '初级写手', 2: '资深写手' };
+async function loadWallet() {
+  try {
+    const j = await authFetch('/api/wallet');
+    ME.level = j.level; paintMeExtras().catch(()=>{});
+    $('lvTileName').textContent = LVNAMES[j.level] || ('LV' + j.level);
+    $('lvTileSub').textContent = j.level >= 1 ? '已解锁奖励权益' : '点看升级进度';
+    // 【2026-09-14 需求】钱包磁贴展示总金额（含待解冻红包）
+    $('walletTileAmt').textContent = '¥' + fmt(j.total != null ? j.total : j.balance);
+    if ($('walletTileSub')) $('walletTileSub').textContent = (j.frozenAmount || 0) > 0 ? '钱包总额 · ¥' + fmt(j.frozenAmount) + ' 待解冻' : '钱包总额 · 提现';
+    $('wdBonusAmt').textContent = '¥' + fmt(j.balance);
+    const pct = Math.min(100, Math.round(j.stats.paid / j.lv1Paid * 100));
+    $('lvBox').innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span class="lvbadge ${j.level >= 1 ? 'lv1' : ''}" style="font-size:13px;padding:3px 12px">LV${j.level} ${LVNAMES[j.level] || ''}</span>
+        <span style="font-size:12px;color:var(--sub)">${j.level >= 1 ? '已解锁等级权益' : '距离 LV1 初级写手 还差一点点'}</span>
+      </div>
+      <div class="kv"><span class="k">累计已到账</span><span class="v">¥${fmt(j.stats.paid)} / ¥${j.lv1Paid}（${pct}%）</span></div>
+      <div class="kv"><span class="k">驳回占比</span><span class="v">${(j.stats.rejectRate * 100).toFixed(1)}% / 需 <20%（${j.stats.rejected}/${j.stats.total} 单）</span></div>
+      ${j.level < 1 ? `<div style="margin:8px 0"><div style="height:7px;border-radius:99px;background:var(--grey-bg);overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#f59e0b,#f97316);transition:width .5s ease"></div></div></div>` : ''}
+      <div class="kv"><span class="k">LV1 初级写手 条件</span><span class="v">累计已到账 ≥ ¥${j.lv1Paid} 且 驳回占比 < ${(j.lv1RejectMax * 100)}%</span></div>
+      <div class="kv"><span class="k">LV1 权益</span><span class="v">已到账金额每单额外 <b>+${(j.bonusRate * 100).toFixed(1)}%</b> 奖励，按月发放进钱包</span></div>
+      ${j.level >= 1 ? `<div class="kv"><span class="k">本月预计奖励</span><span class="v">¥${fmt(j.estBonus)}（基于本月已到账 ¥${fmt(j.estBase)}，下月发放）</span></div>` : ''}
+      ${j.grants.length ? '<div style="margin-top:10px"><div style="font-size:12px;color:var(--sub);margin-bottom:5px">发放记录</div>' + j.grants.map(g => `<div class="kv"><span class="k">${g.month}</span><span class="v">+¥${fmt(g.amount)}${g.note ? ' <span style="color:var(--sub)">（' + g.note + '）</span>' : (g.base ? ' <span style="color:var(--sub)">（基数 ¥' + fmt(g.base) + '）</span>' : '')}</span></div>`).join('') + '</div>' : ''}`;
+    $('walletBox').innerHTML = `
+      <div class="wb-top">
+        <div class="wb-label">👛 钱包总金额</div>
+        <div class="wb-amt">¥${fmt(j.total != null ? j.total : j.balance)}</div>
+        <div class="wb-sub">${(j.frozenAmount || 0) > 0 ? '含 ¥' + fmt(j.frozenAmount) + ' 待解冻红包' : '可提现余额'}</div>
+      </div>
+      <div class="wb-grid">
+        <div class="wb-item"><span>可提余额</span><b>¥${fmt(j.balance)}</b></div>
+        <div class="wb-item"><span>待解冻</span><b class="${j.frozenAmount > 0 ? 'warn' : ''}">¥${fmt(j.frozenAmount || 0)}</b></div>
+        <div class="wb-item"><span>等级</span><b>LV${j.level}</b></div>
+      </div>
+      <div class="wb-actions">
+        <button class="btn btn-g btn-sm" id="wbRecharge">📥 充值</button>
+        <button class="btn btn-ghost btn-sm" id="wbWithdraw">🏧 提现</button>
+      </div>
+      ${(j.frozenAmount || 0) > 0 ? `<div class="flow-tip">其中 ¥${fmt(j.frozenAmount)} 来自现金红包，关联订单完结后自动解冻入账（冻结中 ${j.frozen.length} 笔：${j.frozen.map(f => '¥' + fmt(f.amount)).join('、')}）。</div>` : ''}
+      ${j.grants.length ? '<div style="margin-top:12px"><div class="wb-sec-t">账单明细（最近 ' + Math.min(j.grants.length, 12) + ' 条）</div>' + j.grants.slice(0, 12).map(g => `<div class="kv"><span class="k">${g.month}</span><span class="v">+¥${fmt(g.amount)}${g.note ? ' <span style="color:var(--sub)">（' + g.note + '）</span>' : (g.base ? ' <span style="color:var(--sub)">（基数 ¥' + fmt(g.base) + '）</span>' : '')}</span></div>`).join('') + '</div>' : ''}`;
+    if ($('wbRecharge')) $('wbRecharge').onclick = () => openSub('subRecharge', '📥 充值');
+    if ($('wbWithdraw')) $('wbWithdraw').onclick = () => { const el = $('wdBonus'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+    loadRecharge();
+  } catch (e) { toast(e.message); }
+}
+
+/* ==================== 【v25.0】充值 ==================== */
+let RC_CFG = null, RC_FILE = null;
+// 【v25.2】带鉴权取图片（<img src> 无法携带 Authorization → 会返回"未登录"）
+async function loadAuthedImage(url, boxId, altText) {
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  try {
+    const r = await fetch(url, { headers: { Authorization: 'Bearer ' + (localStorage.getItem('jdy_token') || '') } });
+    if (!r.ok) throw new Error(r.status === 401 ? '登录已过期，请重新登录' : '加载失败（' + r.status + '）');
+    const blob = await r.blob();
+    const objUrl = URL.createObjectURL(blob);
+    box.innerHTML = `<img src="${objUrl}" class="rc-qr" alt="${esc(altText || '图片')}">`;
+    box.classList.remove('rc-qr-load');
+    const img = box.querySelector('img');
+    if (img) img.onclick = () => window.open(objUrl);
+  } catch (e) {
+    box.innerHTML = '<div class="empty" style="padding:10px">' + esc(e.message) + '</div>';
+    box.classList.remove('rc-qr-load');
+  }
+}
+async function loadRecharge() {
+  try {
+    const c = await authFetch('/api/recharge/config');
+    RC_CFG = c;
+    const j = await authFetch('/api/recharge/mine');
+    const ST = { auto_paid: ['已到账（自动）', 'ok'], paid: ['已到账', 'ok'], pending: ['待人工审核', 'warn'], rejected: ['已驳回', 'bad'] };
+    $('rcList').innerHTML = (j.rows && j.rows.length)
+      ? '<div class="wb-sec-t">充值记录</div>' + j.rows.slice(0, 8).map(r => {
+        const s = ST[r.status] || [r.status, ''];
+        return `<div class="kv"><span class="k">${new Date(new Date(r.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ').replace('-', '/')} · ${r.no || ''}</span>
+          <span class="v">¥${fmt(r.amount)} · <b class="${s[1]}">${s[0]}</b>${r.note ? ' <span style="color:var(--sub)">（' + esc(r.note) + '）</span>' : ''}</span></div>`;
+      }).join('')
+      : '<div class="empty" style="padding:10px;text-align:center">暂无充值记录</div>';
+  } catch (e) { $('rcList').innerHTML = '<div class="empty" style="padding:10px;text-align:center">' + esc(e.message) + '</div>'; }
+}
+async function loadRechargePage() {
+  try {
+    const c = RC_CFG || await authFetch('/api/recharge/config');
+    RC_CFG = c;
+    $('rcTip').innerHTML = c.enabled ? c.tip : '<b style="color:#e11d48">充值通道暂未开放</b>，请联系管理员。';
+    const qr = c.qrFileId ? `<div style="text-align:center;margin-top:6px"><div id="rcQrBox" class="rc-qr-load">收款码加载中…</div></div>` : '';
+    $('rcPayInfo').innerHTML = `
+      <div class="rc-pay">
+        <div class="kv"><span class="k">收款方式</span><span class="v">支付宝转账</span></div>
+        <div class="kv"><span class="k">收款账号</span><span class="v"><b id="rcAcc">${esc(c.alipayAccount || '未配置')}</b> <button class="btn btn-ghost btn-sm" id="rcCopy">复制</button></span></div>
+        <div class="kv"><span class="k">收款人</span><span class="v">${esc(c.alipayName || '未配置')}</span></div>
+      </div>
+      ${qr}
+      <div class="flow-tip">${c.qrFileId ? '可扫码转账，或复制账号在支付宝里转账；' : ''}转账后<b>保留转账成功截图</b>，回到本页上传。</div>
+      ${c.ocr && c.ocr.enabled === false ? '<div class="flow-tip">当前通道：<b>人工审核</b> —— 上传截图后由管理员核对并到账（通常当天处理）。</div>' : ''}`;
+    // 【v25.2 修复】图片必须带登录头取（<img src> 发不出 Authorization，会被鉴权拦成"未登录"）
+    if (c.qrFileId) loadAuthedImage('/api/recharge/qr', 'rcQrBox');
+    if ($('rcCopy')) $('rcCopy').onclick = () => {
+      const t = c.alipayAccount || '';
+      if (!t) return toast('管理员还没配置收款账号');
+      navigator.clipboard ? navigator.clipboard.writeText(t).then(() => toast('账号已复制'), () => toast(t)) : toast(t);
+    };
+    $('rcAmounts').innerHTML = [30, 50, 100, 300, 500, 1000].map(v => `<span class="rc-chip tap" data-v="${v}">¥${v}</span>`).join('');
+    $('rcAmounts').querySelectorAll('.rc-chip').forEach(el => el.onclick = () => { $('rcAmount').value = el.dataset.v; });
+    $('rcAutoRule').innerHTML = `单笔 &lt; ¥${fmt(c.autoMax || 1000)} 且截图识别金额一致 → 秒到账`;
+  } catch (e) { $('rcTip').innerHTML = esc(e.message); }
+}
+function rcPickFile(file) {
+  if (!file) return;
+  if (!/^image\//.test(file.type)) return toast('请选择图片');
+  if (file.size > 6 * 1024 * 1024) return toast('截图请控制在 6MB 以内');
+  RC_FILE = file;
+  const url = URL.createObjectURL(file);
+  $('rcPreview').src = url; $('rcPreview').hidden = false;
+  $('rcUpIco').style.display = 'none';
+  $('rcUpTxt').innerHTML = '<b>' + esc(file.name) + '</b><br><span>点击可重新选择</span>';
+  $('rcUploadBox').classList.add('has');
+}
+async function rcSubmit() {
+  const amt = Number($('rcAmount').value);
+  if (!RC_CFG || !RC_CFG.enabled) return toast('充值通道暂未开放');
+  if (!(amt >= (RC_CFG.minAmount || 1))) return toast('请填写充值金额');
+  if (amt > (RC_CFG.maxAmount || 50000)) return toast('单笔最高 ¥' + fmt(RC_CFG.maxAmount));
+  if (!RC_FILE) return toast('请上传支付宝转账截图');
+  const btn = $('btnRcSubmit'); btn.disabled = true; btn.textContent = '识别中…';
+  $('rcResult').innerHTML = '<div class="flow-tip">正在上传并识别截图金额，请稍候（约几秒）…</div>';
+  try {
+    const fd = new FormData();
+    fd.append('file', RC_FILE);
+    fd.append('amount', String(amt));
+    fd.append('orderNo', ($('rcOrderNo').value || '').replace(/[^0-9]/g, ''));
+    const r = await fetch('/api/recharge', { method: 'POST', headers: { Authorization: 'Bearer ' + (localStorage.getItem('jdy_token') || '') }, body: fd });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '提交失败');
+    const ok = j.status === 'auto_paid';
+    $('rcResult').innerHTML = `<div class="rc-result ${ok ? 'ok' : 'warn'}">
+      <b>${ok ? '✅ ' + j.message : '⏳ ' + j.message}</b>
+      <div style="margin-top:6px;font-size:12px;line-height:1.7">
+        单号：${j.no}<br>申报金额：¥${fmt(j.amount)}${j.ocrAmount != null ? '　识别金额：¥' + fmt(j.ocrAmount) : ''}<br>
+        ${ok ? '钱包余额：¥' + fmt(j.balance) : esc(j.reason || '')}
+      </div></div>`;
+    RC_FILE = null; $('rcPreview').hidden = true; $('rcPreview').src = ''; $('rcUpIco').style.display = ''; $('rcUpTxt').innerHTML = '点击选择支付宝转账截图<br><span>需包含：收款人、金额（PNG / JPG，≤6MB）</span>'; $('rcUploadBox').classList.remove('has'); $('rcOrderNo').value = '';
+    loadRecharge();
+  } catch (e) {
+    $('rcResult').innerHTML = '<div class="rc-result bad">' + esc(e.message) + '</div>';
+  }
+  btn.disabled = false; btn.textContent = '提交充值';
+}
+if ($('btnOpenRecharge')) $('btnOpenRecharge').onclick = () => openSub('subRecharge', '📥 充值');
+if ($('btnRcRefresh')) $('btnRcRefresh').onclick = loadRecharge;
+if ($('btnRcBack')) $('btnRcBack').onclick = () => openSub('subWallet', '👛 钱包');
+if ($('rcFile')) $('rcFile').onchange = e => rcPickFile(e.target.files && e.target.files[0]);
+if ($('btnRcSubmit')) $('btnRcSubmit').onclick = rcSubmit;
+async function loadWithdraw() {
+  try {
+    const j = await authFetch('/api/withdraw');
+    $('wdList').innerHTML = j.rows.length ? '<div style="font-size:12px;color:var(--sub);margin-bottom:5px">提现记录</div>' +
+      j.rows.map(w => `<div class="kv"><span class="k">${new Date(new Date(w.createdAt).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 10).replace('-', '/')} ${w.type === 'bonus' ? '激励奖励' : '单子奖励'}</span><span class="v">¥${fmt(w.amount)} · ${w.status === '待处理' ? '<b style="color:var(--amber)">待处理</b>' : esc(w.status)}${w.reason ? ' <span style="color:#e11d48">（' + esc(w.reason) + '）</span>' : ''}</span></div>`).join('') : '<div class="empty" style="padding:12px;text-align:center">暂无提现记录</div>';
+  } catch (e) {}
+}
+async function applyWithdraw(type) {
+  if (!confirm(type === 'bonus' ? '申请提现全部激励奖励余额？' : '申请提现全部待打款的单子奖励？')) return;
+  try {
+    const j = await authFetch('/api/withdraw', { method: 'POST', body: JSON.stringify({ type }) });
+    toast('提现申请已提交（¥' + fmt(j.amount) + '），等待管理员打款');
+    loadWithdraw();
+    if (type === 'bonus') loadWallet();
+  } catch (e) { toast(e.message); }
+}
+/* ================= 同事好友 ================= */
+async function loadFriends() {
+  try {
+    const j = await authFetch('/api/friends');
+    $('frCnt').textContent = j.friends.length ? '（' + j.friends.length + '）' : '';
+    $('frTileCnt').textContent = j.friends.length ? j.friends.length + ' 位' : '还没有';
+    $('frList').innerHTML = j.friends.length ? j.friends.map(u => `
+      <div class="fr-row">
+        <div class="avatar" style="width:38px;height:38px;font-size:15px">${esc((u.displayName || '?')[0])}<span class="dot ${u.online ? 'd-on' : 'd-off'}"></span></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">${esc(u.displayName)} ${u.role === 'admin' ? '<span class="tag tg-warn">管理</span>' : '<span class="lvbadge ' + (u.level >= 1 ? 'lv1' : '') + '">LV' + (u.level || 0) + '</span> <span class="vbadge' + (u.hasRealname ? ' on' : '') + '" title="' + (u.hasRealname ? '已实名' : '未实名') + '">V</span>'}</div>
+          <div style="font-size:11px;color:var(--sub)">ID ${u.uid || '—'} · ${u.online ? '在线' : '离线'}</div>
+        </div>
+        <button class="btn btn-g btn-sm" onclick="chatWith('${u.id}')">💬 聊天</button>
+        <button class="btn btn-gh btn-sm" data-del="${u.id}" data-name="${esc(u.displayName)}">删除</button>
+      </div>`).join('') : '<div class="empty">还没有同事，用上方搜索添加吧</div>';
+    // 【2026-09-17 安全修复】删除按钮改事件委托 + dataset 传参：
+    // 原来把昵称拼进 onclick="delFriend('id','昵称')" 字符串，昵称含单引号即可注入任意 JS（跨用户 XSS）
+    $('frList').querySelectorAll('[data-del]').forEach(b => {
+      b.onclick = () => delFriend(b.dataset.del, b.dataset.name);
+    });
+  } catch (e) { toast(e.message); }
+}
+if($('btnAddFriend'))$('btnAddFriend').onclick = async () => {
+  const q = $('frQuery').value.trim();
+  if (!q) return toast('请输入对方 ID 或用户名');
+  try {
+    const j = await authFetch('/api/friends', { method: 'POST', body: JSON.stringify({ query: q }) });
+    $('frQuery').value = '';
+    toast(j.message || '申请已发送，等待对方确认 ✅');
+  } catch (e) { toast(e.message); }
+};
+async function loadFriendRequests() {
+  try {
+    const j = await authFetch('/api/friends/requests');
+    $('frReqCnt').textContent = j.incoming.length ? '（' + j.incoming.length + ' 条待确认）' : '';
+    $('frReqList').innerHTML = j.incoming.length ? j.incoming.map(r => `
+      <div class="fr-row">
+        <div class="avatar" style="width:38px;height:38px;font-size:15px">${esc((r.name || '?')[0])}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">${esc(r.name)}${r.uid ? ' <span style="font-size:11px;color:var(--sub)">ID ' + r.uid + '</span>' : ''}</div>
+          <div style="font-size:11px;color:var(--sub)">请求加你为同事</div>
+        </div>
+        <button class="btn btn-g btn-sm" onclick="acceptReq('${r._id}')">同意</button>
+        <button class="btn btn-gh btn-sm" onclick="rejectReq('${r._id}')">拒绝</button>
+      </div>`).join('') : '<div class="empty" style="padding:8px 0">暂无待确认申请</div>';
+  } catch (e) {}
+}
+window.acceptReq = async id => {
+  try { await authFetch('/api/friends/requests/' + id + '/accept', { method: 'POST', body: '{}' }); toast('已同意，现在可以聊天了 ✅'); loadFriendRequests(); loadFriends(); }
+  catch (e) { toast(e.message); }
+};
+window.rejectReq = async id => {
+  try { await authFetch('/api/friends/requests/' + id + '/reject', { method: 'POST', body: '{}' }); toast('已拒绝'); loadFriendRequests(); }
+  catch (e) { toast(e.message); }
+};
+/* ================= 合同 ================= */
+async function loadContracts() {
+  try {
+    const j = await authFetch('/api/contract');
+    $('ctPreview').textContent = j.text;
+    $('ctTileStatus').textContent = j.signed ? '已签署' : '待签署';
+    $('ctTileStatus').style.color = j.signed ? 'var(--green-dk)' : 'var(--amber)';
+    $('ctSignedInfo').textContent = j.contracts.length ? '（' + j.contracts.length + ' 份 · ' + j.title + ' ' + j.version + '）' : '';
+    $('ctList').innerHTML = j.contracts.length ? j.contracts.map(c => `
+      <div class="ct-row">
+        <div style="font-size:20px">📜</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">${esc(j.title)} <span class="lvbadge">${esc(c.version)}</span></div>
+          <div style="font-size:11px;color:var(--sub)">签署人：${esc(c.name)} · ${new Date(new Date(c.signedAt).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10)} 电子签署</div>
+        </div>
+        <span style="font-size:12px;color:var(--green-dk);font-weight:600">✓ 已生效</span>
+      </div>`).join('') : '<div class="empty">还没有签署记录，回到「我的」页会弹出签署邀请</div>';
+  } catch (e) { toast(e.message); }
+}
+let contractData = null;
+async function checkContract() {
+  try {
+    const j = await authFetch('/api/contract');
+    contractData = j;
+    if (j.signed) return;
+    $('ctVer').textContent = '版本 ' + j.version + ' · 请仔细阅读后签署';
+    $('ctModalText').textContent = j.text;
+    if (j.realname?.name) { $('ctName').value = j.realname.name; $('ctName').readOnly = true; $('ctName').style.background = 'var(--grey-bg)'; $('ctName').placeholder = '签署姓名（已锁定为实名姓名）'; }
+    else $('ctName').value = ME.displayName || '';
+    setTimeout(() => $('ctMask').classList.add('on'), 1200);
+  } catch (e) {}
+}
+if($('ctLater'))$('ctLater').onclick = () => { $('ctMask').classList.remove('on'); toast('可稍后在「我的-合同管理」完成签署'); };
+if($('ctSign'))$('ctSign').onclick = async () => {
+  const name = $('ctName').value.trim();
+  if (!name) return toast('请输入签署姓名');
+  try {
+    await authFetch('/api/contract/sign', { method: 'POST', body: JSON.stringify({ name, nameConfirm: name }) });
+    $('ctMask').classList.remove('on');
+    toast('签署成功，合同已生效 🎉');
+  } catch (e) { toast(e.message); }
+};
+// 收款方式：实名后姓名自动锁定为实名姓名
+window.chatWith = async id => {
+  closeSub();
+  document.querySelector('.tab[data-p="pChat"]').click();
+  setTimeout(() => openChat(id), 120);
+  try { const j = await authFetch('/api/chats'); chats = j.chats; openChat(id); } catch (e) {}
+};
+window.delFriend = async (id, name) => {
+  if (!confirm('删除同事 ' + (name || '') + '？聊天记录不受影响。')) return;
+  try { await authFetch('/api/friends/' + id, { method: 'DELETE' }); toast('已删除'); loadFriends(); }
+  catch (e) { toast(e.message); }
+};
+if($('btnEditName'))$('btnEditName').onclick = () => {
+  const name = prompt('修改显示名字：', ME.displayName || '');
+  if (name === null) return;
+  const v = name.trim();
+  if (!v) return toast('名字不能为空');
+  authFetch('/api/me/name', { method: 'PUT', body: JSON.stringify({ displayName: v }) })
+    .then(() => { ME.displayName = v; paintMe(); toast('名字已更新 ✅'); loadChats().catch(() => {}); })
+    .catch(e => toast(e.message));
+};
+function purgeLocalMsgs() { try { Object.keys(localStorage).filter(k => k.startsWith('jdy_msg_')).forEach(k => localStorage.removeItem(k)); } catch (e) {} }
+if($('btnLogout2'))$('btnLogout2').onclick = () => { purgeLocalMsgs(); localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); try { fetch('/api/auth/cookie', { method: 'DELETE', keepalive: true }).catch(() => { }); } catch (e) { } location.href = '/login.html'; };   // 【P2-12】同步清除下载 Cookie
+if($('btnSwitch'))$('btnSwitch').onclick = () => { purgeLocalMsgs(); localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); try { fetch('/api/auth/cookie', { method: 'DELETE', keepalive: true }).catch(() => { }); } catch (e) { } location.href = '/login.html'; };   // 【P2-12】
+
+/* ================= 可抢班次 ================= */
+async function loadShiftPool() {
+  const box = $('shiftPool');
+  if (!box) return;
+  try {
+    const ym = cnDateStr(cnNow()).slice(0, 7);
+    const j = await authFetch('/api/shifts?ym=' + ym);
+    const list = (j.shifts || []).filter(s => s.date >= cnDateStr(cnNow()));
+    if (!list.length) { box.innerHTML = '<div class="empty">暂无可抢班次，管理员发布后会显示在这里</div>'; return; }
+    box.innerHTML = list.map(s => `
+      <div class="pool-row">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600">${s.date} ${cnDow(s.date)} · ${s.start}~${s.end}</div>
+          <div style="font-size:11px;color:var(--sub);margin-top:2px">${s.claimCount ? '👥 ' + s.claimCount + ' 人已抢' + (s.claims.length <= 3 ? '：' + esc(s.claims.join('、')) : '') : '还没有人抢'}</div>
+        </div>
+        ${s.claimedByMe
+          ? `<button class="btn btn-gh btn-sm" onclick="unclaimShift('${s._id}')">已抢·退出</button>`
+          : `<button class="btn btn-g btn-sm" onclick="claimShift('${s._id}')">⚡ 抢班</button>`}
+      </div>`).join('');
+  } catch (e) { box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'; }
+}
+const cnDow = dateStr => '周' + '日一二三四五六'[new Date(dateStr + 'T00:00:00+08:00').getUTCDay()];
+async function claimShift(id) {
+  try {
+    const j = await authFetch('/api/shifts/' + id + '/claim', { method: 'POST', body: '{}' });
+    toast('抢班成功：' + j.date + ' ' + j.start + '~' + j.end + '，已写入你的排班 ✅');
+    loadShiftPool();
+    if ($('calGrid')) loadCal();
+  } catch (e) { toast(e.message); }
+}
+async function unclaimShift(id) {
+  if (!confirm('确定退出这个班次吗？')) return;
+  try {
+    await authFetch('/api/shifts/' + id + '/unclaim', { method: 'POST', body: '{}' });
+    toast('已退出班次');
+    loadShiftPool();
+    if ($('calGrid')) loadCal();
+  } catch (e) { toast(e.message); }
+}
+
+/* ================= Tab切换 ================= */
+/* 【2026-09-17 清理】原 loadAd() 往不存在的 #adContent 元素写内容，每次进活动中心都抛被吞掉的异常；
+   公告实际由 loadAdPopup()（#adPopup）负责展示，此处死代码已删除 */
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  $(t.dataset.p).classList.add('on');
+  if (t.dataset.p === 'pCards') { reloadCards(); loadWorkbench(); }
+  if (t.dataset.p === 'pAttend') loadActivity();
+  if (t.dataset.p === 'pMe') { $('payMonth').value = cnDateStr(cnNow()).slice(0, 7); loadWallet(); loadPay(); loadFriends(); loadFriendRequests(); }
+});
+
+/* ================= 实时推送 + 链接稳定性 ================= */
+const socket = io({
+  auth: { token: TOKEN },
+  reconnection: true, reconnectionAttempts: Infinity,
+  reconnectionDelay: 800, reconnectionDelayMax: 5000, randomizationFactor: 0.5,
+  timeout: 20000,
+});
+socket.on('connect', async () => {
+  $('connBar').classList.remove('on');
+  if (ME) { toast('已恢复连接 ✅'); paintMe(); }
+  try { const j = await authFetch('/api/me'); ME = j.user; paintMe(); } catch (e) {}
+  loadChats().catch(() => {});
+  reloadCards().catch(() => {});
+  loadAdPopup().catch(() => {});
+  loadWorkbench().catch(() => {});
+  checkContract().catch(() => {});
+});
+socket.on('disconnect', reason => { $('connBar').classList.add('on'); });
+socket.on('connect_error', () => { $('connBar').classList.add('on'); });
+socket.on('reconnect', () => { $('connBar').classList.remove('on'); });
+
+socket.on('friend_request', d => { toast('📩 ' + (d.fromName || '有人') + ' 请求加你为同事，去「我的-同事好友」确认'); });
+socket.on('announce', d => { toast('📬 站内信：' + (d.title || '新通知')); loadMail().catch(() => {}); });
+socket.on('msg_read', d => {
+  // 对方读了我发的消息 → 刷新当前会话的已读水印
+  if (currentPeer && d.peer === currentPeer) {
+    let changed = false;
+    msgs.forEach(m => { if (m.from === ME.id && !m.read) { m.read = true; changed = true; } });
+    if (changed) renderMsgs(msgs);
+  }
+});
+socket.on('msg_recall', d => {
+  const m = msgs.find(x => String(x._id) === String(d.id));
+  if (m) { m.recalled = true; m.text = ''; m.fileName = null; renderMsgs(msgs); }
+});
+
+/* ================= 消息通知工具 ================= */
+let audioCtx = null;
+function playNotifySound() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+    o.start(audioCtx.currentTime);
+    o.stop(audioCtx.currentTime + 0.3);
+  } catch(e) {}
+}
+function vibratePhone(pattern) {
+  try { if (navigator.vibrate) navigator.vibrate(pattern || [100, 50, 100]); } catch(e) {}
+}
+let notifBannerTimer = null;
+function showNotifBanner(name, preview) {
+  let bar = document.getElementById('notifBanner');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'notifBanner';
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 12px rgba(0,0,0,.2);transform:translateY(-100%);transition:transform .3s ease;font-size:13px';
+    document.body.appendChild(bar);
+  }
+  // 【2026-09-17 安全修复】name/preview 来自对方用户名与消息原文，原样拼 innerHTML 是存储型 XSS
+  // （发一条含 <img onerror=...> 的消息即可在收信人页面执行脚本）；改用 textContent 写入
+  bar.innerHTML = '<div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px">💬</div><div style="flex:1;min-width:0"><div class="nb-name" style="font-weight:600;font-size:14px"></div><div class="nb-preview" style="opacity:.9;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div></div><div style="font-size:11px;opacity:.7">点击查看</div>';
+  bar.querySelector('.nb-name').textContent = name;
+  bar.querySelector('.nb-preview').textContent = preview;
+  bar.style.transform = 'translateY(0)';
+  bar.onclick = () => { bar.style.transform = 'translateY(-100%)'; openChatByName(name); };
+  if (notifBannerTimer) clearTimeout(notifBannerTimer);
+  notifBannerTimer = setTimeout(() => { bar.style.transform = 'translateY(-100%)'; }, 4000);
+}
+function updateTitleUnread() {
+  const total = chats.reduce((s, c) => s + (c.unread || 0), 0);
+  document.title = total > 0 ? `(${total}) 写手工作台` : '写手工作台';
+}
+async function openChatByName(name) {
+  try {
+    await loadChats();
+    const c = chats.find(x => x.user.displayName === name);
+    if (c) openChat(c.user.id);
+  } catch(e) {}
+}
+
+socket.on('msg', m => {
+  const convKey = currentPeer && ME ? [String(ME.id), String(currentPeer)].sort().join(':') : null;
+  const isCurrent = currentPeer && m.conversation === convKey;
+  if (isCurrent) {
+    if (addMsg(m)) renderMsgs(msgs);
+  }
+  // 不重新loadChats，只本地增量更新
+  const fromId = String(m.from);
+  const idx = chats.findIndex(c => String(c.user.id) === fromId);
+  if (idx >= 0) {
+    chats[idx].last = m;
+    if (!isCurrent) chats[idx].unread = (chats[idx].unread || 0) + 1;
+    const c = chats.splice(idx, 1)[0];
+    chats.unshift(c);
+    updateConvItem(fromId); // 只更新这一个会话，不重建整个列表
+  } else {
+    loadChats().catch(() => {});
+  }
+  updateTitleUnread();
+  if (!isCurrent) {
+    playNotifySound();
+    vibratePhone([100, 50, 200]);
+    const preview = m.type === 'file' ? '[文件]' : (m.text || '').slice(0, 30);
+    showNotifBanner(m.fromName || '新消息', preview);
+  }
+  if (m.type === 'file' && isCurrent) toast((m.fromName || '') + ' 发来文件：' + m.fileName);
+});
+// 【2026-09-17 性能修复】批量审批时每张卡都触发一次 renderMsgs 整区重建，页面明显掉帧——
+// 数据照常实时入 cardsMap，重绘合并到 400ms 内只做一次
+let _cardPaintTimer = null;
+socket.on('card', c => {
+  cardsMap[c._id] = c;
+  if (!_cardPaintTimer) {
+    _cardPaintTimer = setTimeout(() => {
+      _cardPaintTimer = null;
+      renderMsgs(msgs);
+      if ($('pCards').classList.contains('on')) reloadCards();
+    }, 400);
+  }
+  toast('派单卡更新：' + c.title + ' → ' + c.status);
+});
+socket.on('presence', p => {
+  if (p.userId === ME.id) { if (p.shift !== undefined) { ME.shift = p.shift; paintMe(); } return; }
+  const c = chats.find(x => x.user.id === p.userId);
+  if (c) {
+    if (p.sockOnline !== undefined) c.user.sockOnline = p.sockOnline;
+    if (p.shift !== undefined) c.user.shift = p.shift;
+    renderConvList();
+    if (p.userId === currentPeer) {
+      $('peerDot').className = 'dot ' + (c.user.sockOnline ? 'd-on' : 'd-off');
+      $('peerSt').textContent = (c.user.sockOnline ? '在线' : '离线') + (c.user.shift ? ' · 在班' : '');
+    }
+  }
+});
+
+/* ================= 会话列表：折叠 / 置顶 / 清空 ================= */
+if($('convToggle'))$('convToggle').onclick = () => {
+  const cl = $('convList');
+  cl.classList.toggle('collapsed');
+  $('convToggle').classList.toggle('flip', cl.classList.contains('collapsed'));
+};
+const pinKey = () => 'jdy_pin_' + (ME ? ME.id : 'x');
+const pinnedPeers = () => { try { return JSON.parse(localStorage.getItem(pinKey()) || '[]'); } catch (e) { return []; } };
+window.togglePin = function () {
+  if (!currentPeer) return toast('先选择一个会话');
+  const arr = pinnedPeers();
+  const i = arr.indexOf(currentPeer);
+  if (i >= 0) { arr.splice(i, 1); toast('已取消置顶'); } else { arr.push(currentPeer); toast('已置顶该会话 📌'); }
+  localStorage.setItem(pinKey(), JSON.stringify(arr));
+  renderConvList();
+};
+window.clearHistory = async function () {
+  if (!currentPeer) return toast('先选择一个会话');
+  if (!confirm('确定清空本机上的这段聊天记录吗？（仅清空自己本地缓存，对方和服务器不受影响）')) return;
+  msgs = []; saveCache(msgs); renderMsgs(msgs);
+  toast('已清空本机聊天记录');
+};
+if($('btnChatMenu'))$('btnChatMenu').onclick = () => {
+  if (!currentPeer) return toast('先选择一个会话');
+  const pinned = pinnedPeers().includes(currentPeer);
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>💬 会话操作</h3>
+    <div class="ops" style="flex-direction:column">
+      <button class="btn ${pinned ? 'btn-gh' : 'btn-o'}" onclick="togglePin();closeSheet()">${pinned ? '📌 取消置顶' : '📌 置顶聊天'}</button>
+      <button class="btn btn-r" onclick="clearHistory();closeSheet()">🗑 清空聊天记录</button>
+    </div>`;
+  $('mask').classList.add('show');
+};
+
+/* ================= 输入事件 ================= */
+function autoGrow() {
+  const el = $('chatInput');
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 220) + 'px';
+}
+if($('btnSend'))$('btnSend').onclick = sendText;
+// 回车=换行（微信式：点「发送」按钮才发出）
+$('chatInput').addEventListener('input', autoGrow);
+if($('btnPlus'))$('btnPlus').onclick = () => {
+  if (!currentPeer) return toast('先选择一个会话');
+  $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
+    <h3>📤 发送内容</h3>
+    <div class="ops">
+      <button class="btn btn-o" onclick="closeSheet();$('imgInput').click()">📷 手机图片</button>
+      <button class="btn btn-bl" onclick="closeSheet();$('fileInput').click()">📎 文件（≤100MB）</button>
+    </div>`;
+  $('mask').classList.add('show');
+};
+$('fileInput').onchange = e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value = ''; };
+$('imgInput').onchange = e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value = ''; };
+
+// 微信/QQ截图：Ctrl+V 粘贴图片直接发送
+document.addEventListener('paste', e => {
+  if (!$('pChat').classList.contains('on') || !currentPeer) return;
+  const items = (e.clipboardData || window.clipboardData)?.items || [];
+  for (const it of items) {
+    if (it.type && it.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = it.getAsFile();
+      if (blob) {
+        const ext = (it.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+        sendFile(new File([blob], '截图_' + cnDateStr(cnNow()).replaceAll('-', '') + '_' + cnHm().replace(':', '') + '.' + ext, { type: it.type }));
+      }
+      return;
+    }
+  }
+});
+
+// 拖拽发送：文件直接发；文件夹递归收集后二次确认
+let dragDepth = 0;
+function entryFiles(entry) {
+  return new Promise(resolve => {
+    if (!entry) return resolve([]);
+    if (entry.isFile) {
+      entry.file(f => resolve([f]), () => resolve([]));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      const readBatch = () => reader.readEntries(async ents => {
+        if (!ents.length) {
+          const sub = [];
+          for (const en of all) sub.push(...await entryFiles(en));
+          return resolve(sub);
+        }
+        all.push(...ents); readBatch();
+      }, () => resolve([]));
+      readBatch();
+    } else resolve([]);
+  });
+}
+const chatRight = $('chatRight');
+chatRight.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; chatRight.classList.add('dragging'); });
+chatRight.addEventListener('dragover', e => e.preventDefault());
+chatRight.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; chatRight.classList.remove('dragging'); } });
+chatRight.addEventListener('drop', async e => {
+  e.preventDefault(); dragDepth = 0; chatRight.classList.remove('dragging');
+  if (!currentPeer) return toast('先选择会话');
+  const items = [...(e.dataTransfer.items || [])];
+  const entries = items.map(it => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+  let files = [];
+  if (entries.length && entries.some(en => en.isDirectory)) {
+    for (const en of entries) files.push(...await entryFiles(en));
+    files = files.filter(f => f.size <= 25 * 1024 * 1024);
+    if (!files.length) return toast('文件夹里没有可发送的文件（单个≤25MB）');
+    if (!confirm('文件夹「' + (entries[0].name) + '」共 ' + files.length + ' 个文件（总计 ' + fmtSize(files.reduce((s, f) => s + f.size, 0)) + '），确认全部发送？')) return;
+  } else {
+    files = [...(e.dataTransfer.files || [])];
+  }
+  toast('开始发送 ' + files.length + ' 个文件…', 6000);
+  for (const f of files) await sendFile(f);
+});
+
+// 支付宝收款方式
+if($('btnAli'))$('btnAli').onclick = async () => {
+  try {
+    await authFetch('/api/me/alipay', { method: 'PUT', body: JSON.stringify({ name: $('aliName').value.trim(), account: $('aliAccount').value.trim() }) });
+    toast('收款方式已保存 ✅');
+  } catch (e) { toast(e.message); }
+};
+function paintAlipay() {
+  if (ME && ME.alipay) { $('aliName').value = ME.alipay.name || ''; $('aliAccount').value = ME.alipay.account || ''; }
+  if (ME?.realname?.name) {
+    $('aliName').value = ME.realname.name;
+    $('aliName').readOnly = true; $('aliName').style.background = 'var(--grey-bg)';
+  }
+}
+
+/* ================= 启动 ================= */
+(async () => {
+  const j = await authFetch('/api/me');
+  ME = j.user;
+  paintMe(); paintAlipay();
+  loadChats().catch(e => toast(e.message));
+  reloadCards().catch(() => {});
+  if($('clockNow'))setInterval(() => { $('clockNow').textContent = cnHm(); }, 1000);
+})();
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/service-worker.js").catch(function () {});
+    });
+  }
+/* 侧边栏切换 */
+document.querySelectorAll('.act-tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.act-tab').forEach(x => x.classList.remove('on'));
+  document.querySelectorAll('.act-panel').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  document.getElementById(t.dataset.at).classList.add('on');
+  if (t.dataset.at === 'atGame') { const g2 = document.getElementById('atGame2'); if (g2) g2.classList.add('on'); loadGameEntry(); }
+});
+
+// 【v24.0】从游戏页 history.back() 返回时走 bfcache 恢复（pageshow persisted）——
+// 这时游戏里的钥匙/背包可能已变化，重新拉一次游戏入口数据，避免显示旧状态
+// 【v24.1】若带着"从游戏退出"的标记，bfcache 恢复后也强制切到「活动」页签
+window.addEventListener("pageshow", function (e) {
+  if (!e.persisted) return;
+  try { if (typeof loadGameEntry === "function") loadGameEntry(); } catch (_e) {}
+  try {
+    if (sessionStorage.getItem('writer_return_tab') === 'atGame') {
+      sessionStorage.removeItem('writer_return_tab');
+      const t = document.querySelector('.act-tab[data-at="atGame"]');
+      if (t && !t.classList.contains('on')) t.click();
+    }
+  } catch (_e) {}
+});
+
+async function loadGameEntry() {
+  try {
+    const r = await fetch('/api/game/state', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('jdy_token') } });
+    // 【2026-09-27 审查修复 P3-19】检查 HTTP 状态（原先只看响应体，网关 5xx 的 HTML/空响应会静默当成功）
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const panel = document.getElementById('atGame');
+    if (!panel) return;
+    const card = panel.querySelector('.act-card');
+    if (!card) return;
+    if (j.maintenance) {
+      card.style.opacity = '0.5';
+      card.style.pointerEvents = 'none';
+      if (!card.querySelector('.maint-wm')) {
+        const wm = document.createElement('div');
+        wm.className = 'maint-wm';
+        wm.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;font-weight:900;color:#fff;background:rgba(0,0,0,0.6);padding:8px 20px;border-radius:8px;letter-spacing:2px';
+        wm.textContent = '🔧 维护中';
+        card.style.position = 'relative';
+        card.appendChild(wm);
+      }
+    } else {
+      card.style.opacity = '1';
+      card.style.pointerEvents = 'auto';
+      const wm = card.querySelector('.maint-wm');
+      if (wm) wm.remove();
+    }
+  } catch(e) {}
+}
+
+/* 签到 */
+async function loadCheckin() {
+  try {
+    const j = await authFetch('/api/activity/checkin');
+    const s = $('ckStreak'); if(s) s.textContent = j.streak;
+    const ta = $('ckTodayAmt'); if(ta) ta.textContent = j.signedToday ? '今日已签 ¥' + j.todayAmount : '今日未签到';
+    const cal = $('ckCal'); if(!cal) return;
+    const dows = ['日','一','二','三','四','五','六'];
+    let html = dows.map(d => '<div class="dow">'+d+'</div>').join('');
+    const today = new Date();
+    const y = today.getFullYear(), m = today.getMonth();
+    const firstDay = new Date(y, m, 1).getDay();
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    for (let i = 0; i < firstDay; i++) html += '<div></div>';
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = j.month + '-' + String(d).padStart(2,'0');
+      const isToday = ds === j.today;
+      const isSigned = j.signedDays.includes(ds);
+      const isFuture = ds > j.today;
+      let cls = 'day';
+      if (isToday) cls += ' today';
+      else if (isSigned) cls += ' signed';
+      else if (isFuture) cls += ' future';
+      html += '<div class="'+cls+'">'+d+'</div>';
+    }
+    cal.innerHTML = html;
+    const btn = $('btnCheckin');
+    if (btn) {
+      if (j.signedToday) { btn.disabled = true; btn.textContent = '今日已签到'; }
+      else if (j.eligible === false) { btn.disabled = true; btn.textContent = '今日接单后可签到'; $('ckTodayAmt').textContent = '今日完成接单后可参与现金签到'; }
+      else { btn.disabled = false; btn.textContent = '立即签到'; }
+    }
+  } catch(e) {}
+}
+if($('btnCheckin'))$('btnCheckin').onclick = async () => {
+  try {
+    const j = await authFetch('/api/activity/checkin', { method: 'POST' });
+    const rm = document.getElementById('ckResultModal');
+    if (rm) {
+      rm.classList.add('on');
+      rm.querySelector('.amt').textContent = '¥' + j.amount;
+      rm.querySelector('.sub').textContent = '连续签到 ' + j.streak + ' 天';
+    }
+    loadCheckin();
+  } catch(e) { loadCheckin(); toast(typeof e === 'string' ? e : (e.message || '签到失败')); }
+};
+function closeCkResult(){const rm=document.getElementById('ckResultModal');if(rm)rm.classList.remove('on');}
+
+/* 红包 */
+async function loadRedpacket() {
+  try {
+    const j = await authFetch('/api/activity/redpacket');
+    const list = $('rpList'); if(!list) return;
+    if (j.available.length === 0) {
+      list.innerHTML = '<div class="empty" style="padding:16px;text-align:center">暂无待拆红包的订单（审核通过后会出现这里）</div>';
+    } else {
+      list.innerHTML = j.available.map(c =>
+        '<div class="rp-item"><div class="rp-icon">🧧</div><div class="rp-info"><div class="rp-title">'+esc(c.title)+'</div><div class="rp-reward">订单金额 ¥'+c.reward+'</div></div><button class="rp-btn" onclick="openRp(\''+c.cardId+'\')">拆红包</button></div>'
+      ).join('');
+    }
+    const fr = $('rpFrozen');
+    if (fr) {
+      if (j.frozen.length > 0) {
+        const frozenSum = Math.round(j.frozen.reduce((s, f) => s + f.amount, 0) * 100) / 100;
+        fr.innerHTML = '<div style="font-size:12px;color:var(--sub);margin:8px 0 4px">冻结中（合计 ¥'+frozenSum+'，订单完结后自动解冻入账）：</div>' +
+          j.frozen.map(f => '<div class="rp-frozen">⏳ '+esc(f.title)+' · ¥'+f.amount+'</div>').join('');
+      } else fr.innerHTML = '';
+    }
+  } catch(e) {}
+}
+async function openRp(cardId) {
+  const rm = document.getElementById('rpModal');
+  if (!rm) return;
+  rm.classList.add('on');
+  rm.querySelector('.rp-box').onclick = async () => {
+    try {
+      const j = await authFetch('/api/activity/redpacket/'+cardId, { method: 'POST' });
+      rm.querySelector('.rp-modal').innerHTML = '<div class="amt" style="font-size:32px;color:#ffd700;margin:20px 0">¥'+j.amount+'</div><div class="tip" style="font-size:14px;color:#fff;margin-bottom:20px">'+(j.luckTag ? '【'+j.luckTag+'】· 奖励比例 '+j.rate+'%' : '奖励比例 '+j.rate+'%')+'</div><div style="margin-top:16px"><button class="act-btn act-btn-red" onclick="closeRp()">开心收下</button></div>';
+      loadRedpacket();
+      // 【2026-09-15】领完不用手动刷新：钱包/工作台统计一并自动更新
+      try { loadWallet(); } catch (e) {}
+      try { loadWorkbench(); } catch (e) {}
+      try {
+        const u = await authFetch('/api/activity/redpacket/unfreeze', { method: 'POST' });
+        if (u && u.unlocked > 0) { loadWallet(); loadRedpacket(); toast('有 ' + u.unlocked + ' 笔红包解冻入账'); }
+      } catch(e) {}
+    } catch(e) { alert(e.message); closeRp(); }
+  };
+}
+function closeRp(){const rm=document.getElementById('rpModal');if(rm)rm.classList.remove('on');}
+
+/* 月度活动 */
+async function loadMonthly() {
+  try {
+    const j = await authFetch('/api/activity/monthly');
+    const pct = Math.min(100, Math.round(j.earned / j.target * 100));
+    const pb = $('mlProg'); if(pb) pb.style.width = pct + '%';
+    const pt = $('mlTxt'); if(pt) pt.textContent = '¥' + j.earned + ' / ¥' + j.target;
+    const btn = $('btnMonthly');
+    if (btn) {
+      if (j.claimed) { btn.disabled = true; btn.textContent = '已领取 ¥' + j.reward; }
+      else if (j.claimable) { btn.disabled = false; btn.textContent = '领取 ¥' + j.reward; }
+      else { btn.disabled = true; btn.textContent = '还差 ¥' + (j.target - j.earned); }
+    }
+  } catch(e) {}
+}
+if($('btnMonthly'))$('btnMonthly').onclick = async () => {
+  try {
+    const j = await authFetch('/api/activity/monthly/claim', { method: 'POST' });
+    alert('恭喜获得 ¥' + j.reward + '！已入账');
+    loadMonthly();
+  } catch(e) { toast(typeof e === 'string' ? e : (e.message || '领取失败')); }
+};
+
+/* 广告弹窗 */
+async function loadAdPopup() {
+  try {
+    const today = new Date().toISOString().slice(0,10);
+    if (localStorage.getItem('adDismissDate') === today) return;
+    const j = await fetch('/api/ads').then(r=>r.json());
+    if (!j.ad || !j.ad.content) return;
+    const mask = document.getElementById('adPopup');
+    if (!mask) return;
+    mask.querySelector('.ad-popup-title').textContent = j.ad.title || '平台公告';
+    mask.querySelector('.ad-popup-body').innerHTML = j.ad.content;
+    mask.classList.add('on');
+  } catch(e) {}
+}
+function closeAdPopup(dontRemind) {
+  const mask = document.getElementById('adPopup');
+  if (!mask) return;
+  if (dontRemind && document.getElementById('adDontRemind').checked) {
+    localStorage.setItem('adDismissDate', new Date().toISOString().slice(0,10));
+  }
+  // 播放飞入动画
+  mask.style.animation = 'popOut .35s ease forwards';
+  setTimeout(() => {
+    mask.classList.remove('on');
+    mask.style.animation = '';
+  }, 350);
+}
+
+/* 活动中心加载 */
+async function loadActivity() {
+  loadCheckin();
+  loadRedpacket();
+  loadMonthly();
+}
