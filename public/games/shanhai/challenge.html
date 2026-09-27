@@ -95,7 +95,8 @@
 </div>
 <script>
 "use strict";
-const TOKEN = localStorage.getItem("jdy_token");
+// 【v26.70】本页不加载 config.js（没有 LS 封装），localStorage 在无痕模式下会直接抛
+const TOKEN = (() => { try { return localStorage.getItem("jdy_token") || ""; } catch (e) { return ""; } })();
 if (!TOKEN) location.href = "/login.html";
 async function api(path, body) {
   // 【v26.57】20 秒超时：请求挂起不再卡死页面
