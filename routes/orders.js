@@ -133,9 +133,39 @@ app.post('/api/orders/share-default', auth, adminOnly, async (req, res) => {
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
 });
 
+// 批量修改分成比例的「影响测算」：预览（dryRun）与真实写入必须走同一段代码、同一个 filter，
+// 否则弹窗按当前页 20 行估算、服务端却改了库里 300 条，确认框上写的金额就成了假的。
+async function planShareBatch(db, filter, to) {
+  const targets = await db.collection(CONFIG.collection).find(filter, {
+    projection: { orderNo: 1, amount: 1, shareRate: 1, status: 1 },
+  }).toArray();
+  const need = targets.filter(o => Math.round(Number(o.shareRate) * 100) / 100 !== to);
+  const r2 = x => Math.round(x * 100) / 100;
+  let before = 0, after = 0, amt = 0;
+  const groups = new Map();
+  for (const o of need) {
+    const a = Number(o.amount) || 0, from = Number(o.shareRate) || 0;
+    before += a * from / 100; after += a * to / 100; amt += a;
+    const key = Math.round(from * 100) / 100;
+    const g = groups.get(key) || { from: key, n: 0, amount: 0 };
+    g.n += 1; g.amount = r2(g.amount + a);
+    groups.set(key, g);
+  }
+  return {
+    targets, need,
+    stats: {
+      matched: targets.length, willUpdate: need.length, skippedUnchanged: targets.length - need.length,
+      overLimit: need.length > 5000,
+      amountTotal: r2(amt), shareBefore: r2(before), shareAfter: r2(after), delta: r2(after - before),
+      byRate: [...groups.values()].sort((x, y) => y.n - x.n).slice(0, 8),
+    },
+  };
+}
+
 // 批量修改分成比例
-//   body: { ids?: string[], all?: boolean, shareRate: number, includeSettled?: boolean }
+//   body: { ids?: string[], all?: boolean, shareRate: number, includeSettled?: boolean, dryRun?: boolean }
 //   ids = 手动勾选的那批；all = 按"全部/仅未结算"整体调整。二者必给其一。
+//   dryRun=true 只回影响测算，不落库、不写审计、不清缓存——给弹窗预览用。
 app.post('/api/orders/share-batch', auth, adminOnly, async (req, res) => {
   try {
     const b = req.body || {};
@@ -143,6 +173,7 @@ app.post('/api/orders/share-batch', auth, adminOnly, async (req, res) => {
     if (!isFinite(rate) || rate <= 0 || rate > 100) return res.status(400).json({ ok: false, error: '分成比例必须是 1-100 之间的数字（%）' });
     const to = Math.round(rate * 100) / 100;
     const includeSettled = !!b.includeSettled;
+    const dryRun = b.dryRun === true;
 
     const filter = {};
     if (Array.isArray(b.ids) && b.ids.length) {
@@ -163,15 +194,13 @@ app.post('/api/orders/share-batch', auth, adminOnly, async (req, res) => {
     // 【v26.68 修复线上 500】投影只能全用包含或全用排除（除 _id 外不可混用），
     // 原先写了 dispatch: 0 —— 而 dispatch 根本不是订单文档上的字段（它是列表接口
     // 查派单卡后临时拼出来的），混用让 Mongo 直接报 Cannot do inclusion/exception mix。
-    const targets = await db.collection(CONFIG.collection).find(filter, {
-      projection: { orderNo: 1, amount: 1, shareRate: 1, status: 1 },
-    }).toArray();
-    const need = targets.filter(o => Math.round(Number(o.shareRate) * 100) / 100 !== to);
+    const { targets, need, stats } = await planShareBatch(db, filter, to);
+    if (dryRun) return res.json({ ok: true, preview: true, shareRate: to, includeSettled, ...stats });
     if (!need.length) {
       return res.json({ ok: true, updated: 0, skippedUnchanged: targets.length,
         message: targets.length ? '所选订单的分成比例已经都是 ' + to + '%，无需修改' : '没有符合条件的订单' });
     }
-    if (need.length > 5000) return res.status(400).json({ ok: false, error: '一次最多改 5000 条，请分批操作' });
+    if (stats.overLimit) return res.status(400).json({ ok: false, error: '一次最多改 5000 条，请分批操作' });
 
     const before = need.map(o => ({ id: String(o._id), orderNo: o.orderNo || '', from: o.shareRate, to, amount: o.amount || 0, status: o.status }));
     const r = await db.collection(CONFIG.collection).updateMany(
@@ -185,10 +214,9 @@ app.post('/api/orders/share-batch', auth, adminOnly, async (req, res) => {
       before, createdAt: new Date(),
     }).catch(e => console.warn('[台账] 审计写入失败:', e.message));
     cacheClearPrefix('orders:');
-    const delta = need.reduce((s, o) => s + (o.amount || 0) * (to - (Number(o.shareRate) || 0)) / 100, 0);
     res.json({
-      ok: true, updated: r.modifiedCount, skippedUnchanged: targets.length - need.length,
-      amountDelta: Math.round(delta * 100) / 100,
+      ok: true, updated: r.modifiedCount, skippedUnchanged: stats.skippedUnchanged,
+      amountDelta: stats.delta, shareBefore: stats.shareBefore, shareAfter: stats.shareAfter,
       message: '已把 ' + r.modifiedCount + ' 条订单的分成比例改为 ' + to + '%',
     });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
