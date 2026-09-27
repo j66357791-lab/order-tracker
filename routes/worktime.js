@@ -1,6 +1,8 @@
 // routes/worktime.js — 排班/打卡/薪资/socket
 // 【2026-09-14 ES6 重构】自 server.js 原样迁出，行为不变
 import { ObjectId, GridFSBucket } from 'mongodb';
+// 【v26.74 多实例必修】清理任务改为带租约的周期任务
+import { everyJob } from '../lib/jobs.js';
 
 export default function mount(ctx) {
   const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
@@ -276,6 +278,7 @@ async function cleanupOldData() {
     if (r1.deletedCount || r2.deletedCount) console.log('[清理] 消息清理：已读', r1.deletedCount, '条，未读过期', r2.deletedCount, '条');
   } catch (e) { console.error('[清理] 失败:', e.message); }
 }
-setTimeout(cleanupOldData, 15 * 1000);                 // 启动后15秒清一次
-setInterval(cleanupOldData, 6 * 3600 * 1000);          // 之后每6小时清一次
+// 【v26.74】改为租约任务：原来每个实例各自每 6 小时清一遍。删除本身是幂等的（第二次删不到东西），
+// 但 GridFS 清理会真的并发跑，配合"下载流未监听 error"(#53) 容易把别人正在下载的文件删掉。
+everyJob('worktime:cleanup', 6 * 3600 * 1000, cleanupOldData, { firstDelayMs: 15 * 1000, getDb });
 }
