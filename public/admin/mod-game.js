@@ -252,6 +252,13 @@ export function mount(root) {
         <button class="btn-ghost" id="ddRunOnce">立即补跑一次</button>
         <span class="sub">释放任务每 10 分钟自动跑；对账只读，补跑走同一套认领逻辑，连点不会重复发</span>
       </div>
+      <div class="inline" style="margin-top:6px">
+        <label class="mini-lbl">把「还没发过」的记录起点改到
+          <input type="date" id="ddStartDate" style="width:150px">
+        </label>
+        <button class="btn-ghost" id="ddSetStart">应用新起点</button>
+        <span class="sub">按北京时间当天 0 点开始发第 1 天；已发过任何一天的记录不受影响</span>
+      </div>
       <div id="ddAuditBox" class="sub" style="margin-top:6px"></div>
       <div style="margin-top:12px" id="actList"><div class="empty">加载中…</div></div>
       <div class="inline" style="margin-top:8px">
@@ -1277,11 +1284,13 @@ export function mount(root) {
   // 【v26.75】堆堆乐释放：只读对账 + 手动补跑。
   // 此前这一块只写着"已自动发邮件，无需手动操作"，可一旦漏发就完全无从查证，只能等玩家来反馈；
   // 而漏发的三种原因（起点未到 / 任务没算到它 / 邮件丢了）处置方式各不相同，必须先看数据。
+  let DD_ACT = null;   // 最近一次对账拿到的活动 ID 与「还没发过」的记录数；改起点要用它限定范围，避免波及别的期次
   $('ddAudit').onclick = async () => {
     const box = $('ddAuditBox');
     box.textContent = '对账中…';
     try {
       const j = await api('/api/shanhai/admin/duiduile/audit');
+      DD_ACT = (j.act && j.act.actId) ? { actId: String(j.act.actId), notStarted: Number(j.notStarted) || 0, title: j.act.title } : null;
       const s = j.sum || {};
       const a = j.act;
       let h = `<div style="margin:2px 0">活动「${esc((a && a.title) || '未配置')}」· ${esc((a && a.state) || '')}`
@@ -1317,6 +1326,25 @@ export function mount(root) {
       $('ddAudit').onclick();
     } catch (e) { toast(e.message); }
     finally { btn.disabled = false; }
+  };
+  // 【v26.77】改释放起点：只动「还没发出过任何一天」的记录，且必须先跑过一次对账拿到活动 ID。
+  // 之所以卡这两道：改起点会直接改变玩家哪天收到钱，范围弄错（比如波及到未来期次、
+  // 或把已发过的人的起点往后挪造成应发天数倒退）就是账实不符，而这正是本次要排查的那类问题。
+  $('ddSetStart').onclick = async () => {
+    const box = $('ddAuditBox');
+    const d = ($('ddStartDate').value || '').trim();
+    if (!DD_ACT) { box.textContent = '请先点「发放对账」——需要它确认是哪一期活动、以及有多少条还没发过。'; return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { box.textContent = '请先在左边选一个日期。'; return; }
+    if (!DD_ACT.notStarted) { box.textContent = `「${esc(DD_ACT.title)}」下没有任何「还没发过」的记录，本次无需改动。`; return; }
+    const tip = `把「${DD_ACT.title}」里 ${DD_ACT.notStarted} 条【还没发过任何一天】的记录，释放起点改为 ${d} 00:00（北京）？\n\n`
+      + `· 这 ${DD_ACT.notStarted} 条之外的记录不受影响\n`
+      + `· 改完当天 0 点后的第一次任务（10 分钟内）就会发出第 1 天\n确认执行？`;
+    if (!confirm(tip)) return;
+    try {
+      const j = await api('/api/shanhai/admin/duiduile/set-start', { method: 'POST', body: JSON.stringify({ activityId: DD_ACT.actId, date: d }) });
+      toast(`已改 ${j.changed} 条记录的释放起点为 ${j.startCn}`);
+      $('ddAudit').onclick();
+    } catch (e) { box.textContent = '改起点失败：' + (e.message || e); }
   };
   // 【v26.49】重置灵脉每日进攻次数
   $('chalResetBtn').onclick = async () => {
