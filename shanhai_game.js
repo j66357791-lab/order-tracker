@@ -2171,17 +2171,35 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     }
   };
 
-  // 【2026-09-24 安全修复】进程内用户级互斥锁：把同一用户的资金操作（转入/挂单/吃单/撤单）
-  // 串行化，根治"读-判-写"竞态（并发双花、冻结超发、撤单与成交双退）。
-  // 本系统为单实例部署（限流/缓存同为进程内存），进程内锁即全局锁；多实例部署需换 Redis。
-  const _userLocks = new Map();
-  async function withUserLock(key, fn) {
-    while (_userLocks.has(key)) { await _userLocks.get(key).catch(() => { }); }
-    let release;
-    const gate = new Promise(r => { release = r; });
-    _userLocks.set(key, gate);
+
+  // 【2026-09-27 审查修复 P1-1】跨实例互斥锁（MongoDB 文档锁，思路同 lib/jobs.js 的 job_leases）：
+  // 主站余额是 wallet_log 的聚合求和，没法对"求和结果"做单文档条件更新，
+  // 所以这类操作用「先抢锁、再读-判-写」来保证多实例下串行。
+  //   抢锁 = 插入 _id=key 的文档（E11000 即被占）；持锁人崩溃靠 exp 过期时间被后来者抢占；
+  //   释放 = 按 owner token 删除（只删自己的锁）。等待 8 秒抢不到按冲突处理。
+  // （旧版进程内 withUserLock 已随转入改造删除——单进程内存锁在多实例部署下不设防）
+  async function withDbLock(db, key, fn, waitMs = 8000) {
+    const col = db.collection('sh_locks');
+    const token = new ObjectId().toString();
+    const hold = () => new Date(Date.now() + 30000);   // 单次持锁上限 30s，防持有者崩溃死锁
+    const deadline = Date.now() + waitMs;
+    for (;;) {
+      try {
+        await col.insertOne({ _id: key, owner: token, exp: hold() });
+        break;
+      } catch (e) {
+        if (e.code !== 11000) throw e;
+      }
+      const stole = await col.findOneAndUpdate(
+        { _id: key, exp: { $lt: new Date() } },
+        { $set: { owner: token, exp: hold() } });
+      if (stole && (stole.value || stole)) break;
+      if (Date.now() >= deadline)
+        throw Object.assign(new Error('操作冲突，请稍后重试'), { statusCode: 409, code: 'LOCK_BUSY' });
+      await new Promise(r => setTimeout(r, 60));
+    }
     try { return await fn(); }
-    finally { release(); if (_userLocks.get(key) === gate) _userLocks.delete(key); }
+    finally { await col.deleteOne({ _id: key, owner: token }).catch(() => { }); }
   }
 
   async function exWalletOf(db, userId) {
@@ -2470,14 +2488,26 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const me = req.user.id;
       const amt = money2((req.body || {}).amount);
       if (!(amt >= EX_MIN_TRANSFER)) return res.status(400).json({ ok: false, error: `最低转入 ¥${EX_MIN_TRANSFER}` });
-      // 【2026-09-24 安全修复】整个"读余额→判够→写流水→加交易所余额"放进用户锁：
-      // 原先是读-判-写三步裸奔，并发两次转入会把主站余额打成负数（双花真实充值余额）
-      await withUserLock('exw:' + me, async () => {
+      // 【2026-09-27 审查修复 P1-1】改用 MongoDB 跨实例锁：
+      // 原先的 withUserLock 是单进程内存锁，而生产已确认多实例部署——两个实例同时处理
+      // 同一用户的快速转入，会各自通过"余额够"的判断，把主站余额打成负数（双花真实充值余额）。
+      // "读余额→判够→写流水"必须全局串行，内存锁做不到，文档锁可以。
+      await withDbLock(db, 'exw:' + me, async () => {
         const bal = await walletBalanceOf(db, me);
         if (bal < amt) throw Object.assign(new Error(`主站余额不足（可用 ¥${bal.toFixed(2)}）`), { statusCode: 400, code: 'NO_BALANCE' });
-        await walletLog(db, me, -amt, 'ex_deposit', `转入交易所 ¥${amt.toFixed(2)}`);
-        await db.collection(EXW_COL).updateOne(
-          { userId: me }, { $inc: { balance: amt }, $set: { updatedAt: new Date() } }, { upsert: true });
+        // 【2026-09-27 审查修复 P2-1】先写负流水、后加交易所余额：第二步失败时补一条反向流水
+        // 原路退回（余额=流水求和，反向流水即恢复原状，且保留完整审计痕迹，绝不删流水）。
+        // 客户端可带 clientRef 作为幂等键（重试同一笔不会重复入账），不带则维持原行为。
+        const clientRef = String((req.body || {}).clientRef || '').slice(0, 64) || null;
+        await walletLog(db, me, -amt, 'ex_deposit', `转入交易所 ¥${amt.toFixed(2)}`, clientRef);
+        try {
+          await db.collection(EXW_COL).updateOne(
+            { userId: me }, { $inc: { balance: amt }, $set: { updatedAt: new Date() } }, { upsert: true });
+        } catch (e) {
+          await walletLog(db, me, amt, 'ex_deposit_back', '转入未完成，自动原路退回').catch(() => { });
+          console.error('[exchange] deposit 入账失败，已补偿退回:', e.message);
+          throw Object.assign(new Error('转入没有完成，钱已退回主站，请稍后重试'), { statusCode: 500 });
+        }
         await db.collection('shanhai_logs').insertOne({ userId: me, action: 'ex_deposit', detail: { amount: amt }, createdAt: new Date() }).catch(() => { });
       });
       const w = await exWalletOf(db, me);
@@ -2511,10 +2541,22 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       );
       const nw = r && (r.value || r);
       if (!nw) return res.status(409).json({ ok: false, error: '可用余额不足或操作冲突，请刷新后重试' });
-      await walletLog(db, me, amt, 'ex_withdraw', `从交易所转出 ¥${amt.toFixed(2)}`);
+      // 【2026-09-27 审查修复 P2-1】先扣交易所、后记主站流水：第二条失败时把刚扣掉的
+      // 交易所余额原路加回，不让钱"悬在半路"（原先失败后交易所已扣、主站没到账，无任何补偿）
+      try {
+        await walletLog(db, me, amt, 'ex_withdraw', `从交易所转出 ¥${amt.toFixed(2)}`);
+      } catch (e) {
+        await db.collection(EXW_COL).updateOne(
+          { userId: me }, { $inc: { balance: amt }, $set: { updatedAt: new Date() } }).catch(() => { });
+        console.error('[exchange] withdraw 入账失败，已补偿回交易所:', e.message);
+        throw Object.assign(new Error('转出没有完成，钱已退回交易所，请稍后重试'), { statusCode: 500 });
+      }
       await db.collection('shanhai_logs').insertOne({ userId: me, action: 'ex_withdraw', detail: { amount: amt }, createdAt: new Date() }).catch(() => { });
       res.json({ ok: true, amount: amt, exBalance: money4(nw.balance || 0), exFrozen: money4(nw.frozen || 0), balance: await walletBalanceOf(db, me) });
-    } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+    } catch (e) {
+      if (e.statusCode) return res.status(e.statusCode).json({ ok: false, error: e.message, code: e.code });
+      console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' });
+    }
   });
 
   // ---------- 发布挂单 ----------
