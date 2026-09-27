@@ -13,7 +13,17 @@ export async function mount(host) {
 
   const $ = id => shDoc.getElementById(id);
   const TOKEN = localStorage.getItem('jdy_token');
-  const USER = JSON.parse(localStorage.getItem('jdy_user') || 'null');
+  // 【2026-09-27 审查修复 P2-9】jdy_user 一旦损坏，裸 JSON.parse 会中断整个面板初始化；
+  // 改为安全解析，坏档/缺失时清掉本地凭据并回登录页（与 admin/app.js 的标准一致）
+  let USER = null;
+  try { USER = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) { USER = null; }
+  if (!TOKEN || !USER) {
+    try { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); } catch (e) { }
+    location.href = '/login.html';
+    return;
+  }
+  // 【P2-12】签发文件下载用 HttpOnly Cookie（失败不影响主流程）
+  try { fetch('/api/auth/cookie', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, keepalive: true }).catch(() => { }); } catch (e) { }
   // 【v20.3】embed=1 嵌入管理工作台 iframe：隐藏自家顶栏
   // 【v20.4】嵌套修复：嵌入模式下所有页面跳转改走壳导航（parent.navGo），
   // 否则 iframe 里再加载整个后台会无限嵌套
@@ -29,7 +39,7 @@ export async function mount(host) {
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmtT = d => d ? (new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ')) : '';
   const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.round(n / 1024) + 'KB';
-  const dl = id => '/api/files/' + id + '/download?token=' + encodeURIComponent(TOKEN);
+  const dl = id => '/api/files/' + id + '/download';   // 【2026-09-27 审查修复 P2-12】token 不再进 URL（改由 HttpOnly Cookie 携带）
   const stPill = st => '<span class="pill st-' + esc(st) + '">' + esc(st) + '</span>';
 
   async function authFetch(url, opt = {}) {
@@ -487,7 +497,7 @@ export async function mount(host) {
   $('chatInput').addEventListener('input', autoGrow);
   $('btnFile').onclick = () => $('fileInput').click();
   $('fileInput').onchange = e => { const f = e.target.files[0]; if (f) sendFile(f); e.target.value = ''; };
-  $('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); if (EMBED) { parent.location.href = '/login.html'; } else location.href = '/login.html'; };
+  $('btnLogout').onclick = () => { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); try { fetch('/api/auth/cookie', { method: 'DELETE', keepalive: true }).catch(() => { }); } catch (e) { } if (EMBED) { parent.location.href = '/login.html'; } else location.href = '/login.html'; };   // 【P2-12】同步清除下载 Cookie
 
   // 截图粘贴直接发送
   document.addEventListener('paste', e => {
