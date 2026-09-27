@@ -137,7 +137,9 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
 
   // ==================== 台账写入 ====================
   async function writeDeal(db, d) {
-    await db.collection(DEAL_COL).insertOne(Object.assign({ createdAt: new Date() }, d)).catch(() => { });
+    // 【2026-09-27 审查修复 P3-1】台账是对账依据，写失败至少要留痕，不能静默吞掉
+    await db.collection(DEAL_COL).insertOne(Object.assign({ createdAt: new Date() }, d))
+      .catch(e => console.error('[market] 成交台账写入失败:', (e && e.message) || e));
   }
   async function writeLog(db, userId, amount, kind, note, orderId, extra) {
     // 【2026-09-26 批次2】走统一账本入口，带 (kind, refId) 幂等键。
@@ -152,6 +154,24 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
   // 【v26.15】区间变更自愈：价格跑出 [min,max] 的自家旧单立即撤掉退冻结。
   // 用户改了价格区间后，旧区间时代挂的单还挂在市场上（比如 0.0005 < 新下限 0.001），
   // 行情/列表看起来就像"价格没夹住"。逐张退冻结，不吃资产。
+  // 【2026-09-27 审查修复 P2-4】机器人撤单原子化：先条件「认领」（open→cancel，且 left/locked
+  // 必须与快照一致），认领成功才退冻结——原先按快照退冻结、再 updateMany 无条件改状态，
+  // 窗口期内刚被撮合的单会重复退冻结/把 done 覆盖成 cancel。返回 true=本次真正撤掉。
+  async function cancelBotOrder(db, o) {
+    const claimed = await db.collection(ORD_COL).findOneAndUpdate(
+      { _id: o._id, status: 'open', left: o.left, locked: o.locked || 0 },
+      { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } });
+    if (!claimed || !(claimed.value || claimed)) return false;
+    if (o.side === 'buy' && (o.locked || 0) > 0) {
+      await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
+        { $inc: { frozen: -o.locked }, $set: { updatedAt: new Date() } });
+    } else if (o.side === 'sell' && o.left > 0) {
+      await db.collection(FUND_COL).updateOne({ _id: 'market' },
+        { $inc: { lingqiFrozen: -o.left, lingqi: o.left } });
+    }
+    return true;
+  }
+
   async function cancelOutOfRange(db, cfg) {
     const min = Number(cfg.priceMin) || 0.0001;
     const max = Number(cfg.priceMax) || 0.18;
@@ -160,22 +180,10 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
         $or: [{ price: { $lt: min } }, { price: { $gt: max } }] })
       .limit(50).toArray();
     if (!stale.length) return { cancelled: 0 };
-    let backLingqi = 0;
-    for (const o of stale) {
-      if (o.side === 'sell' && o.left > 0) backLingqi += o.left;
-      else if (o.side === 'buy' && (o.locked || 0) > 0) {
-        await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
-          { $inc: { frozen: -o.locked }, $set: { updatedAt: new Date() } });
-      }
-    }
-    if (backLingqi) {
-      await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: backLingqi, lingqiFrozen: -backLingqi } });
-    }
-    await db.collection(ORD_COL).updateMany(
-      { _id: { $in: stale.map(o => o._id) } },
-      { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } });
-    console.log('[market] 区间变更：回收越界挂单 %d 张，退回灵气 %d', stale.length, backLingqi);
-    return { cancelled: stale.length };
+    let cancelled = 0;
+    for (const o of stale) { if (await cancelBotOrder(db, o)) cancelled++; }
+    console.log('[market] 区间变更：回收越界挂单 %d 张', cancelled);
+    return { cancelled };
   }
 
   async function recycleStaleBotOrders(db) {
@@ -183,24 +191,10 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
     const stale = await db.collection(ORD_COL)
       .find({ userId: BOT_ID, status: 'open', createdAt: { $lt: deadline } }).limit(30).toArray();
     if (!stale.length) return { recycled: 0 };
-    let backLingqi = 0;
-    for (const o of stale) {
-      if (o.side === 'sell' && o.left > 0) backLingqi += o.left;
-      else if (o.side === 'buy' && (o.locked || 0) > 0) {
-        // 【v26.4】退的是交易所钱包的冻结（钱仍在交易所，不回主站）
-        await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
-          { $inc: { frozen: -o.locked }, $set: { updatedAt: new Date() } });
-      }
-    }
-    if (backLingqi) {
-      await db.collection(FUND_COL).updateOne({ _id: 'market' }, { $inc: { lingqi: backLingqi, lingqiFrozen: -backLingqi } });
-    }
-    await db.collection(ORD_COL).updateMany(
-      { _id: { $in: stale.map(o => o._id) } },
-      { $set: { status: 'cancel', left: 0, locked: 0, updatedAt: new Date() } }
-    );
-    console.log('[market] 回收老挂单 %d 张，退回灵气 %d', stale.length, backLingqi);
-    return { recycled: stale.length, lingqiBack: backLingqi };
+    let recycled = 0;
+    for (const o of stale) { if (await cancelBotOrder(db, o)) recycled++; }
+    console.log('[market] 回收老挂单 %d 张', recycled);
+    return { recycled };
   }
   mountShanhaiMarket.recycleStaleBotOrders = recycleStaleBotOrders;
 
@@ -310,64 +304,97 @@ export default function mountShanhaiMarket(app, { auth, adminOnly, getDb }) {
       const prof = db.collection('shanhai_profiles');
       const sellerId = botIsBuyer ? BOT_ID : playerId;
       const buyerId = botIsBuyer ? playerId : BOT_ID;
+      const exw = db.collection(EXW_COL);
+      const fundCol = db.collection(FUND_COL);
+      // 【2026-09-27 审查修复 P2-2/P2-3】对齐玩家侧吃单路径（shanhai_game.js deal）的写法：
+      // ① 扣款全部改为条件原子更新（可用余额/冻结不足就整单跳过，不再"先读后扣"扣成负数）；
+      // ② undo 栈完整回滚——已发生的资金/灵气划转在 catch 里按逆序还原，不再只还订单余量；
+      // ③ 【新发现修复】自成交（吃自己的单）灵气口径：只做一次「冻结→可用」解冻。
+      //    原实现 buyer 方向 fund.lingqi +n 后又解冻 +n（每单凭空多出 n 灵气）、
+      //    seller 方向解冻漏记（卖单冻结的灵气永远冻死）。
+      const sellerGet = money4(total - fee);
+      const undo = [];
+      const restoreLeft = () => col.updateOne({ _id: target._id },
+        { $inc: { left: n }, $set: { updatedAt: new Date() } }).catch(() => { });
+      let step = 'init';
       try {
-        // 灵气流转
-        const sellerGet = money4(total - fee);
+        // —— 1) 买家付款（条件原子，失败即中止，不产生副作用）——
         if (botIsBuyer) {
-          // 机器人是主动买家：从它的交易所余额扣钱；玩家的卖单是冻结状态，解冻后转出
-          await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
-            { $inc: { balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
-          await prof.updateOne({ userId: playerId }, { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
-          // 【v26.18 账本修复】机器人买入 → 灵气进机器人额度。
-          // 原先这笔从来没记！玩家持续把灵气卖给机器人，fund.lingqi 只出不进，
-          // 流干后所有卖单尝试都跳过 bot_no_lingqi —— 这就是"只剩买单、没有卖单"的根因
-          await db.collection(FUND_COL).updateOne({ _id: 'market' },
-            { $inc: { lingqi: n }, $set: { updatedAt: new Date() } }, { upsert: true });
+          // 机器人主动买入：从它的可用余额扣（可用 = balance - frozen >= total）
+          step = 'bot-debit';
+          const d = await exw.findOneAndUpdate(
+            { userId: BOT_ID, $expr: { $gte: [{ $subtract: [{ $ifNull: ['$balance', 0] }, { $ifNull: ['$frozen', 0] }] }, total] } },
+            { $inc: { balance: -total }, $set: { updatedAt: new Date() } });
+          if (!d || !(d.value || d)) { await restoreLeft(); return { skipped: 'bot_no_cash' }; }
+          undo.push(() => exw.updateOne({ userId: BOT_ID }, { $inc: { balance: total }, $set: { updatedAt: new Date() } }));
+        } else if (targetLegacyBuy) {
+          // 老求购单（v26.3 之前，未冻结余额）：实时扣玩家交易所可用余额
+          step = 'legacy-buyer-debit';
+          const d = await exw.findOneAndUpdate(
+            { userId: playerId, $expr: { $gte: [{ $subtract: [{ $ifNull: ['$balance', 0] }, { $ifNull: ['$frozen', 0] }] }, total] } },
+            { $inc: { balance: -total }, $set: { updatedAt: new Date() } });
+          if (!d || !(d.value || d)) { await restoreLeft(); return { skipped: 'buyer_no_cash' }; }
+          undo.push(() => exw.updateOne({ userId: playerId }, { $inc: { balance: total }, $set: { updatedAt: new Date() } }));
+        } else if (target.exLocked) {
+          // 新求购单（v26.4 起）：钱冻在交易所钱包，同一笔里「解冻 + 扣款」
+          step = 'buyer-frozen-debit';
+          const d = await exw.findOneAndUpdate(
+            { userId: playerId, frozen: { $gte: total } },
+            { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } });
+          if (!d || !(d.value || d)) throw new Error('买家冻结资金不足');
+          undo.push(() => exw.updateOne({ userId: playerId }, { $inc: { frozen: total, balance: total }, $set: { updatedAt: new Date() } }));
+          const rl = await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
+          if (rl.modifiedCount) undo.push(() => col.updateOne({ _id: target._id }, { $inc: { locked: total } }));
         } else {
-          // 机器人是卖家：收钱进交易所钱包；对手方是玩家挂的求购单，由他付钱
-          await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
-            { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
-          await prof.updateOne({ userId: playerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
-          // 【v26.18 账本修复】机器人卖出 → 交付的灵气从额度扣掉。
-          // 原先只在挂单时冻结、成交后冻结额永不释放：frozen 越堆越大、可用灵气单边流失
-          if (!selfDeal) {
-            await db.collection(FUND_COL).updateOne({ _id: 'market' },
-              { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } }, { upsert: true });
-          }
-          if (targetLegacyBuy) {
-            // 从未冻结过的老求购单：从玩家的交易所余额实时扣
-            await db.collection(EXW_COL).updateOne({ userId: playerId },
-              { $inc: { balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
-          } else if (target.exLocked) {
-            // 新求购单（v26.4 起）：解冻 + 扣款，同一笔里完成
-            await db.collection(EXW_COL).updateOne({ userId: playerId },
-              { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
-            await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
-          } else {
-            // 【v26.4 兼容】v26.4 之前挂的求购单：钱已在主站扣过，只冲减订单冻结额
-            await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
-          }
+          // 【v26.4 兼容】更老的求购单：钱当时已从主站扣走，只冲减订单冻结额
+          step = 'legacy-locked';
+          const rl = await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
+          if (rl.modifiedCount) undo.push(() => col.updateOne({ _id: target._id }, { $inc: { locked: total } }));
         }
-        if (botIsBuyer) {
-          await db.collection(EXW_COL).updateOne({ userId: playerId },
-            { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
-          if (selfDeal) {
-            // 【v26.18 账本修复】自成交（吃自己的卖单）：买方=卖方=机器人，
-            // 灵气只是从「冻结」回到「可用」——原先漏记这一步，每自成交一单就凭空销毁 n 灵气
-            await db.collection(FUND_COL).updateOne({ _id: 'market' },
-              { $inc: { lingqiFrozen: -n, lingqi: n }, $set: { updatedAt: new Date() } }, { upsert: true });
-          }
-        } else if (selfDeal) {
-          // 【v26.18 账本修复】自成交（吃自己的买单）：买方付的钱在挂单时已冻结，
-          // 这里从冻结划走；灵气卖出方与买入方都是机器人 → 净额为零。
-          // 原实现既不扣冻结又多记 lingqi+n，等于每单凭空印钱印灵气
-          await db.collection(EXW_COL).updateOne({ userId: BOT_ID },
-            { $inc: { frozen: -total, balance: -total }, $set: { updatedAt: new Date() } }, { upsert: true });
-          await col.updateOne({ _id: target._id }, { $inc: { locked: -total } });
+        // —— 2) 卖家收款（自成交时钱在自己账上转一圈，净支出只有手续费）——
+        step = 'seller-credit';
+        const rp = await exw.updateOne({ userId: sellerId },
+          { $inc: { balance: sellerGet }, $set: { updatedAt: new Date() } }, { upsert: true });
+        if (!(rp && (rp.upsertedCount || rp.modifiedCount || rp.matchedCount))) throw new Error('卖家入账失败');
+        undo.push(() => exw.updateOne({ userId: sellerId }, { $inc: { balance: -sellerGet }, $set: { updatedAt: new Date() } }));
+        // —— 3) 灵气流转 ——
+        if (selfDeal) {
+          // 自成交：灵气只是从「冻结」回到「可用」（卖单挂出时已冻结进额度）
+          step = 'self-lingqi';
+          const rf = await fundCol.findOneAndUpdate(
+            { _id: 'market', lingqiFrozen: { $gte: n } },
+            { $inc: { lingqiFrozen: -n, lingqi: n }, $set: { updatedAt: new Date() } });
+          if (!rf || !(rf.value || rf)) throw new Error('自成交冻结灵气不足');
+          undo.push(() => fundCol.updateOne({ _id: 'market' }, { $inc: { lingqiFrozen: n, lingqi: -n } }));
+        } else if (botIsBuyer) {
+          // 玩家卖单：解冻玩家灵气（条件原子，防与撤单并发）→ 灵气进做市额度
+          // 【v26.18 账本修复延续】机器人买入玩家灵气必须记进额度，否则额度只出不进
+          step = 'seller-unfreeze';
+          const u = await prof.findOneAndUpdate(
+            { userId: playerId, lingqiFrozen: { $gte: n } },
+            { $inc: { lingqiFrozen: -n }, $set: { updatedAt: new Date() } });
+          if (!u || !(u.value || u)) throw new Error('卖家冻结灵气不足（可能与撤单并发冲突）');
+          undo.push(() => prof.updateOne({ userId: playerId }, { $inc: { lingqiFrozen: n }, $set: { updatedAt: new Date() } }));
+          step = 'fund-lingqi-in';
+          const rf = await fundCol.updateOne({ _id: 'market' }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } }, { upsert: true });
+          if (rf && (rf.modifiedCount || rf.upsertedCount)) undo.push(() => fundCol.updateOne({ _id: 'market' }, { $inc: { lingqi: -n } }));
+        } else {
+          // 玩家买单：做市额度出灵气（条件原子）→ 玩家收灵气
+          step = 'fund-lingqi-out';
+          const rf = await fundCol.findOneAndUpdate(
+            { _id: 'market', lingqi: { $gte: n } },
+            { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } });
+          if (!rf || !(rf.value || rf)) throw new Error('做市额度灵气不足');
+          undo.push(() => fundCol.updateOne({ _id: 'market' }, { $inc: { lingqi: n } }));
+          step = 'buyer-lingqi-in';
+          const rg = await prof.updateOne({ userId: playerId }, { $inc: { lingqi: n }, $set: { updatedAt: new Date() } });
+          if (rg && rg.modifiedCount) undo.push(() => prof.updateOne({ userId: playerId }, { $inc: { lingqi: -n }, $set: { updatedAt: new Date() } }));
         }
         // 手续费只落在台账（deals.fee），不进主站 wallet_log
       } catch (e) {
-        await col.updateOne({ _id: target._id }, { $inc: { left: n } }).catch(() => { });
+        for (const u of undo.reverse()) { try { await u(); } catch (e2) { } }
+        await restoreLeft();
+        console.error('[market] settle 失败 step=%s', step, (e && e.message) || e);
         return { skipped: 'settle_error' };
       }
       // 结单：求购单把残余零头退回（买家已冻结的钱按实际成交冲减，剩下的不该一直冻着）
