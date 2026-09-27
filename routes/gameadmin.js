@@ -133,6 +133,16 @@ app.post('/api/admin/game-grant', auth, adminOnly, async (req, res) => {
     if (!userId || !item) return res.status(400).json({ ok: false, error: '缺少参数' });
     const validItems = ['keys','balls','frags','revives','bagS','bagM','bagL'];
     if (!validItems.includes(item)) return res.status(400).json({ ok: false, error: '无效道具类型' });
+    // 【v26.71】userId 必须是一个真实存在的账号。下面的写入是 { userId: String(userId) } + upsert，
+    // 原本对 userId 毫不校验：管理端「按手机号查人」失败时（500 / 网络抖动）会把手机号原样当 ID 发过来，
+    // 于是库里凭空多出一条以 "13800138000" 为键的孤儿档案，接口照样回「发放成功，档案已更新」——
+    // 道具实际打给了一个玩家永远查不到的档案，属于静默丢失。
+    // 注意：这里只要求「账号存在」，不要求「玩过游戏」，所以给新用户预先建档的用法不受影响。
+    if (!/^[0-9a-fA-F]{24}$/.test(String(userId))) {
+      return res.status(400).json({ ok: false, error: '用户 ID 不合法：请先用手机号/工号查到玩家再发放，不要直接填手机号' });
+    }
+    const target = await db.collection('users').findOne({ _id: new ObjectId(String(userId)) }, { projection: { _id: 1, username: 1, role: 1 } });
+    if (!target) return res.status(404).json({ ok: false, error: '该用户 ID 在账号表里不存在，已阻止发放（道具未变动）' });
     // 【2026-09-17 安全修复】校验数量为有限数值并限制单次幅度，防止 NaN 报错或一次刷出巨额道具
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt === 0 || Math.abs(amt) > 100000) {
