@@ -13,6 +13,15 @@ import { addLedgerEntry } from './lib/ledger.js';
 // 【v26.74 多实例必修】定时任务每实例各跑一份 → 同一批数据会被结算多次。统一走租约。
 import { everyJob } from './lib/jobs.js';
 
+// 【v26.77】释放起点：结束【次日】的北京时间 0 点（常驻活动 = 参与次日 0 点）。
+// 为什么单独抽出来并导出：这个值决定玩家哪天收到邮件，写错一天就是全体错一天；
+// 放在 mount 里就测不到，只能靠人肉推。原先的代码算的是结束【当天】0 点，
+// 与自己上一行注释相反 —— 活动要到 23:59 才结束，起点却定在当天 0 点，等于还没结束就开始发。
+export function ddReleaseStart(fromWhen) {
+  const cnNextDay = new Date(new Date(fromWhen).getTime() + 8 * 3600e3 + 86400e3).toISOString().slice(0, 10);
+  return new Date(cnNextDay + 'T00:00:00+08:00');
+}
+
 export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
 
   // ==================== 反作弊阈值 ====================
@@ -1185,12 +1194,8 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const mult = rollDuiduileMult();
       const reward = Math.round(DD_COST * mult * 10) / 10;
       const perDay = Math.round(reward / DD_DAYS * 100) / 100;
-      // 释放从结束次日【北京时间 0 点】开始（每日手动领取）
-      let releaseStart = new Date(now.getTime() + 86400e3);
-      if (act.end) {
-        const cnDay = new Date(new Date(act.end).getTime() + 8 * 3600e3).toISOString().slice(0, 10);
-        releaseStart = new Date(cnDay + 'T00:00:00+08:00');
-      }
+      // 释放从结束次日【北京时间 0 点】开始（每日手动领取）；未设结束时间的常驻活动按参与次日 0 点
+      const releaseStart = ddReleaseStart(act.end || now);
       const r2 = await db.collection(DD_COL).insertOne({
         userId: me.id, activityId: String(act._id), costType,
         base: DD_COST, mult, reward, totalDays: DD_DAYS,
@@ -1366,13 +1371,15 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         // 【v26.76】库里存的是时刻（Date），原来这里直接 toISOString() 显示的是 UTC，
         // 后台填的"23:59"被显示成"15:59"，看起来像时区错了其实是显示错了 —— 一律走 cnOf 转北京。
         act: act ? {
-          title: act.title, enabled: act.enabled !== false,
+          actId: String(act._id), title: act.title, enabled: act.enabled !== false,
           startCn: act.start ? cnOf(new Date(act.start).getTime()) : null,
           endCn: act.end ? cnOf(new Date(act.end).getTime()) : null,
           state: !act.end ? '未设结束（常驻）' : (actMs >= now ? '仍在进行' : '已结束'),
         } : null,
         // 最早的一次未来释放：直接回答"下一轮哪天发"
         pendingStart, nextReleaseCn: nextStartMs === null ? null : cnOf(nextStartMs),
+        // 还没发出过任何一天的记录数 —— 「改释放起点」只会动这一批，先让运营看见是多少条
+        notStarted: recs.filter(r => !(Number(r.releasedDays) > 0)).length,
         total: recs.length, sum,
         shouldTotal: r2(shouldTotal), doneTotal: r2(doneTotal), gapTotal: r2(shouldTotal - doneTotal),
         rows, lostMail,
@@ -1392,6 +1399,32 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       }).catch(() => { });
       res.json({ ok: true, handled: n });
     } catch (e) { console.error('[api] duiduile/release-once', e); res.status(500).json({ ok: false, error: ((e && e.message) || '执行失败') }); }
+  });
+
+  // 【v26.77】后台·改释放起点。只动【还没发出过任何一天】的记录（releasedDays 为 0 或缺失），
+  // 已经发过一条以上的绝不碰 —— 把起点往后挪会让"应发天数"倒退、往前挪会一次性补齐多天，
+  // 两种都会让账上推进的份额和玩家实际收到的对不上，那正是这次要排查的那类问题本身。
+  // 必须带 activityId：避免一次改动波及到别的（未来的）堆堆乐期次。
+  app.post('/api/shanhai/admin/duiduile/set-start', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const b = req.body || {};
+      const actId = String(b.activityId || '');
+      const date = String(b.date || '').trim();
+      if (!ObjectId.isValid(actId)) return res.status(400).json({ ok: false, error: '缺少有效的活动 ID，请先点「发放对账」再操作' });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: '请选择一个日期（YYYY-MM-DD）' });
+      const start = new Date(date + 'T00:00:00+08:00');
+      if (Number.isNaN(start.getTime())) return res.status(400).json({ ok: false, error: '日期无效' });
+      const r = await db.collection(DD_COL).updateMany(
+        { activityId: actId, $or: [{ releasedDays: 0 }, { releasedDays: { $exists: false } }] },
+        { $set: { releaseStart: start, lastDay: null } });
+      await db.collection('shanhai_logs').insertOne({
+        userId: req.user.id, action: 'duiduile_set_start',
+        detail: { activityId: actId, date, changed: r.modifiedCount, by: req.user.username || String(req.user._id) },
+        createdAt: new Date(),
+      }).catch(() => { });
+      res.json({ ok: true, changed: r.modifiedCount, startCn: date + ' 00:00' });
+    } catch (e) { console.error('[api] duiduile/set-start', e); res.status(500).json({ ok: false, error: ((e && e.message) || '设置失败') }); }
   });
 
   // 管理端：清理参与记录（全部 / 指定用户名或工号）——内测数据重置用
