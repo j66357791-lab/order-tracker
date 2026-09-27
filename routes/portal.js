@@ -294,14 +294,16 @@ export default function mountPortal(app, ctx = {}) {
       if (b.cat !== undefined && GALLERY_CATS.includes(String(b.cat))) set.cat = String(b.cat);
       if (b.order !== undefined) set.order = Number(b.order) || 0;
       if (b.active !== undefined) set.active = !!b.active;
-      await db.collection('portal_gallery').updateOne({ _id: new ObjectId(req.params.id) }, { $set: set });
+      if (!ObjectId.isValid(String(req.params.id))) return res.status(400).json({ ok: false, error: '无效的 ID' });   // 【P3-7】畸形 id 返回 400 而不是 500
+      await db.collection('portal_gallery').updateOne({ _id: new ObjectId(String(req.params.id)) }, { $set: set });
       res.json({ ok: true });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
   app.delete('/api/admin/gallery/:id', auth, adminOnly, async (req, res) => {
     try {
       const db = await getDb();
-      await db.collection('portal_gallery').deleteOne({ _id: new ObjectId(req.params.id) });
+      if (!ObjectId.isValid(String(req.params.id))) return res.status(400).json({ ok: false, error: '无效的 ID' });   // 【P3-7】
+      await db.collection('portal_gallery').deleteOne({ _id: new ObjectId(String(req.params.id)) });
       res.json({ ok: true });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
