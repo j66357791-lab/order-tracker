@@ -800,7 +800,8 @@ export function mount(root) {
     catch (err) { toast(err.message); }
   });
 
-  $('gmRefresh').onclick = () => { loadStats(); loadShanhai(); loadCfg(); };
+  // 【2026-09-27 审查修复 P3-18】删除 803 行的重复绑定（真绑定在 1409 行，含完整面板加载；
+  // 两个赋值并存时改动容易只改到旧的那行）
   $('gmCleanup').onclick = cleanup;
   $('gmMaint').onclick = toggleMaint;
   $('gmSaveCfg').onclick = saveCfg;
