@@ -184,7 +184,7 @@ const UI = (() => {
           <div><i>波次</i><b>${Math.floor(stats.time / 18) + 1}/15</b></div>
           <div><i>最佳存活</i><b>${fmtTime(best)}</b></div>
         </div>
-        <button class="btn" onclick="Game.restart()">再入山海</button>
+        <button class="btn" onclick="UI.retry()">再入山海</button>
         <div class="hint">经验珠会强化你的拾取范围与输出节奏，避开精英怪的包围</div>
       </div>`;
   }
@@ -212,7 +212,7 @@ const UI = (() => {
           <div><i>承伤</i><b>${Math.round(hero.dmgTaken)}</b></div>
           <div><i>历史最快</i><b>${fmtTime(best)}</b></div>
         </div>
-        <button class="btn" onclick="Game.restart()">再战一轮</button>
+        <button class="btn" onclick="UI.retry()">再战一轮</button>
         <div class="hint">星级规则：满血通关 3 星 · 余血 ≥60% 2 星 · 更低 1 星<br>M1 原型到此为止 —— M2 将解锁装备词条与法宝流派</div>
       </div>`;
   }
