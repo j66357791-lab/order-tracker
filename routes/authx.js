@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { ObjectId, GridFSBucket } from 'mongodb';
 
 import { limit, limitPass } from '../lib/ratelimit.js';
-import { INLINE_SAFE_TYPES, selfUser } from '../lib/core.js';
+import { INLINE_SAFE_TYPES, selfUser, cleanNick } from '../lib/core.js';
 
 // 【2026-09-24 安全修复】登录时序侧信道兜底：对不存在的用户也执行一次同价 bcrypt 比较。
 // 哈希值对应随机口令「不可能被任何真实口令命中」（bcrypt 哈希本身无法逆推口令）。
@@ -41,7 +41,7 @@ app.post('/api/setup', async (req, res) => {
     if (mark || n > 0) return res.status(400).json({ ok: false, error: '系统已初始化，请直接登录' });
     const doc = {
       username, passwordHash: await bcrypt.hash(String(password), 8),
-      displayName: String(displayName || username).slice(0, 20), role: 'admin',
+      displayName: cleanNick(displayName) || username, role: 'admin',
       shift: false, sockOnline: false, email: '', createdAt: new Date(),
     };
     try {
@@ -119,7 +119,7 @@ app.post('/api/auth/register', limit({ name: 'reg-internal', max: 10, windowMs: 
     const role = hasInvite ? 'writer' : 'client';
     const doc = {
       username, passwordHash: await bcrypt.hash(String(password), 8),
-      displayName: String(displayName || username).slice(0, 20), role,
+      displayName: cleanNick(displayName) || username, role,
       shift: false, sockOnline: false, email: String(email || '').slice(0, 60),
       phone: String(req.body?.phone || '').slice(0, 11),
       level: 0, createdAt: new Date(),
