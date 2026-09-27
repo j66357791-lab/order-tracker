@@ -171,8 +171,8 @@ const UI = (() => {
   function gameOver(stats, hero) {
     const ov = $("overlay");
     ov.style.display = "flex";
-    const best = Math.max(+(localStorage.getItem("m1_best_time") || 0), stats.time);
-    localStorage.setItem("m1_best_time", best);
+    const best = Math.max(+(LS.get("m1_best_time", 0) || 0), stats.time);
+    LS.set("m1_best_time", best);
     ov.innerHTML = `
       <div class="panel">
         <div class="panel-title dead">道陨于此</div>
@@ -192,8 +192,8 @@ const UI = (() => {
   function victory(stats, hero) {
     const ov = $("overlay");
     ov.style.display = "flex";
-    const best = Math.max(+(localStorage.getItem("m1_best_win") || 0), stats.time);
-    localStorage.setItem("m1_best_win", best);
+    const best = Math.max(+(LS.get("m1_best_win", 0) || 0), stats.time);
+    LS.set("m1_best_win", best);
     // 【v24.5】星级按剩余血量：满血 3 星 / ≥60% 2 星 / <60% 1 星
     const hpPct = Math.max(0, Math.min(1, (hero.hp || 0) / (hero.maxHp || 1)));
     // 【v26.10】阈值放宽：原来要 ≥99.9% 血才算 3 星（等于必须滴血未损），
