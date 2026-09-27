@@ -1,6 +1,7 @@
 // routes/user.js — 写手资料/等级/钱包/提现/在班/好友
 // 【2026-09-14 ES6 重构】自 server.js 原样迁出，行为不变
 import { ObjectId } from 'mongodb';
+import { cleanNick } from '../lib/core.js';
 
 export default function mount(ctx) {
   const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
@@ -34,7 +35,7 @@ app.put('/api/me/alipay', auth, async (req, res) => {
 app.put('/api/me/name', auth, async (req, res) => {
   try {
     const db = await getDb();
-    const displayName = String(req.body?.displayName || '').trim().slice(0, 20);
+    const displayName = cleanNick(req.body?.displayName);
     if (!displayName) return res.status(400).json({ ok: false, error: '名字不能为空' });
     await db.collection('users').updateOne({ _id: new ObjectId(req.user.id) }, { $set: { displayName, updatedAt: new Date() } });
     res.json({ ok: true, displayName });
