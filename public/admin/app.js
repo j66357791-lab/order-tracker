@@ -2,9 +2,11 @@
 // 职责：登录守卫 / 接口封装 / 通用组件（toast、确认）/ 时间工具 / 导航渲染
 // 各功能模块（台账/派单/游戏/用户端/安全）逐步迁入后共用本层，不再各自复制
 
-export const TOKEN = localStorage.getItem('jdy_token') || '';
+// —— 登录态读取：localStorage 在无痕模式/被禁用时会抛异常，这里不能让它把整个后台打断 ——
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+export const TOKEN = lsGet('jdy_token') || '';
 export let ME = null;
-try { ME = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) {}
+try { ME = JSON.parse(lsGet('jdy_user') || 'null'); } catch (e) {}
 
 // —— 登录守卫：仅管理员可用；非管理员送回各自的页面 ——
 export function guardAdmin() {
@@ -15,15 +17,41 @@ export function guardAdmin() {
 }
 
 // —— 接口封装：自动带 token；401 统一踢回登录 ——
+// 【v26.71 关键】非 2xx 一律抛出带服务端原文的 Error。
+// 原来这里只处理 401，400/403/409 都当成正常结果 return r.json() 给调用方，
+// 而调用方普遍写的是 `try { const j = await api(...); toast('已到账 ¥' + j.amount) } catch (e) { toast(e.message) }`：
+// 请求被服务端拒绝时 j 是 { ok:false, error:'…' }，j.amount 就是 undefined ——
+// 于是「充值审核没通过」在管理员屏幕上显示成「已到账 ¥undefined（写手余额已更新）」，
+// 派单卡打款、配置保存、数据清理等同理：钱没动、配置没存，提示却报成功。
+// 全站核查过：服务端 511 处失败返回全部带非 2xx 状态码，且没有任何一处用 200 + {ok:false}，
+// 所以「!r.ok 即失败」与真实约定完全对齐；60 个调用点里 48 处本就有 try/catch，
+// 改这一处即可同时修好另外 12 处盲用返回值的调用，不需要在各模块重复加判断。
 export async function api(path, opt = {}) {
-  const r = await fetch(path, { ...opt, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN, ...(opt.headers || {}) } });
+  let r;
+  try {
+    r = await fetch(path, { ...opt, headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN, ...(opt.headers || {}) } });
+  } catch (e) {
+    throw new Error('网络请求失败（连接中断或被拦截），请重试');
+  }
   if (r.status === 401) {
-    localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user');
+    try { localStorage.removeItem('jdy_token'); localStorage.removeItem('jdy_user'); } catch (e) {}
     location.href = '/login.html';
     throw new Error('未登录');
   }
-  return r.json();
+  // 先按文本取，再自己解析：网关/代理返回 HTML 错误页时，r.json() 会抛一句看不懂的
+  // "Unexpected token < in JSON"，把真实状态码盖掉；这里让它显式报 HTTP 码。
+  const text = await r.text().catch(() => '');
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+  if (!r.ok) {
+    const err = new Error((data && (data.error || data.message)) || `操作失败（HTTP ${r.status}）`);
+    err.status = r.status; err.data = data;
+    throw err;
+  }
+  if (data === null) throw new Error(`服务器返回了无法解析的内容（HTTP ${r.status}）`);
+  return data;
 }
+
 
 // —— 轻提示 ——
 let _toastTimer = null;
