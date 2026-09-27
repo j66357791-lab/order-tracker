@@ -160,8 +160,11 @@ app.post('/api/orders/share-batch', auth, adminOnly, async (req, res) => {
 
     const db = await getDb();
     // 先取快照：一是给"改了多少、从多少改到多少"的预览与留痕，二是历史可回滚
+    // 【v26.68 修复线上 500】投影只能全用包含或全用排除（除 _id 外不可混用），
+    // 原先写了 dispatch: 0 —— 而 dispatch 根本不是订单文档上的字段（它是列表接口
+    // 查派单卡后临时拼出来的），混用让 Mongo 直接报 Cannot do inclusion/exception mix。
     const targets = await db.collection(CONFIG.collection).find(filter, {
-      projection: { orderNo: 1, amount: 1, shareRate: 1, status: 1, dispatch: 0 },
+      projection: { orderNo: 1, amount: 1, shareRate: 1, status: 1 },
     }).toArray();
     const need = targets.filter(o => Math.round(Number(o.shareRate) * 100) / 100 !== to);
     if (!need.length) {
