@@ -55,8 +55,16 @@ export function mount(host) {
       orders = j.orders || [];
       USE_REMOTE = true;
     } catch (e) {
+      const wasRemote = USE_REMOTE;
       USE_REMOTE = false;
-      orders = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+      try { orders = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch (e2) { orders = []; }
+      // 【v26.71】降级要喊出来：接口一超时/一报 500，台账就会整表换成「本浏览器暂存」的数据，
+      // 而页面长相完全没变 —— 只有角落里一行小字。管理员很容易把这份本地空表当成云端账本，
+      // 或是在上面继续录入（录入内容只进 localStorage，永远不会到账本里）。
+      // 只在「从云端模式掉下来」这一刻提示一次，避免每 6 秒轮询都弹一条。
+      if (wasRemote !== false) {
+        cpyToast('已连不上服务器，台账切为本地暂存模式：当前显示的不是云端账本，此处的改动也不会入账');
+      }
     }
     render();
   }
@@ -524,7 +532,7 @@ export function mount(host) {
     if (!USE_REMOTE) return;
     try {
       const r = await fetch('/api/orders/share-default', { headers: AH() });
-      const j = await r.json().catch(() => null);
+      const j = await r.json().catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
       if (j && j.ok) applyDefaultRate(j.shareRate);
     } catch (e) { /* 拿不到就用代码默认 45，不打扰 */ }
   }
