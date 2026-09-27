@@ -92,6 +92,8 @@ button { font-family: inherit; }
 .item-card .acts { display: flex; gap: 8px; margin-top: 10px; }
 .item-card .acts button { flex: 1; }
 .st-wait { color: var(--ochre); }
+/* 【2026-09-26 批次2】提现「处理中」状态：抢锁核销中的瞬态，用比"待处理"更醒目的实心态 */
+.st-warn { color: var(--ochre); background: rgba(176, 100, 44, .12); border-radius: 4px; padding: 1px 6px; }
 .st-ok { color: var(--green2); }
 .st-bad { color: var(--red); }
 
