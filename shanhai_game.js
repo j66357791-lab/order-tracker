@@ -1204,18 +1204,25 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   // 【v26.40 释放改版】每日份额不再自动入账，而是累积到「待领取」；玩家手动领取入账。
   // 漏领不损失：按自然日补齐（dayIdx 计算，一次补多天）。
   const ddCnToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+  // 【v26.75】释放进度的唯一算法出处：真实结算与后台对账共用这两个函数，
+  // 否则后台算出"应发第 5 天"、实际代码算出"第 4 天"，对账页就变成误导工具。
+  const ddTargetDay = (startMs, nowMs) => Math.min(DD_DAYS, Math.floor((nowMs - startMs) / 86400e3) + 1);
+  function ddAmountBetween(rec, from, to) {
+    let amt = 0;
+    for (let d = from; d < to; d++) {
+      amt += (d >= DD_DAYS - 1)
+        ? Math.max(0, Math.round(((rec.reward || 0) - (rec.perDay || 0) * (DD_DAYS - 1)) * 100) / 100)
+        : (rec.perDay || 0);
+    }
+    return Math.round(amt * 100) / 100;
+  }
   async function accrueDuiduile(db, rec) {
     if (rec.releasedDays >= DD_DAYS) return false;
     const startMs = new Date(rec.releaseStart).getTime();
     if (Number.isNaN(startMs) || Date.now() < startMs) return false;
-    const dayIdx = Math.floor((Date.now() - startMs) / 86400e3);   // 释放起点当天 = 第 0 天
-    const target = Math.min(DD_DAYS, dayIdx + 1);
+    const target = ddTargetDay(startMs, Date.now());   // 释放起点当天 = 第 0 天
     if (target <= rec.releasedDays) return false;
-    let amt = 0;
-    for (let d = rec.releasedDays; d < target; d++) {
-      amt += (d >= DD_DAYS - 1) ? Math.max(0, Math.round((rec.reward - rec.perDay * (DD_DAYS - 1)) * 100) / 100) : rec.perDay;
-    }
-    amt = Math.round(amt * 100) / 100;
+    const amt = ddAmountBetween(rec, rec.releasedDays, target);
     const r = await db.collection(DD_COL).updateOne(
       { _id: rec._id, releasedDays: rec.releasedDays },
       { $inc: { releasedDays: target - rec.releasedDays, releasedAmount: amt }, $set: { lastDay: ddCnToday() } });
@@ -1276,6 +1283,98 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       res.json({ ok: true, claimed: total });
     } catch (e) { console.error('[api] duiduile/claim', e); res.status(500).json({ ok: false, error: '领取失败，请稍后再试' }); }
   });
+  // 【v26.75】后台·堆堆乐发放对账（只读）。把「应发到第几天 / 实际发到第几天 / 邮箱里有没有对应邮件」
+  // 三件事并排摆出来。此前只能靠"玩家说没收到"来发现漏发，而漏发的三种原因处置方式完全不同：
+  //   未到期 = 正常（释放起点由活动结束时间推出）；落后未跑 = 定时任务没算到它；
+  //   落后已跑/邮件对不上 = 进度推进了但邮件没落地（v26.74 已加回退保护，这里是查历史欠账）。
+  // 看不到数据就只能猜，所以做成后台一页，而不是让运营去跑命令行脚本。
+  app.get('/api/shanhai/admin/duiduile/audit', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const now = Date.now();
+      const today = ddCnToday();
+      const r2 = x => Math.round((Number(x) || 0) * 100) / 100;
+      const act = await db.collection('shanhai_activities').findOne({ type: 'duiduile', enabled: { $ne: false } });
+      const recs = await db.collection(DD_COL).find({}).sort({ releaseStart: -1 }).limit(3000).toArray();
+      const mails = await db.collection(MAIL_COL).aggregate([
+        { $match: { title: { $regex: '灵气堆堆乐' } } },
+        { $group: { _id: '$to', n: { $sum: 1 }, attach: { $sum: '$attach.lingqi' }, last: { $max: '$createdAt' } } },
+      ]).toArray().catch(() => []);
+      const mailBy = new Map(mails.map(m => [String(m._id), m]));
+      const names = {};
+      const uids = [...new Set(recs.map(r => String(r.userId)))].filter(x => ObjectId.isValid(x));
+      if (uids.length) {
+        const us = await db.collection('users')
+          .find({ _id: { $in: uids.map(x => new ObjectId(x)) } }, { projection: { username: 1, displayName: 1 } })
+          .toArray().catch(() => []);
+        us.forEach(u => { names[String(u._id)] = u.displayName || u.username; });
+      }
+      const sum = { 未到期: 0, 正常: 0, 落后未跑: 0, 落后已跑: 0, 已发满: 0 };
+      let shouldTotal = 0, doneTotal = 0;
+      const rows = [];
+      for (const r of recs) {
+        const startMs = new Date(r.releaseStart).getTime();
+        const released = Number(r.releasedDays) || 0;
+        const releasedAmt = r2(r.releasedAmount);
+        if (Number.isNaN(startMs) || now < startMs) { sum.未到期++; continue; }
+        const target = ddTargetDay(startMs, now);
+        const shouldAmt = ddAmountBetween(r, 0, target);
+        shouldTotal += shouldAmt; doneTotal += releasedAmt;
+        if (released >= DD_DAYS) { sum.已发满++; continue; }
+        if (released >= target) { sum.正常++; continue; }
+        const kind = String(r.lastDay || '') === today ? '落后已跑' : '落后未跑';
+        sum[kind]++;
+        const m = mailBy.get(String(r.userId));
+        if (rows.length < 60) rows.push({
+          userId: String(r.userId), name: names[String(r.userId)] || String(r.userId),
+          startCn: new Date(startMs + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '),
+          target, released, gap: target - released, perDay: r2(r.perDay),
+          shouldAmt: r2(shouldAmt), releasedAmt, diff: r2(shouldAmt - releasedAmt),
+          lastDay: r.lastDay || null, mailN: m ? m.n : 0, mailAttach: m ? r2(m.attach) : 0, kind,
+        });
+      }
+      // 账上推进过、邮件附件合计却对不上 → 曾经丢过邮件，需要人工补发
+      const lostMail = [];
+      for (const r of recs) {
+        const adv = r2(r.releasedAmount);
+        if (adv <= 0) continue;
+        const m = mailBy.get(String(r.userId));
+        const att = m ? r2(m.attach) : 0;
+        if (adv - att > 0.5 && lostMail.length < 40) {
+          lostMail.push({ userId: String(r.userId), name: names[String(r.userId)] || String(r.userId), releasedAmt: adv, mailAttach: att, missing: r2(adv - att) });
+        }
+      }
+      const actMs = act && act.end ? new Date(act.end).getTime() : null;
+      res.json({
+        ok: true, nowCn: new Date(now + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '),
+        days: DD_DAYS, perUserCap: 5,
+        act: act ? {
+          title: act.title, enabled: act.enabled !== false,
+          startCn: act.start ? new Date(act.start).toISOString().slice(0, 16).replace('T', ' ') : null,
+          endCn: act.end ? new Date(act.end).toISOString().slice(0, 16).replace('T', ' ') : null,
+          state: !act.end ? '未设结束（常驻）' : (actMs >= now ? '仍在进行' : '已结束'),
+        } : null,
+        total: recs.length, sum,
+        shouldTotal: r2(shouldTotal), doneTotal: r2(doneTotal), gapTotal: r2(shouldTotal - doneTotal),
+        rows, lostMail,
+      });
+    } catch (e) { console.error('[api] duiduile/audit', e); res.status(500).json({ ok: false, error: '对账失败：' + ((e && e.message) || '') }); }
+  });
+
+  // 【v26.75】后台·立即执行一次释放。走的是与定时任务完全相同的工作体：
+  // 内部是「条件更新认领天数 + 发信失败即回退」，所以连点多次也不会重复发；
+  // 漏掉的自然日会像常规定时那样一次补齐（不会少发，也不会多发）。
+  app.post('/api/shanhai/admin/duiduile/release-once', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const n = await processDuiduileRelease();
+      await db.collection('shanhai_logs').insertOne({
+        action: 'duiduile_release_manual', detail: { handled: n }, createdAt: new Date(),
+      }).catch(() => { });
+      res.json({ ok: true, handled: n });
+    } catch (e) { console.error('[api] duiduile/release-once', e); res.status(500).json({ ok: false, error: ((e && e.message) || '执行失败') }); }
+  });
+
   // 管理端：清理参与记录（全部 / 指定用户名或工号）——内测数据重置用
   app.post('/api/shanhai/admin/activities/finduser', auth, adminOnly, async (req, res) => {
     try {
