@@ -8,6 +8,7 @@
 //   4) 关键动作写 game_logs 审计流水
 // 【2026-09-17 安全修复】翻牌/抉择结算加乐观锁（条件更新），并发重复请求不再重复入账
 import { limit } from './lib/ratelimit.js';
+import { addLedgerEntry } from './lib/ledger.js';
 
 export default function mountGames(app, { auth, getDb, cnDayStr }) {
 
@@ -477,7 +478,19 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
     if (!p) return bad(res, 400, '没有可拆的该档福袋');
     const [lo, hi] = BAG_RANGE[size];
     const amount = rnd2(lo + Math.random() * (hi - lo));
-    await db.collection('wallet_log').insertOne({ userId: req.user.id, month: cnDayStr(new Date()).slice(0, 7), amount, note: '魔法翻翻乐-福袋奖励(' + ITEM_NAMES[size] + ')', createdAt: new Date() });
+    try {
+      // 福袋没有天然业务单号可当幂等键（背包是个累加器），防重靠上面那句"扣袋成功才继续"，
+      // 所以这里显式声明 allowNoRef，不再刷缺 refId 的警告
+      await addLedgerEntry(db, { userId: req.user.id, kind: 'game_bag', amount,
+        note: '魔法翻翻乐-福袋奖励(' + ITEM_NAMES[size] + ')' }, { allowNoRef: true });
+    } catch (e) {
+      // 【2026-09-26 批次2】入账失败必须把袋子退回：原先扣完袋再写流水，
+      // 流水写失败就是"袋没了钱也没到"，玩家侧表现为拆了个空袋且无从申诉
+      await db.collection('game_profiles').updateOne({ userId: req.user.id },
+        { $inc: { [field]: 1 }, $set: { updatedAt: new Date() } }).catch(() => { });
+      console.error('[翻翻乐] 福袋入账失败，已退回道具 user=' + req.user.id, (e && e.message) || e);
+      return bad(res, 503, '奖励发放繁忙，福袋已退回，请稍后再拆');
+    }
     await log(db, req.user.id, 'bag_open', { size, amount });
     res.json({ ok: true, size, amount, left: p[field] });
   }));
