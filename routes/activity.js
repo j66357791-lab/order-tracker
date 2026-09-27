@@ -4,6 +4,8 @@ import { ObjectId as _ObjectId } from 'mongodb';
 // 挂载：require('./routes/activity')(app, { auth, getDb, cnDayStr, cnMonthStr, notify });
 import { ObjectId } from 'mongodb';
 import { addLedgerEntry } from '../lib/ledger.js';
+// 【2026-09-27 审查修复 P2-7】签到/拆红包/月奖领取补限流（有唯一索引防重，但缺频率闸）
+import { limit } from '../lib/ratelimit.js';
 
 export default function mountActivity(app, deps) {
   const { auth, getDb, cnDayStr, cnMonthStr, notify } = deps;
@@ -42,7 +44,7 @@ app.get('/api/activity/checkin', auth, async (req, res) => {
 });
 
 // POST /api/activity/checkin - 签到
-app.post('/api/activity/checkin', auth, async (req, res) => {
+app.post('/api/activity/checkin', auth, limit({ name: 'checkin', max: 5, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
   try {
     const db = await getDb();
     const today = cnDayStr(new Date());
@@ -112,7 +114,9 @@ app.get('/api/activity/redpacket', auth, async (req, res) => {
       approvedAt: { $exists: true }
     }).toArray();
     // 历史已拆记录（终身维度，不看日期）
-    const opened = await db.collection('redpacket_records').find({ userId }).toArray();
+    // 【2026-09-27 审查修复 P2-5】只取筛选用得到的字段，减少文档传输（列表本身随订单数增长，量可控）
+    const opened = await db.collection('redpacket_records')
+      .find({ userId }, { projection: { cardId: 1, status: 1, title: 1, amount: 1 } }).toArray();
     const openedCardIds = opened.map(r => String(r.cardId));
     // 未拆过的订单 = 可拆（一个订单终身一次）
     const available = cards.filter(c => !openedCardIds.includes(String(c._id))).map(c => ({
@@ -136,7 +140,7 @@ app.post('/api/activity/redpacket/unfreeze', auth, async (req, res) => {
     res.json({ ok: true, unlocked });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
-app.post('/api/activity/redpacket/:cardId', auth, async (req, res) => {
+app.post('/api/activity/redpacket/:cardId', auth, limit({ name: 'redpacket-open', max: 10, windowMs: 60 * 1000, msg: '拆红包太频繁，稍等片刻' }), async (req, res) => {
   try {
     const db = await getDb();
     const userId = req.user.id;
@@ -206,7 +210,7 @@ app.get('/api/activity/monthly', auth, async (req, res) => {
 });
 
 // POST /api/activity/monthly/claim - 领取月度奖励
-app.post('/api/activity/monthly/claim', auth, async (req, res) => {
+app.post('/api/activity/monthly/claim', auth, limit({ name: 'monthly-claim', max: 5, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
   try {
     const db = await getDb();
     const userId = req.user.id;
