@@ -95,9 +95,11 @@ app.post('/api/admin/users/:id/reset-password', auth, adminOnly, async (req, res
     // 与登录体系对齐：登录时前端传 SHA-256(用户输入)，后端 bcrypt 比对——重置时同样存 bcrypt(SHA-256(新密码))
     // 【2026-09-24 安全修复】bcrypt cost 8 → 10
     const passwordHash = await bcrypt.hash(sha256hex(newPassword), 10);
+    // 【2026-09-26 批次3】重置密码同时作废所有已签发的令牌：
+    // token 有效期 30 天且原先无吊销机制，"帮用户重置密码"这个动作根本踢不掉被盗的会话
     await db.collection('users').updateOne(
       { _id: u._id },
-      { $set: { passwordHash, passwordResetAt: new Date(), passwordResetBy: req.user.username || String(req.user._id) } });
+      { $set: { passwordHash, passwordResetAt: new Date(), tokenAfter: new Date(), passwordResetBy: req.user.username || String(req.user._id) } });
     // 审计流水（谁在什么时候重置了谁的密码）
     await db.collection('game_logs').insertOne({
       userId: id, action: 'admin_reset_password',
