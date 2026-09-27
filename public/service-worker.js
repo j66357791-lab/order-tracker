@@ -5,10 +5,13 @@
  */
 // 【v26.6.1】升版本号：SW 内容一变，浏览器就会拉取新脚本并在 activate 时清掉旧缓存，
 // 把此前被 stale-while-revalidate 扣住的旧页面一次性清干净。
-const CACHE_VERSION = 'jiedan-v16-20260923';
-// 【v22.0】游戏美术资源专用缓存：由游戏页的"资源包下载"显式写入，SW 对这类请求 cache-first。
-// 注意：activate 的清理逻辑必须把这个缓存列入白名单，否则每次 SW 激活都会把已下载的资源包清空。
-const GAME_CACHE = 'fanfanle-assets-v2';
+// 【2026-09-27 审查修复 P2-10/P2-11】升到 v17：① 主缓存加 trimCache 条目上限；② GAME_CACHE
+// 改名 v3（美术包内容变了就改名，旧缓存由 activate 清掉）；③ 删除两段不可达死分支。
+const CACHE_VERSION = 'jiedan-v17-20260927';
+// 【2026-09-27 审查修复 P2-11】翻翻乐美术包缓存带版本号：cache-first 之下只有"换缓存名"
+// 才能让老用户拿到新图（原先写死 v2，换图永远不生效）。美术包内容有变时把这里改名（v3→v4…）。
+// 注意：public/game.html 资源包下载逻辑里的 CACHE 变量必须与这里保持同一个字符串（两处已互相注释）。
+const GAME_CACHE = 'fanfanle-assets-v3';
 const KEEP_CACHES = [CACHE_VERSION, GAME_CACHE];
 const APP_SHELL = [
   '/portal.html',
@@ -17,6 +20,7 @@ const APP_SHELL = [
   '/index.html',
   '/dispatch.html',
   '/writer.html',
+  '/writer-app.js',   // 【2026-09-27】writer.html 内联脚本拆出的主逻辑，离线壳完整性需要它
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
@@ -24,11 +28,33 @@ const APP_SHELL = [
   '/assets/banner-shanhai.jpg',
 ];
 
+// 【2026-09-27 审查修复 P2-10】主缓存条目上限：stale-while-revalidate 会把见过的每张图
+// （含每个 ?v= 变体）都写进缓存，原先无上限、只随版本号整批作废——老用户设备上只进不出。
+// 超过 300 条按先入先出裁剪（Cache API 的 keys() 按写入先后返回，最旧的就是最早存的）。
+const MAIN_CACHE_MAX = 300;
+async function trimMainCache() {
+  const cache = await caches.open(CACHE_VERSION);
+  const keys = await cache.keys();
+  if (keys.length <= MAIN_CACHE_MAX) return;
+  for (const req of keys.slice(0, keys.length - MAIN_CACHE_MAX)) {
+    await cache.delete(req).catch(() => { });
+  }
+}
+
 // 安装：跳过等待，立即激活
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) => cache.addAll(APP_SHELL)).catch(() => {})
-  );
+  // 【2026-09-27 审查修复 P3-10】precache 失败不再静默吞掉：留痕并 3 秒后重试一次，
+  // 避免离线壳残缺而无人知晓（重试仍失败就放弃——下次 SW 更新会再试）
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open(CACHE_VERSION);
+      await cache.addAll(APP_SHELL);
+    } catch (e) {
+      console.warn('[sw] precache 失败，3 秒后重试一次:', (e && e.message) || e);
+      await new Promise(r => setTimeout(r, 3000));
+      await caches.open(CACHE_VERSION).then(c => c.addAll(APP_SHELL)).catch(() => { });
+    }
+  })());
   self.skipWaiting();
 });
 
@@ -102,7 +128,8 @@ self.addEventListener('fetch', (event) => {
         const networkFetch = fetch(event.request).then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
+            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone))
+              .then(() => trimMainCache());
           }
           return response;
         }).catch(() => cached || Response.error());   // 网络失败且无缓存：不能把 undefined 交给 respondWith
@@ -112,39 +139,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML 页面：network-first（总是获取最新版本）
-  if (url.pathname.endsWith('.html') || url.pathname === '/' || url.pathname.endsWith('/')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match(url.pathname.indexOf('member') >= 0 ? '/portal.html' : '/index.html')))
-    );
-    return;
-  }
-
-  // 【v20.4 修复】/admin/ 下的壳文件（app.js / app.css / mod-*.js）必须 network-first：
-  // 原来走下面的"先回缓存、后台更新"，部署新版本后第一次打开管理后台会拿到上一版
-  // 的 app.js（导航项、样式都是旧的），刷新一次才对——表现为"页面布局突然不对"。
-  if (url.pathname.startsWith('/admin/')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match(event.request).then((cached) => cached || Response.error()))
-    );
-    return;
-  }
+  // 【2026-09-27 审查修复 P3-11】删除两段不可达的旧分支（.html/.js/.css 已被上面的 network-first
+  // 正则截获，走到这里只可能是"无扩展名路径"）。原 /admin/ 分支对 js/css 同样不可达——
+  // v20.4 那次"后台布局突然不对"的事故正是这类分支造成的误读，死代码一律清掉。
 
   // 其他静态资源：stale-while-revalidate（先回缓存，后台更新）
   event.respondWith(
@@ -153,7 +150,8 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
+            caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone))
+              .then(() => trimMainCache());
           }
           return response;
         })
