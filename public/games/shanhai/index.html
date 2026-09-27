@@ -347,11 +347,11 @@
   <div id="overlay"></div>
 </div>
 
-<script src="js/config.js?v=36"></script>
+<script src="js/config.js?v=37"></script>
 <script>
 "use strict";
 // ===== 后端对接层 =====
-const SH_TOKEN = localStorage.getItem("jdy_token");
+const SH_TOKEN = LS.get("jdy_token", "");
 if (!SH_TOKEN) location.href = "/login.html";
 // 【v24.0】从写手端点进来的走 history.back()：写手端走 bfcache 恢复，不整页重载不闪白屏
 // 【v24.1】sessionStorage 留标记 → 写手端恢复/加载后直接落在「活动」页签
@@ -364,7 +364,7 @@ function exitToWriter(){
 }
 async function shApi(path, opt = {}) {
   const r = await fetch(path, { ...opt, headers: { "Content-Type": "application/json", Authorization: "Bearer " + SH_TOKEN, ...(opt.headers || {}) } });
-  if (r.status === 401) { localStorage.removeItem("jdy_token"); localStorage.removeItem("jdy_user"); location.href = "/login.html"; throw new Error("未登录"); }
+  if (r.status === 401) { LS.remove("jdy_token"); LS.remove("jdy_user"); location.href = "/login.html"; throw new Error("未登录"); }
   // 【v26.34】404/5xx 带上失败的接口路径——报错即定位，不用再猜是哪个请求出的问题
   if (r.status === 404 || r.status >= 500) {
     const d = await r.json().catch(() => ({}));
@@ -374,15 +374,15 @@ async function shApi(path, opt = {}) {
 }
 function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
 </script>
-<script src="js/assets.js?v=36"></script>
-<script src="js/pool.js?v=36"></script>
-<script src="js/meta.js?v=36"></script>
-<script src="js/entities.js?v=36"></script>
-<script src="js/weapons.js?v=36"></script>
-<script src="js/effects.js?v=36"></script>
-<script src="js/audio.js?v=36"></script>
-<script src="js/ui.js?v=36"></script>
-<script src="js/game.js?v=36"></script>
+<script src="js/assets.js?v=37"></script>
+<script src="js/pool.js?v=37"></script>
+<script src="js/meta.js?v=37"></script>
+<script src="js/entities.js?v=37"></script>
+<script src="js/weapons.js?v=37"></script>
+<script src="js/effects.js?v=37"></script>
+<script src="js/audio.js?v=37"></script>
+<script src="js/ui.js?v=37"></script>
+<script src="js/game.js?v=37"></script>
 <script>
 "use strict";
 (async () => {
@@ -423,7 +423,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" id="sndToggle">${(window.SFX && SFX.enabled) ? "🔊 音效：开" : "🔇 音效：关"}</div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer;position:relative" id="umMail">📮 邮箱<span id="umMailDot" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);width:9px;height:9px;border-radius:50%;background:#e8503c"></span></div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" onclick="exitToWriter()">🏠 返回网站</div>
-            <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer;color:#c0392b" onclick="localStorage.removeItem('jdy_token');localStorage.removeItem('jdy_user');location.href='/login.html'">🚪 退出登录</div>
+            <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer;color:#c0392b" onclick="LS.remove('jdy_token');LS.remove('jdy_user');location.href='/login.html'">🚪 退出登录</div>
           </div>
         </div>
       </div>`;
@@ -542,13 +542,13 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       </div>`;
     document.body.appendChild(mask);
     // 加载榜单数据
-    fetch('/api/shanhai/leaderboard', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('jdy_token') } })
+    fetch('/api/shanhai/leaderboard', { headers: { 'Authorization': 'Bearer ' + LS.get('jdy_token', '') } })
       .then(r => r.json())
       .then(d => {
         const el = document.getElementById('boardList');
         if (!el) return;
         const row = (u, i, right) => `<div style="display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid rgba(0,0,0,.05)">
-            <span>${i+1}. ${u.username || '佚名'}</span><span>${right}</span></div>`;
+            <span>${i+1}. ${_escHtml(u.username || '佚名')}</span><span>${right}</span></div>`;
         const t = (d.timeBoard || []).map((u, i) => row(u, i, fmtT(u.bestTimeSec) + ' · ' + (u.wins || 0) + '胜')).join('');
         const k = (d.killBoard || []).map((u, i) => row(u, i, '斩妖' + (u.bestKills || 0) + ' · ' + (u.wins || 0) + '胜')).join('');
         el.innerHTML = `<div style="font-weight:900;color:#3a5a4a;margin:8px 0 2px">⚡ 最快通关</div>` + (t || '<div style="text-align:center;padding:12px;color:#999">虚位以待</div>') +
@@ -2608,7 +2608,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     1: "练手局 · 节奏舒缓", 2: "妖群渐起 · 数量与属性增强", 3: "兽群游荡", 4: "毕方来袭 · 远程压制",
     5: "精英初现", 7: "旋龟入列 · 重甲压阵", 10: "草泽双精英", 15: "妖潮之夜", 20: "山臊王 · 真身降临",
   };
-  function starsOf(n) { return (META.stageStars || {})[n] || (localStorage.getItem("sh_stars_" + n) | 0) || 0; }
+  function starsOf(n) { return (META.stageStars || {})[n] || (LS.get("sh_stars_" + n, 0) | 0) || 0; }
   function stageOpen(n) { return n === 1 || starsOf(n - 1) > 0; }
   // 【v24.9】体力：上限 10，挑战一局 1 点，每 2 小时恢复 1 点（服务端计时）
   function fmtHMS(sec) {
@@ -2671,7 +2671,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
     const p = META.profile || {};
     // 【v24.5】星级图以服务端档案为准（跨设备），本地也留一份
     const ss = Object.assign({}, p.stageStars || {}, META.stageStars || {});
-    Object.keys(ss).forEach(k => { const v = +ss[k] || 0; if (v) localStorage.setItem("sh_stars_" + k, String(v)); });
+    Object.keys(ss).forEach(k => { const v = +ss[k] || 0; if (v) LS.set("sh_stars_" + k, String(v)); });
     META.stageStars = ss;
     $("tbXianyu").textContent = p.xianyu || 0;
     $("tbLingqi").textContent = p.lingqi || 0;
@@ -3070,7 +3070,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       <div class="bag-cell q-${it.quality}" data-id="${it.id}" title="${tierName(it)}">
         <img class="bag-ico" src="/games/shanhai/assets/${BAG_ICON[it.slot] || "icon_weapon"}.png" alt="">
         <i>${SLOT_NAME[it.slot] || it.slot} · <em class="tier-tag">${TIER_CN[tierOf(it)]}</em></i>
-        <b style="color:${it.color || "#cfd8dc"}">${it.name || ""}</b>
+        <b style="color:${it.color || "#cfd8dc"}">${_escHtml(it.name || "")}</b>
         <em>${it.affix || ""}+${it.val}${it.slot === "weapon" ? "" : "%"}</em>
       </div>`).join("");
     grid.querySelectorAll(".bag-cell").forEach(c => c.onclick = () => {
@@ -3184,7 +3184,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
       const d = await shApi("/api/shanhai/leaderboard");
       const kind = window.__boardKind;
       const list = kind === "t" ? d.timeBoard : d.killBoard;
-      const fmt = list.map((p, i) => `<tr><td>${i + 1}</td><td>${p.username || "侠士"}</td><td>${kind === "t" ? fmtT(p.bestTimeSec) : p.bestKills}</td><td style="color:#6A7480">胜${p.wins || 0}</td></tr>`).join("") || '<tr><td colspan="4" class="empty-tip">虚位以待</td></tr>';
+      const fmt = list.map((p, i) => `<tr><td>${i + 1}</td><td>${_escHtml(p.username || "侠士")}</td><td>${kind === "t" ? fmtT(p.bestTimeSec) : p.bestKills}</td><td style="color:#6A7480">胜${p.wins || 0}</td></tr>`).join("") || '<tr><td colspan="4" class="empty-tip">虚位以待</td></tr>';
       box.innerHTML = `<div class="board-tabs">
         <button class="${kind === "t" ? "on" : ""}" data-k="t">最快通关</button>
         <button class="${kind === "k" ? "on" : ""}" data-k="k">斩妖最多</button>
@@ -3236,7 +3236,7 @@ function fmtT(s) { s = Math.round(s); return String(Math.floor(s / 60)).padStart
   UI.gameOver = function (stats, hero) { META.report(false, curStage, packStats(stats, hero)).then(g => g && renderHome()); const r = _over(stats, hero); addHomeBtn(); return r; };
   UI.victory = function (stats, hero) {
     META.report(true, curStage, packStats(stats, hero)).then(g => {
-      if (g && g.stars) { localStorage.setItem("sh_stars_" + curStage, g.stars); META.stageStars = META.stageStars || {}; META.stageStars[curStage] = g.stars; }
+      if (g && g.stars) { LS.set("sh_stars_" + curStage, g.stars); META.stageStars = META.stageStars || {}; META.stageStars[curStage] = g.stars; }
       renderHome();
       if (g) {
         const p = document.querySelector(".panel .result-grid");
