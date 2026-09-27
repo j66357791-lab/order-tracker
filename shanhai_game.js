@@ -10,6 +10,8 @@ import { limit } from './lib/ratelimit.js';
 import { ObjectId } from 'mongodb';
 import { createHash, randomBytes as _rb } from 'crypto';
 import { addLedgerEntry } from './lib/ledger.js';
+// 【v26.74 多实例必修】定时任务每实例各跑一份 → 同一批数据会被结算多次。统一走租约。
+import { everyJob } from './lib/jobs.js';
 
 export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
 
@@ -1219,10 +1221,22 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       { $inc: { releasedDays: target - rec.releasedDays, releasedAmount: amt }, $set: { lastDay: ddCnToday() } });
     // 【v26.46】每日份额改发邮件（玩家在头像-设置-邮箱里领取）；旧 pending 手动领取保留兼容
     if (r.modifiedCount && amt > 0) {
-      await sendMails(db, [rec.userId],
-        `灵气堆堆乐 · 每日释放（第 ${rec.releasedDays + 1}/${DD_DAYS} 天）`,
-        `今日释放 ${amt} 灵气已附于本邮件，点击领取即可到账。`,
-        amt, 0);
+      // 【v26.74 修】邮件发送失败必须把刚推进的进度退回去。
+      // 原来 releasedDays 先 +1、然后才发邮件，而邮件是这批灵气【唯一的】投递渠道：
+      // insertMany 一旦失败（网络抖动、TTL 索引重建中、库压力），下一轮 target<=releasedDays
+      // 直接 return false —— 那一天的灵气就永久消失了，且没有任何告警或对账能发现。
+      try {
+        await sendMails(db, [rec.userId],
+          `灵气堆堆乐 · 每日释放（第 ${rec.releasedDays + 1}/${DD_DAYS} 天）`,
+          `今日释放 ${amt} 灵气已附于本邮件，点击领取即可到账。`,
+          amt, 0);
+      } catch (e) {
+        const back = target - rec.releasedDays;
+        await db.collection(DD_COL).updateOne({ _id: rec._id },
+          { $inc: { releasedDays: -back, releasedAmount: -amt }, $set: { lastDay: '' } }).catch(() => { });
+        console.error(`[duiduile] 第 ${rec.releasedDays + 1} 天邮件发送失败，已回退 ${back} 天份额待下轮重试：`, (e && e.message) || e);
+        return false;
+      }
     }
     return !!r.modifiedCount;
   }
@@ -1236,8 +1250,10 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     for (const rec of docs) { if (await accrueDuiduile(db, rec)) n++; }
     return n;
   }
-  setInterval(() => { processDuiduileRelease().catch(e => console.error('[duiduile] 释放任务', e.message)); }, 10 * 60 * 1000);
-  setTimeout(() => { processDuiduileRelease().catch(() => { }); }, 90 * 1000);
+  // 【v26.74 · A3】同样换成租约任务。注意 accrueDuiduile 内部本来就有
+  // { _id, releasedDays: 旧值 } 的条件更新做乐观锁，所以多实例不会重复计息；
+  // 这一层租约是为了避免每个实例都全表扫一遍、以及重复发信件的开销。
+  everyJob('sh:duiduile-release', 10 * 60 * 1000, processDuiduileRelease, { firstDelayMs: 90 * 1000, getDb });
   // 手动领取：先补齐当日份额，再把待领取一次性入账
   app.post('/api/shanhai/duiduile/claim', auth, limit({ name: 'sh-dd-claim', max: 30, windowMs: 60 * 1000, msg: '太快了' }), async (req, res) => {
     try {
@@ -1588,7 +1604,17 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     const now = new Date();
     const occs = await db.collection(OCC_COL).find({ lastSettleAt: { $lte: new Date(now.getTime() - 3600e3) } }).limit(200).toArray();
     await db.collection('shanhai_battles').deleteMany({ expireAt: { $lt: new Date() } }).catch(() => { });   // 过期战斗会话清理
+    let settled = 0;
     for (const o of occs) {
+      // 【v26.74 · A1 关键】先把"这一小时的结算权"抢到手，再动钱。
+      // 原来是无条件 $inc 扣仙玉 / 发灵气，lastSettleAt 在扣完之后才更新 ——
+      // 两个实例（多实例部署）同时读到同一个旧 lastSettleAt，就会各扣一遍、各发一遍：
+      // 玩家被多扣 N 倍仙玉、同时多领 N 倍灵气（灵气可在交易所变现），两个方向都是错的。
+      // 把 lastSettleAt 的旧值写进更新条件即成乐观锁：抢到的人 modifiedCount=1，其余为 0 直接跳过。
+      const won = await db.collection(OCC_COL).updateOne(
+        { _id: o._id, lastSettleAt: o.lastSettleAt },
+        { $set: { lastSettleAt: now } });
+      if (!won || won.modifiedCount !== 1) continue;   // 本轮已被其它实例认领
       const prof = await db.collection('shanhai_profiles').findOne({ userId: o.userId });
       if (!prof || (prof.xianyu || 0) < o.settleCost) {
         await db.collection(OCC_COL).deleteOne({ _id: o._id });
@@ -1596,13 +1622,14 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         continue;
       }
       await db.collection('shanhai_profiles').updateOne({ userId: o.userId }, { $inc: { xianyu: -o.settleCost, lingqi: o.out } });
-      await db.collection(OCC_COL).updateOne({ _id: o._id }, { $set: { lastSettleAt: now } });
       await db.collection('shanhai_logs').insertOne({ userId: o.userId, action: 'vein_settle', detail: { out: o.out, cost: o.settleCost }, createdAt: new Date() }).catch(() => { });
+      settled++;
     }
-    return occs.length;
+    return settled;
   }
-  setInterval(() => { processOccupations().catch(e => console.error('[chal] 结算', e.message)); }, 10 * 60 * 1000);
-  setTimeout(() => { processOccupations().catch(() => { }); }, 120 * 1000);
+  // 【v26.74 · A3】原来这里是裸 setInterval：多实例下每个进程各跑一份，同一批占领每小时被结算 N 次。
+  // 换成带租约的 everyJob：每一轮只有一个实例真正执行（配合上面 A1 的乐观锁双保险）。
+  everyJob('sh:occupations', 10 * 60 * 1000, processOccupations, { firstDelayMs: 120 * 1000, getDb });
 
   // ==================== 体力（v24.9） ====================
   // 上限 10 点，挑战一局消耗 1 点，每 2 小时恢复 1 点（服务端计时，客户端改不了）
