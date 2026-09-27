@@ -228,13 +228,26 @@ app.get('/api/chats', auth, async (req, res) => {
     const db = await getDb();
     if (req.user.role === 'admin') {
       const writers = await db.collection('users').find({ role: 'writer' }).sort({ createdAt: 1 }).toArray();
-      const list = [];
-      for (const w of writers) {
+      // 【2026-09-27 审查修复 P2-5】原先每个写手 2 次查询（N+1），写手一多会话列表明显变慢；
+      // 改为两次聚合一次算完：每个会话的最后一条消息 + 每个会话的未读数
+      const convs = writers.map(w => pairKey(req.user.id, w._id.toString()));
+      const [lastAgg, unreadAgg] = await Promise.all([
+        db.collection('messages').aggregate([
+          { $match: { conversation: { $in: convs } } },
+          { $sort: { createdAt: -1 } },
+          { $group: { _id: '$conversation', doc: { $first: '$$ROOT' } } },
+        ]).toArray(),
+        db.collection('messages').aggregate([
+          { $match: { conversation: { $in: convs }, to: req.user.id, read: false } },
+          { $group: { _id: '$conversation', n: { $sum: 1 } } },
+        ]).toArray(),
+      ]);
+      const lastMap = new Map(lastAgg.map(x => [x._id, x.doc]));
+      const unreadMap = new Map(unreadAgg.map(x => [x._id, x.n]));
+      const list = writers.map(w => {
         const conv = pairKey(req.user.id, w._id.toString());
-        const last = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: -1 }).limit(1).toArray();
-        const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
-        list.push({ user: selfUser(w), unread, last: last[0] || null });
-      }
+        return { user: selfUser(w), unread: unreadMap.get(conv) || 0, last: lastMap.get(conv) || null };
+      });
       return res.json({ ok: true, chats: list });
     }
     // 写手：会话对象=管理员 + 好友（同事）
@@ -242,13 +255,26 @@ app.get('/api/chats', auth, async (req, res) => {
     const me = await db.collection('users').findOne({ _id: new ObjectId(req.user.id) });
     const friendIds = (me.friends || []).filter(x => ObjectId.isValid(x) && x !== req.user.id);
     const friends = friendIds.length ? await db.collection('users').find({ _id: { $in: friendIds.map(x => new ObjectId(x)) } }).toArray() : [];
-    const list = [];
-    for (const a of [...admins, ...friends]) {
+    // 【2026-09-27 审查修复 P2-5】与 admin 分支同款：两次聚合代替每个联系人 2 次查询
+    const peers = [...admins, ...friends];
+    const convs2 = peers.map(a => pairKey(req.user.id, a._id.toString()));
+    const [lastAgg2, unreadAgg2] = await Promise.all([
+      db.collection('messages').aggregate([
+        { $match: { conversation: { $in: convs2 } } },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: '$conversation', doc: { $first: '$$ROOT' } } },
+      ]).toArray(),
+      db.collection('messages').aggregate([
+        { $match: { conversation: { $in: convs2 }, to: req.user.id, read: false } },
+        { $group: { _id: '$conversation', n: { $sum: 1 } } },
+      ]).toArray(),
+    ]);
+    const lastMap2 = new Map(lastAgg2.map(x => [x._id, x.doc]));
+    const unreadMap2 = new Map(unreadAgg2.map(x => [x._id, x.n]));
+    const list = peers.map(a => {
       const conv = pairKey(req.user.id, a._id.toString());
-      const last = await db.collection('messages').find({ conversation: conv }).sort({ createdAt: -1 }).limit(1).toArray();
-      const unread = await db.collection('messages').countDocuments({ conversation: conv, to: req.user.id, read: false });
-      list.push({ user: selfUser(a), unread, last: last[0] || null });
-    }
+      return { user: selfUser(a), unread: unreadMap2.get(conv) || 0, last: lastMap2.get(conv) || null };
+    });
     list.sort((x, y) => (y.last?.createdAt || y.user.createdAt || 0) - (x.last?.createdAt || x.user.createdAt || 0));
     res.json({ ok: true, chats: list });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
@@ -306,10 +332,15 @@ app.get('/api/workbench', auth, async (req, res) => {
     const start = new Date(ym + '-01T00:00:00+08:00');
     const endDate = (() => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 1, 0, 0, 0) - 8 * 3600 * 1000) })();
     const monthCards = await db.collection('cards').find({ to: req.user.id, createdAt: { $gte: start, $lt: endDate } }).toArray();
-    const allCards = await db.collection('cards').find({ to: req.user.id }).toArray();
-    const pendingCount = allCards.filter(c => ['待接单', '已接单', '待审核'].includes(c.status)).length;
+    // 【2026-09-27 审查修复 P2-5】原先把该用户全部订单拉进内存只为数两个状态（订单越多越慢），
+    // 改为两次定向聚合，数据量与订单总数解耦
+    const pendingCount = await db.collection('cards').countDocuments({ to: req.user.id, status: { $in: ['待接单', '已接单', '待审核'] } });
+    const payAgg = await db.collection('cards').aggregate([
+      { $match: { to: req.user.id, status: '待打款' } },
+      { $group: { _id: null, sum: { $sum: { $cond: [{ $isNumber: '$reward' }, '$reward', 0] } } } },
+    ]).toArray();
     const monthAccepted = Math.round(monthCards.filter(c => c.status !== '已拒绝').reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
-    const pendingPay = Math.round(allCards.filter(c => c.status === '待打款').reduce((s, c) => s + (c.reward || 0), 0) * 100) / 100;
+    const pendingPay = Math.round(((payAgg[0] && payAgg[0].sum) || 0) * 100) / 100;
     const cnDay = d => cnDateStr(new Date(new Date(d).getTime() + 8 * 3600 * 1000)).slice(0, 10);
     const daily = {};
     monthCards.forEach(c => {
@@ -329,7 +360,7 @@ app.get('/api/workbench', auth, async (req, res) => {
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 发文字消息
-app.post('/api/messages', auth, async (req, res) => {
+app.post('/api/messages', auth, limit({ name: 'msg-send', max: 30, windowMs: 60 * 1000, msg: '发送太频繁，稍等片刻' }), async (req, res) => {
   try {
     const db = await getDb();
     const peer = String(req.body?.peer || '');
@@ -380,6 +411,22 @@ app.post('/api/files', auth, limit({ name: 'upload', max: 30, windowMs: 10 * 60 
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 // 下载文件（会话双方可下；支持 ?token= 供浏览器直接打开）
+// 【2026-09-27 审查修复 P2-12】文件预览/下载的 HttpOnly Cookie：
+// <img>/<a> 标签带不了 Authorization 头，前端原先把 JWT 拼在下载 URL 里（进浏览器历史与访问日志）。
+// 登录后的页面（写手端/管理端聊天）调一次 POST 本接口签发 Cookie，之后 /api/files/:id/download
+// 直接免参访问；登出时 DELETE 清除。Cookie 与当前 token 同值同寿，HttpOnly + SameSite=Strict。
+app.post('/api/auth/cookie', auth, (req, res) => {
+  const h = req.headers.authorization || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : '';
+  if (!token) return res.status(400).json({ ok: false, error: '缺少令牌' });
+  res.setHeader('Set-Cookie', `jdy_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${30 * 24 * 3600}`);
+  res.json({ ok: true });
+});
+app.delete('/api/auth/cookie', (req, res) => {
+  res.setHeader('Set-Cookie', 'jdy_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
+  res.json({ ok: true });
+});
+
 app.get('/api/files/:id/download', auth, async (req, res) => {
   try {
     const db = await getDb();
