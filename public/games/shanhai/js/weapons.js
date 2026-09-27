@@ -194,6 +194,16 @@ class Projectile {
     this.target = params.target || null;
     this.homing = !!params.homing;
     this.isSword = (kind === "sword" || kind === "swordburst");
+    // 【v26.70】公转模式的一组字段必须先给默认值：原来只在 kind==="gale" 分支里赋值，
+    // 而对象池会把用过的弹幕回收再交给别的弹幕复用。于是「旋风刃打过一发之后，
+    // 从同一个池里复用的任何一发（火线、冰锥、敌人子弹、落石）都还带着 orbit=true」，
+    // update() 第一句就 if (this.orbit) 直接改写坐标并 return —— 这颗子弹不再按弹道飞行，
+    // 而是瞬移贴到主角身上绕圈，敌人子弹会变成绕着玩家转的必中环，且完全躲不开。
+    // heroRef 同理会残留：池里长期攥着上一代的英雄对象。
+    this.orbit = false;
+    this.orbA = 0; this.orbR = 0; this.orbW = 0;
+    this.heroRef = null;
+    this.hitCdT = 0;
     // 【v24.3】旋风刃：绕体旋转模式（跟随英雄、按角度公转、带命中冷却）
     if (kind === "gale") {
       this.orbit = true;
