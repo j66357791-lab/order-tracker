@@ -3,6 +3,7 @@ import { ObjectId as _ObjectId } from 'mongodb';
 // 【2026-09-14v2 架构瘦身】从 server.js 抽出，行为不变
 // 挂载：require('./routes/activity')(app, { auth, getDb, cnDayStr, cnMonthStr, notify });
 import { ObjectId } from 'mongodb';
+import { addLedgerEntry } from '../lib/ledger.js';
 
 export default function mountActivity(app, deps) {
   const { auth, getDb, cnDayStr, cnMonthStr, notify } = deps;
@@ -84,7 +85,15 @@ app.post('/api/activity/checkin', auth, async (req, res) => {
       throw e;
     }
     // 入账 wallet_log
-    await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount, note: '每日签到', createdAt: new Date() });
+    // 【2026-09-26 批次2】带 refId 幂等键；并且入账真失败时把签到记录退回去，
+    // 否则用户"今天已签到"却永远拿不到钱，再点一次又被唯一索引挡成"今日已签到"，死局。
+    try {
+      await addLedgerEntry(db, { userId, kind: 'checkin', refId: 'checkin:' + userId + ':' + today, amount, note: '每日签到' });
+    } catch (e) {
+      await db.collection('checkin_records').deleteOne({ userId, date: today }).catch(() => { });
+      console.error('[签到] 入账失败，已撤销签到记录待重试 user=' + userId, (e && e.message) || e);
+      return res.status(503).json({ ok: false, error: '奖励到账处理繁忙，请稍后重新签到' });
+    }
     res.json({ ok: true, amount, streak });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
@@ -219,7 +228,14 @@ app.post('/api/activity/monthly/claim', auth, async (req, res) => {
       if (e.code === 11000) return res.status(400).json({ ok: false, error: '本月奖励已领取' });
       throw e;
     }
-    await db.collection('wallet_log').insertOne({ userId, month, amount: reward, note: '月度活动奖励', createdAt: new Date() });
+    // 【2026-09-26 批次2】同上：幂等 refId + 失败回退领取记录，避免"已领取却没到账"的死局
+    try {
+      await addLedgerEntry(db, { userId, kind: 'monthly', refId: 'monthly:' + userId + ':' + month, amount: reward, note: '月度活动奖励' });
+    } catch (e) {
+      await db.collection('monthly_claims').deleteOne({ userId, month }).catch(() => { });
+      console.error('[月度] 奖励入账失败，已撤销领取记录待重试 user=' + userId, (e && e.message) || e);
+      return res.status(503).json({ ok: false, error: '奖励到账处理繁忙，请稍后再领' });
+    }
     res.json({ ok: true, reward });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
@@ -233,40 +249,76 @@ let D = { ObjectId: null, CONFIG: null, normalizeStatus: null, cnMonthStr: null,
 export async function unfreezeRedpackets(db, userId) {
   const { ObjectId, CONFIG, normalizeStatus, cnMonthStr, notify } = D;
   const frozen = await db.collection('redpacket_records').find({ userId, status: '冻结' }).sort({ createdAt: 1 }).toArray();
+  if (!frozen.length) return 0;
+  // 【2026-09-26 批次2 性能】原先每条冻结记录要串行走 3~5 次库（查卡、查订单、查重、改状态、写流水），
+  // 而本函数是在"管理员确认打款"的同步路径里被调用的 —— 冻结记录一多，打款接口响应就线性变慢，
+  // 慢到管理员以为失败又点一次，正好叠加提现那边的重复打款风险。这里先把卡和订单批量拉齐。
+  const cardIds = frozen.map(r => r.cardId).filter(id => id && ObjectId.isValid(String(id))).map(id => new ObjectId(String(id)));
+  const cardMap = new Map();
+  if (cardIds.length) {
+    const cards = await db.collection('cards').find({ _id: { $in: cardIds } }).toArray();
+    for (const c of cards) cardMap.set(String(c._id), c);
+  }
+  const orderIds = [...new Set(cardIds.map(id => cardMap.get(String(id))?.orderId).filter(x => x && ObjectId.isValid(String(x))))]
+    .map(x => new ObjectId(String(x)));
+  const orderMap = new Map();
+  if (orderIds.length) {
+    const orders = await db.collection(CONFIG.collection).find({ _id: { $in: orderIds } }).toArray();
+    for (const o of orders) orderMap.set(String(o._id), o);
+  }
+  // 已经入过账的红包订单号。新数据按幂等键 (kind='redpacket', refId=订单号) 查；
+  // 【2026-09-26 批次2】兼容口径：v26.65 之前的历史流水没有 kind/refId，只有 cardId + "红包奖励-标题"，
+  // 直接丢掉这条判重会让老用户"历史上已领过的那单"在新逻辑眼里变成没领过。
+  const already = await db.collection('wallet_log').find(
+    { userId, $or: [{ kind: 'redpacket' }, { cardId: { $type: 'string' } }] },
+    { projection: { refId: 1, note: 1, cardId: 1 } }).toArray();
+  const paidRefs = new Set(already.map(x => String(x.refId || x.cardId || '')).filter(Boolean));
+
   let unlocked = 0;
   const paidCardIds = new Set();   // 本轮已入账订单（重复拆的历史脏数据只按最早一笔算）
   for (const r of frozen) {
-    const cid = String(r.cardId);
-    const card = await db.collection('cards').findOne({ _id: r.cardId });
-    let done = false;
-    if (card) {
-      if (card.status === '已完成') done = true;
-      else if (card.orderId) {
-        try {
-          if (ObjectId.isValid(String(card.orderId))) {
-            const o = await db.collection(CONFIG.collection).findOne({ _id: new ObjectId(String(card.orderId)) });
-            if (o && normalizeStatus(o.status) === '已结算') done = true;   // 关联订单完结
-          }
-        } catch (e3) { /* orderId 非法格式：跳过订单关联检查 */ }
+    // 【2026-09-26 批次2】单条try/catch：原先整个函数是一条裸链路，历史数据里只要有一条
+    // cardId 存的是字符串（该集合做过索引迁移，存在旧格式），new ObjectId 就抛 BSONError，
+    // 导致**这个写手所有冻结红包永远解不了**，而调用方只 console.warn —— 用户侧表现为"钱一直不解冻"。
+    try {
+      const cid = String(r.cardId);
+      const card = cardMap.get(cid);
+      let done = false;
+      if (card) {
+        if (card.status === '已完成') done = true;
+        else if (card.orderId && ObjectId.isValid(String(card.orderId))) {
+          const o = orderMap.get(String(card.orderId));
+          if (o && normalizeStatus(o.status) === '已结算') done = true;   // 关联订单完结
+        }
       }
-    }
-    if (done) {
-      // 【2026-09-14 修复】幂等：同订单已入过账（本轮或历史）的重复记录作废，不再入账
-      const paid = paidCardIds.has(cid) || await db.collection('wallet_log').findOne({ userId, note: '红包奖励-' + (r.title || ''), cardId: cid });
-      if (paid) {
+      if (!done) continue;
+      if (paidCardIds.has(cid) || paidRefs.has(cid)) {
         await db.collection('redpacket_records').updateOne({ _id: r._id }, { $set: { status: '已作废', note: '重复拆包记录' } });
         continue;
       }
-      // 【二次复核修正】原"查重→无条件改状态→入账"三步非原子，打款自动触发与手动解冻并发时
-      // 同一红包会重复入账两次（真金流水）——改为条件更新抢占，只有改成功的那个请求入账
+      // 【二次复核修正】条件更新抢占，防并发重复入账
       const claim = await db.collection('redpacket_records').updateOne(
         { _id: r._id, status: '冻结' },
         { $set: { status: '已解冻', unlockedAt: new Date() } });
       if (!claim.modifiedCount) { paidCardIds.add(cid); continue; }
-      await db.collection('wallet_log').insertOne({ userId, month: cnMonthStr(new Date()), amount: r.amount, note: '红包奖励-' + r.title, cardId: cid, createdAt: new Date() });
-      paidCardIds.add(cid);
+      try {
+        // 【2026-09-26 批次2】走账本幂等键 (kind='redpacket', refId=订单号)
+        await addLedgerEntry(db, { userId, kind: 'redpacket', refId: cid, amount: r.amount,
+          note: '红包奖励-' + (r.title || ''), extra: { cardId: cid } });
+        paidRefs.add(cid); paidCardIds.add(cid);
+      } catch (e) {
+        // 入账失败就把状态退回"冻结"，下一轮打款/手动解冻会重试 ——
+        // 原先是改完状态再写流水，写失败就永久停在"已解冻但没钱"，且再也不会被扫到（用户亏）
+        await db.collection('redpacket_records').updateOne({ _id: r._id },
+          { $set: { status: '冻结', unfreezeError: String((e && e.message) || e).slice(0, 200) } })
+          .catch(() => console.error('[红包] 入账失败且状态回退也失败，需人工核对！record=' + r._id + ' user=' + userId));
+        console.error('[红包] 解冻入账失败，已退回冻结待重试 user=' + userId + ' card=' + cid, (e && e.message) || e);
+        continue;
+      }
       try { notify(r.userId, 'msg', { title: '红包到账', content: '「' + (r.title || '') + '」订单完结，现金红包 ¥' + r.amount + ' 已解冻入账，可在钱包中查看。' }); } catch (e2) {}
       unlocked++;
+    } catch (e) {
+      console.error('[红包] 单条解冻异常（已跳过，不影响其余）record=' + r._id, (e && e.message) || e);
     }
   }
   return unlocked;
