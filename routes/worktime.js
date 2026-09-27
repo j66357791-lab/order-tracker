@@ -129,8 +129,27 @@ app.post('/api/attendance/clockin', auth, async (req, res) => {
       userId: req.user.id, date, planStart: day ? day.start : null, planEnd: day ? day.end : null,
       clockIn: time, clockOut: null, status, updatedAt: new Date(),
     };
-    if (exist) await db.collection('attendance').updateOne({ _id: exist._id }, { $set: doc });
-    else await db.collection('attendance').insertOne(doc);
+    // 【2026-09-26 批次2】两处修正（配套 attendance 的 (userId,date) 唯一索引，见 lib/db.js）：
+    //   ① 原"先查后插"非原子，双击会产生两条同日记录，考勤/旷工判定随之错乱；
+    //   ② 原来 exist 分支用整包 { $set: doc } 覆盖，而 doc 里 clockOut: null ——
+    //      已签退的人只要再触发一次上班卡（脚本重放、页面重复提交）就会把签退记录抹掉，
+    //      状态也被改回"出勤"。现在过滤条件钉死 clockIn 为空，只补上班卡、绝不碰已签退的字段。
+    try {
+      const r = await db.collection('attendance').updateOne(
+        { userId: req.user.id, date, clockIn: null },
+        { $set: { clockIn: time, status, planStart: doc.planStart, planEnd: doc.planEnd, updatedAt: doc.updatedAt },
+          $setOnInsert: { userId: req.user.id, date, createdAt: new Date() } },
+        { upsert: true });
+      if (r.matchedCount === 0 && r.upsertedCount === 0) {
+        return res.status(409).json({ ok: false, error: '今天已打过上班卡，请刷新查看' });
+      }
+    } catch (e) {
+      if (e && e.code === 11000) {
+        const cur = await db.collection('attendance').findOne({ userId: req.user.id, date });
+        return res.status(400).json({ ok: false, error: '今天已打过上班卡（' + ((cur && cur.clockIn) || '--') + '）' });
+      }
+      throw e;
+    }
     await db.collection('users').updateOne({ _id: req.user._id }, { $set: { shift: true } });
     io.emit('presence', { userId: req.user.id, shift: true, sockOnline: true });
     res.json({ ok: true, attendance: doc });
@@ -147,7 +166,10 @@ app.post('/api/attendance/clockout', auth, async (req, res) => {
     if (att.clockOut) return res.status(400).json({ ok: false, error: '今天已签退（' + att.clockOut + '）' });
     let status = '出勤';
     if (att.planEnd && toMin(time) < toMin(att.planEnd)) status = '早退';
-    await db.collection('attendance').updateOne({ _id: att._id }, { $set: { clockOut: time, status } });
+    // 【2026-09-26 批次2】带 clockOut:null 条件，避免并发双击把第一次的签退时间覆盖掉
+    const r = await db.collection('attendance').updateOne(
+      { _id: att._id, clockOut: null }, { $set: { clockOut: time, status, updatedAt: new Date() } });
+    if (!r.matchedCount) return res.status(409).json({ ok: false, error: '今天已签退，请刷新查看' });
     await db.collection('users').updateOne({ _id: req.user._id }, { $set: { shift: false } });
     io.emit('presence', { userId: req.user.id, shift: false, sockOnline: true });
     res.json({ ok: true, clockOut: time, status });
@@ -226,13 +248,26 @@ async function cleanupOldData() {
     const db = await getDb();
     const bucket = new GridFSBucket(db);
     const cutoff = new Date(Date.now() - FILE_RETAIN_DAYS * 24 * 3600 * 1000);
-    // 【2026-09-24 资金安全修复】只清理聊天附件（metadata.kind 为空或 'chat'）。
-    // 原先无差别删除 fs 桶 3 天前的所有文件——充值截图（kind:'recharge'）是财务凭证，
-    // 也存这个桶，3 天后 404 会导致审计链条断裂、历史充值截图全部裂图。
+    // 【2026-09-24 资金安全修复】只清理聊天附件（原先无差别删除 fs 桶 3 天前的所有文件——
+    //   充值截图 kind:'recharge' 是财务凭证，3 天后 404 会让审计链条断裂、历史截图全部裂图）
+    // 【2026-09-26 修正】那条修复用的是「排除单个 kind」的黑名单写法：
+    //   { 'metadata.kind': { $ne: 'recharge' } }
+    // 而充值还有另一个 kind —— recharge_qr（收款二维码，recharge.js 上传时写的），
+    // 它 ≠ 'recharge' 所以照样被删：管理员上传的收款码 3 天后消失，cfg.qrFileId 变悬空引用，
+    // GET /api/recharge/qr 404 → **全站充值页没有收款码**（收入通道挂掉，且现场看起来像"二维码坏了"）。
+    // 改为白名单：只有"明确是聊天附件"的才清理，将来新增任何 kind 都不会被误删。
     const old = await db.collection('fs.files')
-      .find({ uploadDate: { $lt: cutoff }, 'metadata.kind': { $ne: 'recharge' } }).project({ _id: 1 }).toArray();
-    for (const f of old) { try { await bucket.delete(f._id); } catch (e) {} }
-    if (old.length) console.log('[清理] 已删除', old.length, '个超过' + FILE_RETAIN_DAYS + '天的聊天附件');
+      .find({
+        uploadDate: { $lt: cutoff },
+        $or: [{ 'metadata.kind': { $exists: false } }, { 'metadata.kind': null }, { 'metadata.kind': 'chat' }],
+      }).project({ _id: 1, filename: 1 }).toArray();
+    let deleted = 0, failed = 0;
+    for (const f of old) {
+      try { await bucket.delete(f._id); deleted++; }
+      // 原先是 catch(e){} 静默吞掉：删不掉的孤儿文件永远不会有人知道
+      catch (e) { failed++; console.warn('[清理] 删除失败', f.filename || String(f._id), e?.message || e); }
+    }
+    if (deleted) console.log('[清理] 已删除', deleted, '个超过' + FILE_RETAIN_DAYS + '天的聊天附件' + (failed ? '（另有 ' + failed + ' 个删除失败）' : ''));
     // 已读消息3天后清理（省库）；未读兜底30天，防止漏看的信息凭空消失
     const readCut = new Date(Date.now() - MSG_READ_RETAIN_DAYS * 24 * 3600 * 1000);
     const unreadCut = new Date(Date.now() - MSG_UNREAD_RETAIN_DAYS * 24 * 3600 * 1000);
