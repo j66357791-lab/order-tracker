@@ -80,7 +80,10 @@ const Game = (() => {
     boss = null;
     // 【2026-09-24 性能优化】各池加存活上限（第 4 参数）：高负载战斗（Boss 召唤翻倍、
     // 全屏弹幕、伤害数字刷屏）下对象数有界，帧率稳定，低端机不再越打越卡
-    enemyPool = new Pool(() => new Enemy(), (e, t, x, y) => e.reset(t, x, y), 60, 240);
+    // 【v26.70】enemyPool 的包装器原来只转发 3 个参数，spawnEnemy 传的第 4 个 isElite
+    // 在这里被静默丢掉 → Enemy.elite 永远是 false：精英不放大、不出金条、不掉 3 颗经验珠、
+    // 无提示音无 toast，整套精英机制形同虚设（且因参数个数不匹配，静态检查看不出来）。
+    enemyPool = new Pool(() => new Enemy(), (e, t, x, y, elite) => e.reset(t, x, y, elite), 60, 240);
     projPool = new Pool(() => new Projectile(), (p, k, x, y, dx, dy, prm) => p.reset(k, x, y, dx, dy, prm), 80, 400);
     pickupPool = new Pool(() => new Pickup(), (p, k, x, y) => p.reset(k, x, y), 100, 300);
     fxPool = new Pool(() => new Fx(), (f, k, x, y, s) => f.reset(k, x, y, s), 30, 100);
@@ -350,7 +353,10 @@ const Game = (() => {
     if (shakeT > 0) shakeT -= dt;
 
     // 死亡
-    if (hero.hp <= 0) {
+    // 【v26.70】加 state 守卫：同一帧里 Boss 倒地（→win）与英雄血量归零（→over）可以先后成立，
+    // 原写法两次都会执行 → 先上报通关、紧接着又上报阵亡，结算面板被「道陨于此」覆盖，
+    // 玩家明明通关却看到自己死了。票据制度下第二次上报还会被服务端拒（成绩已入账，看着像出错）。
+    if (state === "playing" && hero.hp <= 0) {
       state = "over";
       if (window.SFX) { SFX.hurt(); SFX.gameOver(); }   // 【v26.13】BGM 不停了：主页和战斗共用同一条背景乐，连续不断
       UI.gameOver(stats, hero);
@@ -383,6 +389,7 @@ const Game = (() => {
   }
 
   function onBossDead() {
+    if (state !== "playing") return;   // 【v26.70】终局只结算一次（见上面死亡分支的同款守卫）
     if (window.SFX) SFX.bossDie();
     fxPool.spawn("die", boss.x, boss.y, 2.2);
     fxPool.spawn("smash", boss.x, boss.y, 1.5);
@@ -524,9 +531,15 @@ const Game = (() => {
 
     ctx.save();
     let sx = 0, sy = 0;
+    // 【v26.70】抖动只在战斗中生效：shakeT 是在 update() 里衰减的，而 update() 只在 state==="playing"
+    // 时运行。被击杀那一发正好触发大抖动时结束战斗，shakeT 就永久停在正值上，
+    // 结算面板底下整幅画面会一直随机抽搐（且不会再衰减回去）。
     if (shakeT > 0) {
-      sx = (Math.random() - 0.5) * 10 * shakeT * 3;
-      sy = (Math.random() - 0.5) * 10 * shakeT * 3;
+      if (state !== "playing") shakeT = 0;
+      else {
+        sx = (Math.random() - 0.5) * 10 * shakeT * 3;
+        sy = (Math.random() - 0.5) * 10 * shakeT * 3;
+      }
     }
     ctx.translate(Math.round(W / 2 - camera.x + sx), Math.round(H / 2 - camera.y + sy));
 
@@ -631,6 +644,11 @@ const Game = (() => {
       joyId = null; touchVec = null;
       joy.style.display = "none";
       joyKnob.style.transform = "translate(0,0)";
+      // 【v26.70】松手必须把方向键清零：touchKeys() 在 touchVec 为空时是直接返回 input 的，
+      // 原来的写法让 input 保留最后一次滑动时的方向，角色朝着那个方向一路跑到地图边上，
+      // 玩家得再按一次屏幕才能停下——触屏操作上完全不能接受。
+      // 这里只清触屏带来的分量，键盘的 keyup 各自负责，互不干扰。
+      input.left = input.right = input.up = input.down = false;
     }
   };
   cv.addEventListener("touchend", joyEnd);
@@ -661,7 +679,8 @@ const Game = (() => {
       requestAnimationFrame(loop);
     },
     startRun,
-    restart: startRun,
+    // 【v26.70】删掉 restart 别名：v26.67 起结算页改走宿主层 enterBattle（扣体力 + 领票据），
+    // 这个别名已无人调用，留着等于给控制台留一条「不花体力、没票据地开一局」的旁路。
     get state() { return state; },
     get hero() { return hero; },
     get __weapons() { return weapons; },
