@@ -247,6 +247,12 @@ export function mount(root) {
         <button class="btn-ghost" id="ddClean" style="color:#b3452f">清理记录</button>
         <span class="sub">清理后该玩家的免费次数/通关加成次数会重新可用</span>
       </div>
+      <div class="inline" style="margin-top:6px">
+        <button class="btn-ghost" id="ddAudit">发放对账</button>
+        <button class="btn-ghost" id="ddRunOnce">立即补跑一次</button>
+        <span class="sub">释放任务每 10 分钟自动跑；对账只读，补跑走同一套认领逻辑，连点不会重复发</span>
+      </div>
+      <div id="ddAuditBox" class="sub" style="margin-top:6px"></div>
       <div style="margin-top:12px" id="actList"><div class="empty">加载中…</div></div>
       <div class="inline" style="margin-top:8px">
         <button class="btn-ghost" id="actAdd">＋ 新增活动</button>
@@ -1267,6 +1273,46 @@ export function mount(root) {
       if (!j.ok) throw new Error(j.error || '清理失败');
       toast('已清理 ' + j.deleted + ' 条参与记录');
     } catch (e) { toast(e.message); }
+  };
+  // 【v26.75】堆堆乐释放：只读对账 + 手动补跑。
+  // 此前这一块只写着"已自动发邮件，无需手动操作"，可一旦漏发就完全无从查证，只能等玩家来反馈；
+  // 而漏发的三种原因（起点未到 / 任务没算到它 / 邮件丢了）处置方式各不相同，必须先看数据。
+  $('ddAudit').onclick = async () => {
+    const box = $('ddAuditBox');
+    box.textContent = '对账中…';
+    try {
+      const j = await api('/api/shanhai/admin/duiduile/audit');
+      const s = j.sum || {};
+      const a = j.act;
+      let h = `<div style="margin:2px 0">活动「${esc((a && a.title) || '未配置')}」· ${esc((a && a.state) || '')}`
+        + (a && a.endCn ? ` · 结束于 ${esc(a.endCn)}` : '') + `　<span style="color:#8a8578">对账时刻 ${esc(j.nowCn)}（北京）· 共 ${j.total} 条参与记录</span></div>`
+        + `<div>应发灵气合计 <b>${j.shouldTotal}</b> ｜ 账上已推进 <b>${j.doneTotal}</b> ｜ 差额 `
+        + `<b style="color:${j.gapTotal > 0.5 ? '#b3452f' : '#2f6b4c'}">${j.gapTotal}</b></div>`
+        + `<div style="color:#8a8578">` + Object.keys(s).map(k => `${k} ${s[k]}`).join('　｜　') + `</div>`;
+      if (j.lostMail && j.lostMail.length) {
+        h += `<div style="color:#b3452f;margin-top:6px"><b>⚠ ${j.lostMail.length} 人账上推进了灵气、邮箱里却没有对应邮件</b>（需人工补发）：`
+          + j.lostMail.slice(0, 12).map(x => `${esc(x.name)} 缺 ${x.missing}`).join('、') + `</div>`;
+      }
+      if (j.rows && j.rows.length) {
+        h += `<table style="margin-top:6px"><tr><th>玩家</th><th>释放起点</th><th>应到</th><th>实到</th><th>差</th><th>应发</th><th>已推进</th><th>邮件</th><th>判定</th></tr>`
+          + j.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.startCn)}</td><td>第 ${r.target} 天</td><td>第 ${r.released} 天</td>`
+            + `<td style="color:${r.gap > 0 ? '#b3452f' : ''}">${r.gap}</td><td>${r.shouldAmt}</td><td>${r.releasedAmt}</td>`
+            + `<td>${r.mailN} 封 / ${r.mailAttach}</td><td>${esc(r.kind)}</td></tr>`).join('') + `</table>`;
+      } else if (!j.lostMail || !j.lostMail.length) {
+        h += `<div style="color:#2f6b4c;margin-top:4px">✓ 没有发现进度落后或丢件的记录</div>`;
+      }
+      box.innerHTML = h;
+    } catch (e) { box.textContent = '对账失败：' + (e.message || e); }
+  };
+  $('ddRunOnce').onclick = async () => {
+    const btn = $('ddRunOnce');
+    btn.disabled = true;
+    try {
+      const j = await api('/api/shanhai/admin/duiduile/release-once', { method: 'POST', body: '{}' });
+      toast(j.handled ? `已补跑：处理 ${j.handled} 条（漏掉的自然日一次补齐）` : '本轮没有需要释放的记录（起点未到或都已发到位）');
+      $('ddAudit').onclick();
+    } catch (e) { toast(e.message); }
+    finally { btn.disabled = false; }
   };
   // 【v26.49】重置灵脉每日进攻次数
   $('chalResetBtn').onclick = async () => {
