@@ -583,6 +583,7 @@ let ME = null;
 try { ME = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) {}
 
 /* ========== 基础 ========== */
+const T = ms => (window.AbortSignal && AbortSignal.timeout) ? { signal: AbortSignal.timeout(ms) } : {};   // 【P2-15】请求超时助手
 let toastT = null;
 function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2400); }
 function isClient() { return !!(ME && ME.role === 'client' && TOKEN); }
@@ -636,7 +637,7 @@ function openLogin(trigger) { $('rgErr').textContent = ''; openModal('loginMask'
 let capId = '';
 async function loadCaptcha() {
   try {
-    const j = await (await fetch('/api/captcha')).json();
+    const j = await (await fetch('/api/captcha', T(15000))).json();
     capId = j.id || '';
     $('rgCapBox').innerHTML = j.svg || '';
   } catch (e) { $('rgCapBox').innerHTML = '<div style="font-size:11px;color:var(--ink2);line-height:1.6">验证码加载失败<br>点此重试</div>'; }
@@ -685,7 +686,7 @@ $('rgGo').onclick = async () => {
   $('rgGo').disabled = true; $('rgGo').textContent = '创建中…';
   try {
     const pwHash = await sha256hex(pwd);
-    const r = await fetch('/api/portal/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: phone, phone, password: pwHash, displayName: name, captchaId: capId, captchaAnswer: $('rgCap').value.trim() }) });
+    const r = await fetch('/api/portal/register', { ...T(15000), method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: phone, phone, password: pwHash, displayName: name, captchaId: capId, captchaAnswer: $('rgCap').value.trim() }) });
     const j = await r.json();
     if (!j.ok) {
       err.textContent = j.error || '注册失败';
@@ -705,7 +706,8 @@ $('lgGo').onclick = async () => {
   if (!u || !p) { err.textContent = '请填写账号和密码'; return; }
   $('lgGo').disabled = true; $('lgGo').textContent = '登录中…';
   try {
-    const r = await fetch('/api/portal/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: await sha256hex(p), passwordPlain: p }) });
+    // 【2026-09-27 审查修复 P2-13】不再发送密码原文（passwordPlain），与 login.html 同步——只传指纹
+    const r = await fetch('/api/portal/login', { ...T(15000), method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: await sha256hex(p) }) });
     const j = await r.json();
     if (!j.ok) { err.textContent = j.error || '登录失败'; $('lgGo').disabled = false; $('lgGo').textContent = '登录'; return; }
     saveAuth(j.token, j.user);
@@ -888,7 +890,7 @@ function askSvc(title, trigger) {
 }
 $('ldGo').onclick = async () => {
   try {
-    const r = await fetch('/api/portal/lead', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ packageName: $('ldNote').dataset.pkg || '一般咨询', note: $('ldNote').value, contact: $('ldPhone').value }) });
+    const r = await fetch('/api/portal/lead', { ...T(15000), method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ packageName: $('ldNote').dataset.pkg || '一般咨询', note: $('ldNote').value, contact: $('ldPhone').value }) });
     const j = await r.json();
     if (!j.ok) return toast(j.error);
     closeMask();
