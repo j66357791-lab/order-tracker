@@ -296,10 +296,15 @@ function openMap(diff) {
     if (e.touches.length < 2) pinch0 = 0;
     if (e.touches.length === 1) { tDrag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty }; } else tDrag = null;
   });
-  document.addEventListener("touchmove", e => {
-    if ((!drag && !tDrag) || !e.target.closest) return;
-    if (e.target.closest(".vp")) e.preventDefault();
-  }, { passive: false });
+  // 【2026-09-27 审查修复 P3-16】document 级 touchmove 用命名函数且只挂一次：
+  // 原先每次打开地图都往 document 追加一个匿名监听（无法 remove），反复开关会持续累积
+  if (!window.__chalTouchBound) {
+    window.__chalTouchBound = true;
+    document.addEventListener("touchmove", e => {
+      if (!e.target || !e.target.closest) return;
+      if (e.target.closest(".vp")) e.preventDefault();
+    }, { passive: false });
+  }
   vp.querySelectorAll(".zbar button").forEach(bt => bt.onclick = () => {
     if (bt.dataset.z === "in") zoomAt(scale * 1.25);
     else if (bt.dataset.z === "out") zoomAt(scale * 0.8);
@@ -351,6 +356,12 @@ async function startFight(lv) {
   };
   set(d.pHP, d.gHP);
   const lock = v => ["btnAtk", "btnHeavy", "btnDef"].forEach(id => { const e = document.getElementById(id); if (e) e.disabled = v; });
+  // 【2026-09-27 审查修复 P3-17】战斗日志：insertAdjacentHTML 代替 innerHTML +=
+  // （后者每回合整段重建 DOM，O(n²)）；并限制 200 条上限，长战斗不再无限堆积节点
+  const addLog = html => {
+    log.insertAdjacentHTML('beforeend', html);
+    while (log.children.length > 200) log.removeChild(log.firstChild);
+  };
   const act = async action => {
     if (fighting) return;
     fighting = true; lock(true);
@@ -365,9 +376,9 @@ async function startFight(lv) {
         pf.classList.add("lunge-l"); gf.classList.add("hit");
         setTimeout(() => { pf.classList.remove("lunge-l"); gf.classList.remove("hit"); }, 200);
         floatDmg(gf, r.pDmg, r.pCrit);
-        log.innerHTML += '<div' + (r.pCrit ? ' class="hl"' : '') + '>第' + r.round + '回合：你' + (action === "heavy" ? "【重击】" : "") + (r.pCrit ? "暴击" : "") + '造成 ' + fmt(r.pDmg) + ' 伤害' + (r.recoil ? '（反震 -' + fmt(r.recoil) + '）' : '') + '</div>';
+        addLog('<div' + (r.pCrit ? ' class="hl"' : '') + '>第' + r.round + '回合：你' + (action === "heavy" ? "【重击】" : "") + (r.pCrit ? "暴击" : "") + '造成 ' + fmt(r.pDmg) + ' 伤害' + (r.recoil ? '（反震 -' + fmt(r.recoil) + '）' : '') + '</div>');
       } else if (r.heal > 0) {
-        log.innerHTML += '<div>第' + r.round + '回合：你转入防御，回复 ' + r.heal + ' 生命</div>';
+        addLog('<div>第' + r.round + '回合：你转入防御，回复 ' + r.heal + ' 生命</div>');
       }
       if (r.gDmg > 0) {
         const gf = document.getElementById("gFig"), pf = document.getElementById("pFig");
@@ -375,7 +386,7 @@ async function startFight(lv) {
           gf.classList.add("lunge-r"); pf.classList.add("hit");
           setTimeout(() => { gf.classList.remove("lunge-r"); pf.classList.remove("hit"); }, 200);
           floatDmg(pf, r.gDmg, false);
-          log.innerHTML += '<div>' + esc(d.guardian.name) + (r.gNote ? "【" + r.gNote + "】" : "") + '反击造成 ' + fmt(r.gDmg) + ' 伤害</div>';
+          addLog('<div>' + esc(d.guardian.name) + (r.gNote ? "【" + r.gNote + "】" : "") + '反击造成 ' + fmt(r.gDmg) + ' 伤害</div>');
           log.scrollTop = log.scrollHeight;
         }, 260);
       }
