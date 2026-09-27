@@ -280,8 +280,14 @@ export function mount(host) {
     const doneList = scope.filter(o => DONE_SET.has(stLabel(o.status)) && inP(o.doneDate));
     const doneAmt = doneList.reduce((s, o) => s + o.amount, 0);
     const pendingAmt = scope.filter(o => stLabel(o.status) === '待结算').reduce((s, o) => s + o.amount, 0);
-    const settledShare = scope.filter(o => stLabel(o.status) === '已结算').reduce((s, o) => s + effShare(o), 0);
-    const totalShare = scope.reduce((s, o) => s + effShare(o), 0);
+    const settledList = scope.filter(o => stLabel(o.status) === '已结算');
+    const settledShare = settledList.reduce((s, o) => s + effShare(o), 0);
+    // 【v26.72】预计总收入 = 还没结算掉的这部分分成，不含已结算。
+    // 原来这里是 scope 全量求和：已到账的钱也被算进「预计」里，于是这张卡既不是「还没到手的钱」
+    // 也不是「历史总收入」，跟旁边那张「已结算（我的分成）」相加会重复计算一次。
+    // 现在的口径是自洽的：区间内全部订单分成 = 预计总收入 + 已结算分成。
+    const unsettledList = scope.filter(o => stLabel(o.status) !== '已结算');
+    const totalShare = unsettledList.reduce((s, o) => s + effShare(o), 0);
     const dispatchCnt = scope.filter(o => o.dispatch).length;
 
     shDoc.getElementById('lblTake').textContent = P.scopeLabel + '接单金额';
@@ -293,7 +299,9 @@ export function mount(host) {
     shDoc.getElementById('kPending').innerHTML = fmt(r2(pendingAmt)) + '<small> 元</small>';
     shDoc.getElementById('kSettled').innerHTML = fmt(r2(settledShare)) + '<small> 元</small>';
     shDoc.getElementById('kShare').innerHTML = fmt(r2(totalShare)) + '<small> 元</small>';
-    shDoc.getElementById('subCount').textContent = scope.length + ' 单' + (dispatchCnt ? ' · 其中已分单 ' + dispatchCnt + ' 单（收入按实际结算口径：分成−报酬）' : '');
+    shDoc.getElementById('subCount').textContent = unsettledList.length + ' 单未结算'
+      + (settledList.length ? '（已结算 ' + settledList.length + ' 单不计入）' : '')
+      + (dispatchCnt ? ' · 其中已分单 ' + dispatchCnt + ' 单（收入按实际结算口径：分成−报酬）' : '');
     const unitTxt = P.gran === 'day' ? '每日' : '每月';
     shDoc.getElementById('chartTitle').textContent = P.scopeLabel + unitTxt + '接单 / 完单金额';
 
@@ -622,12 +630,15 @@ export function mount(host) {
     const peak = Math.max(...daily);
     const peakIdx = daily.indexOf(peak);
     chartData = { P, daily, cum, scope };
-    shDoc.getElementById('tileDTitle').textContent = P.scopeLabel + unitTxt + '分成收入走势（预计）';
+    shDoc.getElementById('tileDTitle').textContent = P.scopeLabel + unitTxt + '分成收入走势（按接单日 · 含已结算）';
     shDoc.getElementById('tileCTitle').textContent = P.scopeLabel + unitTxt + '累计分成收入走势';
     shDoc.getElementById('tileDVal').innerHTML = fmt(r2(peak)) + '<small> 元</small>';
     shDoc.getElementById('tileDSub').textContent = peak > 0 ? `单日峰值 · ${P.keys[peakIdx]} · 点击看走势 →` : '暂无收入，点击看走势 →';
     shDoc.getElementById('tileCVal').innerHTML = fmt(r2(cum[cum.length - 1] || 0)) + '<small> 元</small>';
-    shDoc.getElementById('tileCSub').textContent = '累计终点 = 预计总收入 · 点击看走势 →';
+    // 【v26.72】这张图按「接单日期」落桶、且含已结算，所以它的终点是"区间内接单的订单分成合计"，
+    // 既不等于预计总收入，也略小于「预计总收入 + 已结算分成」（后两者还含接单日在区间外、
+    // 但完单日落在区间内的单）。原来直接标成"= 预计总收入"，两张卡数字对不上又看不出为什么。
+    shDoc.getElementById('tileCSub').textContent = '累计终点 = 区间内接单的订单分成合计（含已结算）· 点击看走势 →';
   }
   function openChart(kind) {
     if (!chartData) return;
@@ -649,9 +660,12 @@ export function mount(host) {
     const done = orders.filter(o => o.doneDate === d && DONE_SET.has(stLabel(o.status)));
     return {
       take, done,
+      // 【v26.72】与「预计总收入」同口径：带「预计」二字的数一律不含已结算，否则同一块面板上
+      // 两张卡口径不一致，做完的单结算掉之后当日「预计收入」会凭空少一块，看着像出鬼了。
+      unpaid: done.filter(o => stLabel(o.status) !== '已结算'),
       takeAmt: take.reduce((s, o) => s + o.amount, 0),
       doneAmt: done.reduce((s, o) => s + o.amount, 0),
-      shareAmt: done.reduce((s, o) => s + effShare(o), 0),
+      shareAmt: done.filter(o => stLabel(o.status) !== '已结算').reduce((s, o) => s + effShare(o), 0),
     };
   }
 
@@ -667,7 +681,7 @@ export function mount(host) {
     shDoc.getElementById('todayBrief').innerHTML = `
       <span class="tb-take">今日接单金额：<b>${fmt(r2(td.takeAmt))}</b> 元（${td.take.length} 单）</span>
       <span class="tb-done">今日完单金额：<b>${fmt(r2(td.doneAmt))}</b> 元（${td.done.length} 单）</span>
-      <span class="tb-share">预计今天完单金额收入：<b>${fmt(r2(td.shareAmt))}</b> 元</span>`;
+      <span class="tb-share">预计今天完单收入（未结算）：<b>${fmt(r2(td.shareAmt))}</b> 元${td.unpaid.length ? '' : ' · 今天没有待结算的单'}</span>`;
 
     const byTake = {}, byShare = {}, byDone = {};
     scope.forEach(o => {
@@ -711,7 +725,7 @@ export function mount(host) {
     shDoc.getElementById('dayStats').innerHTML = `
       <div class="ds blue">接单金额（当日登记）<b>${fmt(r2(st.takeAmt))} 元 · ${st.take.length} 单</b></div>
       <div class="ds green">完单金额（当日做完）<b>${fmt(r2(st.doneAmt))} 元 · ${st.done.length} 单</b></div>
-      <div class="ds purple">预计完单分成收入<b>${fmt(r2(st.shareAmt))} 元</b></div>`;
+      <div class="ds purple">预计完单分成收入（未结算）<b>${fmt(r2(st.shareAmt))} 元</b><small style="color:#8a8578">已结算的计入旁边「完单金额」</small></div>`;
     const list = [...st.take, ...st.done.filter(o => o.date !== d)]
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     const box = shDoc.getElementById('dayTableBox');
