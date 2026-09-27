@@ -28,7 +28,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 
 /* 萤火粒子 */
 .fireflies { position: absolute; inset: 0; pointer-events: none; }
-.fireflies i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #D4B87A; box-shadow: 0 0 6px 1px rgba(212,184,122,.6); opacity: 0; animation: fly 9s linear infinite; }
+.fireflies i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #D4B87A; box-shadow: 0 0 6px 1px rgba(212,184,122,.6); opacity: 0; bottom: -4%; animation: fly 9s linear infinite; will-change: transform, opacity; } /* 【2026-09-27 P2-22】bottom 动画改 transform（见下方 keyframes）：不再每帧重排 */
 .fireflies i:nth-child(1) { left: 12%; animation-delay: 0s; }
 .fireflies i:nth-child(2) { left: 28%; animation-delay: 1.8s; }
 .fireflies i:nth-child(3) { left: 45%; animation-delay: 3.4s; }
@@ -37,7 +37,7 @@ body { font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; disp
 .fireflies i:nth-child(6) { left: 88%; animation-delay: 2.6s; }
 .fireflies i:nth-child(7) { left: 20%; animation-delay: 5.8s; }
 .fireflies i:nth-child(8) { left: 55%; animation-delay: 7s; }
-@keyframes fly { 0% { bottom: -4%; opacity: 0 } 12% { opacity: .8 } 85% { opacity: .5 } 100% { bottom: 92%; opacity: 0 } }
+@keyframes fly { 0% { transform: translateY(0); opacity: 0 } 12% { opacity: .8 } 85% { opacity: .5 } 100% { transform: translateY(-96vh); opacity: 0 } }
 
 /* ===== ② 加载 ===== */
 .load-body { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
