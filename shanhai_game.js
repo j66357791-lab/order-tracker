@@ -1312,11 +1312,26 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const sum = { 未到期: 0, 正常: 0, 落后未跑: 0, 落后已跑: 0, 已发满: 0 };
       let shouldTotal = 0, doneTotal = 0;
       const rows = [];
+      // 未到期是最容易让人误判成"漏发"的一类，必须把"到底哪天开始发"显示出来，
+      // 所以单独记一个最早的起点时间，并把未到期的记录也列进明细表。
+      let nextStartMs = null, pendingStart = 0;
+      const cnOf = (ms) => new Date(ms + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
       for (const r of recs) {
         const startMs = new Date(r.releaseStart).getTime();
         const released = Number(r.releasedDays) || 0;
         const releasedAmt = r2(r.releasedAmount);
-        if (Number.isNaN(startMs) || now < startMs) { sum.未到期++; continue; }
+        if (Number.isNaN(startMs) || now < startMs) {
+          sum.未到期++; pendingStart++;
+          if (nextStartMs === null || startMs < nextStartMs) nextStartMs = startMs;
+          if (rows.length < 60) rows.push({
+            userId: String(r.userId), name: names[String(r.userId)] || String(r.userId),
+            startCn: Number.isNaN(startMs) ? '(起点无效)' : cnOf(startMs),
+            target: 0, released, gap: 0, perDay: r2(r.perDay),
+            shouldAmt: 0, releasedAmt, diff: 0,
+            lastDay: r.lastDay || null, mailN: 0, mailAttach: 0, kind: '未到期',
+          });
+          continue;
+        }
         const target = ddTargetDay(startMs, now);
         const shouldAmt = ddAmountBetween(r, 0, target);
         shouldTotal += shouldAmt; doneTotal += releasedAmt;
@@ -1327,7 +1342,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
         const m = mailBy.get(String(r.userId));
         if (rows.length < 60) rows.push({
           userId: String(r.userId), name: names[String(r.userId)] || String(r.userId),
-          startCn: new Date(startMs + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '),
+          startCn: cnOf(startMs),
           target, released, gap: target - released, perDay: r2(r.perDay),
           shouldAmt: r2(shouldAmt), releasedAmt, diff: r2(shouldAmt - releasedAmt),
           lastDay: r.lastDay || null, mailN: m ? m.n : 0, mailAttach: m ? r2(m.attach) : 0, kind,
@@ -1346,14 +1361,18 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       }
       const actMs = act && act.end ? new Date(act.end).getTime() : null;
       res.json({
-        ok: true, nowCn: new Date(now + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '),
+        ok: true, nowCn: cnOf(now),
         days: DD_DAYS, perUserCap: 5,
+        // 【v26.76】库里存的是时刻（Date），原来这里直接 toISOString() 显示的是 UTC，
+        // 后台填的"23:59"被显示成"15:59"，看起来像时区错了其实是显示错了 —— 一律走 cnOf 转北京。
         act: act ? {
           title: act.title, enabled: act.enabled !== false,
-          startCn: act.start ? new Date(act.start).toISOString().slice(0, 16).replace('T', ' ') : null,
-          endCn: act.end ? new Date(act.end).toISOString().slice(0, 16).replace('T', ' ') : null,
+          startCn: act.start ? cnOf(new Date(act.start).getTime()) : null,
+          endCn: act.end ? cnOf(new Date(act.end).getTime()) : null,
           state: !act.end ? '未设结束（常驻）' : (actMs >= now ? '仍在进行' : '已结束'),
         } : null,
+        // 最早的一次未来释放：直接回答"下一轮哪天发"
+        pendingStart, nextReleaseCn: nextStartMs === null ? null : cnOf(nextStartMs),
         total: recs.length, sum,
         shouldTotal: r2(shouldTotal), doneTotal: r2(doneTotal), gapTotal: r2(shouldTotal - doneTotal),
         rows, lostMail,
