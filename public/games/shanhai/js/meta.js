@@ -89,11 +89,31 @@ const META = (() => {
     if (d.stamina) stamina = d.stamina;   // 【v24.9】
     return profile;
   }
+  // 【v26.67 批次3】结算改为「服务端票据」制：
+  // 开局用 1 点体力换一张一次性 runToken，结算时带回来；服务端据此认定这一局真实发生过、
+  // 且只结算一次（关卡号以票据为准，客户端再报一遍也不作数）。
+  // 没有票据的上报服务端不再发奖 —— 所以这里必须把票据存下来并在 report 后用掉。
+  let curRunToken = null;
+  async function startRun(stage) {
+    const d = await shApi("/api/shanhai/run/start", { stage });
+    if (d.stamina) stamina = d.stamina;
+    curRunToken = d.runToken || null;
+    return d;
+  }
   async function report(win, stage) {
     const h = Game.hero;
     if (!h) return null;
+    // 一局只上报一次：同帧既判胜又判败时，第二次直接复用第一次的结果，不再发第二个请求
+    const token = curRunToken;
+    if (!token) {
+      // 老版本页面/票据已用掉：不再盲发（发了也拿不到奖励），提示由调用方处理
+      console.warn("[meta] 没有本局开局凭证，跳过上报");
+      return null;
+    }
+    curRunToken = null;
     try {
       const d = await shApi("/api/shanhai/result", {
+        runToken: token,
         win, stage,
         timeSec: Math.floor(h.timeAlive || 0),
         kills: h.kills || 0,
@@ -107,7 +127,11 @@ const META = (() => {
       // 【v24.5】档案里的星级图（跨设备）合并进本地
       if (d.stageStars) stageStars = Object.assign({}, d.stageStars, stageStars);
       return d;
-    } catch (e) { return null; }
+    } catch (e) {
+      // 上报失败时把票据还回去，结算面板上的「重试上报」还能救回这一局
+      curRunToken = token;
+      return null;
+    }
   }
   async function upgradeSkill(key) { return shApi("/api/shanhai/upgrade", { key }); }
   async function draw() { return shApi("/api/shanhai/draw", {}); }
@@ -119,7 +143,6 @@ const META = (() => {
   async function idleCraft() { return shApi("/api/shanhai/idle/craft", {}); }
   // 【v24.9】体力（挑战扣 1）与装备分解
   async function staminaInfo() { const d = await shApi("/api/shanhai/stamina"); if (d.stamina) stamina = d.stamina; return stamina; }
-  async function consumeStamina() { const d = await shApi("/api/shanhai/stamina/consume", {}); if (d.stamina) stamina = d.stamina; return d; }
   async function dismantle(itemId) { return shApi("/api/shanhai/dismantle", { itemId }); }
   // 【v26.0】灵气交易所：行情 / 挂单 / 成交 / 撤单
   async function exBoard() { return shApi("/api/shanhai/exchange/board"); }
@@ -151,7 +174,7 @@ const META = (() => {
   async function equipUpgrade(itemId, stones) { return shApi("/api/shanhai/equip/upgrade", { itemId, stones }); }
   async function equipCompose(itemIds) { return shApi("/api/shanhai/equip/compose", { itemIds }); }
 
-  return { load, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, consumeStamina, dismantle, dismantlePrice, bonus, exBoard, exPublish, exDeal, exCancel,
+  return { load, startRun, report, upgradeSkill, draw, equip, unequip, idleInfo, idleClaim, idleCraft, staminaInfo, dismantle, dismantlePrice, bonus, exBoard, exPublish, exDeal, exCancel,
     exDeposit, exWithdraw, lingqiInfo, lingqiClaim, shopInfo, shopBuy, equipUpgrade, equipCompose, exChart, factionInfo, factionSelect, talentLearn,
     get factionCache() { return factionCache; },
     get profile() { return profile; }, get stamina() { return stamina; }, set stamina(v) { stamina = v; },
