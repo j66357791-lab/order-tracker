@@ -8,21 +8,49 @@
 // 【2026-09-17 安全修复】补战绩上限/关卡上限/接口限流，堵住脚本刷仙玉的口子
 import { limit } from './lib/ratelimit.js';
 import { ObjectId } from 'mongodb';
-import { createHash } from 'crypto';
+import { createHash, randomBytes as _rb } from 'crypto';
 import { addLedgerEntry } from './lib/ledger.js';
 
 export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
 
   // ==================== 反作弊阈值 ====================
   // 【v24.4】第一章 · 南山草泽扩为普通 20 关：上限与击杀密度随关卡放大
+  // 【v26.67 批次3】原先这里的 maxKillsPerMin / killHardCap / maxTimeSec 组成一条
+  // "由客户端上报的 timeSec 反推允许多少击杀"的公式，等于让上报者自己决定上限；
+  // 现在换成下面的 stageKillCeil(stage)（由服务端关卡表算，与上报时长无关），三个旧阈值一并删除。
   const LIMITS = {
-    maxTimeSec: 7200,        // 单局时长上限 2h
-    maxKillsPerMin: 120,     // 击杀/分钟基准（L1 波次密度 < 60；高关卡密度更高，按关卡放大）
     maxLevel: 60,            // 等级上限（20 关经验总量提升）
     winMinTimeSec: 60,       // 通关最短合理用时（15波+Boss < 1min 不可能）
     maxStage: 20,            // 关卡数上限——第一章普通 20 关
-    killHardCap: 20000,      // 单局击杀硬上限（防超长挂机脚本刷仙玉）
   };
+
+  // ==================== 【v26.67 批次3】服务端关卡权威上限 ====================
+  // 为什么要有这一段：/result 原先的"合理性校验"里，用来判定的每一个数值
+  // （timeSec / kills / stage / win）都是上报者自己填的，等于让考生自己写监考标准。
+  // kCap 由客户端的 timeSec 推出来，报 7200 秒就能报 20000 杀，一次拿满 2 万仙玉。
+  //
+  // 现在改成：每关的击杀上限由**服务端的关卡表**算出来，与客户端上报的时长无关。
+  // 表内容与前端 public/games/shanhai/js/config.js 的 waves + game.js 的 stageMul 对齐：
+  //   waves 15 波在 L1 基准共 243 只普通怪（不含 Boss），数量倍率
+  //   count = 0.7(L1) / 1.3(L2) / 1.3+0.15(n-2)(L3+)，Boss 每 7 秒召唤 4 只（L20 翻倍）。
+  // 留 25% 余量 + 固定 60 只缓冲，正常玩家打满全屏也碰不到；脚本则被压回"这一关本来的量"。
+  const STAGE_SPAWN_BASE = 243;      // 前端 waves 表在 L1 的普通怪总数
+  const BOSS_SUMMON_ROUNDS = 22;     // Boss 战最长按 ~150s / 7s 一轮估
+  function stageCountMul(n) {
+    return n === 1 ? 0.7 : n === 2 ? 1.3 : 1.3 + 0.15 * (n - 2);
+  }
+  function stageKillCeil(n) {
+    const summons = (n === 20 ? 8 : 4) * BOSS_SUMMON_ROUNDS;
+    const expected = STAGE_SPAWN_BASE * stageCountMul(n) + summons + 1 /* Boss 本体 */;
+    return Math.ceil(expected * 1.25) + 60;
+  }
+  // 一关从头打完（15 波 Σdur≈192s + Boss 战）也不会超过这个用时；
+  // 上报超过 1800 秒的"局"要么是脚本要么是客户端卡死，不再当成有效战绩
+  const STAGE_MAX_TIME_SEC = 1800;
+  // 开局票据：一次开局换一张，用完即焚。没有票据的结算一律不发奖 ——
+  // 这让"同一局反复上报"和"绕过体力直接刷 /result"两条路一起失效。
+  const RUN_COL = 'shanhai_runs';
+  const RUN_TTL_MS = 40 * 60 * 1000;   // 一局最长 30 分钟，留 10 分钟余量
 
   // ==================== 养成层配置 ====================
   const META_CFG = {
@@ -148,18 +176,42 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   });
 
   // 挑战一局扣 1 点：前端点"出战"时调用，成功才进战斗（体力不足则前端引导等待恢复）
-  app.post('/api/shanhai/stamina/consume', auth, limit({ name: 'shanhai-stamina', max: 20, windowMs: 60 * 1000, msg: '操作太频繁，稍等片刻' }), async (req, res) => {
+  // ==================== 开局（v26.67：取代原 /stamina/consume） ====================
+  // 一次开局做三件事，全部在服务端定账：
+  //   1) 校验关卡号合法，且不许跳关（只能打「已通关最高关 + 1」及以下的关）
+  //   2) 原子扣 1 点体力（条件更新，并发双击只能扣一次，体力从"读-判-写"变成真上限）
+  //   3) 发一张一次性开局票据 runToken，结算时必须带回来
+  // 原来体力扣在 /stamina/consume、结算在 /result，两者毫无关联 ——
+  // 脚本根本不消耗体力，直接循环 POST /result 就能刷，体力上限（12 局/天）形同虚设。
+  app.post('/api/shanhai/run/start', auth, limit({ name: 'shanhai-run', max: 20, windowMs: 60 * 1000, byUser: true, msg: '开局太频繁，稍等片刻' }), async (req, res) => {
     try {
       const db = await getDb();
-      const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      const me = req.user.id;
+      const st = Math.floor(Number((req.body || {}).stage) || 1);
+      if (!(st >= 1 && st <= LIMITS.maxStage)) return res.status(400).json({ ok: false, error: '关卡不存在' });
+      const p = await ensureProfile(db, me, req.user.displayName || req.user.username);
+      // 进度单调：没打过前面的关，就不能直接进后面的关（后面的关首通奖与掉落都更好）
+      const cleared = (p.clearedStages || []).filter(x => Number.isFinite(x));
+      const top = cleared.length ? Math.max(...cleared) : 0;
+      if (st > top + 1) return res.status(403).json({ ok: false, error: '请先通关第 ' + (top + 1) + ' 关' });
+
       const now = Date.now();
       const s = staminaCalc(p, now);
       if (s.cur < STAMINA_CFG.cost) return res.status(400).json({ ok: false, error: '体力不足（每 2 小时恢复 1 点）', stamina: s, code: 'NO_STAMINA' });
       const left = s.cur - STAMINA_CFG.cost;
-      // 注意：把"已恢复的量"和"本次消耗"一起落库，起点重置为现在
-      await db.collection('shanhai_profiles').updateOne({ userId: req.user.id }, { $set: staminaSet(left, now) });
+      // 条件更新：库里的体力值必须仍等于刚才读到的那份，否则说明有并发在同时扣
+      const spent = await db.collection('shanhai_profiles').updateOne(
+        { userId: me, stamina: p.stamina, staminaAt: p.staminaAt },
+        { $set: Object.assign(staminaSet(left, now), { updatedAt: new Date() }) });
+      if (!spent.matchedCount) return res.status(409).json({ ok: false, error: '操作太快了，请重试' });
+
+      const runToken = _rb(16).toString('hex');
+      await db.collection(RUN_COL).insertOne({
+        _id: runToken, userId: me, stage: st, used: false,
+        createdAt: new Date(), expiresAt: new Date(now + RUN_TTL_MS),
+      });
       const ns = staminaCalc({ stamina: left, staminaAt: new Date(now) }, now);
-      res.json({ ok: true, stamina: ns });
+      res.json({ ok: true, runToken, stage: st, stamina: ns });
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
@@ -299,20 +351,28 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
     } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
   });
 
-  app.post('/api/shanhai/lingqi/claim', auth, limit({ name: 'sh-lingqi', max: 15, windowMs: 60 * 1000, msg: '领取太频繁，稍等片刻' }), async (req, res) => {
+  app.post('/api/shanhai/lingqi/claim', auth, limit({ name: 'sh-lingqi', max: 15, windowMs: 60 * 1000, byUser: true, msg: '领取太频繁，稍等片刻' }), async (req, res) => {
     try {
       const db = await getDb();
-      const p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      let p = await ensureProfile(db, req.user.id, req.user.displayName || req.user.username);
+      // 老档案可能没有计时起点（矿脉是后加的功能），先补一次再算
+      if (!p.lingqiAt) {
+        await db.collection('shanhai_profiles').updateOne({ userId: req.user.id }, { $set: { lingqiAt: new Date() } });
+        p = await db.collection('shanhai_profiles').findOne({ userId: req.user.id });
+      }
       const r = lingqiCalc(p, Date.now());
       if (!r.unlocked) return res.status(400).json({ ok: false, error: `通关第 ${LINGQI_MINE.unlockStage} 关后解锁灵气矿脉` });
       if (r.gain < 1) return res.status(400).json({ ok: false, error: `还没攒够 1 点（当前 ${r.days} 天 / 日产量 ${r.rate} 点），再等等` });
       // 起点推进「已领取的天数」而不是直接设为现在，避免把不足一天的零头抹掉
-      const elapsedMs = Date.now() - new Date(p.lingqiAt || Date.now()).getTime();
-      const newStart = new Date(new Date(p.lingqiAt || Date.now()).getTime() + r.days * 86400000);
-      await db.collection('shanhai_profiles').updateOne(
-        { userId: req.user.id },
+      const elapsedMs = Date.now() - new Date(p.lingqiAt).getTime();
+      const newStart = new Date(new Date(p.lingqiAt).getTime() + r.days * 86400000);
+      // 【v26.67 批次3】同样把起点当乐观锁：矿脉灵气是**可进交易所变现**的资产，
+      // 双发等于直接把真金 multiplied by 2，比挂机仙玉更贵
+      const hit = await db.collection('shanhai_profiles').updateOne(
+        { userId: req.user.id, lingqiAt: p.lingqiAt },
         { $inc: { lingqi: r.gain }, $set: { lingqiAt: newStart, updatedAt: new Date() } }
       );
+      if (!hit.matchedCount) return res.status(409).json({ ok: false, error: '这份矿脉收益刚已被领取，请刷新后再看', code: 'LINGQI_RACE' });
       await db.collection('shanhai_logs').insertOne({ userId: req.user.id, action: 'lingqi_mine', detail: { gain: r.gain, days: r.days, rate: r.rate }, createdAt: new Date() }).catch(() => { });
       const np = await db.collection('shanhai_profiles').findOne({ userId: req.user.id });
       res.json({ ok: true, gain: r.gain, days: r.days, rate: r.rate, lingqi: np ? (np.lingqi || 0) : 0, elapsedMs });
@@ -484,12 +544,20 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const rate = Math.min(95, cfg.rate + useStones * STONE_RATE);   // 封顶 95%，永远保留失败可能
       step = 'consume';
       // 无论成败，材料与灵石都消耗（用户定稿：失败则消耗的装备消失销毁）
+      // 【v26.67 批次3】把"扣材料"改成一次带条件的原子更新：
+      // 原先是「读背包 → $pull（不校验是否真删到）→ 掷骰 → 加属性」，
+      // 凑齐恰好 5 件蓝装时并行发 5 个请求都能通过前面的读校验，
+      // $pull 只有第一个删到、后面的删空也不报错，于是**一份材料换到多份 upAtk**。
       const matIds = mats.slice(0, cfg.cost).map(x => x.id);
-      await db.collection('shanhai_profiles').updateOne(
-        { userId: me }, { $pull: { bag: { id: { $in: matIds } } } });
+      const claimFilter = { userId: me, 'bag.id': { $all: matIds } };
+      const claimUpdate = { $pull: { bag: { id: { $in: matIds } } }, $set: { updatedAt: new Date() } };
       if (useStones > 0) {
-        await db.collection('shanhai_profiles').updateOne(
-          { userId: me }, { $inc: { ['stones.' + tier]: -useStones } });
+        claimFilter['stones.' + tier] = { $gte: useStones };
+        claimUpdate.$inc = { ['stones.' + tier]: -useStones };
+      }
+      const claimed = await db.collection('shanhai_profiles').updateOne(claimFilter, claimUpdate);
+      if (!claimed.matchedCount) {
+        return res.status(409).json({ ok: false, error: '材料或灵石刚被其它操作占用/不足，请刷新背包后重试' });
       }
       step = 'roll';
       const success = Math.random() * 100 < rate;
@@ -550,8 +618,12 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const nextQ = QUALITY.find(x => x.id === Q_ORDER[qi + 1]);
       step = 'consume';
       // 无论成败，5 件材料都消耗
-      await db.collection('shanhai_profiles').updateOne(
-        { userId: me }, { $pull: { bag: { id: { $in: itemIds } } } });
+      // 【v26.67 批次3】同 upgrade：条件更新抢占材料，抢不到就 409，
+      // 否则并行合成会「一份材料出多件产物」
+      const claimed = await db.collection('shanhai_profiles').updateOne(
+        { userId: me, 'bag.id': { $all: itemIds } },
+        { $pull: { bag: { id: { $in: itemIds } } }, $set: { updatedAt: new Date() } });
+      if (!claimed.matchedCount) return res.status(409).json({ ok: false, error: '材料刚被其它操作占用，请刷新后重选' });
       step = 'roll';
       const success = Math.random() * 100 < COMPOSE_RATE;
       let loot = null;
@@ -1559,25 +1631,35 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   }
 
   // ==================== 战绩上报（含养成奖励结算） ====================
-  // 【2026-09-17 安全加固】限流：一局至少一分钟，10次/分钟足够正常上报，脚本高频刷分会被挡下
-  app.post('/api/shanhai/result', auth, limit({ name: 'shanhai-result', max: 10, windowMs: 60 * 1000, msg: '战绩上报太频繁，请稍后再试' }), async (req, res) => {
+  // 【v26.67 批次3】改为服务端权威：必须带 /run/start 发的票据，票据一次性、关卡以票据里的为准，
+  // 击杀上限来自服务端关卡表而不是"客户端报了多少时长"。限流也改成按用户分桶。
+  app.post('/api/shanhai/result', auth, limit({ name: 'shanhai-result', max: 14, windowMs: 60 * 1000, byUser: true, msg: '战绩上报太频繁，请稍后再试' }), async (req, res) => {
     try {
+      const { win, timeSec, kills, level, dmgTaken, hpPct, runToken } = req.body || {};
+      // 票据格式先判，再碰数据库：脚本拿假 token 高频刷这个接口时，
+      // 不该每次都白占一次数据库连接（放在 getDb 之后的话，防护等于用成本换便宜请求）
+      const tk = String(runToken || '');
+      if (!/^[a-f0-9]{32}$/.test(tk)) return res.status(400).json({ ok: false, error: '缺少本局开局凭证，本局不计成绩' });
       const db = await getDb();
-      const { win, timeSec, kills, level, dmgTaken, stage, hpPct } = req.body || {};
+
+      // —— 票据核销：一次开局只允许结算一次（原子抢占，防并发重放）——
+      const run = await db.collection(RUN_COL).findOneAndUpdate(
+        { _id: tk, userId: req.user.id, used: false },
+        { $set: { used: true, settledAt: new Date() } },
+        { returnDocument: 'after' });
+      const runDoc = run && (run.value || run);
+      if (!runDoc) return res.status(400).json({ ok: false, error: '本局开局凭证无效或已结算过，本局不计成绩' });
+      if (runDoc.expiresAt && runDoc.expiresAt.getTime() < Date.now()) {
+        return res.status(400).json({ ok: false, error: '本局已超时作废，请重新开局' });
+      }
+      const st = Number(runDoc.stage);   // 关卡号只认票据，客户端再报一次也不算数
+
       const t = Math.floor(Number(timeSec) || 0);
-      const k = Math.floor(Number(kills) || 0);
       const lv = Math.floor(Number(level) || 1);
       const isWin = !!win;
-      const st = Math.floor(Number(stage) || 1);
-
-      // —— 合理性校验（不合格只记战绩不发奖励） ——
-      // 【2026-09-17 安全修复】原校验在 t≤30 秒时不检查击杀上限（上报 timeSec=30,
-      // kills=100万 可白拿百万仙玉），且 stage 无上限可无限刷首通奖励——补上绝对上限
-      // 【v24.4】击杀密度上限随关卡放大（高关卡波次密度更高，1 + 0.16×(st-1)）
-      const densityCap = Math.ceil(LIMITS.maxKillsPerMin * (1 + 0.16 * (st - 1)));
-      const kCap = Math.min(LIMITS.killHardCap, Math.ceil(Math.max(t, 60) / 60) * densityCap + 50);
-      const bad = t < 0 || t > LIMITS.maxTimeSec
-        || k < 0 || k > kCap
+      const kCeil = stageKillCeil(st);
+      const k = Math.min(kCeil, Math.max(0, Math.floor(Number(kills) || 0)));   // 夹到本关可能出现的最大值
+      const bad = t < 0 || t > STAGE_MAX_TIME_SEC
         || lv < 1 || lv > LIMITS.maxLevel
         || st < 1 || st > LIMITS.maxStage
         || (isWin && t < LIMITS.winMinTimeSec);
@@ -1594,9 +1676,9 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       // 【2026-09-24 加固】hpPct 截断到 [0,1]，防上报 1.5 之类越界值干扰星级
       const hp = Math.max(0, Math.min(1, Number(hpPct) || 0));
       // 【v26.10】与客户端 ui.js 保持同一套标准：≥95% 血 3 星 / ≥60% 2 星 / 通关 1 星。
-      const stars = isWin
-        ? (Number(hpPct) != null && Number.isFinite(Number(hpPct)) ? (hp >= 0.95 ? 3 : hp >= 0.6 ? 2 : 1) : (t < 180 ? 3 : t < 360 ? 2 : 1))
-        : 0;
+      // 【v26.67】判星一律用夹取后的 hp：原先判的是未夹取的 Number(hpPct) 是否有限，
+      // 于是上报 1.5、99 这类越界值照样走进 hp 分支，等价于"随便报个血就是 3 星"。
+      const stars = isWin ? (hp >= 0.95 ? 3 : hp >= 0.6 ? 2 : 1) : 0;
       // 【二次复核修正】bestTimeSec 原来用对象展开生成第二个 $set，首通那一局会把
       // 前面 $set 里的 username/updatedAt 整体覆盖丢掉——改为预先组装同一个 $set
       const setResult = { username: req.user.displayName || req.user.username, updatedAt: new Date() };
@@ -1666,12 +1748,19 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
       const r = idleCalc(p, Date.now());
       if (!r.unlocked) return res.status(400).json({ ok: false, error: '通关第 ' + IDLE_CFG.unlockStage + ' 关后解锁挂机收益' });
       if (r.xianyuGain <= 0 && r.elapsedSec < 60) return res.status(400).json({ ok: false, error: '挂机不足 1 分钟，再等等' });
+      const claimAt = new Date();
       const upd = {
         $inc: { xianyu: r.xianyuGain },
-        $set: { idleAt: new Date(), idleKeyProgress: r.keyProgress, updatedAt: new Date() },
+        $set: { idleAt: claimAt, idleKeyProgress: r.keyProgress, updatedAt: new Date() },
       };
-      const out = await db.collection('shanhai_profiles').findOneAndUpdate({ userId: req.user.id }, upd, { returnDocument: 'after' });
+      // 【v26.67 批次3】把"计时起点"放进更新条件里当乐观锁：
+      // 原先筛选只有 {userId}，收益是读旧 idleAt 算出来的、却无条件写入新起点 ——
+      // 两台设备（或同端并发两个请求）会各自算出同一份满额并各 $inc 一次，8 小时宝箱领两遍。
+      // 同文件的 mails/claim、duiduile/claim、shop/buy、talent/learn 本来就是这么抢占的，这两个漏了。
+      const out = await db.collection('shanhai_profiles').findOneAndUpdate(
+        { userId: req.user.id, idleAt: p.idleAt }, upd, { returnDocument: 'after' });
       const np = out && (out.value || out);
+      if (!np) return res.status(409).json({ ok: false, error: '这份挂机收益刚已被领取（可能是在另一台设备），请刷新后再看', code: 'IDLE_RACE' });
       await db.collection('shanhai_logs').insertOne({
         userId: req.user.id, action: 'idle_claim', detail: { sec: r.elapsedSec, xianyu: r.xianyuGain, keyGain: +(r.keyProgress - ((p.idleKeyProgress) || 0)).toFixed(6), keyRate: r.keyRate }, createdAt: new Date(),
       }).catch(() => {});
