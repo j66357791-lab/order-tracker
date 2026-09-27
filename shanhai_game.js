@@ -9,6 +9,7 @@
 import { limit } from './lib/ratelimit.js';
 import { ObjectId } from 'mongodb';
 import { createHash } from 'crypto';
+import { addLedgerEntry } from './lib/ledger.js';
 
 export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
 
@@ -876,6 +877,11 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   });
   app.put('/api/shanhai/admin/factions', auth, adminOnly, async (req, res) => {
     try {
+      // 【2026-09-26 修复】这里漏了 const db = await getDb()（本文件其它管理接口都有），
+      // 直接引用 db → ReferenceError 被外层 catch 吞成"保存失败"：
+      // 后台改流派/天赋数值**恒 500**，而这条 PUT 是天赋树数值唯一的热调通道，
+      // 坏了就只能回退代码默认值或手工改库 —— 表现为"点了保存没反应"，很难联想到缺声明。
+      const db = await getDb();
       const list = (req.body || {}).factions;
       const err = validateFactions(list);
       if (err) return res.status(400).json({ ok: false, error: err });
@@ -1962,9 +1968,11 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   }
   // 资金流水（正=进账，负=支出）
   async function walletLog(db, userId, amount, kind, note, orderId) {
-    await db.collection('wallet_log').insertOne({
-      userId, amount: money2(amount), kind, note: note || '', orderId: orderId || null, createdAt: new Date(),
-    });
+    // 【2026-09-26 批次2】统一走账本幂等键 (kind, refId)。
+    // 全站余额就是 wallet_log 求和，而交易所的提现/回款/成交在这里都是真金流水：
+    // 原先是裸 insertOne，撮合重试或并发回款会把同一笔钱记两次。
+    // orderId（挂单号/提现流水号）正好是天然幂等键，缺省时退化为无防重并由 ledger 层打警告。
+    await addLedgerEntry(db, { userId, kind, refId: orderId || null, amount: money2(amount), note: note || '', extra: { orderId: orderId || null } });
   }
 
   // ---------- 行情看板 ----------
