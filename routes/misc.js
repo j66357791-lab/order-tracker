@@ -2,6 +2,7 @@
 // 【2026-09-14 ES6 重构】自 server.js 原样迁出，行为不变
 import { ObjectId } from 'mongodb';
 import crypto from 'crypto';
+import { limit } from '../lib/ratelimit.js';
 
 export default function mount(ctx) {
 
@@ -9,25 +10,55 @@ export default function mount(ctx) {
 
   const { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket, rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday, CONTRACT_VERSION, CONTRACT_TITLE, CONTRACT_TEXT, unfreezeRedpackets } = ctx;
 
-app.get('/api/captcha', (req, res) => {
+// 【2026-09-26 批次3】发码接口原先无鉴权 + 无限流，且容量保护只删"已过期"的条目：
+// 5 分钟 TTL 窗口内高频领码就能让 captchaStore 无界增长（Render 512MB 实例上是真实的内存风险），
+// 同时也让"用验证码挡脚本注册"变成"送脚本一个免费接口"。
+app.get('/api/captcha', limit({ name: 'captcha', max: 30, windowMs: 5 * 60 * 1000, ipMax: 120, msg: '获取验证码太频繁，请稍后再试' }), (req, res) => {
   const a = rnd(8) + 2, b = rnd(8) + 1;
   const op = Math.random() < 0.5 ? '+' : '-';
   const ans = op === '+' ? a + b : a - b;
   const id = crypto.randomBytes(12).toString('hex');
   captchaStore.set(id, { ans, exp: Date.now() + 5 * 60 * 1000 });
-  if (captchaStore.size > 500) for (const [k, v] of captchaStore) if (v.exp < Date.now()) captchaStore.delete(k);
+  // 【2026-09-26 批次3】容量保护原先只删"已过期"的条目 —— 5 分钟 TTL 内高频领码根本删不掉，
+  // Map 会无界增长。现在超限就按插入顺序驱逐最旧的（Map 迭代顺序即插入顺序）。
+  if (captchaStore.size > 800) {
+    let over = captchaStore.size - 800;
+    for (const k of captchaStore.keys()) { captchaStore.delete(k); if (--over <= 0) break; }
+  }
   const noise = Array.from({ length: 3 }, () => `<path d="M${rnd(120)} ${rnd(44)} Q ${rnd(160)} ${rnd(60)} ${120 + rnd(80)} ${rnd(50)}" stroke="#94a3b8${rnd(9)}" fill="none" stroke-width="1.5" opacity=".5"/>`).join('');
   const dots = Array.from({ length: 26 }, () => `<circle cx="${rnd(200)}" cy="${rnd(56)}" r="${rnd(2) + 1}" fill="#cbd5e1" opacity=".7"/>`).join('');
-  // 【2026-09-17 加固】逐字符错位/旋转/字号抖动：原来算式是一整段明文 <text>，
-  // 脚本不用OCR、直接正则抠文本就能算出答案，验证码形同虚设
-  const expr = `${a} ${op} ${b} = ?`;
+  // 【2026-09-26 批次3】答案改用「七段码路径」画出来，不再有任何 <text> 节点。
+  // 之前虽然做了逐字符错位/旋转，但字符本身还是明文写在 <text> 里，
+  // 脚本按 x 坐标排序拼接（x = startX + i*18 严格单调）就能还原算式，等于没有验证码。
+  // 现在机器要拿答案必须先做图形识别；顺带保留干扰线与噪点。
+  const SEGS = {
+    a: [2, 0, 16, 0], g: [2, 12, 16, 12], d: [2, 24, 16, 24],
+    f: [2, 0, 2, 12], b: [16, 0, 16, 12], e: [2, 12, 2, 24], c: [16, 12, 16, 24],
+  };
+  const DIGITS = {
+    0: 'abcdef', 1: 'bc', 2: 'abged', 3: 'abgcd', 4: 'fgbc',
+    5: 'afgcd', 6: 'afdec', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg',
+  };
+  const glyph = (ch, x, y, rot) => {
+    const stroke = `stroke="#1f2937" stroke-width="3.6" stroke-linecap="round" fill="none"`;
+    let lines = [];
+    if (ch === '+') lines = [[3, 12, 19, 12], [11, 5, 11, 19]];
+    else if (ch === '-') lines = [[3, 12, 19, 12]];
+    else {
+      const key = DIGITS[ch];
+      if (!key) return '';
+      lines = [...key].map(s => SEGS[s]);
+    }
+    const inner = lines.map(([x1, y1, x2, y2]) =>
+      `<line x1="${x1 + rnd(2) - 1}" y1="${y1 + rnd(2) - 1}" x2="${x2 + rnd(2) - 1}" y2="${y2 + rnd(2) - 1}" ${stroke}/>`).join('');
+    return `<g transform="translate(${x} ${y}) rotate(${rot})">${inner}</g>`;
+  };
+  const expr = `${a}${op}${b}`;
   const chars = expr.split('');
-  const startX = 100 - (chars.length - 1) * 9;
-  const glyphs = chars.map((ch, i) => {
-    const x = startX + i * 18, y = 30 + rnd(9);
-    return `<text x="${x}" y="${y}" text-anchor="middle" font-size="${23 + rnd(5)}" font-weight="700" font-family="Georgia,serif" fill="#1f2937" transform="rotate(${rnd(17) - 8} ${x} ${y})">${ch}</text>`;
-  }).join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="56" viewBox="0 0 200 56"><rect width="200" height="56" rx="10" fill="#f1f5f9"/>${noise}${dots}${glyphs}</svg>`;
+  const startX = 96 - (chars.length - 1) * 11;
+  const glyphs = chars.map((ch, i) => glyph(ch, startX + i * 22, 12 + rnd(5), rnd(13) - 6)).join('');
+  const hint = `<text x="176" y="30" text-anchor="middle" font-size="18" font-weight="700" font-family="Georgia,serif" fill="#64748b">=?</text>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="56" viewBox="0 0 200 56"><rect width="200" height="56" rx="10" fill="#f1f5f9"/>${noise}${dots}${glyphs}${hint}</svg>`;
   res.json({ ok: true, id, svg });
 });
 // 临时：清空所有聊天记录（管理员调用，需带确认参数，误触即不可恢复）
