@@ -91,7 +91,7 @@ export function mount(root) {
 
   // —— 套餐 ——
   async function loadPkgs() {
-    const j = await api('/api/admin/packages').catch(() => null);
+    const j = await api('/api/admin/packages').catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
     if (!j || !j.ok) { $('mlPkgList').innerHTML = '<div class="empty">' + esc((j && j.error) || '加载失败') + '</div>'; return; }
     // 【v21.1】接口返回 ok:true 但字段缺失时不要直接 .length 崩掉（外壳现在切回面板会自动重取，
     // 这条路径比之前跑得频繁，加上兜底避免一条脏响应把整个面板打空）
@@ -127,11 +127,11 @@ export function mount(root) {
     if (!body.name) { $('mlPkgErr').textContent = '套餐名必填'; return; }
     const id = $('mlPkgErr').dataset.id || '';
     $('mlPkgErr').textContent = '';
-    const j = await api(id ? '/api/admin/packages/' + id : '/api/admin/packages', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }).catch(() => null);
+    const j = await api(id ? '/api/admin/packages/' + id : '/api/admin/packages', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }).catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
     if (j && j.ok) { $('mlPkgMask').classList.remove('on'); toast('已保存 ✓ 用户端即时生效'); loadPkgs(); } else $('mlPkgErr').textContent = (j && j.error) || '保存失败';
   };
   window.mlTogglePkg = async (id, active) => {
-    const j = await api('/api/admin/packages/' + id, { method: 'PUT', body: JSON.stringify({ active }) }).catch(() => null);
+    const j = await api('/api/admin/packages/' + id, { method: 'PUT', body: JSON.stringify({ active }) }).catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
     if (j && j.ok) loadPkgs(); else toast((j && j.error) || '操作失败');
   };
   // 编辑时把 id 存到 err 节点（省一个隐藏变量位）
@@ -140,7 +140,7 @@ export function mount(root) {
 
   // —— 文案馆作品 ——
   async function loadGal() {
-    const j = await api('/api/admin/gallery').catch(() => null);
+    const j = await api('/api/admin/gallery').catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
     if (!j || !j.ok) { $('mlGalList').innerHTML = '<div class="empty">' + esc((j && j.error) || '加载失败') + '</div>'; return; }
     j.gallery = j.gallery || [];
     if (!j.gallery.length) { $('mlGalList').innerHTML = '<div class="empty">还没有作品，点上方新增</div>'; return; }
@@ -184,24 +184,24 @@ export function mount(root) {
     if (!body.title) { $('mlGalErr').textContent = '标题必填'; return; }
     if (!body.img) { $('mlGalErr').textContent = '图片地址必填'; return; }
     const id = $('mlGalErr').dataset.id || '';
-    const j = await api(id ? '/api/admin/gallery/' + id : '/api/admin/gallery', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }).catch(() => null);
+    const j = await api(id ? '/api/admin/gallery/' + id : '/api/admin/gallery', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }).catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
     if (j && j.ok) { $('mlGalMask').classList.remove('on'); toast('已保存 ✓ 用户端即时生效'); loadGal(); } else $('mlGalErr').textContent = (j && j.error) || '保存失败';
   };
   window.mlToggleGal = async (id, active) => {
-    const j = await api('/api/admin/gallery/' + id, { method: 'PUT', body: JSON.stringify({ active }) }).catch(() => null);
+    const j = await api('/api/admin/gallery/' + id, { method: 'PUT', body: JSON.stringify({ active }) }).catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
     if (j && j.ok) loadGal(); else toast((j && j.error) || '操作失败');
   };
   $('mlGalDel').onclick = async () => {
     const id = $('mlGalErr').dataset.id; if (!id) return;
     if (!confirm('确定删除这条作品？用户端首页会立即移除。')) return;
-    const j = await api('/api/admin/gallery/' + id, { method: 'DELETE' }).catch(() => null);
+    const j = await api('/api/admin/gallery/' + id, { method: 'DELETE' }).catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
     if (j && j.ok) { $('mlGalMask').classList.remove('on'); toast('已删除'); loadGal(); } else toast((j && j.error) || '删除失败');
   };
   $('mlGImg').addEventListener('input', () => { $('mlGPrev').src = $('mlGImg').value.trim(); });
 
   // —— 用户咨询 ——
   async function loadLeads() {
-    const j = await api('/api/admin/leads').catch(() => null);
+    const j = await api('/api/admin/leads').catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
     if (!j || !j.ok) { $('mlLeadList').innerHTML = '<div class="empty">加载失败</div>'; return; }
     j.leads = j.leads || [];
     $('mlLeadList').innerHTML = j.leads.length ? j.leads.map(l => `<div class="lead" style="padding:14px 0;border-bottom:1px dashed var(--line)">
@@ -211,7 +211,7 @@ export function mount(root) {
       : '<div class="empty">还没有用户咨询</div>';
   }
   window.mlMarkLead = async (id) => {
-    const j = await api('/api/admin/leads/' + id, { method: 'PUT', body: JSON.stringify({ status: '已跟进' }) }).catch(() => null);
+    const j = await api('/api/admin/leads/' + id, { method: 'PUT', body: JSON.stringify({ status: '已跟进' }) }).catch(e => ({ ok: false, error: (e && e.message) || String(e) }));
     if (j && j.ok) loadLeads();
   };
 
