@@ -269,6 +269,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const TOKEN = localStorage.getItem('jdy_token') || '';
 let ME = null;
 try { ME = JSON.parse(localStorage.getItem('jdy_user') || 'null'); } catch (e) {}
+const T = ms => (window.AbortSignal && AbortSignal.timeout) ? { signal: AbortSignal.timeout(ms) } : {};   // 【P2-15】请求超时助手
 const cnDate = d => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 const cnTime = d => new Date(new Date(d).getTime() + 8 * 3600 * 1000).toISOString().slice(5, 16).replace('T', ' ');
 
@@ -292,7 +293,7 @@ document.querySelectorAll('[data-pane]').forEach(b => b.onclick = () => go(b.dat
 let LEADS = [];
 async function loadMe() {
   try {
-    const r = await fetch('/api/portal/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+    const r = await fetch('/api/portal/me', { ...T(15000), headers: { 'Authorization': 'Bearer ' + TOKEN } });
     if (r.status === 401 || r.status === 403) { location.replace('/portal.html#login'); return; }
     const j = await r.json();
     if (!j.ok) return;
@@ -329,7 +330,7 @@ $('saveMe').onclick = async () => {
   if (!name) { $('meErr').textContent = '昵称不能为空'; return; }
   $('saveMe').disabled = true; $('saveMe').textContent = '保存中…';
   try {
-    const r = await fetch('/api/portal/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ displayName: name }) });
+    const r = await fetch('/api/portal/profile', { ...T(15000), method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ displayName: name }) });
     const j = await r.json();
     if (!j.ok) { $('meErr').textContent = j.error || '保存失败'; }
     else {
@@ -360,7 +361,7 @@ function paintDealBar(pkgs) {
 }
 async function loadPkgs() {
   try {
-    const j = await (await fetch('/api/portal/packages')).json();
+    const j = await (await fetch('/api/portal/packages', T(15000))).json();
     if (!j.ok || !j.packages.length) {
       $('pkgGrid').innerHTML = '<div class="empty">套餐配置中，可直接提交需求让我们报价</div>';
       $('dealText').innerHTML = '优惠活动筹备中，先提交需求，客服会给你当下最优方案。';
@@ -397,7 +398,7 @@ $('ldGo').onclick = async () => {
   if (phone && !/^1[3-9]\d{9}$/.test(phone)) { $('ldErr').textContent = '手机号格式不对'; return; }
   $('ldGo').disabled = true; $('ldGo').textContent = '提交中…';
   try {
-    const r = await fetch('/api/portal/lead', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ packageName: $('ldNote').dataset.pkg || '一般咨询', note: $('ldNote').value, contact: phone }) });
+    const r = await fetch('/api/portal/lead', { ...T(15000), method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ packageName: $('ldNote').dataset.pkg || '一般咨询', note: $('ldNote').value, contact: phone }) });
     const j = await r.json();
     if (!j.ok) { $('ldErr').textContent = j.error || '提交失败'; }
     else { $('leadMask').classList.remove('on'); toast('已提交，我们尽快联系你 ✓'); go('me'); loadMe(); }
