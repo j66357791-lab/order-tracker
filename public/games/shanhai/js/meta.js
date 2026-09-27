@@ -67,7 +67,7 @@ const META = (() => {
   async function shApi(url, body) {
     const r = await fetch(url, {
       method: body ? "POST" : "GET",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("jdy_token") },
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + LS.get("jdy_token", "") },
       body: body ? JSON.stringify(body) : undefined,
     });
     if (r.status === 401) { location.href = "/login.html"; throw { error: "未登录" }; }
