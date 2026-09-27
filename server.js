@@ -15,7 +15,7 @@ import { CONFIG, CHANGELOG, assertConfig } from './config.js';
 import { getDb } from './lib/db.js';
 import {
   JWT_SECRET, signToken, publicUser, selfUser, auth, adminOnly,
-  cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr,
+  cacheGet, cacheSet, cacheClear, cacheClearPrefix, cnDayStr, cnMonthStr, cnNow, cnDateStr,
   sha256hex, captchaStore, verifyCaptcha, rnd, ymOf, toMin, cnTimeStr,
   cleanReplyTo, nextUid, assignUid, pairKey, makeNotify,
 } from './lib/core.js';
@@ -114,6 +114,9 @@ const DEPLOY_CHECK_FILES = [
   // 【v26.9】灵石图标（新道具，漏传会表现为商城货币条上灵石位置空白）
   'public/games/shanhai/assets/item/lingstone_t1.png',
   'lib/core.js', 'lib/db.js', 'lib/env.js', 'lib/ratelimit.js', 'lib/ocr.js', 'lib/ocr-child.mjs', 'lib/tessdata/eng.traineddata.gz',
+  // 【v26.65 批次2】账本唯一写入口：漏传这个文件，充值/签到/红包/福袋/交易所的**所有**资金写入都会报错，
+  // 而部署自检原先不认识它，仍会报"全部在线"——必须纳入核验清单
+  'lib/ledger.js',
   'routes/portal.js', 'routes/authx.js', 'routes/user.js', 'routes/orders.js',
   'routes/recharge.js', 'public/admin/mod-recharge.js',
   'routes/misc.js', 'routes/ads.js', 'routes/cards.js', 'routes/worktime.js', 'routes/gameadmin.js', 'routes/dbadmin.js',
@@ -172,7 +175,7 @@ const unfreezeRedpackets = activityMod.unfreezeRedpackets;
 const contract = await import('./routes/misc.js');
 const bcrypt = (await import('bcryptjs')).default;
 const jwt = (await import('jsonwebtoken')).default;
-const ctx = { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket,
+const ctx = { app, auth, adminOnly, getDb, notify, upload, CONFIG, signToken, publicUser, selfUser, ObjectId, cacheGet, cacheSet, cacheClear, cacheClearPrefix, cnDayStr, cnMonthStr, cnNow, cnDateStr, sha256hex, captchaStore, verifyCaptcha, nextUid, assignUid, pairKey, cleanReplyTo, io, bcrypt, gridBucket, makeBucket,
   rnd, ymOf, toMin, cnTimeStr, JWT_SECRET, jwt, STATUSES, DONE_STATUSES, CARD_STATUSES, normalizeStatus, normCard, localToday,
   CONTRACT_VERSION: contract.CONTRACT_VERSION, CONTRACT_TITLE: contract.CONTRACT_TITLE, CONTRACT_TEXT: contract.CONTRACT_TEXT,
   unfreezeRedpackets };
@@ -234,8 +237,50 @@ try {
   } catch (e) { console.error('挂机激活迁移失败:', e.message); }
 })();
 
+// —— 【v26.65】打款"处理中"僵死兜底 ——
+// 批次 2 把提现打款改成了「先抢占为 处理中 → 再做副作用 → 落 已打款」。
+// 如果进程正好在这中间被杀（部署切换、OOM），单子会永久停在"处理中"：
+// 既不会被再次打款（条件是"待处理"），也不在待办列表里显形。启动时退回"待处理"即可自愈。
+// 只处理 10 分钟前的，避免误伤正在执行中的请求。
+(async () => {
+  try {
+    const db = await getDb();
+    const cut = new Date(Date.now() - 10 * 60 * 1000);
+    const r = await db.collection('withdrawals').updateMany(
+      { status: '处理中', processingAt: { $lt: cut } },
+      { $set: { status: '待处理' }, $currentDate: { payResetAt: true } });
+    if (r.modifiedCount) console.log('[提现] 启动自愈：' + r.modifiedCount + ' 笔卡在「处理中」的打款申请已退回「待处理」，请在工作台重新核对后再打款');
+  } catch (e) { console.error('提现处理中自愈失败:', e.message); }
+})();
+
 // ---- 兜底与启动 ----
 app.use((req, res) => res.status(404).json({ ok: false, error: '接口不存在' }));
+
+// 【2026-09-26 修复】此前全服务没有任何 (err,req,res,next) 错误中间件：
+// 畸形 JSON（body-parser 抛 SyntaxError）、超上限上传（multer 抛 LIMIT_FILE_SIZE）、
+// 同步抛错全部落到 Express 默认错误处理器 —— NODE_ENV 不是 production 时会把含绝对路径的
+// 堆栈直接回显给客户端，而且返回的是 HTML，前端 res.json() 再抛一次，现场表现为"点了没反应"。
+// 现在统一成 JSON、统一状态码，并且永不回显 err.message（细节只进日志）。
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = err.status || err.statusCode;
+  let code = 500;
+  if (err.type === 'entity.parse.failed') code = 400;              // JSON 格式错误
+  else if (err.type === 'entity.too.large') code = 413;            // 超过 express.json 的 2MB
+  else if (err.code === 'LIMIT_FILE_SIZE') code = 413;             // multer 文件超限
+  else if (err.code === 'LIMIT_UNEXPECTED_FILE') code = 400;       // 字段名不对/多传文件
+  else if (err.code === 'LIMIT_FILE_COUNT') code = 400;
+  else if (typeof status === 'number' && status >= 400 && status < 600) code = status;
+  const route = (req.baseUrl || '') + (req.path || '');
+  if (code >= 500) console.error('[请求异常] ' + req.method + ' ' + route, err && err.stack || err);
+  else console.warn('[请求被拒] ' + req.method + ' ' + route + ' → ' + code + '（' + (err.code || err.type || 'Error') + '）');
+  res.status(code).json({
+    ok: false,
+    error: code === 400 ? (err.type === 'entity.parse.failed' ? '请求数据格式有误，请刷新后重试' : '请求参数有误')
+      : code === 413 ? '上传内容过大，请压缩后重试（截图请控制在 6MB 以内）'
+      : '服务器开小差，请稍后再试',
+  });
+});
 server.listen(CONFIG.port, () => {
   console.log(`订单统计系统V15（ES6模块化）已启动: http://localhost:${CONFIG.port}`);
   console.log(`架构: server.js 入口 + config.js + lib/{db,core,env,ratelimit}.js + routes/ 9 个业务模块 + 2 个游戏模块`);
@@ -258,5 +303,11 @@ server.listen(CONFIG.port, () => {
   console.log('[自检] JWT_SECRET: ' + (r.JWT_SECRET ? '已配置 ✓' : '未配置 ⚠ 使用随机密钥，重启后需重新登录（建议在 .env 里配置）'));
   console.log('[自检] MONGO_URI : ' + (r.MONGO_URI ? '已配置 ✓' : '未配置（使用 config.js 默认值）'));
   console.log('[自检] TRUST_PROXY: ' + (r.TRUST_PROXY ? '已开启（反代后面部署）' : '关闭（直连部署）'));
+  // 【2026-09-26】这几项代码里都会读，但过去既不打印也不在 .env.example 里说明，
+  // 导致"我以为配了/关了"这类口径错位只能靠读源码排查。现在启动就报出来。
+  console.log('[自检] REALNAME_HASH_KEY: ' + (r.REALNAME_HASH_KEY ? '已配置 ✓（身份证走 HMAC 加盐哈希）'
+    : '未配置 ⚠ 实名身份证号将使用**无盐 SHA-256** —— 身份证号码有结构（地区码+生日+顺序+校验位），库一旦泄露可离线穷举还原，建议尽快配置（配置后需一次性迁移历史哈希）'));
+  console.log('[自检] OCR_ENABLED: ' + r.OCR_ENABLED + (r.OCR_ENABLED === '1' ? '（注意：默认就是开，充值截图金额一致即无人工复核直接入账）' : ''));
+  console.log('[自检] OCR_HEAVY  : ' + (r.OCR_HEAVY ? '开（需在线下载 chi_sim 语言包，512MB 实例上大概率超时）' : '关（仅英文包，够识别数字）'));
 });
 
