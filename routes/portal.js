@@ -38,7 +38,7 @@ export default function mountPortal(app, ctx = {}) {
         role = 'writer';
       }
       const doc = {
-        username: String(username), phone: String(phone), passwordHash: await bcrypt.hash(String(password), 8),   // password 已是前端 SHA-256
+        username: String(username), phone: String(phone), passwordHash: await bcrypt.hash(String(password), 10),   // password 已是前端 SHA-256；【P3-5】cost 统一为 10
         displayName: cleanNick(displayName) || (role === 'writer' ? '写手' : '用户') + String(username).slice(0, 4),
         role, createdAt: new Date(), portalLeads: 0, shift: false, sockOnline: false, email: '', level: 0,
       };
