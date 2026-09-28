@@ -238,6 +238,8 @@ export default function mountGames(app, { auth, getDb, cnDayStr }) {
     } catch (e) { next(); } // 配置读取失败不阻塞游戏，用代码内默认值
   });
 
+  // 【P3-6 注】全站管理端鉴权已统一为 adminOnly 中间件；本文件的 adminGate 与其等价（ctx 未解构 adminOnly，
+  // 暂保留内联门避免动挂载签名）——新增管理接口请优先走 adminOnly，不要在这里继续堆。
   const adminGate = (req, res) => { if (req.user.role !== 'admin') { bad(res, 403, '需要管理员权限'); return false; } return true; };
 
   // ==================== 接口 ====================
