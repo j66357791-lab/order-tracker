@@ -40,7 +40,7 @@ app.post('/api/setup', async (req, res) => {
     const n = await db.collection('users').countDocuments();
     if (mark || n > 0) return res.status(400).json({ ok: false, error: '系统已初始化，请直接登录' });
     const doc = {
-      username, passwordHash: await bcrypt.hash(String(password), 8),
+      username, passwordHash: await bcrypt.hash(String(password), 10),   // 【P3-5】cost 统一为 10（与登录升级/重置一致）
       displayName: cleanNick(displayName) || username, role: 'admin',
       shift: false, sockOnline: false, email: '', createdAt: new Date(),
     };
@@ -118,7 +118,7 @@ app.post('/api/auth/register', limit({ name: 'reg-internal', max: 10, windowMs: 
     }
     const role = hasInvite ? 'writer' : 'client';
     const doc = {
-      username, passwordHash: await bcrypt.hash(String(password), 8),
+      username, passwordHash: await bcrypt.hash(String(password), 10),
       displayName: cleanNick(displayName) || username, role,
       shift: false, sockOnline: false, email: String(email || '').slice(0, 60),
       phone: String(req.body?.phone || '').slice(0, 11),
