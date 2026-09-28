@@ -205,5 +205,86 @@ app.post('/api/admin/game-cleanup', auth, adminOnly, async (req, res) => {
   } catch(e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 
+// ==================== 【2026-09-28】经济总屏（方向三）：灵气/仙玉/钱包/交易所一屏总览 ====================
+// 管理员需要一眼看出"今天印了多少、花了多少、水位是否正常"。数据来自 8 个轻量聚合
+// （档案/钱包都是小集合；流水查询走 createdAt 索引，7 天窗口可控）。
+// 告警三类：负余额（灵气/仙玉/交易所钱包/做市额度）、24h 大额流水（|amount| ≥ 100）。
+app.get('/api/game/admin/economy', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const BOT_ID = '__market__';
+    const DAY = 86400000;
+    const since7 = new Date(Date.now() - 7 * DAY);
+    const since1 = new Date(Date.now() - DAY);
+    const bigMoveMin = 100;   // 大额异动阈值
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+    const dayKey = { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+08:00' } };
+    const num = f => ({ $cond: [{ $isNumber: f }, f, 0] });
+
+    // ① 存量：档案（灵气/冻结/仙玉）与玩家数
+    const [profAgg] = await db.collection('shanhai_profiles').aggregate([
+      { $group: { _id: null, players: { $sum: 1 },
+        lingqi: { $sum: num('$lingqi') }, lingqiFrozen: { $sum: num('$lingqiFrozen') }, xianyu: { $sum: num('$xianyu') } } },
+    ]).toArray();
+    // ② 交易所：玩家钱包合计 + 机器人钱包 + 做市额度
+    const [exAgg] = await db.collection('shanhai_ex_wallet').aggregate([
+      { $group: { _id: null, balance: { $sum: num('$balance') }, frozen: { $sum: num('$frozen') } } },
+    ]).toArray();
+    const botW = await db.collection('shanhai_ex_wallet').findOne({ userId: BOT_ID });
+    const fund = await db.collection('shanhai_market_fund').findOne({ _id: 'market' });
+    // ③ 交易所成交（近 7 天按北京日）
+    const deals7d = await db.collection('shanhai_ex_deals').aggregate([
+      { $match: { createdAt: { $gte: since7 } } },
+      { $group: { _id: { day: dayKey }, count: { $sum: 1 }, total: { $sum: num('$total') }, fee: { $sum: num('$fee') } } },
+      { $sort: { _id: 1 } },
+    ]).toArray();
+    // ④ 主站钱包流水（近 7 天：流入/流出，按北京日）
+    const wallet7d = await db.collection('wallet_log').aggregate([
+      { $match: { createdAt: { $gte: since7 } } },
+      { $group: { _id: { day: dayKey },
+        inflow: { $sum: { $cond: [{ $gt: [{ $ifNull: ['$amount', 0] }, 0] }, { $ifNull: ['$amount', 0] }, 0] } },
+        outflow: { $sum: { $cond: [{ $lt: [{ $ifNull: ['$amount', 0] }, 0] }, { $multiply: [{ $ifNull: ['$amount', 0] }, -1] }, 0] } } } },
+      { $sort: { _id: 1 } },
+    ]).toArray();
+    // ⑤ 提现按状态分布（状态词动态分组，不硬编码）
+    const withdrawByStatus = await db.collection('withdrawals').aggregate([
+      { $group: { _id: '$status', count: { $sum: 1 }, sum: { $sum: num('$amount') } } },
+      { $sort: { count: -1 } },
+    ]).toArray();
+    // ⑥ 灵气/交易所事件（近 7 天，动作 × 日；只挑资产相关动作，避免日志噪声）
+    const logEvents7d = await db.collection('shanhai_logs').aggregate([
+      { $match: { createdAt: { $gte: since7 },
+        action: { $in: ['lingqi_mine', 'duiduile_claim', 'duiduile_play', 'ex_deposit', 'ex_withdraw', 'exchange_deal', 'exchange_publish', 'exchange_cancel'] } } },
+      { $group: { _id: { day: dayKey, action: '$action' }, count: { $sum: 1 },
+        gain: { $sum: { $cond: [{ $isNumber: '$detail.gain' }, '$detail.gain', 0] } },
+        amount: { $sum: { $cond: [{ $isNumber: '$detail.amount' }, '$detail.amount', 0] } } } },
+      { $sort: { '_id.day': 1, '_id.action': 1 } },
+    ]).toArray();
+    // ⑦ 大额异动（24h，|amount| ≥ 阈值，前 20 条）
+    const bigMoves = await db.collection('wallet_log').aggregate([
+      { $match: { createdAt: { $gte: since1 } } },
+      { $addFields: { abs: { $abs: { $ifNull: ['$amount', 0] } } } },
+      { $match: { abs: { $gte: bigMoveMin } } },
+      { $sort: { abs: -1 } }, { $limit: 20 },
+      { $project: { createdAt: 1, userId: 1, kind: 1, amount: 1, note: 1 } },
+    ]).toArray();
+    // ⑧ 告警：负余额（任何一处为负都说明有账没对平）
+    const negLingqi = await db.collection('shanhai_profiles').countDocuments({ lingqi: { $lt: 0 } });
+    const negXianyu = await db.collection('shanhai_profiles').countDocuments({ xianyu: { $lt: 0 } });
+    const negExw = await db.collection('shanhai_ex_wallet').countDocuments({ balance: { $lt: 0 } });
+    res.json({ ok: true, generatedAt: new Date(),
+      profiles: { players: (profAgg && profAgg.players) || 0, lingqi: r2(profAgg && profAgg.lingqi), lingqiFrozen: r2(profAgg && profAgg.lingqiFrozen), xianyu: r2(profAgg && profAgg.xianyu) },
+      exchange: { playerBalance: r2(exAgg && exAgg.balance), playerFrozen: r2(exAgg && exAgg.frozen),
+        bot: { balance: r2(botW && botW.balance), frozen: r2(botW && botW.frozen) },
+        fund: { lingqi: r2(fund && fund.lingqi), lingqiFrozen: r2(fund && fund.lingqiFrozen) } },
+      deals7d: deals7d.map(x => ({ day: x._id.day, count: x.count, total: r2(x.total), fee: r2(x.fee) })),
+      wallet7d: wallet7d.map(x => ({ day: x._id.day, inflow: r2(x.inflow), outflow: r2(x.outflow), net: r2(x.inflow - x.outflow) })),
+      withdrawByStatus: withdrawByStatus.map(x => ({ status: x._id || '未知', count: x.count, sum: r2(x.sum) })),
+      logEvents7d: logEvents7d.map(x => ({ day: x._id.day, action: x._id.action, count: x.count, gain: r2(x.gain), amount: r2(x.amount) })),
+      bigMoves: bigMoves.map(x => ({ createdAt: x.createdAt, userId: x.userId, kind: x.kind, amount: r2(x.amount), note: x.note || '' })),
+      alerts: { negLingqi, negXianyu, negExw, fundNegative: !!(fund && (fund.lingqi || 0) < 0), bigMoveMin } });
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+});
+
 // 【2026-09-12】挂载魔法翻翻乐游戏模块
 }
