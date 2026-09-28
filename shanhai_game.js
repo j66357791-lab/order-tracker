@@ -2914,8 +2914,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   });
 
   // ==================== 管理端：山海数据面板（游戏工作台用） ====================
-  app.get('/api/shanhai/admin/stats', auth, async (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ ok: false, error: '需要管理员权限' });
+  app.get('/api/shanhai/admin/stats', auth, adminOnly, async (req, res) => {   // 【P3-6】内联检查改统一中间件
     try {
       const db = await getDb();
       const [players, agg, top] = await Promise.all([
@@ -2943,8 +2942,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   });
 
   // 【v24.8】挂机激活：查看符合条件的玩家名单
-  app.get('/api/shanhai/admin/idle-eligible', auth, async (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ ok: false, error: '需要管理员权限' });
+  app.get('/api/shanhai/admin/idle-eligible', auth, adminOnly, async (req, res) => {
     try {
       const db = await getDb();
       const r = await activateIdle(db, { unlockStage: IDLE_CFG.unlockStage });
@@ -2954,8 +2952,7 @@ export default function mountShanhaiGame(app, { auth, getDb, adminOnly }) {
   });
 
   // 【v24.8】挂机激活：手动对符合条件的老玩家激活计时（幂等，可从"现在"开始重新计时）
-  app.post('/api/shanhai/admin/idle-activate', auth, async (req, res) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ ok: false, error: '需要管理员权限' });
+  app.post('/api/shanhai/admin/idle-activate', auth, adminOnly, async (req, res) => {
     try {
       const db = await getDb();
       const reset = req.body && req.body.reset === true;   // reset=true 时把所有人的起点设为现在
