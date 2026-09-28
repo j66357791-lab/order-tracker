@@ -112,6 +112,7 @@
     <div id="panel-recharge" style="display:none"></div>
     <div id="panel-overview" style="display:none"></div>
     <div id="panel-recon" style="display:none"></div>
+    <div id="panel-economy" style="display:none"></div>
     <div id="panel-game" style="display:none"></div>
     <div id="panel-shanhai" style="display:none"></div>
     <div id="panel-mall" style="display:none"></div>
@@ -129,6 +130,7 @@ const LAZY = {
   dispatch: () => import('/admin/mod-chat.js'),
   overview: () => import('/admin/mod-cards.js').then(m => ({ mount: m.mountOverview })),
   recon:    () => import('/admin/mod-cards.js').then(m => ({ mount: m.mountRecon })),
+  economy:  () => import('/admin/mod-economy.js'),
   ads:      () => import('/admin/mod-ads.js'),
   withdraw: () => import('/admin/mod-withdraw.js'),
   recharge: () => import('/admin/mod-recharge.js'),
