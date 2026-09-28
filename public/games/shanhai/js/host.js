@@ -41,6 +41,7 @@
           <div style="font-size:18px;font-weight:900;color:#3a5a4a;margin-bottom:16px">设置</div>
           <div style="display:flex;flex-direction:column;gap:10px">
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" id="sndToggle">${(window.SFX && SFX.enabled) ? "🔊 音效：开" : "🔇 音效：关"}</div>
+            <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" id="hdToggle">${(window.LS && LS.get("sh_hd","0")==="1") ? "✨ 画质：高清" : "🖼 画质：标准"}</div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer;position:relative" id="umMail">📮 邮箱<span id="umMailDot" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);width:9px;height:9px;border-radius:50%;background:#e8503c"></span></div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer" onclick="exitToWriter()">🏠 返回网站</div>
             <div style="padding:12px;background:#fff;border-radius:10px;cursor:pointer;color:#c0392b" onclick="LS.remove('jdy_token');LS.remove('jdy_user');location.href='/login.html'">🚪 退出登录</div>
@@ -55,6 +56,16 @@
       const on = window.SFX ? SFX.toggle() : false;
       tg.textContent = on ? "🔊 音效：开" : "🔇 音效：关";
       toast(on ? "音效已开启" : "音效已关闭");
+    };
+    // 【2026-09-28】高清画质开关：高清=画布按设备像素比（≤1.5）重设，高分屏不再发糊；低端机用标准档更省电
+    const hd = document.getElementById("hdToggle");
+    if (hd) hd.onclick = (ev) => {
+      ev.stopPropagation();
+      const on = LS.get("sh_hd", "0") === "1";
+      LS.set("sh_hd", on ? "0" : "1");
+      window.dispatchEvent(new Event("resize"));
+      hd.textContent = !on ? "✨ 画质：高清" : "🖼 画质：标准";
+      toast(!on ? "已切换高清画质（较耗电）" : "已切换标准画质");
     };
     // 【v26.46】邮箱：先查未领数显示红点，点进入邮件列表
     const me = document.getElementById('umMail');
