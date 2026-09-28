@@ -22,9 +22,16 @@ const Game = (() => {
   const input = { left: false, right: false, up: false, down: false };
   let touchVec = null;
 
+  // 【2026-09-28】高清画质开关（用户菜单可切换，LS 'sh_hd'）：逻辑坐标保持 CSS 像素不变，
+  // 画布物理分辨率乘 DPR（≤1.5），绘制前统一 setTransform——高分屏不再发糊，低端机默认标准档更省电。
+  const dprOf = () => { try { return (window.LS && LS.get('sh_hd', '0') === '1') ? Math.min(window.devicePixelRatio || 1, 1.5) : 1; } catch (e) { return 1; } };
+  let DPR = 1;
   function resize() {
-    W = cv.width = window.innerWidth;
-    H = cv.height = window.innerHeight;
+    DPR = dprOf();
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    tileBase = { x0: 0, y0: 0, cols: 0, rows: 0 };   // 强制离屏地块按新 DPR 重拼
   }
 
   // ============ 开局 ============
@@ -570,7 +577,8 @@ const Game = (() => {
       const cols = x1 - x0 + 1, rows = y1 - y0 + 1;
       if (!tileCanvas || tileBase.x0 !== x0 || tileBase.y0 !== y0 || tileBase.cols !== cols || tileBase.rows !== rows) {
         if (!tileCanvas) { tileCanvas = document.createElement("canvas"); tileCtx = tileCanvas.getContext("2d"); }
-        tileCanvas.width = cols * TS; tileCanvas.height = rows * TS;
+        tileCanvas.width = Math.round(cols * TS * DPR); tileCanvas.height = Math.round(rows * TS * DPR);
+        tileCtx.setTransform(DPR, 0, 0, DPR, 0, 0);   // 离屏也按 DPR 绘制，高清模式下地块同样清晰
         tileBase = { x0, y0, cols, rows };
         for (let ty = y0; ty <= y1; ty++) {
           for (let tx = x0; tx <= x1; tx++) {
@@ -580,7 +588,7 @@ const Game = (() => {
           }
         }
       }
-      ctx.drawImage(tileCanvas, x0 * TS, y0 * TS);
+      ctx.drawImage(tileCanvas, x0 * TS, y0 * TS, cols * TS, rows * TS);   // 离屏物理分辨率更高时，按逻辑尺寸贴回
     }
 
     // —— 装饰（y 排序已做，直接画在实体前；树按底部 y 与实体一起排序更好，M1 简化：先画装饰）——
