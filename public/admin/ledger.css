@@ -240,3 +240,30 @@
     .safe-bottom{padding-bottom:max(0px,env(safe-area-inset-bottom))}
   }
 
+  /* ===== 【v26.81】账单粘贴找单（只查询，不改状态） ===== */
+  #findMask{z-index:25}
+  .find-modal{width:min(1000px,96vw);padding:16px 18px}
+  .find-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+  .find-head h2{margin:0}
+  .find-x{flex:none;font-size:15px;line-height:1;padding:4px 10px}
+  .find-text{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:12.5px;font-family:ui-monospace,Consolas,monospace;line-height:1.5;resize:vertical;min-height:120px}
+  .find-actions{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .find-actions .grow{flex:1}
+  .find-sub{font-size:11.5px;color:var(--sub)}
+  .find-out{margin-top:6px}
+  .find-sum{font-size:13px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:9px 12px;margin-bottom:10px}
+  .find-sum b{font-variant-numeric:tabular-nums}
+  .find-table{max-height:46vh;margin-bottom:10px}
+  .find-table table{min-width:720px}
+  .find-fold{margin:8px 0;border:1px solid var(--line);border-radius:8px;background:#fff;padding:0 12px}
+  .find-fold summary{cursor:pointer;font-size:12.5px;color:var(--sub);padding:9px 0;list-style:none}
+  .find-fold summary::-webkit-details-marker{display:none}
+  .find-fold summary::before{content:"▸ ";color:var(--blue)}
+  .find-fold[open] summary::before{content:"▾ "}
+  .find-fold[open] summary{border-bottom:1px solid var(--line)}
+  .find-miss{font-size:12px;color:var(--sub);padding:10px 0;font-variant-numeric:tabular-nums;white-space:normal;line-height:1.9}
+  .find-note-row{font-size:12px;color:var(--sub);padding:6px 0;border-bottom:1px dashed var(--line)}
+  .find-note-row:last-child{border-bottom:none}
+  .find-warn{font-size:12.5px;color:var(--amber);background:var(--amber-bg);border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin-top:8px}
+
+
