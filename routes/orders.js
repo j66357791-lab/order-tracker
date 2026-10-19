@@ -217,6 +217,85 @@ app.post('/api/orders/lookup', auth, adminOnly, async (req, res) => {
   }
 });
 
+// ============ 【v26.83】二次核验清单 ============
+// 逐单对账时撞上「金额对不上 / 重复单号 / 台账查无此号」的那几笔，先记下来最后处理。
+// 刻意不写成订单的 status：分类里多一个值就会被 `status !== '已结算'` 这类现有判断当成
+// 未结算计进收入、还会窜进分类看板和写手端。所以它是和分类垂直的一个标记，
+// 存在 config 的一条文档里，订单本身不动。
+const REVIEW_KEY = '***';
+const REVIEW_MAX = 2000;
+const REVIEW_REASONS = new Set(['diff', 'multi', 'miss']);
+
+function cleanReviewItem(x) {
+  const orderNo = String((x && x.orderNo) || '').slice(0, 24);
+  if (!/^\d{6,24}$/.test(orderNo)) return null;
+  const id = String((x && x._id) || '').slice(0, 24);
+  if (id && !/^[0-9a-fA-F]{24}$/.test(id)) return null;
+  const reason = REVIEW_REASONS.has(String(x && x.reason)) ? String(x.reason) : 'diff';
+  const bill = (x && x.bill) || {};
+  const pay = Number(bill.pay);
+  return {
+    key: id ? 'o:' + id : 'n:' + orderNo,
+    orderNo, _id: id || null, reason,
+    bill: {
+      pay: Number.isFinite(pay) && pay >= 0 ? Math.round(pay * 100) / 100 : null,
+      time: String(bill.time || '').slice(0, 20).replace(/[^\d\-: T]/g, ''),
+      serial: String(bill.serial || '').slice(0, 40).replace(/\D/g, ''),
+    },
+    note: String((x && x.note) || '').slice(0, 80),
+    at: String((x && x.at) || '').slice(0, 20).replace(/[^\d\-: T]/g, '') || null,
+  };
+}
+
+async function readReview(db) {
+  const d = await db.collection('config').findOne({ key: REVIEW_KEY });
+  return d && Array.isArray(d.value && d.value.items) ? d.value.items : [];
+}
+
+async function writeReview(db, items, actor) {
+  await db.collection('config').updateOne({ key: REVIEW_KEY }, {
+    $set: { value: { items }, updatedAt: new Date(), updatedBy: actor },
+    $setOnInsert: { key: REVIEW_KEY },
+  }, { upsert: true });
+}
+
+app.get('/api/orders/review', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    res.json({ ok: true, items: await readReview(db) });
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+});
+
+// body: { op: 'add'|'clear'|'drop', items?: [...], keys?: [...] }
+// add 按 key 覆盖（同一笔重复标记只留一条）；clear/drop 按 key 摘除。
+app.post('/api/orders/review', auth, adminOnly, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const op = String(b.op || '');
+    const db = await getDb();
+    const cur = await readReview(db);
+    let items = cur;
+    if (op === 'add') {
+      const incoming = (Array.isArray(b.items) ? b.items : []).map(cleanReviewItem).filter(Boolean);
+      if (!incoming.length) return res.status(400).json({ ok: false, error: '要标记的内容不对（订单号需要 6-24 位数字）' });
+      const map = new Map(cur.map(x => [x.key, x]));
+      incoming.forEach(x => map.set(x.key, x));
+      items = [...map.values()];
+      if (items.length > REVIEW_MAX) {
+        return res.status(400).json({ ok: false, error: '待核验已经 ' + cur.length + ' 条，超过 ' + REVIEW_MAX + ' 上限，请先清掉一批' });
+      }
+    } else if (op === 'clear' || op === 'drop') {
+      const keys = new Set((Array.isArray(b.keys) ? b.keys : []).map(String));
+      if (!keys.size) return res.status(400).json({ ok: false, error: '没指定要摘除哪几条' });
+      items = cur.filter(x => !keys.has(x.key));
+    } else {
+      return res.status(400).json({ ok: false, error: '未知操作' });
+    }
+    await writeReview(db, items, req.user.username);
+    res.json({ ok: true, items, added: op === 'add' ? items.length - cur.length : 0, removed: cur.length - items.length });
+  } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
+});
+
 // ============ 【v26.66】分成比例：默认值配置 + 批量修改 ============
 // 路由都挂在 /api/orders/xxx 上且只用 GET/POST —— 已存在的 PUT/DELETE /api/orders/:id 会
 // 吃掉 /api/orders/<单个词> 的形态（Express 按注册顺序匹配），所以这里不用 PUT，避免抢路由。
