@@ -10,7 +10,7 @@
 //     iframe 时代开关的清理。
 //  4. 保留右下角 ⚡ 悬浮抽屉：📅月份切换 / 🔍快捷查询 / ⚡快捷录入 三张卡一个不少。
 const CSS_HREF = '/admin/ledger.css';
-const MARKUP = "\n<div class=\"layout\">\n\n  <!-- ===== 左侧快捷导航栏 ===== -->\n  <aside class=\"sidebar\">\n    <div class=\"side-card\">\n      <h4>📅 月份切换</h4>\n      <div class=\"mon-nav\">\n        <button class=\"btn-ghost\" id=\"monPrev\">‹</button>\n        <b id=\"monCur\">—</b>\n        <button class=\"btn-ghost\" id=\"monNext\">›</button>\n      </div>\n      <div class=\"mon-list\" id=\"monList\"></div>\n      <div class=\"side-tip\">带 · 的月份有订单数据，点月份名可切换明细与日历</div>\n    </div>\n\n    <div class=\"side-card\">\n      <h4>🔍 快捷查询</h4>\n      <input type=\"search\" id=\"qKw\" placeholder=\"订单号 / 备注关键词\">\n      <div class=\"q-results\" id=\"qResults\"><div class=\"q-empty\">输入关键词即时匹配，点结果跳到明细行</div></div>\n    </div>\n\n    <div class=\"side-card quick-form\">\n      <h4>⚡ 快捷录入（比例默认<span id=\"qkRateHint\">45</span>%）</h4>\n      <input type=\"text\" id=\"qkNo\" placeholder=\"订单编号 *\">\n      <div class=\"row2\">\n        <input type=\"number\" id=\"qkAmt\" placeholder=\"金额（元）*\" min=\"0\" step=\"0.01\">\n        <input type=\"number\" id=\"qkRate\" value=\"45\" min=\"1\" max=\"100\" step=\"0.1\" title=\"分成比例%\" style=\"max-width:74px\">\n      </div>\n      <button class=\"btn-primary\" id=\"qkSave\">⚡ 一键录入</button>\n      <div class=\"side-tip\">接单日=今天 · 分类=待开始 · 完单后到明细里改进度</div>\n    </div>\n  </aside>\n\n  <!-- ===== 主内容 ===== -->\n  <div class=\"main\">\n    <div class=\"wrap\">\n      <header>\n        <h1>📋 订单统计系统</h1>\n        <div class=\"meta\">数据源：<b id=\"dbState\">连接中…</b> · <span id=\"todayStr\"></span> · 兼职写手接单台账 · <a href=\"/admin.html\" style=\"color:#b0642c\">🏠 管理工作台</a> · <a href=\"/admin.html#mall\" style=\"color:#07c160\">用户端配置</a> · <a href=\"/admin.html#game\" style=\"color:#7c4dff\">游戏管控</a> · <a href=\"#\" onclick=\"this.getRootNode().host.__ledger.logout();return false\" style=\"color:var(--sub)\">退出登录</a></div>\n      </header>\n\n      <!-- ===== 今日待跟进 ===== -->\n      <section class=\"todo-banner\" id=\"todoBanner\" style=\"display:none\">\n        <div class=\"todo-head\">🔔 今日待跟进订单（待开始 / 进行中）—— <span id=\"todoCount\"></span>，右侧下拉可直接更新进度</div>\n        <div class=\"todo-list\" id=\"todoList\"></div>\n      </section>\n\n      <!-- ===== 核心看板 ===== -->\n      <section class=\"kpis\">\n        <div class=\"kpi blue\"><div class=\"label\" id=\"lblTake\">接单金额</div><div class=\"value\" id=\"kTake\">0<small> 元</small></div><div class=\"sub\" id=\"subTake\">— 单</div></div>\n        <div class=\"kpi green\"><div class=\"label\" id=\"lblDone\">完单金额</div><div class=\"value\" id=\"kDone\">0<small> 元</small></div><div class=\"sub\" id=\"subDone\">— 单</div></div>\n        <div class=\"kpi amber\"><div class=\"label\">待结算（已交付未结算）</div><div class=\"value\" id=\"kPending\">0<small> 元</small></div><div class=\"sub\">按订单金额计</div></div>\n        <div class=\"kpi purple\"><div class=\"label\">已结算（我的分成）</div><div class=\"value\" id=\"kSettled\">0<small> 元</small></div><div class=\"sub\">已到账口径</div></div>\n        <div class=\"kpi blue\"><div class=\"label\">预计总收入</div><div class=\"value\" id=\"kShare\">0<small> 元</small></div><div class=\"sub\" id=\"subCount\">— 单</div></div>\n      </section>\n\n      <section class=\"panels\">\n        <div class=\"panel\">\n          <h3 id=\"chartTitle\">每日接单 / 完单金额</h3>\n          <div class=\"legend\">\n            <span><i style=\"background:var(--blue)\"></i>接单金额（按接单日）</span>\n            <span><i style=\"background:var(--green)\"></i>完单金额（按完单日，待结算+已结算）</span>\n            <span style=\"color:#94a3b8\">鼠标悬停柱子看当日数值</span>\n          </div>\n          <div class=\"bars\" id=\"dailyChart\"></div>\n          <div class=\"chart-foot\" id=\"chartFoot\"></div>\n        </div>\n        <div class=\"panel\">\n          <h3>订单分类看板（按进度）</h3>\n          <div class=\"status-rows\" id=\"statusChart\"></div>\n          <div class=\"st-note\">口径说明：<b>待结算 = 已交付未结算</b>，客户已收货、钱还没到；「已结算」才算到账。完单金额 = 待结算 + 已结算。</div>\n        </div>\n      </section>\n\n      <!-- ===== 收入走势（方块卡，点击弹窗看图） ===== -->\n      <section class=\"panels\" style=\"margin-bottom:16px;grid-template-columns:1fr 1fr\">\n        <div class=\"panel chart-tile\" onclick=\"this.getRootNode().host.__ledger.openChart('daily')\">\n          <h3 id=\"tileDTitle\">每日分成收入走势（预计）</h3>\n          <div class=\"tile-big\" id=\"tileDVal\">—</div>\n          <div class=\"tile-sub\" id=\"tileDSub\">点击查看走势图 →</div>\n        </div>\n        <div class=\"panel chart-tile\" onclick=\"this.getRootNode().host.__ledger.openChart('cum')\">\n          <h3 id=\"tileCTitle\">累计分成收入走势</h3>\n          <div class=\"tile-big\" id=\"tileCVal\">—</div>\n          <div class=\"tile-sub\" id=\"tileCSub\">点击查看走势图 →</div>\n        </div>\n      </section>\n\n      <!-- ===== 日历看板 ===== -->\n      <section class=\"panel\" style=\"margin-bottom:16px\" id=\"calendarCard\">\n        <h3 id=\"calTitle\">日历看板</h3>\n        <div class=\"today-brief\" id=\"todayBrief\"></div>\n        <div class=\"cal-head\"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>\n        <div class=\"cal-grid\" id=\"calGrid\"></div>\n        <div class=\"cal-legend\">\n          口径：<b>接单金额</b> = 当日登记的接单金额汇总 · <b>完单金额</b> = 当日做完（提交待结算/已结算）订单金额汇总 · <b>预计今天完单金额收入</b> = 当日完单订单的分成合计。\n          绿色深浅 = 预计当日收入。<b>点任意日期 → 弹出当天接单明细，可直接编辑/删除。</b>\n        </div>\n      </section>\n\n      <!-- ===== 明细表 ===== -->\n      <section class=\"toolbar\" id=\"tableTop\">\n        <select id=\"fPeriodType\" title=\"时间范围类型\">\n          <option value=\"month\">按月</option>\n          <option value=\"quarter\">按季度</option>\n          <option value=\"year\">按年</option>\n          <option value=\"day\">按日</option>\n        </select>\n        <span id=\"periodInputs\" style=\"display:inline-flex;gap:8px;align-items:center\"></span>\n        <select id=\"fStatus\"><option value=\"\">全部分类</option></select>\n        <input type=\"search\" id=\"fKeyword\" placeholder=\"搜订单编号 / 备注…\">\n        <span class=\"grow\"></span>\n        <a class=\"btn-ghost\" href=\"/dispatch.html\" style=\"text-decoration:none;display:inline-flex;align-items:center\">派单工作台 →</a>\n        <button class=\"btn-ghost\" id=\"btnExport\">导出 CSV</button><button class=\"btn-ghost\" id=\"btnRate\" title=\"把勾选的、或全部未结算订单的分成比例一次改完\">批量改分成</button><button class=\"btn-ghost\" id=\"btnFind\" title=\"粘贴支付宝账单文本，按订单号定位台账里的单（只查询，不改状态）\">📥 账单找单</button>\n        <button class=\"btn-primary\" id=\"btnAdd\">＋ 新增订单</button>\n      </section>\n\n      <div class=\"table-card\" id=\"tableCard\">\n        <table>\n          <thead>\n            <tr>\n              <th style=\"width:32px\"><input type=\"checkbox\" id=\"ckAll\" title=\"全选/取消本页\"></th><th>接单日</th><th>订单编号</th>\n              <th class=\"num\">订单金额（元）</th><th class=\"num\">分成比例</th><th class=\"num\">分成金额（元）</th>\n              <th>分类</th><th>完单日</th><th>分单</th><th>备注</th><th style=\"width:90px\">操作</th>\n            </tr>\n          </thead>\n          <tbody id=\"tbody\"></tbody>\n          <tfoot id=\"tfoot\"></tfoot>\n        </table>\n        <div class=\"empty\" id=\"emptyTip\" style=\"display:none\">暂无订单，点右上角「＋ 新增订单」或左侧「⚡ 快捷录入」</div>\n        <div class=\"pager\" id=\"pager\"></div>\n      </div>\n      <div class=\"hint\">分成金额 = 订单金额 × 分成比例；「待结算」即已交付等钱的状态，「已结算」为实际到账口径。已分单订单在收入统计中按实际结算金额（分成 − 写手报酬）计入。</div>\n    </div>\n  </div>\n</div>\n\n<!-- 悬浮工具开关（仅嵌入后台时显示）：月份切换 · 快捷查询 · 快捷录入 -->\n<button class=\"side-fab\" id=\"sideFab\" type=\"button\" aria-expanded=\"false\"\n        title=\"快捷工具：月份切换 / 快捷查询 / 快捷录入\" aria-label=\"快捷工具\">⚡</button>\n\n<!-- 走势图弹窗（加宽） -->\n<div class=\"mask\" id=\"chartMask\" onclick=\"if(event.target===this)this.getRootNode().host.__ledger.closeChart()\">\n  <div class=\"modal chart-modal\">\n    <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px\">\n      <h2 id=\"chartMTitle\" style=\"font-size:16px;font-weight:700\"></h2>\n      <button class=\"btn-ghost\" onclick=\"this.getRootNode().host.__ledger.closeChart()\">关闭</button>\n    </div>\n    <div class=\"line-wrap\" id=\"chartMBody\"></div>\n  </div>\n</div>\n\n<!-- 日历单日明细大弹窗 -->\n<div class=\"mask\" id=\"dayMask\" onclick=\"if(event.target===this)this.getRootNode().host.__ledger.closeDayModal()\">\n  <div class=\"modal day-modal\">\n    <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:12px\">\n      <h2 id=\"dayMTitle\" style=\"font-size:16px;font-weight:700\"></h2>\n      <button class=\"btn-ghost\" onclick=\"this.getRootNode().host.__ledger.closeDayModal()\">关闭</button>\n    </div>\n    <div class=\"day-stats\" id=\"dayStats\"></div>\n    <div class=\"table-card\" id=\"dayTableBox\"></div>\n    <div class=\"hint\" id=\"dayHint\"></div>\n  </div>\n</div>\n\n<!-- 批量改分成弹窗 -->\n<div class=\"mask\" id=\"rateMask\">\n  <div class=\"modal\" style=\"max-width:540px\">\n    <h2>批量修改分成比例</h2>\n    <div class=\"field full\"><label>修改范围</label>\n      <select id=\"rateScope\">\n        <option value=\"sel\">仅已勾选的订单</option>\n        <option value=\"all\">全部未结算订单（不含「已结算」）</option>\n      </select>\n    </div>\n    <div class=\"field\"><label>新分成比例（%）</label><input type=\"number\" id=\"rateNew\" min=\"1\" max=\"100\" step=\"0.1\" value=\"45\"></div>\n    <label style=\"display:flex;gap:6px;align-items:center;font-size:13px;margin:10px 0\"><input type=\"checkbox\" id=\"rateAlsoDefault\"> 同时把该比例设为「新单默认分成比例」</label>\n    <div class=\"hint\" id=\"ratePreview\" style=\"margin:0 0 8px\">—</div>\n    <div class=\"form-err\" id=\"rateErr\"></div>\n    <div class=\"modal-actions\">\n      <button class=\"btn-ghost\" id=\"rateCancel\">取消</button>\n      <button class=\"btn-danger\" id=\"rateSave\">确认修改</button>\n    </div>\n  </div>\n</div>\n\n<!-- 账单粘贴找单（只查询，不改状态） -->\n<div class=\"mask\" id=\"findMask\">\n  <div class=\"modal find-modal\">\n    <div class=\"find-head\"><h2>📥 账单粘贴找单</h2><button class=\"btn-ghost find-x\" id=\"findClose\" title=\"关闭（Esc）\">✕</button></div>\n    <div class=\"hint\">把支付宝「批量付款」明细整块复制进来，自动识别 10-20 位订单号并对照台账。<b>这里只查询、不改任何数据</b>：要改「待结算 → 已结算」，点行上的「定位」回到明细，用原来的编辑按钮自己改。</div>\n    <textarea id=\"findText\" class=\"find-text\" rows=\"7\" placeholder=\"粘贴账单文本，例如：&#10;20261017110070001506610098468497&#10;2026-10-17 15:31:55&#10;转账&#10;批量付款-工资-技术服务-3316397630001242690&#10;35.86 58.36&#10;支付宝\"></textarea>\n    <div class=\"find-actions\"><button class=\"btn-primary\" id=\"findGo\">识别并对照台账</button><span class=\"find-sub\" id=\"findBusy\"></span><span class=\"grow\"></span><span class=\"find-sub\">Ctrl+Enter 直接查</span></div>\n    <div class=\"form-err\" id=\"findErr\"></div>\n    <div id=\"findOut\" class=\"find-out\"></div>\n  </div>\n</div>\n\n<!-- 逐单对账卡片 -->\n<div class=\"mask\" id=\"reconMask\">\n  <div class=\"modal recon-modal\">\n    <div class=\"recon-bar\">\n      <button class=\"btn-ghost\" id=\"reconBack\">← 返回账单列表</button>\n      <b class=\"recon-prog\" id=\"reconProg\"></b>\n      <span class=\"grow\"></span>\n      <span class=\"find-sub\">Y 已结算 · N 还没结算 · 空格 跳过 · ← 上一张 · Esc 返回</span>\n    </div>\n    <div class=\"recon-track\"><i id=\"reconFill\"></i></div>\n    <div id=\"reconCard\"></div>\n    <div class=\"recon-actions\" id=\"reconActions\"></div>\n  </div>\n</div>\n\n<!-- 新增/编辑弹窗 -->\n<div class=\"mask\" id=\"mask\">\n  <div class=\"modal\">\n    <h2 id=\"modalTitle\">新增订单</h2>\n    <div class=\"form-grid\">\n      <div class=\"field\"><label>接单日期 *</label><input type=\"date\" id=\"mDate\"></div>\n      <div class=\"field\"><label>订单编号 *</label><input type=\"text\" id=\"mOrderNo\" placeholder=\"如 DD20260907-01\"></div>\n      <div class=\"field\"><label>订单金额（元）*</label><input type=\"number\" id=\"mAmount\" min=\"0\" step=\"0.01\" placeholder=\"如 850\"></div>\n      <div class=\"field\"><label>分成比例（%）*</label><input type=\"number\" id=\"mShare\" min=\"0\" max=\"100\" step=\"0.1\" placeholder=\"如 70\"></div>\n      <div class=\"field full\"><label>分类（订单进度）*</label><select id=\"mStatus\"></select></div>\n      <div class=\"field full\" id=\"doneDateField\">\n        <label>完单日期</label>\n        <input type=\"date\" id=\"mDoneDate\">\n        <span class=\"tip\">进度为「待结算 / 已结算」时必填，默认今天；改回进行中会自动清空</span>\n      </div>\n      <div class=\"field full\"><label>备注</label><textarea id=\"mNote\" placeholder=\"客户、内容类型、交接情况…（可留空）\"></textarea></div>\n    </div>\n    <div class=\"form-err\" id=\"formErr\"></div>\n    <div class=\"modal-actions\">\n      <button class=\"btn-ghost\" id=\"btnCancel\">取消</button>\n      <button class=\"btn-primary\" id=\"btnSave\">保存</button>\n    </div>\n  </div>\n</div>\n\n";
+const MARKUP = "\n<div class=\"layout\">\n\n  <!-- ===== 左侧快捷导航栏 ===== -->\n  <aside class=\"sidebar\">\n    <div class=\"side-card\">\n      <h4>📅 月份切换</h4>\n      <div class=\"mon-nav\">\n        <button class=\"btn-ghost\" id=\"monPrev\">‹</button>\n        <b id=\"monCur\">—</b>\n        <button class=\"btn-ghost\" id=\"monNext\">›</button>\n      </div>\n      <div class=\"mon-list\" id=\"monList\"></div>\n      <div class=\"side-tip\">带 · 的月份有订单数据，点月份名可切换明细与日历</div>\n    </div>\n\n    <div class=\"side-card\">\n      <h4>🔍 快捷查询</h4>\n      <input type=\"search\" id=\"qKw\" placeholder=\"订单号 / 备注关键词\">\n      <div class=\"q-results\" id=\"qResults\"><div class=\"q-empty\">输入关键词即时匹配，点结果跳到明细行</div></div>\n    </div>\n\n    <div class=\"side-card quick-form\">\n      <h4>⚡ 快捷录入（比例默认<span id=\"qkRateHint\">45</span>%）</h4>\n      <input type=\"text\" id=\"qkNo\" placeholder=\"订单编号 *\">\n      <div class=\"row2\">\n        <input type=\"number\" id=\"qkAmt\" placeholder=\"金额（元）*\" min=\"0\" step=\"0.01\">\n        <input type=\"number\" id=\"qkRate\" value=\"45\" min=\"1\" max=\"100\" step=\"0.1\" title=\"分成比例%\" style=\"max-width:74px\">\n      </div>\n      <button class=\"btn-primary\" id=\"qkSave\">⚡ 一键录入</button>\n      <div class=\"side-tip\">接单日=今天 · 分类=待开始 · 完单后到明细里改进度</div>\n    </div>\n  </aside>\n\n  <!-- ===== 主内容 ===== -->\n  <div class=\"main\">\n    <div class=\"wrap\">\n      <header>\n        <h1>📋 订单统计系统</h1>\n        <div class=\"meta\">数据源：<b id=\"dbState\">连接中…</b> · <span id=\"todayStr\"></span> · 兼职写手接单台账 · <a href=\"/admin.html\" style=\"color:#b0642c\">🏠 管理工作台</a> · <a href=\"/admin.html#mall\" style=\"color:#07c160\">用户端配置</a> · <a href=\"/admin.html#game\" style=\"color:#7c4dff\">游戏管控</a> · <a href=\"#\" onclick=\"this.getRootNode().host.__ledger.logout();return false\" style=\"color:var(--sub)\">退出登录</a></div>\n      </header>\n\n      <!-- ===== 今日待跟进 ===== -->\n      <section class=\"todo-banner\" id=\"todoBanner\" style=\"display:none\">\n        <div class=\"todo-head\">🔔 今日待跟进订单（待开始 / 进行中）—— <span id=\"todoCount\"></span>，右侧下拉可直接更新进度</div>\n        <div class=\"todo-list\" id=\"todoList\"></div>\n      </section>\n\n      <!-- ===== 核心看板 ===== -->\n      <section class=\"kpis\">\n        <div class=\"kpi blue\"><div class=\"label\" id=\"lblTake\">接单金额</div><div class=\"value\" id=\"kTake\">0<small> 元</small></div><div class=\"sub\" id=\"subTake\">— 单</div></div>\n        <div class=\"kpi green\"><div class=\"label\" id=\"lblDone\">完单金额</div><div class=\"value\" id=\"kDone\">0<small> 元</small></div><div class=\"sub\" id=\"subDone\">— 单</div></div>\n        <div class=\"kpi amber\"><div class=\"label\">待结算（已交付未结算）</div><div class=\"value\" id=\"kPending\">0<small> 元</small></div><div class=\"sub\">按订单金额计</div></div>\n        <div class=\"kpi purple\"><div class=\"label\">已结算（我的分成）</div><div class=\"value\" id=\"kSettled\">0<small> 元</small></div><div class=\"sub\">已到账口径</div></div>\n        <div class=\"kpi blue\"><div class=\"label\">预计总收入</div><div class=\"value\" id=\"kShare\">0<small> 元</small></div><div class=\"sub\" id=\"subCount\">— 单</div></div>\n      </section>\n\n      <section class=\"panels\">\n        <div class=\"panel\">\n          <h3 id=\"chartTitle\">每日接单 / 完单金额</h3>\n          <div class=\"legend\">\n            <span><i style=\"background:var(--blue)\"></i>接单金额（按接单日）</span>\n            <span><i style=\"background:var(--green)\"></i>完单金额（按完单日，待结算+已结算）</span>\n            <span style=\"color:#94a3b8\">鼠标悬停柱子看当日数值</span>\n          </div>\n          <div class=\"bars\" id=\"dailyChart\"></div>\n          <div class=\"chart-foot\" id=\"chartFoot\"></div>\n        </div>\n        <div class=\"panel\">\n          <h3>订单分类看板（按进度）</h3>\n          <div class=\"status-rows\" id=\"statusChart\"></div>\n          <div class=\"st-note\">口径说明：<b>待结算 = 已交付未结算</b>，客户已收货、钱还没到；「已结算」才算到账。完单金额 = 待结算 + 已结算。</div>\n        </div>\n      </section>\n\n      <!-- ===== 收入走势（方块卡，点击弹窗看图） ===== -->\n      <section class=\"panels\" style=\"margin-bottom:16px;grid-template-columns:1fr 1fr\">\n        <div class=\"panel chart-tile\" onclick=\"this.getRootNode().host.__ledger.openChart('daily')\">\n          <h3 id=\"tileDTitle\">每日分成收入走势（预计）</h3>\n          <div class=\"tile-big\" id=\"tileDVal\">—</div>\n          <div class=\"tile-sub\" id=\"tileDSub\">点击查看走势图 →</div>\n        </div>\n        <div class=\"panel chart-tile\" onclick=\"this.getRootNode().host.__ledger.openChart('cum')\">\n          <h3 id=\"tileCTitle\">累计分成收入走势</h3>\n          <div class=\"tile-big\" id=\"tileCVal\">—</div>\n          <div class=\"tile-sub\" id=\"tileCSub\">点击查看走势图 →</div>\n        </div>\n      </section>\n\n      <!-- ===== 日历看板 ===== -->\n      <section class=\"panel\" style=\"margin-bottom:16px\" id=\"calendarCard\">\n        <h3 id=\"calTitle\">日历看板</h3>\n        <div class=\"today-brief\" id=\"todayBrief\"></div>\n        <div class=\"cal-head\"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>\n        <div class=\"cal-grid\" id=\"calGrid\"></div>\n        <div class=\"cal-legend\">\n          口径：<b>接单金额</b> = 当日登记的接单金额汇总 · <b>完单金额</b> = 当日做完（提交待结算/已结算）订单金额汇总 · <b>预计今天完单金额收入</b> = 当日完单订单的分成合计。\n          绿色深浅 = 预计当日收入。<b>点任意日期 → 弹出当天接单明细，可直接编辑/删除。</b>\n        </div>\n      </section>\n\n      <!-- ===== 明细表 ===== -->\n      <section class=\"toolbar\" id=\"tableTop\">\n        <select id=\"fPeriodType\" title=\"时间范围类型\">\n          <option value=\"month\">按月</option>\n          <option value=\"quarter\">按季度</option>\n          <option value=\"year\">按年</option>\n          <option value=\"day\">按日</option>\n        </select>\n        <span id=\"periodInputs\" style=\"display:inline-flex;gap:8px;align-items:center\"></span>\n        <select id=\"fStatus\"><option value=\"\">全部分类</option></select>\n        <input type=\"search\" id=\"fKeyword\" placeholder=\"搜订单编号 / 备注…\">\n        <span class=\"grow\"></span>\n        <a class=\"btn-ghost\" href=\"/dispatch.html\" style=\"text-decoration:none;display:inline-flex;align-items:center\">派单工作台 →</a>\n        <button class=\"btn-ghost\" id=\"btnExport\">导出 CSV</button><button class=\"btn-ghost\" id=\"btnRate\" title=\"把勾选的、或全部未结算订单的分成比例一次改完\">批量改分成</button><button class=\"btn-ghost\" id=\"btnFind\" title=\"粘贴支付宝账单文本，按订单号定位台账里的单（只查询，不改状态）\">📥 账单找单</button><button class=\"btn-ghost\" id=\"btnReview\" title=\"逐单对账时撞上限额对不上 / 重复单号 / 台账查无此号的那些笔，先记在这里最后统一处理\" style=\"display:none\">🔎 二次核验</button>\n        <button class=\"btn-primary\" id=\"btnAdd\">＋ 新增订单</button>\n      </section>\n\n      <div class=\"table-card\" id=\"tableCard\">\n        <table>\n          <thead>\n            <tr>\n              <th style=\"width:32px\"><input type=\"checkbox\" id=\"ckAll\" title=\"全选/取消本页\"></th><th>接单日</th><th>订单编号</th>\n              <th class=\"num\">订单金额（元）</th><th class=\"num\">分成比例</th><th class=\"num\">分成金额（元）</th>\n              <th>分类</th><th>完单日</th><th>分单</th><th>备注</th><th style=\"width:90px\">操作</th>\n            </tr>\n          </thead>\n          <tbody id=\"tbody\"></tbody>\n          <tfoot id=\"tfoot\"></tfoot>\n        </table>\n        <div class=\"empty\" id=\"emptyTip\" style=\"display:none\">暂无订单，点右上角「＋ 新增订单」或左侧「⚡ 快捷录入」</div>\n        <div class=\"pager\" id=\"pager\"></div>\n      </div>\n      <div class=\"hint\">分成金额 = 订单金额 × 分成比例；「待结算」即已交付等钱的状态，「已结算」为实际到账口径。已分单订单在收入统计中按实际结算金额（分成 − 写手报酬）计入。</div>\n    </div>\n  </div>\n</div>\n\n<!-- 悬浮工具开关（仅嵌入后台时显示）：月份切换 · 快捷查询 · 快捷录入 -->\n<button class=\"side-fab\" id=\"sideFab\" type=\"button\" aria-expanded=\"false\"\n        title=\"快捷工具：月份切换 / 快捷查询 / 快捷录入\" aria-label=\"快捷工具\">⚡</button>\n\n<!-- 走势图弹窗（加宽） -->\n<div class=\"mask\" id=\"chartMask\" onclick=\"if(event.target===this)this.getRootNode().host.__ledger.closeChart()\">\n  <div class=\"modal chart-modal\">\n    <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:10px\">\n      <h2 id=\"chartMTitle\" style=\"font-size:16px;font-weight:700\"></h2>\n      <button class=\"btn-ghost\" onclick=\"this.getRootNode().host.__ledger.closeChart()\">关闭</button>\n    </div>\n    <div class=\"line-wrap\" id=\"chartMBody\"></div>\n  </div>\n</div>\n\n<!-- 日历单日明细大弹窗 -->\n<div class=\"mask\" id=\"dayMask\" onclick=\"if(event.target===this)this.getRootNode().host.__ledger.closeDayModal()\">\n  <div class=\"modal day-modal\">\n    <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:12px\">\n      <h2 id=\"dayMTitle\" style=\"font-size:16px;font-weight:700\"></h2>\n      <button class=\"btn-ghost\" onclick=\"this.getRootNode().host.__ledger.closeDayModal()\">关闭</button>\n    </div>\n    <div class=\"day-stats\" id=\"dayStats\"></div>\n    <div class=\"table-card\" id=\"dayTableBox\"></div>\n    <div class=\"hint\" id=\"dayHint\"></div>\n  </div>\n</div>\n\n<!-- 批量改分成弹窗 -->\n<div class=\"mask\" id=\"rateMask\">\n  <div class=\"modal\" style=\"max-width:540px\">\n    <h2>批量修改分成比例</h2>\n    <div class=\"field full\"><label>修改范围</label>\n      <select id=\"rateScope\">\n        <option value=\"sel\">仅已勾选的订单</option>\n        <option value=\"all\">全部未结算订单（不含「已结算」）</option>\n      </select>\n    </div>\n    <div class=\"field\"><label>新分成比例（%）</label><input type=\"number\" id=\"rateNew\" min=\"1\" max=\"100\" step=\"0.1\" value=\"45\"></div>\n    <label style=\"display:flex;gap:6px;align-items:center;font-size:13px;margin:10px 0\"><input type=\"checkbox\" id=\"rateAlsoDefault\"> 同时把该比例设为「新单默认分成比例」</label>\n    <div class=\"hint\" id=\"ratePreview\" style=\"margin:0 0 8px\">—</div>\n    <div class=\"form-err\" id=\"rateErr\"></div>\n    <div class=\"modal-actions\">\n      <button class=\"btn-ghost\" id=\"rateCancel\">取消</button>\n      <button class=\"btn-danger\" id=\"rateSave\">确认修改</button>\n    </div>\n  </div>\n</div>\n\n<!-- 账单粘贴找单（只查询，不改状态） -->\n<div class=\"mask\" id=\"findMask\">\n  <div class=\"modal find-modal\">\n    <div class=\"find-head\"><h2>📥 账单粘贴找单</h2><button class=\"btn-ghost find-x\" id=\"findClose\" title=\"关闭（Esc）\">✕</button></div>\n    <div class=\"hint\">把支付宝「批量付款」明细整块复制进来，自动识别 10-20 位订单号并对照台账。<b>这里只查询、不改任何数据</b>：要改「待结算 → 已结算」，点行上的「定位」回到明细，用原来的编辑按钮自己改。</div>\n    <textarea id=\"findText\" class=\"find-text\" rows=\"7\" placeholder=\"粘贴账单文本，例如：&#10;20261017110070001506610098468497&#10;2026-10-17 15:31:55&#10;转账&#10;批量付款-工资-技术服务-3316397630001242690&#10;35.86 58.36&#10;支付宝\"></textarea>\n    <div class=\"find-actions\"><button class=\"btn-primary\" id=\"findGo\">识别并对照台账</button><span class=\"find-sub\" id=\"findBusy\"></span><span class=\"grow\"></span><span class=\"find-sub\">Ctrl+Enter 直接查</span></div>\n    <div class=\"form-err\" id=\"findErr\"></div>\n    <div id=\"findOut\" class=\"find-out\"></div>\n  </div>\n</div>\n\n<!-- 二次核验专区 -->\n<div class=\"mask\" id=\"reviewMask\">\n  <div class=\"modal find-modal\">\n    <div class=\"find-head\"><h2>🔎 二次核验专区</h2><button class=\"btn-ghost find-x\" id=\"reviewClose\" title=\"关闭（Esc）\">✕</button></div>\n    <div class=\"hint\">这里放的是逐单对账时你按下「稍后核验」的那几笔 —— 金额对不上、单号在台账有多行、或台账根本没这个号。<b>它不是订单的分类</b>，不影响「待结算 / 已结算」的统计口径，处理完点「清掉标记」就消失。</div>\n    <div class=\"find-actions\"><button class=\"btn-primary\" id=\"reviewGo\">▶ 逐单过这批</button><span class=\"grow\"></span><button class=\"btn-ghost\" id=\"reviewRefresh\">刷新</button><span class=\"find-sub\" id=\"reviewBusy\"></span></div>\n    <div class=\"form-err\" id=\"reviewErr\"></div>\n    <div id=\"reviewOut\" class=\"find-out\"></div>\n  </div>\n</div>\n\n<!-- 逐单对账卡片 -->\n<div class=\"mask\" id=\"reconMask\">\n  <div class=\"modal recon-modal\">\n    <div class=\"recon-bar\">\n      <button class=\"btn-ghost\" id=\"reconBack\">← 返回账单列表</button>\n      <b class=\"recon-prog\" id=\"reconProg\"></b>\n      <span class=\"grow\"></span>\n      <span class=\"find-sub\">Y 已结算 · N 还没结算 · S 稍后核验/已核验 · 空格 跳过 · ← 上一张 · Esc 返回</span>\n    </div>\n    <div class=\"recon-track\"><i id=\"reconFill\"></i></div>\n    <div id=\"reconCard\"></div>\n    <div class=\"recon-actions\" id=\"reconActions\"></div>\n  </div>\n</div>\n\n<!-- 新增/编辑弹窗 -->\n<div class=\"mask\" id=\"mask\">\n  <div class=\"modal\">\n    <h2 id=\"modalTitle\">新增订单</h2>\n    <div class=\"form-grid\">\n      <div class=\"field\"><label>接单日期 *</label><input type=\"date\" id=\"mDate\"></div>\n      <div class=\"field\"><label>订单编号 *</label><input type=\"text\" id=\"mOrderNo\" placeholder=\"如 DD20260907-01\"></div>\n      <div class=\"field\"><label>订单金额（元）*</label><input type=\"number\" id=\"mAmount\" min=\"0\" step=\"0.01\" placeholder=\"如 850\"></div>\n      <div class=\"field\"><label>分成比例（%）*</label><input type=\"number\" id=\"mShare\" min=\"0\" max=\"100\" step=\"0.1\" placeholder=\"如 70\"></div>\n      <div class=\"field full\"><label>分类（订单进度）*</label><select id=\"mStatus\"></select></div>\n      <div class=\"field full\" id=\"doneDateField\">\n        <label>完单日期</label>\n        <input type=\"date\" id=\"mDoneDate\">\n        <span class=\"tip\">进度为「待结算 / 已结算」时必填，默认今天；改回进行中会自动清空</span>\n      </div>\n      <div class=\"field full\"><label>备注</label><textarea id=\"mNote\" placeholder=\"客户、内容类型、交接情况…（可留空）\"></textarea></div>\n    </div>\n    <div class=\"form-err\" id=\"formErr\"></div>\n    <div class=\"modal-actions\">\n      <button class=\"btn-ghost\" id=\"btnCancel\">取消</button>\n      <button class=\"btn-primary\" id=\"btnSave\">保存</button>\n    </div>\n  </div>\n</div>\n\n";
 
 export function mount(host) {
   const shDoc = host.attachShadow({ mode: 'open' });
@@ -326,7 +326,7 @@ export function mount(host) {
           <td class="num">${fmt(o.amount)}</td>
           <td class="num">${o.shareRate}%</td>
           <td class="num" style="color:var(--green);font-weight:600">${fmt(r2(share(o)))}</td>
-          <td><span class="tag ${stLabel(o.status)}">${stLabel(o.status)}</span></td>
+          <td><span class="tag ${stLabel(o.status)}">${stLabel(o.status)}</span>${inReview(o._id, o.orderNo) ? '<span class="tag 需复核" title="在二次核验专区里，还没处理">需复核</span>' : ''}</td>
           <td>${o.doneDate || '—'}</td>
           <td>${o.dispatch ? '<span class="tag 进行中" title="已派单给 ' + esc(o.dispatch.toName) + '，报酬 ¥' + o.dispatch.reward + ' · 卡状态：' + esc(o.dispatch.status) + '">已分单·' + esc(o.dispatch.toName) + '</span>' : '<span style="color:#cbd5e1">—</span>'}</td>
           <td class="note-cell" title="${esc(o.note || '')}">${esc(o.note || '')}</td>
@@ -584,7 +584,7 @@ export function mount(host) {
       <td class="num">${c.pay == null ? '—' : fmt(r2(c.pay))}</td>
       <td class="num">${fmt(r2(r.amount))}</td>
       <td class="num">${fmt(r2(r.share))}</td>
-      <td class="num ${diff == null ? '' : diff === 0 ? 'rc-eq' : 'rc-diff'}">${diff == null ? '—' : diff === 0 ? '一致 ✓' : (diff > 0 ? '+' : '−') + fmt(Math.abs(diff))}</td>
+      <td class="num ${diff == null ? '' : diff === 0 ? 'd-eq' : 'd-ne'}">${diff == null ? '—' : diff === 0 ? '一致 ✓' : (diff > 0 ? '+' : '−') + fmt(Math.abs(diff))}</td>
       <td><span class="tag ${esc(stLabel(r.status))}">${esc(stLabel(r.status))}</span></td>
       <td class="note-cell" title="${esc(r.note)}">${esc(r.note)}</td>
       <td>${canGo
@@ -679,30 +679,59 @@ export function mount(host) {
   // 一张卡 = 一笔账单 × 台账一行。「已结算 / 还没结算」走的是编辑弹窗同一条
   // PUT /api/orders/:id（saveOrder），没有另开写入口径；一轮走完再 loadOrders() 回服务端核对。
   // 已经是「已结算」的行不进卡（没得可确认），账单里没命中的单号照样进卡，避免静默跳过。
-  const RECON = { list: [], i: 0, log: [], busy: false };
+  const RECON = { list: [], i: 0, log: [], busy: false, origin: 'find', cleared: 0 };
 
-  function reconQueue() {
+  function queueFromCards(cards, keepSettled) {
     const out = [];
-    (FIND_LAST.cards || []).forEach(c => {
-      if (!c.rows.length) { out.push({ c, r: null }); return; }
-      c.rows.filter(r => r.status !== '已结算').forEach(r => out.push({ c, r }));
+    (cards || []).forEach(c => {
+      if (!c.rows.length) { out.push({ c, r: null, key: c.key || null }); return; }
+      c.rows.filter(r => keepSettled || r.status !== '已结算').forEach(r => out.push({ c, r, key: c.key || null }));
     });
     return out;
   }
 
   function startRecon() {
     if (!FIND_LAST) return;
-    RECON.list = reconQueue(); RECON.i = 0; RECON.log = [];
+    RECON.origin = 'find';
+    RECON.list = queueFromCards(FIND_LAST.cards, false);
+    RECON.i = 0; RECON.log = []; RECON.cleared = 0;
     $('reconMask').classList.add('show');
     paintRecon();
   }
 
+  // 专区里的「逐单过这批」：先按单号回库里的当前状态（标记可能是几天前打的），
+  // 再喂给同一套卡片引擎 —— 不分叉第二套对账 UI
+  async function startReviewRecon() {
+    if (!REVIEW.items.length) return;
+    $('reviewErr').textContent = '';
+    $('reviewBusy').textContent = '按台账现值刷新中…';
+    try {
+      const cards = await reviewCards();
+      RECON.origin = 'review';
+      RECON.list = queueFromCards(cards, true);
+      RECON.i = 0; RECON.log = []; RECON.cleared = 0;
+      $('reviewMask').classList.remove('show');
+      $('reconMask').classList.add('show');
+      paintRecon();
+    } catch (e) {
+      $('reviewErr').textContent = '打不开：' + (e.message || e);
+    } finally {
+      $('reviewBusy').textContent = '';
+    }
+  }
+
   function closeRecon() {
     $('reconMask').classList.remove('show');
-    if (!RECON.log.length) return;
     const n = RECON.log.length;
-    renderFindResult(FIND_LAST);   // 卡片上的状态是直接改在结果对象里的，列表重画就是新的
-    loadOrders();                  // 再和云端核对一遍，KPI / 明细一起刷新
+    if (RECON.origin === 'review') {
+      // 从专区进来的，过完回专区（不是回粘贴页），并带上最新标记状态
+      loadReview().then(() => { renderReview(); openReviewModal(); });
+      if (n) { loadOrders(); cpyToast('本轮改了 ' + n + ' 单，已刷新台账'); }
+      return;
+    }
+    if (!n) return;
+    renderFindResult(FIND_LAST);
+    loadOrders();
     cpyToast('本轮改了 ' + n + ' 单，已刷新台账');
   }
 
@@ -769,16 +798,51 @@ export function mount(host) {
           ? '没取到账单金额，比不了差额'
           : diff === 0 ? '金额一致 ✓' : '差 ' + (diff > 0 ? '+' : '−') + fmt(Math.abs(diff)) + ' 元 —— 只提醒，不拦你改'}</div>` : ''}
       ${r && c.rows.length > 1 ? `<div class="rc-warn">这个单号在台账有 ${c.rows.length} 行，现在看的是第 ${c.rows.indexOf(r) + 1} 行；不是这一笔就点「跳过」，下一张是另一行。</div>` : ''}
+      ${RECON.origin === 'review' ? `<div class="rc-reason">${REASON_TEXT[c.reason] || '当初被你标为待核验'}${c.billNote ? '（' + esc(c.billNote) + '）' : ''}<span class="find-sub"> · 标记于 ${esc(c.billAt || '—')}</span></div>` : ''}
     </div>`;
-    $('reconActions').innerHTML = r
+    // 黄色卡：金额对不上 / 单号在台账多行 / 台账根本没这个号 —— 这种可以「稍后核验」进专区
+    const yellow = !r || (diff != null && diff !== 0) || (r && c.rows.length > 1);
+    const review = RECON.origin === 'review';
+    const lateBtn = review
+      ? `<button class="btn-primary" id="rcLate">已核验 · 清掉标记 <kbd>S</kbd></button>`
+      : (yellow ? `<button class="btn-ghost" id="rcLate">稍后核验 <kbd>S</kbd></button>` : '');
+    $('reconActions').innerHTML = (r
       ? `<button class="btn-primary" id="rcYes">已结算 ✓ <kbd>Y</kbd></button>`
         + `<button class="btn-ghost" id="rcNo">还没结算 ✕ <kbd>N</kbd></button>`
-        + `<button class="btn-ghost" id="rcSkip">跳过 · 不改 <kbd>空格</kbd></button>`
-      : `<button class="btn-ghost" id="rcSkip">跳过 · 不改 <kbd>空格</kbd></button>`;
-    const y = $('rcYes'), n = $('rcNo');
+      : '')
+      + lateBtn
+      + `<button class="btn-ghost" id="rcSkip">${review ? '留着下次 · 不改 <kbd>空格</kbd>' : '跳过 · 不改 <kbd>空格</kbd>'}</button>`;
+    const y = $('rcYes'), n = $('rcNo'), late = $('rcLate');
     if (y) y.onclick = () => reconApply('已结算');
     if (n) n.onclick = () => reconApply('待结算');
+    if (late) late.onclick = reconLate;
     $('rcSkip').onclick = () => reconNext();
+  }
+
+  // 「稍后核验」= 把这一笔存进专区；「已核验·清掉标记」= 从专区摘掉
+  async function reconLate() {
+    const it = RECON.list[RECON.i];
+    if (!it) return;
+    const c = it.c, r = it.r;
+    try {
+      if (RECON.origin === 'review') {
+        if (it.key) await clearReview([it.key]);
+        render();
+      } else {
+        const diff = reconAmt(c, r);
+        await flagReview([{
+          orderNo: c.orderNo, _id: r ? r._id : null,
+          reason: !r ? 'miss' : (c.rows.length > 1 ? 'multi' : 'diff'),
+          bill: { pay: c.pay, time: c.payTime, serial: c.serial },
+          note: diff == null ? '' : '账单 ' + c.pay + ' / 后台分成 ' + r.share + ' 差 ' + (diff > 0 ? '+' : '') + diff,
+          at: localDate() + ' ' + new Date().toTimeString().slice(0, 8),
+        }]);
+        render();   // 角标要立刻出现在明细表上：纯标记不改状态，不会走 loadOrders 那次重画
+      }
+      reconNext();
+    } catch (e) {
+      cpyToast('标记没存上：' + (e.message || e));   // 留在这张卡，不假装成功
+    }
   }
 
   async function reconApply(to) {
@@ -795,6 +859,8 @@ export function mount(host) {
       if (o) Object.assign(o, doc);
       RECON.log.push({ orderNo: r.orderNo, date: r.date, from: r.status, to, share: r.share });
       r.status = to;
+      // 从专区进来的，改完状态就意味着这笔核验过了，顺手把标记摘掉
+      if (it.key) { await clearReview([it.key]); RECON.cleared++; }
       reconNext();
     } catch (e) {
       // 留在这张卡上，把失败说清楚，绝不假装过了
@@ -807,6 +873,102 @@ export function mount(host) {
 
   function reconNext() { RECON.i++; paintRecon(); }
   function reconPrev() { if (RECON.i > 0) { RECON.i--; paintRecon(); } }
+
+  /* ================= 【v26.83】二次核验专区 ================= */
+  // 黄色那几笔（金额不符 / 重复单号 / 台账查无此号）先记在这儿，最后统一处理。
+  // 它是独立于「分类」的一个标记：不进 KPI、不进分类看板、写手端也看不到。
+  const REASON_TEXT = { diff: '账单金额与台账分成不一致', multi: '这个单号在台账有多行', miss: '台账里没有这个单号' };
+  const REVIEW = { items: [] };
+
+  async function reviewApi(body) {
+    const r = await fetch('/api/orders/review', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, AH()), body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
+    if (!r.ok || !j.ok) throw new Error(j.error || ('请求失败 ' + r.status));
+    REVIEW.items = j.items || [];
+    paintReviewBtn();
+    return j;
+  }
+  const flagReview = items => reviewApi({ op: 'add', items });
+  const clearReview = keys => reviewApi({ op: 'clear', keys });
+
+  async function loadReview() {
+    try {
+      const r = await fetch('/api/orders/review', { headers: AH() });
+      const j = await r.json();
+      REVIEW.items = j && j.ok && Array.isArray(j.items) ? j.items : [];
+    } catch (e) { REVIEW.items = []; }
+    paintReviewBtn();
+  }
+
+  function paintReviewBtn() {
+    const b = $('btnReview');
+    if (!b) return;
+    const n = REVIEW.items.length;
+    b.style.display = n ? '' : 'none';
+    b.textContent = '🔎 二次核验' + (n ? '（' + n + '）' : '');
+  }
+
+  const reviewKeyOf = (id, orderNo) => (id ? 'o:' + id : 'n:' + orderNo);
+  const inReview = (id, orderNo) => REVIEW.items.some(x => x.key === reviewKeyOf(id, orderNo));
+
+  // 专区里的行 = 当初记的账单快照 + 台账现在的值（标记可能是几天前打的，不能拿旧状态去对）
+  async function reviewCards() {
+    if (!REVIEW.items.length) return [];
+    const r = await fetch('/api/orders/lookup', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, AH()),
+      body: JSON.stringify({ text: REVIEW.items.map(x => x.orderNo).join('\n') }),
+    });
+    const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
+    if (!j.ok) throw new Error(j.error || '取不到台账现值');
+    const byNo = new Map();
+    (j.cards || []).forEach(c => byNo.set(c.orderNo, c));
+    return REVIEW.items.map(x => {
+      const c = byNo.get(x.orderNo);
+      let rows = c ? c.rows.slice() : [];
+      if (x._id) rows = rows.filter(o => String(o._id) === String(x._id));
+      return {
+        orderNo: x.orderNo, pay: x.bill ? x.bill.pay : null, payExtra: [],
+        payTime: x.bill ? x.bill.time : null, serial: x.bill ? x.bill.serial : null,
+        rows, key: x.key, reason: x.reason, billNote: x.note, billAt: x.at,
+      };
+    });
+  }
+
+  function openReviewModal() { $('reviewErr').textContent = ''; renderReview(); $('reviewMask').classList.add('show'); }
+  function closeReviewModal() { $('reviewMask').classList.remove('show'); }
+
+  function renderReview() {
+    const items = REVIEW.items;
+    if (!items.length) {
+      $('reviewOut').innerHTML = '<div class="q-empty">专区是空的。逐单对账时遇到黄色那张卡，点「稍后核验」就会进这里。</div>';
+      paintReviewBtn(); return;
+    }
+    const g = { diff: [], multi: [], miss: [] };
+    items.forEach(x => (g[x.reason] || g.diff).push(x));
+    $('reviewOut').innerHTML = `<div class="rv-sum">共 <b>${items.length}</b> 笔待核验：金额不符 <b>${g.diff.length}</b> · 重复单号 <b>${g.multi.length}</b> · 台账查无此号 <b>${g.miss.length}</b></div>`
+      + Object.keys(g).filter(k => g[k].length).map(k => `<div class="rv-group"><h4>${REASON_TEXT[k]}（${g[k].length}）</h4>
+        <div class="table-card find-table"><table><thead><tr><th>订单编号</th><th class="num">账单金额</th><th>账单时间</th><th>标记时备注</th><th>台账现值</th><th>操作</th></tr></thead><tbody>`
+        + g[k].map(x => {
+          const o = x._id ? orders.find(y => String(y._id) === String(x._id)) : null;
+          return `<tr><td><b class="cpy" data-copy="${esc(x.orderNo)}" title="点击复制单号">${esc(x.orderNo)}</b></td>`
+            + `<td class="num">${x.bill && x.bill.pay != null ? fmt(r2(x.bill.pay)) : '—'}</td>`
+            + `<td class="find-sub">${esc((x.bill && x.bill.time) || '—')}</td>`
+            + `<td class="note-cell" title="${esc(x.note)}">${esc(x.note)}</td>`
+            + `<td>${o ? `<span class="tag ${esc(stLabel(o.status))}">${esc(stLabel(o.status))}</span>`
+              : `<span class="find-sub">${x._id ? '台账里已找不到这行（可能被删）' : '本来就没有对应台账行'}</span>`}</td>`
+            + `<td>${o ? `<button class="btn-mini" onclick="this.getRootNode().host.__ledger.locateOrder('${esc(String(x._id))}')">定位</button>` : ''}`
+              + `<button class="btn-mini" onclick="this.getRootNode().host.__ledger.clearOneReview('${esc(x.key)}')">清掉标记</button></td></tr>`;
+        }).join('')
+        + '</tbody></table></div></div>').join('')
+      + '<div class="hint">「清掉标记」只删这条核验记录、不动订单状态；「▶ 逐单过这批」会按台账<b>现在的值</b>重新取一遍再一张张过，改完状态自动把标记摘掉。</div>';
+    paintReviewBtn();
+  }
+
+  function clearOneReview(key) {
+    clearReview([key]).then(() => { renderReview(); render(); }).catch(e => { $('reviewErr').textContent = '清不掉：' + (e.message || e); });
+  }
 
   function renderPager(total, p, tp) {
     const el = shDoc.getElementById('pager');
@@ -1262,12 +1424,21 @@ export function mount(host) {
         if (k === 'escape') { closeRecon(); return; }
         if (k === 'y') { reconApply('已结算'); return; }
         if (k === 'n') { reconApply('待结算'); return; }
+        if (k === 's') { const late = $('rcLate'); if (late) reconLate(); return; }   // 只在卡上真有这个按钮时才响应
         if (k === ' ' || k === 'arrowright') { e.preventDefault(); reconNext(); return; }
         if (k === 'arrowleft') { e.preventDefault(); reconPrev(); return; }
         return;
       }
-      if (find && e.key === 'Escape') closeFindModal();
+      if (e.key !== 'Escape') return;
+      if ($('reviewMask').classList.contains('show')) { closeReviewModal(); return; }
+      if (find) closeFindModal();
     });
+    // 【v26.83】二次核验专区
+    $('btnReview').onclick = openReviewModal;
+    $('reviewClose').onclick = closeReviewModal;
+    $('reviewGo').onclick = startReviewRecon;
+    $('reviewRefresh').onclick = () => { $('reviewBusy').textContent = '取清单中…'; loadReview().then(renderReview).then(() => { $('reviewBusy').textContent = ''; }); };
+    $('reviewMask').onclick = e => { if (e.target === $('reviewMask')) closeReviewModal(); };
     // 勾选：明细表是分页渲染的，用事件委托挂在 tbody 上，翻页后旧监听不会残留
     $('tbody').addEventListener('change', e => {
       const ck = e.target.closest('[data-rck]');
@@ -1305,6 +1476,8 @@ export function mount(host) {
       const el = $('dbState');
       if (USE_REMOTE) { el.textContent = 'MongoDB 云端已连接'; el.className = ''; }
       else { el.textContent = '本地模式（未连上服务器，数据暂存本浏览器）'; el.className = 'offline'; }
+      // 复核标记要在明细画出来之后重画一次，否则「需复核」角标第一次是空的
+      loadReview().then(render);
     });
   })();
 
@@ -1348,6 +1521,7 @@ export function mount(host) {
     gotoMonth, jumpToOrder, openModal, removeOrder, openDayModal,
     openFindModal, closeFindModal, runFind, locateOrder,
     startRecon, closeRecon,
+    openReviewModal, closeReviewModal, clearOneReview, startReviewRecon,
     logout: () => {
       localStorage.removeItem('jdy_token');
       localStorage.removeItem('jdy_user');
