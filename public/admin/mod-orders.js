@@ -1050,7 +1050,7 @@ export function mount(host) {
       ${shown ? `<div class="table-card ag-table"><table><thead><tr><th>等待</th><th>接单日</th><th>订单编号</th><th class="num">订单金额</th><th class="num">分成</th><th class="num">报酬</th><th>分类</th><th>备注</th><th>操作</th></tr></thead><tbody>`
         + j.rows.map(agRow).join('')
         + '</tbody></table></div>' + (j.total > shown ? `<div class="hint">表里只列前 ${shown} 条（按等待天数从久到近），合计是全部 ${j.total} 条的。</div>` : '') : (j.total ? '' : '<div class="q-empty">这个条件下没有单子。把时间放宽，或勾上「已结算」再看。</div>')}
-      <div class="hint">口径：时间范围筛的是<b>${j.field === 'doneDate' ? '完单日' : '接单日'}</b>${j.from ? '，起 ' + esc(j.from) : ''}${j.to ? '，止 ' + esc(j.to) : ''}${j.minDays ? '，且等待 ≥ ' + j.minDays + ' 天' : ''}${j.split !== 'all' ? '，' + (j.split === 'yes' ? '只看已分单' : '只看未分单') : ''}${j.keyword ? '，关键词「' + esc(j.keyword) + '」' : ''}。报表只读，点行上的「编辑」才会改数据。</div>`;
+      <div class="hint">口径：今天按<b>北京日历日 ${esc(j.today || '—')}</b> 算；时间范围筛的是<b>${j.field === 'doneDate' ? '完单日' : '接单日'}</b>${j.from ? '，起 ' + esc(j.from) : ''}${j.to ? '，止 ' + esc(j.to) : ''}${j.minDays ? '，且等待 ≥ ' + j.minDays + ' 天' : ''}${j.split !== 'all' ? '，' + (j.split === 'yes' ? '只看已分单' : '只看未分单') : ''}${j.keyword ? '，关键词「' + esc(j.keyword) + '」' : ''}。报表只读，点行上的「编辑」才会改数据。</div>`;
   }
 
   function agRow(o) {
