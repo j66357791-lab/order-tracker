@@ -310,4 +310,30 @@
   .rc-reason{margin-top:8px;font-size:12.5px;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px 12px}
   #btnReview{color:var(--red);border-color:#fca5a5}
 
+  /* ===== 【v26.84】高级筛选 · 未结算账龄 ===== */
+  .ag-modal{width:min(1080px,96vw)}
+  .ag-form{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0}
+  .ag-row{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+  .ag-row:last-child{margin-bottom:0}
+  .ag-row label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub)}
+  .ag-row input,.ag-row select{border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px;font-family:inherit;background:#fff;color:var(--ink)}
+  .ag-row input[type=number]{width:78px}
+  .ag-row input[type=search]{width:170px}
+  .ag-wide{flex:1;min-width:260px}
+  .ag-chk{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--ink)}
+  .ag-chk label{flex-direction:row;align-items:center;gap:5px;font-size:13px;color:var(--ink)}
+  .ag-quick{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub)}
+  .ag-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:8px}
+  .ag-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .ag-card b{display:block;font-size:21px;font-variant-numeric:tabular-nums;line-height:1.2}
+  .ag-card span{font-size:11.5px;color:var(--sub)}
+  .ag-card.amber b{color:var(--amber)} .ag-card.green b{color:var(--green)} .ag-card.purple b{color:var(--purple)} .ag-card.blue b{color:var(--blue)}
+  .ag-buckets{margin-bottom:10px}
+  .ag-buckets table,.ag-table table{min-width:760px}
+  .ag-buckets tr.ag-zero td{color:#cbd5e1}
+  .ag-table{max-height:44vh;margin-bottom:8px}
+  .ag-days{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;font-variant-numeric:tabular-nums;background:#f1f5f9;color:#475569}
+  .ag-days.d-mid{background:var(--amber-bg);color:var(--amber)}
+  .ag-days.d-old{background:var(--red-bg);color:var(--red);font-weight:600}
+
 
