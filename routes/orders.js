@@ -94,6 +94,74 @@ app.get('/api/orders', auth, adminOnly, async (req, res) => {
   }
 });
 
+// ============ 【v26.81】账单粘贴找单（只读） ============
+// 场景：发工资后，管理员把支付宝「批量付款」明细整块复制过来，要按备注里的订单号找到台账对应行。
+// 刻意做成只查询、不写库：状态变更仍由人工在明细里点「编辑」完成，避免把「已付工资」和
+// 「分成已到账」这两个不同口径混在一起自动刷数据。
+const LOOKUP_MAX_NOS = 500;
+const LOOKUP_MAX_TEXT = 200000;
+// 只取「前后都不是数字」的 10~20 位连续数字。支付宝流水号是 32 位，因此不会被误当成订单号。
+const LOOKUP_NO_RE = /(?<!\d)\d{10,20}(?!\d)/g;
+
+function extractOrderNos(text) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(text || '').matchAll(LOOKUP_NO_RE)) {
+    if (!seen.has(m[0])) { seen.add(m[0]); out.push(m[0]); }
+    if (out.length >= LOOKUP_MAX_NOS) break;
+  }
+  return out;
+}
+
+app.post('/api/orders/lookup', auth, adminOnly, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const raw = String(b.text || '');
+    if (raw.length > LOOKUP_MAX_TEXT) {
+      return res.status(400).json({ ok: false, error: '一次粘贴超过 ' + LOOKUP_MAX_TEXT + ' 字，请分几批' });
+    }
+    const nos = extractOrderNos(raw);
+    if (!nos.length) {
+      return res.status(400).json({ ok: false, error: '没识别到订单号。需要 10-20 位连续数字，例如「批量付款-工资-技术服务-3316397630001242690」尾部那个号' });
+    }
+
+    const db = await getDb();
+    const proj = { projection: { date: 1, orderNo: 1, amount: 1, shareRate: 1, status: 1, doneDate: 1, note: 1 } };
+    const rows = await db.collection(CONFIG.collection)
+      .find({ orderNo: { $in: nos } }, proj).sort({ date: -1 }).limit(LOOKUP_MAX_NOS * 5).toArray();
+
+    const found = rows.map(o => ({
+      _id: String(o._id), date: o.date || '', orderNo: o.orderNo || '',
+      amount: Number(o.amount) || 0, shareRate: Number(o.shareRate) || 0,
+      status: normalizeStatus(o.status), doneDate: o.doneDate || null, note: o.note || '',
+    }));
+    const hit = new Set(found.map(o => o.orderNo));
+    const notFound = nos.filter(n => !hit.has(n));
+
+    // 备注兜底：有些付款单号只写在备注里（如「补：3316…」），单独列一组给人判断，不混进命中
+    // 号码已限定为纯数字，拼进 $regex 不存在注入面
+    const noteHits = [];
+    if (notFound.length) {
+      const probe = notFound.slice(0, 50);
+      const nrows = await db.collection(CONFIG.collection)
+        .find({ $or: probe.map(n => ({ note: { $regex: n } })) }, proj).limit(200).toArray();
+      nrows.forEach(r => {
+        probe.filter(n => (r.note || '').includes(n)).forEach(n => {
+          if (!hit.has(r.orderNo)) noteHits.push({ from: n, orderNo: r.orderNo, date: r.date || '', status: normalizeStatus(r.status), note: r.note || '' });
+        });
+      });
+    }
+
+    res.json({
+      ok: true, extracted: nos.length, found, notFound, noteHits,
+      noteProbeCapped: notFound.length > 50,
+      truncated: rows.length >= LOOKUP_MAX_NOS * 5,
+    });
+  } catch (e) {
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
+  }
+});
+
 // ============ 【v26.66】分成比例：默认值配置 + 批量修改 ============
 // 路由都挂在 /api/orders/xxx 上且只用 GET/POST —— 已存在的 PUT/DELETE /api/orders/:id 会
 // 吃掉 /api/orders/<单个词> 的形态（Express 按注册顺序匹配），所以这里不用 PUT，避免抢路由。
