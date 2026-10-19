@@ -102,6 +102,9 @@ const LOOKUP_MAX_NOS = 500;
 const LOOKUP_MAX_TEXT = 200000;
 // 只取「前后都不是数字」的 10~20 位连续数字。支付宝流水号是 32 位，因此不会被误当成订单号。
 const LOOKUP_NO_RE = /(?<!\d)\d{10,20}(?!\d)/g;
+// 锚点行：行尾就是订单号，如「批量付款-工资-技术服务-3316375455202007954」
+const ANCHOR_RE = /(?<!\d)(\d{10,20})(?!\d)\s*$/;
+const MONEY_RE = /\d+\.\d{1,2}/g;
 
 function extractOrderNos(text) {
   const out = [];
@@ -113,6 +116,42 @@ function extractOrderNos(text) {
   return out;
 }
 
+// 把粘贴文本切成「一笔一条」的付款记录。账单侧的金额只用来给你核对，不参与任何计算。
+// 锚点是行尾带订单号的那一行：往前 4 行找付款时间和流水号，往后 3 行找第一个金额。
+// 认不出结构的粘贴退回通用扫描（只有订单号、没有金额），绝不静默丢数据。
+function parsePayRecords(text) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/[ \t\u00a0]+$/g, ''));
+  const recs = [];
+  lines.forEach((line, i) => {
+    const m = line.match(ANCHOR_RE);
+    if (!m) return;
+    const rec = { orderNo: m[1], pay: null, payExtra: [], payTime: null, serial: null };
+    for (let j = i + 1; j <= i + 3 && j < lines.length; j++) {
+      const nums = lines[j].match(MONEY_RE);
+      if (nums && nums.length) {
+        rec.pay = Number(nums[0]);
+        rec.payExtra = nums.slice(1).map(Number);
+        break;
+      }
+    }
+    for (let j = i - 1; j >= Math.max(0, i - 4); j--) {
+      if (!rec.payTime) {
+        const dt = lines[j].match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
+        if (dt) rec.payTime = dt[0];
+      }
+      if (!rec.serial) {
+        const sn = lines[j].match(/^\s*(\d{20,})\s*$/);
+        if (sn) rec.serial = sn[1];
+      }
+    }
+    recs.push(rec);
+    if (recs.length >= LOOKUP_MAX_NOS) return;
+  });
+  if (recs.length) return recs;
+  // 没有任何行尾锚点：整段可能挤成一行，退回通用号码扫描，金额留空由人自己看
+  return extractOrderNos(text).map(no => ({ orderNo: no, pay: null, payExtra: [], payTime: null, serial: null }));
+}
+
 app.post('/api/orders/lookup', auth, adminOnly, async (req, res) => {
   try {
     const b = req.body || {};
@@ -120,41 +159,57 @@ app.post('/api/orders/lookup', auth, adminOnly, async (req, res) => {
     if (raw.length > LOOKUP_MAX_TEXT) {
       return res.status(400).json({ ok: false, error: '一次粘贴超过 ' + LOOKUP_MAX_TEXT + ' 字，请分几批' });
     }
-    const nos = extractOrderNos(raw);
-    if (!nos.length) {
+    const recs = parsePayRecords(raw);
+    if (!recs.length) {
       return res.status(400).json({ ok: false, error: '没识别到订单号。需要 10-20 位连续数字，例如「批量付款-工资-技术服务-3316397630001242690」尾部那个号' });
     }
+    const nos = [...new Set(recs.map(r => r.orderNo))];
 
     const db = await getDb();
     const proj = { projection: { date: 1, orderNo: 1, amount: 1, shareRate: 1, status: 1, doneDate: 1, note: 1 } };
     const rows = await db.collection(CONFIG.collection)
       .find({ orderNo: { $in: nos } }, proj).sort({ date: -1 }).limit(LOOKUP_MAX_NOS * 5).toArray();
 
-    const found = rows.map(o => ({
-      _id: String(o._id), date: o.date || '', orderNo: o.orderNo || '',
-      amount: Number(o.amount) || 0, shareRate: Number(o.shareRate) || 0,
-      status: normalizeStatus(o.status), doneDate: o.doneDate || null, note: o.note || '',
-    }));
-    const hit = new Set(found.map(o => o.orderNo));
-    const notFound = nos.filter(n => !hit.has(n));
+    const byNo = new Map();
+    rows.forEach(o => {
+      const r = {
+        _id: String(o._id), date: o.date || '', orderNo: o.orderNo || '',
+        amount: Number(o.amount) || 0, shareRate: Number(o.shareRate) || 0,
+        share: Math.round((Number(o.amount) || 0) * (Number(o.shareRate) || 0)) / 100,
+        status: normalizeStatus(o.status), doneDate: o.doneDate || null, note: o.note || '',
+      };
+      if (!byNo.has(r.orderNo)) byNo.set(r.orderNo, []);
+      byNo.get(r.orderNo).push(r);
+    });
 
+    const cards = recs.map(r => {
+      const hits = byNo.get(r.orderNo) || [];
+      return { ...r, rows: hits, state: hits.length ? (hits.length > 1 ? 'multi' : 'ok') : 'miss' };
+    });
+
+    const missing = nos.filter(n => !byNo.has(n));
     // 备注兜底：有些付款单号只写在备注里（如「补：3316…」），单独列一组给人判断，不混进命中
     // 号码已限定为纯数字，拼进 $regex 不存在注入面
     const noteHits = [];
-    if (notFound.length) {
-      const probe = notFound.slice(0, 50);
+    if (missing.length) {
+      const probe = missing.slice(0, 50);
       const nrows = await db.collection(CONFIG.collection)
         .find({ $or: probe.map(n => ({ note: { $regex: n } })) }, proj).limit(200).toArray();
       nrows.forEach(r => {
         probe.filter(n => (r.note || '').includes(n)).forEach(n => {
-          if (!hit.has(r.orderNo)) noteHits.push({ from: n, orderNo: r.orderNo, date: r.date || '', status: normalizeStatus(r.status), note: r.note || '' });
+          noteHits.push({ from: n, orderNo: r.orderNo, date: r.date || '', status: normalizeStatus(r.status), note: r.note || '' });
         });
       });
     }
 
+    // 只回结构性计数；状态相关的数字由页面按 cards 现算，免得出现两份口径不同的汇总
+    const multi = cards.filter(c => c.state === 'multi').length;
+    const noPay = cards.filter(c => c.pay == null).length;
     res.json({
-      ok: true, extracted: nos.length, found, notFound, noteHits,
-      noteProbeCapped: notFound.length > 50,
+      ok: true, extracted: nos.length, records: cards.length,
+      cards, noteHits, notFound: missing,
+      counts: { multi, noPay },
+      noteProbeCapped: missing.length > 50,
       truncated: rows.length >= LOOKUP_MAX_NOS * 5,
     });
   } catch (e) {
