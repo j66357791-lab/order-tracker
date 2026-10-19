@@ -296,6 +296,116 @@ app.post('/api/orders/review', auth, adminOnly, async (req, res) => {
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
 });
 
+// ============ 【v26.84】未结算账龄报表（只读） ============
+// 目的：按接单日算出每单已等待几天，时间段可筛，把三种金额口径各自汇总，
+// 让管理员直接看出「下一次要打多少钱」。只读，不写库、不改状态。
+// 为什么要单独一个接口而不是让页面在已加载的明细上算：
+// 列表接口有 500 条上限且受当前期间筛选影响，拿它做金额决策会出现「没取到≠没有」，
+// 报表必须自己到库里取全量。
+const AGING_MAX_ROWS = 5000;
+const AGING_BUCKETS = [[0, 7], [8, 15], [16, 30], [31, 60], [61, 90], [91, Infinity]];
+
+app.get('/api/orders/aging', auth, adminOnly, async (req, res) => {
+  try {
+    const q = req.query;
+    const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+    const field = q.field === 'doneDate' ? 'doneDate' : 'date';
+    const today = localToday();
+    if (!dayRe.test(today)) return res.status(500).json({ ok: false, error: '今天日期取不到，无法算等待天数' });
+
+    const dateRange = {};
+    if (q.from && dayRe.test(q.from)) dateRange.$gte = q.from;
+    if (q.to && dayRe.test(q.to)) dateRange.$lte = q.to;
+    if (Object.keys(dateRange).length === 0) delete dateRange.__none;
+
+    // 默认看「还没结算」的三类；可以显式把已结算也拉进来（field=doneDate 时空值不计）
+    const want = String(q.status || '').split(',').map(s => normalizeStatus(s.trim())).filter(s => STATUSES.includes(s));
+    const statuses = want.length ? want : STATUSES.filter(s => s !== '已结算');
+
+    const query = { status: { $in: statuses } };
+    if (Object.keys(dateRange).length) query[field] = dateRange;
+    if (q.minDays && /^\d{1,4}$/.test(String(q.minDays))) {
+      const minD = Number(q.minDays);
+      if (minD > 0) {
+        const cut = new Date(today + 'T00:00:00');
+        cut.setDate(cut.getDate() - minD);
+        query[field] = Object.assign({}, query[field] || {}, { $lte: cut.toISOString().slice(0, 10) });
+      }
+    }
+    if (q.q && q.q.trim()) {
+      const rx = { $regex: String(q.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+      query.$or = [{ orderNo: rx }, { note: rx }];
+    }
+
+    const db = await getDb();
+    const rows = await db.collection(CONFIG.collection).find(query).limit(AGING_MAX_ROWS).toArray();
+    const truncated = rows.length >= AGING_MAX_ROWS;
+
+    // 派单卡的报酬：一次把涉及的卡捞出来，别按行 N 次查
+    const ids = rows.map(r => String(r._id));
+    const feeByOrder = new Map();
+    if (ids.length) {
+      const cards = await db.collection('cards')
+        .find({ orderId: { $in: ids } })
+        .project({ orderId: 1, reward: 1, toName: 1, status: 1 }).toArray();
+      cards.forEach(c => {
+        if (!c.orderId) return;
+        const prev = feeByOrder.get(c.orderId) || { fee: 0, to: '', status: '' };
+        prev.fee += Number(c.reward) || 0;
+        prev.to = c.toName || prev.to;
+        prev.status = c.status || prev.status;
+        feeByOrder.set(c.orderId, prev);
+      });
+    }
+
+    const r2 = x => Math.round(x * 100) / 100;
+    const todayMs = Date.parse(today + 'T00:00:00');
+    const list = rows.map(o => {
+      const d = o[field] || o.date || '';
+      const ms = Date.parse(d + 'T00:00:00');
+      const days = Number.isFinite(ms) ? Math.max(0, Math.floor((todayMs - ms) / 86400000)) : 0;
+      const amount = Number(o.amount) || 0, rate = Number(o.shareRate) || 0;
+      const share = r2(amount * rate / 100);
+      const dinfo = feeByOrder.get(String(o._id));
+      return {
+        _id: String(o._id), date: o.date || '', doneDate: o.doneDate || null, orderNo: o.orderNo || '',
+        amount: r2(amount), shareRate: rate, share, days,
+        status: normalizeStatus(o.status), note: o.note || '',
+        writer: dinfo ? (dinfo.to || '') : '', writerFee: dinfo ? r2(dinfo.fee) : 0, cardStatus: dinfo ? dinfo.status : '',
+      };
+    });
+    return finish(list);
+
+    function finish(items) {
+      const splitFilter = String(q.split || 'all');
+      let out = items;
+      if (splitFilter === 'yes') out = items.filter(x => x.writerFee > 0);
+      else if (splitFilter === 'no') out = items.filter(x => x.writerFee === 0);
+      out.sort((a, b) => b.days - a.days);
+      const sum = { amount: 0, share: 0, writerFee: 0, net: 0 };
+      const buckets = AGING_BUCKETS.map(([lo, hi]) => ({ lo, hi, n: 0, amount: 0, share: 0, writerFee: 0 }));
+      out.forEach(x => {
+        sum.amount += x.amount; sum.share += x.share; sum.writerFee += x.writerFee;
+        sum.net += x.share - x.writerFee;
+        const b = buckets.find(bk => x.days >= bk.lo && x.days <= bk.hi);
+        if (b) { b.n++; b.amount = r2(b.amount + x.amount); b.share = r2(b.share + x.share); b.writerFee = r2(b.writerFee + x.writerFee); }
+      });
+      return res.json({
+        ok: true, today, field, statuses, from: dateRange.$gte || null, to: dateRange.$lte || null,
+        minDays: /^\d{1,4}$/.test(String(q.minDays || '0')) ? Number(q.minDays || 0) : 0,
+        split: splitFilter, keyword: String(q.q || ''),
+        total: out.length, truncated,
+        sums: { amount: r2(sum.amount), share: r2(sum.share), writerFee: r2(sum.writerFee), net: r2(sum.net) },
+        buckets: buckets.map(b => ({ ...b, hiLabel: Number.isFinite(b.hi) ? b.hi : '' })),
+        oldestDays: out.length ? out[0].days : 0,
+        rows: out.slice(0, 500),
+      });
+    }
+  } catch (e) {
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
+  }
+});
+
 // ============ 【v26.66】分成比例：默认值配置 + 批量修改 ============
 // 路由都挂在 /api/orders/xxx 上且只用 GET/POST —— 已存在的 PUT/DELETE /api/orders/:id 会
 // 吃掉 /api/orders/<单个词> 的形态（Express 按注册顺序匹配），所以这里不用 PUT，避免抢路由。
