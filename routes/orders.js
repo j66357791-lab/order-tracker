@@ -310,7 +310,10 @@ app.get('/api/orders/aging', auth, adminOnly, async (req, res) => {
     const q = req.query;
     const dayRe = /^\d{4}-\d{2}-\d{2}$/;
     const field = q.field === 'doneDate' ? 'doneDate' : 'date';
-    const today = localToday();
+    // Render 的容器是 UTC，直接用服务器本地日期会在北京时间 00:00-08:00 这段把「今天」
+    // 算成前一天，等待天数跟着少一天。报表只读，这里按北京日历日算；
+    // 写入路径的 localToday 不动（改了会牵动完单日默认值和历史统计口径）。
+    const today = typeof cnDayStr === 'function' ? cnDayStr(new Date()) : localToday();
     if (!dayRe.test(today)) return res.status(500).json({ ok: false, error: '今天日期取不到，无法算等待天数' });
 
     const dateRange = {};
