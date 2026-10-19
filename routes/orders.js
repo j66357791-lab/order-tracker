@@ -409,6 +409,108 @@ app.get('/api/orders/aging', auth, adminOnly, async (req, res) => {
   }
 });
 
+// ============ 【v26.85】数据分析大屏（只读） ============
+// 一次把月度/年度、完成速度、到账周期、每日环比、账龄概览全算好返回，
+// 页面只负责画。同样是服务端全量取数：前端那份明细有 500 条上限，拿来算年度趋势会偏小。
+const INS_MAX_ROWS = 5000;
+const SPEED_BUCKETS = [[0, 0, '当天'], [1, 3, '1-3 天'], [4, 7, '4-7 天'], [8, 15, '8-15 天'], [16, 30, '16-30 天'], [31, Infinity, '30 天以上']];
+
+app.get('/api/orders/insights', auth, adminOnly, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.collection(CONFIG.collection).find({}, {
+      projection: { date: 1, doneDate: 1, status: 1, amount: 1, shareRate: 1, settledAt: 1 },
+    }).limit(INS_MAX_ROWS).toArray();
+
+    const today = typeof cnDayStr === 'function' ? cnDayStr(new Date()) : localToday();
+    const r2 = x => Math.round(x * 100) / 100;
+    const dayNum = s => Date.parse(String(s).slice(0, 10) + 'T00:00:00Z');
+    const dDiff = (a, b) => Math.round((dayNum(a) - dayNum(b)) / 86400000);
+    const mean = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 10) / 10 : null;
+    const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2 * 10) / 10; };
+    const pct = (a, b) => (b ? Math.round((a - b) / b * 1000) / 10 : null);
+    const shareOf = o => r2((Number(o.amount) || 0) * (Number(o.shareRate) || 0) / 100);
+    const dayStr = v => typeof cnDayStr === 'function' ? cnDayStr(new Date(v)) : String(v).slice(0, 10);
+
+    const byMonth = new Map(), byYear = new Map(), perDay = new Map();
+    const speed = [], cycle = [];
+    const stCount = {}, agingBuckets = [[0, 7], [8, 15], [16, 30], [31, 60], [61, 90], [91, Infinity]]
+      .map(([lo, hi]) => ({ lo, hi, n: 0, amount: 0, share: 0 }));
+    let totalAmount = 0, totalShare = 0, settledNoStamp = 0, unsettled = { n: 0, amount: 0, share: 0 }, oldest = 0;
+
+    rows.forEach(o => {
+      const amt = Number(o.amount) || 0, sh = shareOf(o), st = normalizeStatus(o.status) || '未知';
+      totalAmount = r2(totalAmount + amt); totalShare = r2(totalShare + sh);
+      stCount[st] = (stCount[st] || 0) + 1;
+
+      const ym = String(o.date || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(ym)) {
+        const m = byMonth.get(ym) || { ym, n: 0, amount: 0, share: 0, settled: 0 };
+        m.n++; m.amount = r2(m.amount + amt); m.share = r2(m.share + sh);
+        if (st === '已结算') m.settled++;
+        byMonth.set(ym, m);
+      }
+      const yy = String(o.date || '').slice(0, 4);
+      if (/^\d{4}$/.test(yy)) {
+        const y = byYear.get(yy) || { year: yy, n: 0, amount: 0, share: 0 };
+        y.n++; y.amount = r2(y.amount + amt); y.share = r2(y.share + sh);
+        byYear.set(yy, y);
+      }
+      if (o.date) {
+        const d = perDay.get(o.date) || { d: o.date, n: 0, amount: 0, share: 0 };
+        d.n++; d.amount = r2(d.amount + amt); d.share = r2(d.share + sh);
+        perDay.set(o.date, d);
+      }
+      // 完成速度：接单日 → 完单日（两个都填了才算，缺一个就不进样本，避免瞎估）
+      if (o.date && o.doneDate) { const d = dDiff(o.doneDate, o.date); if (d >= 0) speed.push(d); }
+      // 到账周期：完单日 → 结算时间戳。没有戳的已结算单计入 missing，不冒充 0 天
+      if (o.settledAt) {
+        const base = o.doneDate || o.date;
+        const sd = dayStr(o.settledAt);
+        if (base && /^\d{4}-\d{2}-\d{2}$/.test(sd)) { const d = dDiff(sd, base); if (d >= 0) cycle.push(d); }
+      } else if (st === '已结算') settledNoStamp++;
+      // 未结算账龄：从接单日等到今天
+      if (st !== '已结算' && o.date) {
+        const d = Math.max(0, dDiff(today, o.date));
+        unsettled.n++; unsettled.amount = r2(unsettled.amount + amt); unsettled.share = r2(unsettled.share + sh);
+        if (d > oldest) oldest = d;
+        const b = agingBuckets.find(x => d >= x.lo && d <= x.hi);
+        if (b) { b.n++; b.amount = r2(b.amount + amt); b.share = r2(b.share + sh); }
+      }
+    });
+
+    const sumOf = arr => arr.reduce((a, x) => ({ n: a.n + x.n, amount: r2(a.amount + x.amount), share: r2(a.share + x.share) }), { n: 0, amount: 0, share: 0 });
+    const windowDays = n => { const out = []; for (let i = 0; i < n; i++) out.push(new Date(dayNum(today) - i * 86400000).toISOString().slice(0, 10)); return out; };
+    const d30 = windowDays(30).reverse().map(d => perDay.get(d) || { d, n: 0, amount: 0, share: 0 });
+    const w7 = sumOf(windowDays(7).map(d => perDay.get(d) || { n: 0, amount: 0, share: 0 }));
+    const p7 = sumOf(windowDays(14).slice(7).map(d => perDay.get(d) || { n: 0, amount: 0, share: 0 }));
+    const thisMonth = String(today).slice(0, 7);
+    const dom = Number(String(today).slice(8, 10));
+    const prevMonthYm = (() => { const t = new Date(dayNum(thisMonth + '-01')); t.setUTCMonth(t.getUTCMonth() - 1); return t.toISOString().slice(0, 7); })();
+    const monthWindow = (ym) => windowDays(dom).map(d => ym + '-' + d.slice(8, 10)).map(k => perDay.get(k) || { n: 0, amount: 0, share: 0 });
+    const mNow = sumOf(monthWindow(thisMonth)), mPrev = sumOf(monthWindow(prevMonthYm));
+    const dayArr = [...perDay.values()].filter(x => x.n).sort((a, b) => b.amount - a.amount);
+
+    const speedBuckets = SPEED_BUCKETS.map(([lo, hi, label]) => ({ label, n: speed.filter(d => d >= lo && d <= hi).length }));
+
+    return res.json({
+      ok: true, today, total: rows.length, truncated: rows.length >= INS_MAX_ROWS,
+      sums: { amount: totalAmount, share: totalShare, avgOrder: rows.length ? r2(totalAmount / rows.length) : 0 },
+      stCount,
+      months: [...byMonth.values()].sort((a, b) => a.ym < b.ym ? -1 : 1),
+      years: [...byYear.values()].sort((a, b) => a.year < b.year ? -1 : 1)
+        .map((y, i, arr) => ({ ...y, prev: i ? arr[i - 1].amount : null, growth: i ? pct(y.amount, arr[i - 1].amount) : null })),
+      speed: { samples: speed.length, noDoneDate: rows.length - speed.length, avg: mean(speed), median: median(speed), max: speed.length ? Math.max(...speed) : null, buckets: speedBuckets },
+      cycle: { samples: cycle.length, avg: mean(cycle), median: median(cycle), settledTotal: stCount['已结算'] || 0, missing: settledNoStamp, since: cycle.length ? '已有戳的样本算出' : '还没有带结算时间戳的单据' },
+      daily30: d30, dailyPeak: dayArr.slice(0, 3), dailySlow: dayArr.slice(-3).reverse(),
+      compare: { last7: w7, prev7: p7, amountPct: pct(w7.amount, p7.amount), countPct: pct(w7.n, p7.n), monthNow: mNow, monthPrev: mPrev, monthPct: pct(mNow.amount, mPrev.amount), monthLabel: thisMonth, prevLabel: prevMonthYm, monthNote: '两月各取 1 号到 ' + dom + ' 号，同天数才可比' },
+      aging: { ...unsettled, oldest, buckets: agingBuckets },
+    });
+  } catch (e) {
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
+  }
+});
+
 // ============ 【v26.66】分成比例：默认值配置 + 批量修改 ============
 // 路由都挂在 /api/orders/xxx 上且只用 GET/POST —— 已存在的 PUT/DELETE /api/orders/:id 会
 // 吃掉 /api/orders/<单个词> 的形态（Express 按注册顺序匹配），所以这里不用 PUT，避免抢路由。
@@ -544,6 +646,7 @@ app.post('/api/orders', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
     doc.createdAt = new Date();
+    if (doc.status === SETTLED) doc.settledAt = new Date();   // 建单即已结算，也记上时间戳
     const r = await db.collection(CONFIG.collection).insertOne(doc);
     cacheClearPrefix('orders:');   // 【2026-09-26】原先是全量 clear（把所有筛选组合一把清空，
                                       // 紧接着每个台账请求都穿透到库），改成只失效订单缓存
@@ -561,6 +664,14 @@ app.put('/api/orders/:id', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
     doc.updatedAt = new Date();
+    // 结算时间戳只在「跨进/跨出已结算」那一刻写：历史单没有这个字段，
+    // 到账周期报表会如实标出样本覆盖率，不拿缺失当 0。
+    const prev = await db.collection(CONFIG.collection).findOne(
+      { _id: new ObjectId(req.params.id) }, { projection: { status: 1 } });
+    if (prev) {
+      if (doc.status === SETTLED && normalizeStatus(prev.status) !== SETTLED) doc.settledAt = new Date();
+      else if (doc.status !== SETTLED && normalizeStatus(prev.status) === SETTLED) doc.settledAt = null;
+    }
     const r = await db.collection(CONFIG.collection).findOneAndUpdate(
       { _id: new ObjectId(req.params.id) },
       { $set: doc },
