@@ -358,17 +358,27 @@ export function mount(host) {
     }
   }
 
-  /* ================= 【v26.86】📤 提交订单辅助（转账核对卡） ================= */
-  // 顺序按你说的：订单号 → 支付宝账号 → 支付宝实名 → 派单员。
-  // 收款信息优先取写手账号里绑定的（全站强制收款人=实名），查不到就用你手记的备忘；
-  // 手机号和姓名只存数据库的 config 备忘，绝不写进代码 —— 仓库是公开的。
-  const PAY = { sel: null, payee: null, confirming: false, done: 0 };
+  /* ================= 【v26.86】📤 提交订单辅助（填单信息卡） ================= */
+  // 派单员是上游（给单的人），不是收款方；②③是你自己的固定收款资料，全站存一份。
+  // 所以这张卡不做"按派单员去查他绑定的支付宝"那套 —— 那是把上下游搞反了。
+  const PAY = { sel: null, me: null, editing: false, confirming: false, done: 0 };
 
-  function openPayCard() {
+  async function loadPayMe() {
+    if (PAY.me) return PAY.me;
+    try {
+      const r = await fetch('/api/orders/payme', { headers: AH() });
+      const j = await r.json();
+      PAY.me = j && j.ok ? { account: j.account || '', realname: j.realname || '' } : { account: '', realname: '' };
+    } catch (e) { PAY.me = { account: '', realname: '' }; }
+    return PAY.me;
+  }
+
+  async function openPayCard() {
     $('payMask').classList.add('show');
-    PAY.sel = null; PAY.confirming = false;
+    PAY.sel = null; PAY.confirming = false; PAY.editing = false;
     renderPayList();
-    renderPayRight();
+    await loadPayMe();
+    renderPayRight(PAY.me.account ? '' : '先设一下你的收款资料（支付宝账号+实名），设一次以后每张卡自动带');
     setTimeout(() => { const el = $('payKw'); if (el) el.focus(); }, 50);
   }
   function closePayCard() { $('payMask').classList.remove('show'); }
@@ -396,18 +406,10 @@ export function mount(host) {
   async function paySelect(id) {
     const o = orders.find(x => String(x._id) === String(id));
     if (!o) return;
-    PAY.sel = o; PAY.confirming = false;
-    renderPayRight(null);
+    PAY.sel = o; PAY.confirming = false; PAY.editing = false;
     renderPayList();
-    let p = { account: '', realname: '', source: '' };
-    if (o.writer) {
-      try {
-        const r = await fetch('/api/orders/payee?name=' + encodeURIComponent(o.writer), { headers: AH() });
-        const j = await r.json();
-        if (j && j.ok) p = j;
-      } catch (e) { /* 拿不到就当没有，让人手输 */ }
-    }
-    PAY.payee = p;
+    renderPayRight('取收款资料中…');
+    await loadPayMe();
     renderPayRight();
   }
 
@@ -423,44 +425,79 @@ export function mount(host) {
     return {
       o,
       orderNo: o.orderNo || '',
-      account: $('payAcct') ? $('payAcct').value.trim() : (PAY.payee && PAY.payee.account || ''),
-      realname: $('payName') ? $('payName').value.trim() : (PAY.payee && PAY.payee.realname || ''),
+      account: $('payAcct') ? $('payAcct').value.trim() : (PAY.me && PAY.me.account || ''),
+      realname: $('payName') ? $('payName').value.trim() : (PAY.me && PAY.me.realname || ''),
       writer: $('payWriter') ? $('payWriter').value.trim() : (o.writer || ''),
     };
   }
 
   function renderPayRight(tip) {
     const o = PAY.sel;
-    if (!o) { $('payRight').innerHTML = '<div class="q-empty">' + (tip || '左边点一单，这里带出转账要用的四项') + '</div>'; return; }
+    if (!o) { $('payRight').innerHTML = '<div class="q-empty">' + (tip || '左边点一单，这里出这张单的填单信息') + '</div>'; return; }
     if (tip) { $('payRight').innerHTML = '<div class="q-empty">' + tip + '</div>'; return; }
-    const p = PAY.payee || {};
+    const me = PAY.me || { account: '', realname: '' };
+    const line = (no, label, val, id) => `<div class="pay-row${val ? '' : ' empty'}" data-copy="${esc(val)}" title="点这一行复制${esc(label)}">
+        <span class="pr-no">${no}</span>
+        <span class="pr-k">${label}</span>
+        <span class="pr-v ${id ? 'edit' : ''}">${id
+          ? `<input id="${id}" value="${esc(val)}" placeholder="${label === '派单员' ? '填上游派单员名字' : '未设置'}">`
+          : `<b>${esc(val || '（未设置）')}</b>`}</span>
+        <span class="pr-cp">📋</span>
+      </div>`;
+    const editMe = PAY.editing;
     $('payRight').innerHTML = `
-      <div class="pay-sum">这一单：<b>${fmt(r2(o.amount))}</b> 元 · 分成 <b>${fmt(r2(share(o)))}</b> 元 · 接单 <b>${esc(o.date)}</b> · <span class="tag ${esc(stLabel(o.status))}">${esc(stLabel(o.status))}</span></div>
-      <div class="pay-fields">
-        <label>① 订单编号<input id="payNo" value="${esc(o.orderNo || '')}" readonly></label>
-        <label>② 支付宝账号<input id="payAcct" value="${esc(p.account || '')}" placeholder="手机号 / 邮箱"></label>
-        <label>③ 支付宝实名<input id="payName" value="${esc(p.realname || '')}" placeholder="收款人姓名"></label>
-        <label>④ 派单员名称<input id="payWriter" value="${esc(o.writer || '')}" placeholder="这单派给谁"></label>
+      <div class="pay-head2">「${esc(o.orderNo || '(没填单号)')}」单 · 填单信息如下<span class="find-sub">　点任意一行 = 复制那一行</span></div>
+      <div class="pay-card">
+        ${line('①', '订单编号', o.orderNo || '')}
+        ${editMe
+          ? `<div class="pay-row edit"><span class="pr-no">②</span><span class="pr-k">支付宝账号</span><span class="pr-v"><input id="payAcct" value="${esc(me.account)}" placeholder="手机号 / 邮箱"></span></div>
+             <div class="pay-row edit"><span class="pr-no">③</span><span class="pr-k">支付宝实名</span><span class="pr-v"><input id="payName" value="${esc(me.realname)}" placeholder="收款人姓名"></span>
+             <span class="pr-cp"><button class="btn-mini" id="meSave">保存</button></span></div>`
+          : line('②', '支付宝账号', me.account || '') + line('③', '支付宝实名', me.realname || '')}
+        ${line('④', '派单员', o.writer || '', 'payWriter')}
       </div>
-      <div class="hint">${p.source ? '②③ 已自动带出（来源：' + esc(p.source) + '）' : '②③ 没查到绑定记录，手输一次再点「记住」，以后同名自动带'}${o.note ? ' · 备注：' + esc(o.note.slice(0, 30)) : ''}</div>
+      <div class="hint">②③是${editMe ? '正在改：存一次，以后每张卡都自动带' : '你自己的固定收款资料（全站存一份，改一次全生效）'}；④是这单的<b>上游派单员</b>，只作记录用，不是收款方。${esc(o.date)} 接单 · 订单金额 ${fmt(r2(o.amount))} 元 · 分成 ${fmt(r2(share(o)))} 元</div>
       <div class="pay-tools">
-        <button class="btn-ghost" id="cpNo">📋 复制单号</button>
-        <button class="btn-ghost" id="cpPay">📋 复制账号+姓名</button>
-        <button class="btn-ghost" id="cpAll">📋 复制全部四项</button>
-        <button class="btn-mini" id="cpRemember">记住这个收款人</button>
+        <button class="btn-primary" id="cpAll">📋 复制整张卡</button>
+        <button class="btn-ghost" id="meEdit">${editMe ? '取消修改' : '改我的收款资料'}</button>
       </div>
       <div class="form-err" id="payErr"></div>
       <div class="modal-actions" id="payActs"></div>`;
-    ['payAcct', 'payName'].forEach(id => { const el = $(id); if (el) el.classList.add('pay-in'); });
-    const cp = (txt, ok) => { navigator.clipboard.writeText(txt).then(() => cpyToast(ok)).catch(() => cpyToast('浏览器不让复制，手动选一下吧')); };
-    $('cpNo').onclick = () => cp(payVals().orderNo, '已复制订单编号');
-    $('cpPay').onclick = () => { const v = payVals(); cp(v.account + ' ' + v.realname, '已复制账号和姓名'); };
+    const cp = (txt, ok) => { navigator.clipboard.writeText(txt).then(() => cpyToast(ok)).catch(() => cpyToast('浏览器不让复制，手动选一下这行')); };
+    [...shDoc.querySelectorAll('.pay-row[data-copy]')].forEach(el => el.addEventListener('click', () => {
+      const v = el.dataset.copy;
+      if (!v) { cpyToast('这行还没内容'); return; }
+      cp(v, '已复制：' + v.slice(0, 24));
+    }));
     $('cpAll').onclick = () => {
       const v = payVals();
-      cp('订单号：' + v.orderNo + '\n支付宝账号：' + v.account + '\n支付宝实名：' + v.realname + '\n派单员：' + v.writer, '四项已复制，可直接粘出去');
+      if (!v.account || !v.realname) { $('payErr').textContent = '②③还没设置，先点「改我的收款资料」存一次'; return; }
+      cp(v.orderNo + ' 单填单信息如下\n订单编号：' + v.orderNo + '\n支付宝账号：' + v.account + '\n支付宝实名：' + v.realname + '\n派单员：' + (v.writer || '（未填）'),
+        '整张卡已复制');
     };
-    $('cpRemember').onclick = rememberPayee;
+    $('meEdit').onclick = () => { PAY.editing = !PAY.editing; renderPayRight(); };
+    if (editMe && $('meSave')) $('meSave').onclick = savePayMe;
     renderPayActs();
+  }
+
+  async function savePayMe() {
+    const acct = $('payAcct').value.trim(), name = $('payName').value.trim();
+    const err = $('payErr');
+    err.textContent = '';
+    try {
+      const r = await fetch('/api/orders/payme', {
+        method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, AH()),
+        body: JSON.stringify({ account: acct, realname: name }),
+      });
+      const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
+      if (!r.ok || !j.ok) throw new Error(j.error || ('请求失败 ' + r.status));
+      PAY.me = { account: j.account, realname: j.realname };
+      PAY.editing = false;
+      cpyToast('收款资料已存，以后每张卡自动带出');
+      renderPayRight();
+    } catch (e) {
+      err.textContent = '没存上：' + (e.message || e);
+    }
   }
 
   function renderPayActs() {
@@ -474,7 +511,7 @@ export function mount(host) {
           <div class="en-row"><span>支付宝实名</span><b>${esc(v.realname || '—')}</b></div>
           <div class="en-row"><span>派单员</span><b>${esc(v.writer || '—')}</b></div>
         </div>
-        <div class="hint">就按这四条去打款。确认无误后结束这张卡；派单员若填过/改过，会顺手写回这单（只写派单员这一个字段，不动金额和分类）。</div>
+        <div class="hint">确认这四条就是你要提交上去的填单信息。确认后卡片结束；④派单员若填过/改过，会顺手写回这单（只写派单员这一个字段，不动金额和分类）。</div>
         <button class="btn-primary" id="payYes">✓ 是，无误，结束</button><button class="btn-ghost" id="payBack">不对，回去改</button>`;
       $('payYes').onclick = payFinish;
       $('payBack').onclick = () => { PAY.confirming = false; renderPayRight(); };
@@ -512,25 +549,6 @@ export function mount(host) {
       const err = $('payErr');
       if (err) err.textContent = '写回失败：' + (e.message || e);
       if (btn) btn.disabled = false;
-    }
-  }
-
-  async function rememberPayee() {
-    const v = payVals();
-    const err = $('payErr');
-    err.textContent = '';
-    if (!v.writer) { err.textContent = '先把④派单员填上，备忘是按名字存的'; return; }
-    if (v.account.length < 4) { err.textContent = '支付宝账号太短，确认一下是不是漏了字'; return; }
-    try {
-      await fetch('/api/orders/payee', {
-        method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, AH()),
-        body: JSON.stringify({ name: v.writer, account: v.account, realname: v.realname }),
-      }).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok || !j.ok) throw new Error(j.error || ('请求失败 ' + r.status)); });
-      PAY.payee = { account: v.account, realname: v.realname, source: '备忘' };
-      cpyToast('已记住：' + v.writer + ' 的收款信息');
-      renderPayRight();
-    } catch (e) {
-      err.textContent = '没记住：' + (e.message || e);
     }
   }
 

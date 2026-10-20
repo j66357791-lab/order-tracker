@@ -301,7 +301,7 @@ app.post('/api/orders/review', auth, adminOnly, async (req, res) => {
 // ============ 【v26.86】录单辅助：派单员记忆 与 收款信息 ============
 // 派单员排序直接从不结算/已结算的订单里 tally writer —— 不另存一份计数器，
 // 两处计数迟早对不上，而且删单/改单时计数器不会跟着动。
-const PAYEES_KEY = '***';
+const PAYME_KEY = '***';
 const ctrlRe = /[\u0000-\u001f\u007f]/g;
 const cleanName = s => String(s || '').replace(ctrlRe, '').trim().slice(0, 30);
 
@@ -325,43 +325,30 @@ app.get('/api/orders/writers', auth, adminOnly, async (req, res) => {
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
 });
 
-// 收款信息：优先用写手自己在账号里绑定的（全站强制「收款支付宝=实名本人」），
-// 没有绑定记录的（比如微信里私下派的活）再回落到管理员手记的备忘。
-// 这两个字段是个人信息，只在这个 adminOnly 接口里出，不写进审计日志、不进仓库。
-app.get('/api/orders/payee', auth, adminOnly, async (req, res) => {
+// 固定收款资料：管理员自己收款用的支付宝账号+实名，全站就一份，录一次到处带出。
+// 派单员是上游（给单的人），不是收款方，所以这里不去查任何写手账号。
+// 账号和姓名只存这一条 config，绝不写进代码 —— 仓库是公开的。
+app.get('/api/orders/payme', auth, adminOnly, async (req, res) => {
   try {
-    const name = cleanName(req.query.name);
-    if (!name) return res.status(400).json({ ok: false, error: '要查的派单员名字是空的' });
     const db = await getDb();
-    const rx = new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
-    const u = await db.collection('users').findOne({ displayName: rx },
-      { projection: { displayName: 1, 'realname.name': 1, alipay: 1 } });
-    const cfg = await db.collection('config').findOne({ key: PAYEES_KEY });
-    const memo = (cfg && cfg.value && cfg.value[name]) || null;
-    res.json({
-      ok: true, name,
-      account: (u && u.alipay && u.alipay.account) || (memo && memo.account) || '',
-      realname: (u && u.realname && u.realname.name) || (memo && memo.realname) || '',
-      source: u && u.alipay && u.alipay.account ? '账号绑定' : (memo && memo.account ? '备忘' : ''),
-    });
+    const d = await db.collection('config').findOne({ key: PAYME_KEY });
+    const v = (d && d.value) || {};
+    res.json({ ok: true, account: v.account || '', realname: v.realname || '', updatedAt: v.updatedAt || '' });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
 });
 
-// 手记一次，以后同名自动带出
-app.post('/api/orders/payee', auth, adminOnly, async (req, res) => {
+app.post('/api/orders/payme', auth, adminOnly, async (req, res) => {
   try {
     const b = req.body || {};
-    const name = cleanName(b.name);
-    if (!name) return res.status(400).json({ ok: false, error: '派单员名字不能为空' });
     const account = String(b.account || '').replace(ctrlRe, '').trim().slice(0, 50);
     const realname = cleanName(b.realname);
     if (account.length < 4) return res.status(400).json({ ok: false, error: '支付宝账号太短，确认一下是不是漏了字' });
+    if (!realname) return res.status(400).json({ ok: false, error: '支付宝实名不能为空' });
+    const value = { account, realname, updatedAt: new Date().toISOString() };
     const db = await getDb();
-    const cfg = await db.collection('config').findOne({ key: PAYEES_KEY });
-    const value = (cfg && cfg.value && typeof cfg.value === 'object') ? cfg.value : {};
-    value[name] = { account, realname, updatedAt: new Date().toISOString() };
-    await db.collection('config').updateOne({ key: PAYEES_KEY }, { $set: { value }, $setOnInsert: { key: PAYEES_KEY } }, { upsert: true });
-    res.json({ ok: true, name, account, realname });
+    await db.collection('config').updateOne({ key: PAYME_KEY },
+      { $set: { value }, $setOnInsert: { key: PAYME_KEY } }, { upsert: true });
+    res.json({ ok: true, account, realname, updatedAt: value.updatedAt });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: '服务器开小差，请稍后再试' }); }
 });
 
