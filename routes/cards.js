@@ -268,36 +268,72 @@ app.get('/api/dispatch/overview', auth, adminOnly, async (req, res) => {
 // type: needPay = 台账已结算(客户已到账)但卡还没打款 → 提醒审批打款
 //       needReview = 台账已结算但卡还停在待审核 → 提醒先审核
 //       unsynced  = 卡已完成(已给写手打款)但台账还没标已结算 → 提醒补台账
+// 管理员：财务对账 —— 派单卡状态 × 台账到账状态 的全量交叉视图
+// diff = 需要动手的差异；空串 = 正常在途：
+//   needReview 台账已结算(钱已到账)但卡还在待审核 → 先去审核
+//   needPay    台账已结算且卡=待打款 → 可以给写手打款
+//   unsynced   卡已完成(已打款)但台账还没标已结算 → 补一次台账同步
+//   noorder    这张卡没关联上台账单
+//   waiting    卡已通过审核(待打款)但客户钱还没到账 → 只能等，但管理员必须看得见它
+//             （以前这类一条都不显示，因为页面只拿"差异"，这就是他说的"看不到已通过审核的订单"）
+// 一律返回全量并在服务端算好计数/合计：筛选放前端做，这样计数永远是全量的，
+// 不会出现"筛完只剩 3 单，看数字以为待打款就这 3 单的钱"。
+const RECON_MAX = 2000;
+
+function diffOf(cardStatus, oStatus, hasOrder) {
+  if (!hasOrder) return cardStatus === '已完成' ? 'unsynced' : 'noorder';
+  if (oStatus === '已结算') {
+    if (cardStatus === '待审核') return 'needReview';
+    if (cardStatus === '待打款') return 'needPay';
+  }
+  // 卡已完成 = 已给写手打款，只有台账还没标已结算才算"缺台账"；
+  // 之前这里无条件 return 'unsynced'，把两边都对齐的正常单也标成了差异。
+  if (cardStatus === '已完成') return oStatus === '已结算' ? '' : 'unsynced';
+  if (cardStatus === '待打款') return 'waiting';
+  return '';
+}
+
 app.get('/api/dispatch/reconcile', auth, adminOnly, async (req, res) => {
   try {
     const db = await getDb();
-    const cards = (await db.collection('cards').find({})
-      .sort({ createdAt: -1 }).limit(500).toArray()).map(normCard);
-    // 【2026-09-14 性能修复】同样改为 $in 批量拉取订单
-    const cand = cards.filter(c => c.orderId && ObjectId.isValid(c.orderId) && ['待审核', '待打款', '已完成'].includes(c.status));
+    const cards = (await db.collection('cards').find({}).sort({ createdAt: -1 }).limit(RECON_MAX).toArray()).map(normCard);
+    const orderIds = cards.map(c => c.orderId).filter(x => x && ObjectId.isValid(x)).map(x => new ObjectId(x));
     const orderMap = new Map();
-    if (cand.length) {
-      const orders = await db.collection(CONFIG.collection).find({ _id: { $in: cand.map(c => new ObjectId(c.orderId)) } }).toArray();
+    if (orderIds.length) {
+      const orders = await db.collection(CONFIG.collection).find({ _id: { $in: orderIds } }).toArray();
       for (const o of orders) orderMap.set(o._id.toString(), o);
     }
-    const out = [];
-    for (const c of cand) {
-      const order = orderMap.get(String(c.orderId));
-      if (!order) continue;
-      const oStatus = normalizeStatus(order.status);
-      let type = null;
-      if (oStatus === '已结算' && c.status === '待打款') type = 'needPay';
-      else if (oStatus === '已结算' && c.status === '待审核') type = 'needReview';
-      else if (oStatus !== '已结算' && c.status === '已完成') type = 'unsynced';
-      if (!type) continue;
-      out.push({
-        type,
-        card: { _id: c._id.toString(), title: c.title, to: c.to, toName: c.toName, reward: c.reward, status: c.status, orderNo: c.orderNo },
-        order: { _id: order._id.toString(), orderNo: order.orderNo, amount: order.amount, status: oStatus, doneDate: order.doneDate || null },
-      });
-    }
-    out.sort((a, b) => (a.type === 'needReview' ? -1 : a.type === 'needPay' ? 0 : 1) - (b.type === 'needReview' ? -1 : b.type === 'needPay' ? 0 : 1));
-    res.json({ ok: true, items: out });
+    const now = Date.now();
+    const rows = cards.map(c => {
+      const order = c.orderId && ObjectId.isValid(c.orderId) ? (orderMap.get(String(c.orderId)) || null) : null;
+      const oStatus = order ? normalizeStatus(order.status) : '';
+      const reward = Number(c.reward) || 0;
+      const since = new Date(c.submittedAt || c.createdAt || now).getTime();
+      return {
+        _id: c._id.toString(), title: c.title, to: c.to, toName: c.toName, reward,
+        status: c.status, diff: diffOf(c.status, oStatus, !!order),
+        createdAt: c.createdAt || null, submittedAt: c.submittedAt || null,
+        waitDays: Math.max(0, Math.floor((now - since) / 86400000)),
+        orderId: order ? String(order._id) : null, orderNo: order ? (order.orderNo || '') : '',
+        orderAmount: order ? (Number(order.amount) || 0) : null,
+        orderShare: order ? Math.round((Number(order.amount) || 0) * (Number(order.shareRate) || 0)) / 100 : null,
+        orderStatus: oStatus,
+      };
+    });
+    const counts = {}, sumDiff = {};
+    rows.forEach(r => {
+      counts[r.status] = (counts[r.status] || 0) + 1;
+      const k = r.diff || 'ok';
+      const s = sumDiff[k] || (sumDiff[k] = { n: 0, reward: 0 });
+      s.n++; s.reward = Math.round((s.reward + r.reward) * 100) / 100;
+    });
+    const rank = { needReview: 0, needPay: 1, unsynced: 2, noorder: 3, waiting: 4, '': 5 };
+    rows.sort((a, b) => (rank[a.diff] - rank[b.diff]) || (b.waitDays - a.waitDays));
+    res.json({
+      ok: true, scanned: rows.length, truncated: rows.length >= RECON_MAX,
+      rows, counts, sumDiff,
+      total: Math.round(rows.reduce((s, r) => s + r.reward, 0) * 100) / 100,
+    });
   } catch (e) { console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
 });
 }
