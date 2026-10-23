@@ -3,7 +3,7 @@
 // 迁移要点见文件末尾注释。核心：Shadow DOM 隔离样式；socket.io 改成按需加载；
 // 面板不可见时 socket 只收不发重绘；原业务逻辑（本地缓存、引用回复、图片/文件预览、
 // 派单卡发送与审核打款、在线状态）一行没改。
-const MARKUP = "\n<div id=\"connBar\">⚠ 网络连接断开，正在自动重连…（恢复后无需刷新）</div>\n\n<header class=\"topbar\">\n  <div class=\"logo\">📨</div>\n  <div><h1>派单工作台</h1><div class=\"sub\">管理端 · 派单系统 V17</div></div>\n  <div class=\"grow\"></div>\n  <button class=\"tbtn\" onclick=\"this.getRootNode().host.__ledger.pGo('/index.html','orders')\">📊 台账</button>\n  <button class=\"tbtn\" id=\"btnInvite\">🎟️ 邀请码</button>\n  <button class=\"tbtn\" id=\"btnLogout\">退出</button>\n</header>\n\n<div class=\"subtabs\">\n  <div class=\"stab\" onclick=\"this.getRootNode().host.__ledger.pGo('/admin.html','home')\" style=\"color:var(--green2)\">🏠 工作台</div>\n      <div class=\"stab\" onclick=\"this.getRootNode().host.__ledger.pGo('/admin.html#game','game')\" style=\"color:#7c4dff\">🎮 游戏控制器</div>\n      <div class=\"stab on\" data-v=\"vChat\">💬 聊天/派单<span class=\"reddot\" id=\"tabUnread\" style=\"display:none\">0</span></div>\n  <div class=\"stab\" onclick=\"this.getRootNode().host.__ledger.pGo('/admin.html#mall','mall')\">📦 用户端配置</div>\n  <div class=\"stab\" onclick=\"this.getRootNode().host.__ledger.pGo('/index.html','orders')\">📊 台账统计</div>\n</div>\n\n<main class=\"main\">\n  <!-- 聊天 + 发卡 -->\n  <section id=\"vChat\" class=\"panel on\">\n    <div id=\"chatLayout\">\n      <div id=\"convList\"></div>\n      <div id=\"chatRight\">\n        <div id=\"chatHead\"><span class=\"dot d-off\" id=\"peerDot\"></span><span id=\"peerName\">选择会话</span><span class=\"sub\" id=\"peerSt\"></span>\n          <span style=\"flex:1\"></span>\n          <button class=\"btn btn-g btn-sm\" id=\"btnNewCard\">＋ 发派单卡</button>\n        </div>\n        <div id=\"chatBox\"><div class=\"empty\">左侧选择写手，开始沟通 / 派单</div></div>\n        <div id=\"dragOver\">📥 松手发送 · 文件夹需确认</div>\n        <div id=\"chatInputBar\">\n          <div id=\"quoteBar\"><span>↩</span><span class=\"qb-txt\" id=\"quoteTxt\"></span><button class=\"qb-x\" onclick=\"this.getRootNode().host.__ledger.clearQuote()\">✕</button></div>\n          <div class=\"input-row\">\n            <button class=\"icon-btn\" id=\"btnFile\" title=\"发文件\">📎</button>\n            <textarea id=\"chatInput\" rows=\"1\" placeholder=\"输入消息，回车发送 · Shift+回车换行 · 支持粘贴/拖入截图和文件\"></textarea>\n            <button class=\"icon-btn\" id=\"btnSend\" style=\"background:var(--green);color:#fff\" title=\"发送\">➤</button>\n            <input type=\"file\" id=\"fileInput\" style=\"display:none\">\n          </div>\n        </div>\n      </div>\n    </div>\n  </section>\n\n</main>\n\n<div class=\"mask\" id=\"mask\"><div class=\"sheet\" id=\"sheet\"></div></div>\n<div id=\"imgMask\" onclick=\"this.getRootNode().host.__ledger.closePreview()\"><a class=\"dl\" id=\"imgDl\" href=\"#\" target=\"_blank\" onclick=\"event.stopPropagation()\">⬇ 下载原图</a><img id=\"imgBig\" alt=\"图片预览\"><iframe id=\"pvFrame\" title=\"文件预览\"></iframe></div>\n<div id=\"toast\"></div>\n\n";
+const MARKUP = "\n<div id=\"connBar\">⚠ 网络连接断开，正在自动重连…（恢复后无需刷新）</div>\n\n<header class=\"topbar\">\n  <div class=\"logo\">📨</div>\n  <div><h1>派单工作台</h1><div class=\"sub\">管理端 · 派单系统 V17</div></div>\n  <div class=\"grow\"></div>\n  <button class=\"tbtn\" onclick=\"this.getRootNode().host.__ledger.pGo('/index.html','orders')\">📊 台账</button>\n  <button class=\"tbtn\" id=\"btnInvite\">🎟️ 邀请码</button>\n  <button class=\"tbtn\" id=\"btnLogout\">退出</button>\n</header>\n\n<div class=\"subtabs\">\n  <div class=\"stab\" onclick=\"this.getRootNode().host.__ledger.pGo('/admin.html','home')\" style=\"color:var(--green2)\">🏠 工作台</div>\n      <div class=\"stab\" onclick=\"this.getRootNode().host.__ledger.pGo('/admin.html#game','game')\" style=\"color:#7c4dff\">🎮 游戏控制器</div>\n      <div class=\"stab on\" data-v=\"vChat\">💬 聊天/派单<span class=\"reddot\" id=\"tabUnread\" style=\"display:none\">0</span></div>\n  <div class=\"stab\" onclick=\"this.getRootNode().host.__ledger.pGo('/admin.html#mall','mall')\">📦 用户端配置</div>\n  <div class=\"stab\" onclick=\"this.getRootNode().host.__ledger.pGo('/index.html','orders')\">📊 台账统计</div>\n</div>\n\n<main class=\"main\">\n  <!-- 聊天 + 发卡 -->\n  <section id=\"vChat\" class=\"panel on\">\n    <div id=\"chatLayout\">\n      <div id=\"convList\"></div>\n      <div id=\"chatRight\">\n        <div id=\"chatHead\"><span class=\"dot d-off\" id=\"peerDot\"></span><span id=\"peerName\">选择会话</span><span class=\"sub\" id=\"peerSt\"></span>\n          <span style=\"flex:1\"></span>\n          <button class=\"btn btn-gh btn-sm\" id=\"btnInviteTop\" title=\"生成 / 查看写手邀请码：写手注册时要填这个码\">🎟️ 邀请码</button>\n          <button class=\"btn btn-g btn-sm\" id=\"btnNewCard\">＋ 发派单卡</button>\n        </div>\n        <div id=\"chatBox\"><div class=\"empty\">左侧选择写手，开始沟通 / 派单</div></div>\n        <div id=\"dragOver\">📥 松手发送 · 文件夹需确认</div>\n        <div id=\"chatInputBar\">\n          <div id=\"quoteBar\"><span>↩</span><span class=\"qb-txt\" id=\"quoteTxt\"></span><button class=\"qb-x\" onclick=\"this.getRootNode().host.__ledger.clearQuote()\">✕</button></div>\n          <div class=\"input-row\">\n            <button class=\"icon-btn\" id=\"btnFile\" title=\"发文件\">📎</button>\n            <textarea id=\"chatInput\" rows=\"1\" placeholder=\"输入消息，回车发送 · Shift+回车换行 · 支持粘贴/拖入截图和文件\"></textarea>\n            <button class=\"icon-btn\" id=\"btnSend\" style=\"background:var(--green);color:#fff\" title=\"发送\">➤</button>\n            <input type=\"file\" id=\"fileInput\" style=\"display:none\">\n          </div>\n        </div>\n      </div>\n    </div>\n  </section>\n\n</main>\n\n<div class=\"mask\" id=\"mask\"><div class=\"sheet\" id=\"sheet\"></div></div>\n<div id=\"imgMask\" onclick=\"this.getRootNode().host.__ledger.closePreview()\"><a class=\"dl\" id=\"imgDl\" href=\"#\" target=\"_blank\" onclick=\"event.stopPropagation()\">⬇ 下载原图</a><img id=\"imgBig\" alt=\"图片预览\"><iframe id=\"pvFrame\" title=\"文件预览\"></iframe></div>\n<div id=\"toast\"></div>\n\n";
 
 export async function mount(host) {
   const shDoc = host.attachShadow({ mode: 'open' });
@@ -153,8 +153,9 @@ export async function mount(host) {
         <div class="last">${c.last ? (c.last.type === 'text' ? esc(c.last.text).slice(0, 18) : c.last.type === 'file' ? '[文件]' : '[派单卡]') : '开始沟通'}</div></div>
         ${c.unread ? '<div class="unread">' + (c.unread > 99 ? '99+' : c.unread) + '</div>' : ''}
       </div>`;
-    }).join('') || '<div class="empty">还没有写手，先生成邀请码</div>';
+    }).join('') || '<div class="empty">还没有写手<br><button class="btn btn-g btn-sm" id="invFromEmpty" style="margin-top:10px">🎟️ 生成邀请码</button><div class="sub" style="margin-top:8px;font-size:12px">把码发给对方，对方在登录页「注册」里填上就是写手账号</div></div>';
     shDoc.querySelectorAll('.conv').forEach(el => el.onclick = () => openChat(el.dataset.id));
+    const eb = $('invFromEmpty'); if (eb) eb.onclick = openInvite;
     const totalUnread = chats.reduce((s, c) => s + (c.unread || 0), 0);
     $('tabUnread').style.display = totalUnread ? 'inline-block' : 'none';
     $('tabUnread').textContent = totalUnread > 99 ? '99+' : totalUnread;
@@ -393,25 +394,55 @@ export async function mount(host) {
     } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = '发送派单卡'; }
   }
   window.closeSheet = () => $('mask').classList.remove('show');
-  $('mask').onclick = e => { if (e.target === $('mask')) closeSheet(); };
+  // 弹窗只认手动关（✕ / Esc），点空白不关 —— 和台账那批弹窗统一
+  shDoc.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
   /* ================= 邀请码 ================= */
-  $('btnInvite').onclick = async () => {
+  // 【修】POST /api/invites 回的是 { invites: [...] }，老代码读 j.invite.code —— 点"生成"必然报错，
+  // 加上 🎟️ 按钮原本在自家顶栏里、嵌入后台后顶栏被 chat.css 整条 display:none，所以两处都找不到入口。
+  const invRow = (code, used) => `<div class="kv${used ? '' : ' inv-code'}" data-copy="${esc(code)}" title="${used ? '已被使用' : '点这一行复制'}">
+      <span class="k">${esc(code)}</span><span class="v" style="color:${used ? 'var(--sub)' : 'var(--green-dk)'};font-weight:${used ? 400 : 700}">${used ? '已被使用' : '未使用 📋'}</span></div>`;
+  function bindInv() {
+    [...shDoc.querySelectorAll('.inv-code')].forEach(el => el.onclick = () => {
+      const v = el.dataset.copy;
+      (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject())
+        .then(() => toast('已复制邀请码：' + v), () => toast('浏览器不让复制，手动选一下：' + v));
+    });
+  }
+  async function invNew(n) {
+    const btn = $('invNew'); if (btn) btn.disabled = true;
+    try {
+      const j = await authFetch('/api/invites', { method: 'POST', body: JSON.stringify({ count: n }) });
+      const list = (j && j.invites) || [];
+      if (!list.length) throw new Error('没拿到新邀请码');
+      $('invList').insertAdjacentHTML('afterbegin', list.map(c => invRow(c.code, false)).join(''));
+      bindInv();
+      $('invMeta').textContent = '共 ' + $('invList').querySelectorAll('.kv').length + ' 条 · 最新的在最上';
+      toast('已生成 ' + list.length + ' 个，点那一行就复制');
+    } catch (e) { toast((e && e.message) || '生成失败'); }
+    if (btn) btn.disabled = false;
+  }
+  async function openInvite() {
     let codes = [];
-    try { const j = await authFetch('/api/invites'); codes = j.invites || []; } catch (e) {}
+    try { const j = await authFetch('/api/invites'); codes = j.invites || []; } catch (e) { toast('邀请码列表没取到'); }
     $('sheet').innerHTML = `<button class="close-x" onclick="closeSheet()">✕</button>
       <h3>🎟️ 写手邀请码</h3>
-      <div style="margin-bottom:12px"><button class="btn btn-g btn-sm" id="invNew">＋ 生成新邀请码</button></div>
-      <div id="invList">${codes.length ? codes.map(c => `<div class="kv"><span class="k">${esc(c.code)}</span><span class="v" style="color:var(--sub)">${c.usedBy ? '已被使用' : '未使用'}</span></div>`).join('') : '<div class="empty">还没有邀请码，点上面按钮生成</div>'}</div>`;
+      <div class="sub" style="margin:4px 0 12px;font-size:12px;color:var(--sub)">写手注册时要填邀请码（登录页的「注册」）。生成后把码发给对方，一人一码，用过即作废。</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn btn-g btn-sm" id="invNew">＋ 生成 1 个</button>
+        <button class="btn btn-gh btn-sm" id="invNew5">＋ 一次生成 5 个</button>
+        <button class="btn btn-gh btn-sm" id="invReload">刷新列表</button>
+      </div>
+      <div id="invList">${codes.length ? codes.map(c => invRow(c.code, !!c.usedBy)).join('') : '<div class="empty">还没有邀请码，点上面按钮生成</div>'}</div>
+      <div class="sub" id="invMeta" style="margin-top:8px;font-size:12px;color:var(--sub)">共 ${codes.length} 条 · 最多显示最近 100 条</div>`;
     $('mask').classList.add('show');
-    $('invNew').onclick = async () => {
-      try {
-        const j = await authFetch('/api/invites', { method: 'POST', body: '{}' });
-        $('invList').insertAdjacentHTML('afterbegin', '<div class="kv"><span class="k" style="color:var(--green-dk);font-weight:700">' + esc(j.invite.code) + '</span><span class="v" style="color:var(--sub)">未使用</span></div>');
-        toast('已生成：' + j.invite.code);
-      } catch (e) { toast(e.message); }
-    };
-  };
+    $('invNew').onclick = () => invNew(1);
+    $('invNew5').onclick = () => invNew(5);
+    $('invReload').onclick = openInvite;
+    bindInv();
+  }
+  $('btnInvite').onclick = openInvite;
+  $('btnInviteTop').onclick = openInvite;
 
   /* ================= 实时推送 + 稳定性 ================= */
   // 【v21.0】socket.io 原来是靠页面里的 <script src> 暴露全局 io；面板里改成按需加载（全局只加一次）
