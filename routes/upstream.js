@@ -279,6 +279,72 @@ export default function mount(ctx) {
     } catch (e) { console.error('[upstream-derive]', e); res.status(e.userFacing ? 400 : 500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
+  // 【v26.90】批次档案：他说"切换一下窗口就没了…哪怕粘贴表也需要留存档案"。
+  // 存独立集合 recon_batches，绝不碰 orders；粘贴原文里有手机号，所以这份档案只存在他自己的库里（不进仓库、不进日志）。
+  // 免费库只有 512MB，所以只留最近 60 批，超出自动淘汰最旧的。
+  const BATCH_KEEP = 60;
+  const batchCol = db => db.collection('recon_batches');
+
+  app.post('/api/upstream/batch', auth, adminOnly, async (req, res) => {
+    try {
+      const b = req.body || {};
+      const texts = Array.isArray(b.texts) ? b.texts.map(s => String(s || '')) : [];
+      const bytes = texts.reduce((t, s) => t + s.length, 0);
+      if (bytes > 900000) return res.status(400).json({ ok: false, error: '这批原文超过 90 万字符，先手动存成文件吧（库只有 512MB，别让它撑爆）' });
+      const doc = {
+        at: new Date(),
+        name: String(b.name || '').trim().slice(0, 40) || '未命名批次',
+        kind: b.kind === 'full' ? 'full' : 'recon',
+        sources: (Array.isArray(b.sources) ? b.sources : []).slice(0, 20),
+        stats: b.stats || null, counts: b.counts || null, span: b.span || null,
+        rateMode: b.rateMode || null,
+        texts,
+      };
+      const db = await getDb();
+      const r = await batchCol(db).insertOne(doc);
+      const all = await batchCol(db).find({}).sort({ at: -1 }).toArray();
+      let removed = 0;
+      for (const old of all.slice(BATCH_KEEP)) { await batchCol(db).deleteOne({ _id: old._id }); removed++; }
+      res.json({ ok: true, id: String(r.insertedId), kept: Math.min(all.length, BATCH_KEEP), removed, bytes });
+    } catch (e) { console.error('[upstream-batch]', e); res.status(500).json({ ok: false, error: '没存上：' + (e.message || e) }); }
+  });
+
+  app.get('/api/upstream/batches', auth, adminOnly, async (req, res) => {
+    try {
+      const db = await getDb();
+      const rows = await batchCol(db).find({}).sort({ at: -1 }).limit(BATCH_KEEP).toArray();
+      res.json({
+        ok: true, keep: BATCH_KEEP,
+        batches: rows.map(x => ({
+          id: String(x._id), at: x.at, name: x.name, kind: x.kind,
+          sources: x.sources || [], stats: x.stats || null, counts: x.counts || null, span: x.span || null,
+          bytes: (x.texts || []).reduce((t, s) => t + String(s).length, 0),
+        })),
+      });
+    } catch (e) { console.error('[upstream-batches]', e); res.status(500).json({ ok: false, error: '读不到档案' }); }
+  });
+
+  app.get('/api/upstream/batch', auth, adminOnly, async (req, res) => {
+    try {
+      const id = String(req.query.id || '');
+      if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: '批次 ID 不对' });
+      const db = await getDb();
+      const x = await batchCol(db).findOne({ _id: new ObjectId(id) });
+      if (!x) return res.status(404).json({ ok: false, error: '这批档案不在了（可能已被自动淘汰）' });
+      res.json({ ok: true, batch: { id: String(x._id), at: x.at, name: x.name, kind: x.kind, sources: x.sources || [], stats: x.stats || null, counts: x.counts || null, span: x.span || null, rateMode: x.rateMode || null, texts: x.texts || [] } });
+    } catch (e) { console.error('[upstream-batch-get]', e); res.status(500).json({ ok: false, error: '读不到这批档案' }); }
+  });
+
+  app.delete('/api/upstream/batch', auth, adminOnly, async (req, res) => {
+    try {
+      const id = String((req.body || {}).id || '');
+      if (!ObjectId.isValid(id)) return res.status(400).json({ ok: false, error: '批次 ID 不对' });
+      const db = await getDb();
+      const r = await batchCol(db).deleteOne({ _id: new ObjectId(id) });
+      res.json({ ok: true, deleted: r.deletedCount });
+    } catch (e) { console.error('[upstream-batch-del]', e); res.status(500).json({ ok: false, error: '没删掉' }); }
+  });
+
   // 【v26.89】完整单子：台账【全量】（内部翻页，不吃列表接口那个 500 上限）× 这批上游 → 一行一单，两侧并排。
   // 他要的是"先把老单子全部整理"，所以这里不是差异清单，是总账：每单都给「缺什么 / 上游有没有 / 建议补什么」。
   // 比例不让他再填一遍：他说"粘贴这些数据都是 45%"，那就从这批的 工资÷订单金额 里取众数读出来。
@@ -317,6 +383,7 @@ export default function mount(ctx) {
       const rows = [];
       const stats = { total: all.length, withUp: 0, noUp: 0, noKey: 0, crossDup: 0, personBad: 0, rateBad: 0, statusBad: 0, amtBad: 0 };
       const missCnt = { channel: 0, group: 0, draft: 0, final: 0, writer: 0 };
+      const ledgerNos = new Set(all.map(o => String(o.orderNo || '').trim()).filter(Boolean));
       all.forEach(o => {
         const no = String(o.orderNo || '').trim();
         const ups = no ? (byNo.get(no) || []) : [];
@@ -354,10 +421,43 @@ export default function mount(ctx) {
           upN: ups.length,
         });
       });
+      // 迁移要用的是"谁有谁没有"，不是差异计数：他说"那些是台账有但结算粘贴或几何没的，
+      // 那些是几何或粘贴表有的但台账没录的，都要说清楚"。
+      // 关键口径：上游表只覆盖它那段时间，跨月老单不能算成"上游没有"——所以 ledOnly 只在这批覆盖的日期区间内判，
+      // 区间外的老实标成 outSpan，不混进来吓人。
+      const days = ext.map(x => String(x.takeDate || x.doneDate || '')).filter(isD).sort();
+      const span = days.length ? { from: days[0], to: days[days.length - 1] } : null;
+      const ledOnly = [], outSpan = [];
+      rows.forEach(r => {
+        if (r.up) return;
+        if (!span) { ledOnly.push(r); return; }
+        if (isD(r.date) && r.date >= span.from && r.date <= span.to) ledOnly.push(r);
+        else outSpan.push({ id: r.id, no: r.no, date: r.date, amount: r.amount, status: r.status });
+      });
+      const upOnly = ext.filter(x => !(x.nos || []).some(n => ledgerNos.has(n))).map(x => ({
+        no: x.no, raw: x.raw, src: x.src, amount: x.amount, paid: x.paid, status: x.status,
+        person: String(x.person || ''), group: String(x.group || ''), takeDate: x.takeDate, odd: x.odd || '',
+      }));
+      // 他台账里那几行「微信：LM003415」是手工号：纯数字匹配永远碰不到，单独一档，别让它冒充"上游没这单"
+      const manualNo = rows.filter(r => r.no && !/^\d{6,24}$/.test(r.no)).map(r => ({ id: r.id, no: r.no, date: r.date, amount: r.amount, status: r.status, note: r.note }));
+      // 金额录成 0、真实数字写在备注里（他样例里的 1000 / 50 / 840）：只列出来，金额是红线，不批量改
+      const noteAmt = rows.filter(r => r.amount === 0 && /(^|[^\d])\d{2,9}([^\d]|$)/.test(r.note)).map(r => ({
+        id: r.id, no: r.no, date: r.date, status: r.status, note: r.note,
+        inNote: (r.note.match(/\d{2,9}/) || [''])[0],
+      }));
+      const migrate = {
+        span,
+        ledOnly: ledOnly.slice(0, 400), ledOnlyN: ledOnly.length,
+        upOnly: upOnly.slice(0, 400), upOnlyN: upOnly.length,
+        outSpan: outSpan.slice(0, 200), outSpanN: outSpan.length,
+        manualNo: manualNo.slice(0, 200), manualNoN: manualNo.length,
+        noteAmt: noteAmt.slice(0, 200), noteAmtN: noteAmt.length,
+        bothBad: rows.filter(r => r.flags.length).length,
+      };
       res.json({
         ok: true, scanned: all.length, truncated: all.length >= PAGES * PAGE,
         sources: cols.map(c => ({ src: c.src, kind: c.kind, rows: c.rows })),
-        rateMode, missCnt, stats, rows,
+        rateMode, missCnt, stats, rows, migrate,
       });
     } catch (e) { console.error('[upstream-full]', e); res.status(e.userFacing ? 400 : 500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });

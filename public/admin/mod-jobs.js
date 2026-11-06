@@ -257,7 +257,15 @@ export function mount(host) {
   const listed = () => rowsAll().filter(inList).sort((a, b) => heat(a).score - heat(b).score);
 
   /* ============ 骨架 ============ */
+  // 【v26.90】外壳每次切回本面板都会调 refresh()，以前它等于重建整块 DOM ——
+  // 他粘进框里的表格、勾好的来源、刚跑出来的对账结果就这么没了。现在骨架只建一次，切回来只重画数据。
+  let BUILT = false;
+  function paintAll() {
+    paintHead(); paintSum(); paintViews(); paintTeamFilter(); paintList();
+    paintUpstream(); paintNewTeam(true); paintBackfill(); paintFull(); paintArchives();
+  }
   function skeleton() {
+    if (BUILT) { paintAll(); return; }
     $('#app').innerHTML = `
       <h1>🛠 做单中心 <span class="sub">做到哪了 + 还剩多久 · 主数据读台账真单</span></h1>
       <div class="banner" id="head">正在读台账…</div>
@@ -297,6 +305,15 @@ export function mount(host) {
             <button class="btn p" id="rGo">开始对账</button>
             <button class="btn g" id="rCsv" disabled>导出差异 CSV</button>
             <span class="sub" id="rBusy"></span>
+          </div>
+          <div class="bar" id="archBar"><b>📦 档案</b>
+            <span class="sub">每次对账自动存一批，含粘贴原文（只存在你自己的库里，不进代码仓库；只留最近 60 批）</span>
+            <span class="grow"></span>
+            <select id="archSel" style="max-width:300px"></select>
+            <button class="btn sm g" id="archUse">回填这批原文</button>
+            <button class="btn sm g" id="archRe">回填并重跑</button>
+            <button class="btn sm g" id="archDel">删掉这批</button>
+            <span class="sub" id="archN"></span>
           </div>
           <div class="form" style="margin-top:8px">
             <div class="f"><label>几何结算账号（只存服务端配置，不进代码不进仓库）</label><input id="rAcc" placeholder="结算账号" inputmode="numeric"></div>
@@ -347,7 +364,9 @@ export function mount(host) {
             <button class="btn p" id="upAdd">＋ 添加</button>
           </div></div>
       </details>`;
-    paintHead(); paintSum(); paintViews(); paintTeamFilter(); paintList(); paintUpstream(); paintNewTeam(); paintBackfill(); paintFull();
+    BUILT = true;
+    paintAll();
+    if (!$('#nDraft').value) syncNewDue();
     bind();
   }
 
@@ -573,6 +592,20 @@ export function mount(host) {
     paintSum(); paintList(); paintTeamFilter(); paintHead();
     toast('还没平台号，先留本机；号到手在卡上点「并入台账」');
   }
+  // 上游那行拿去填「记一单」：只填框，不写库 —— 漏录还是号写错，得他自己认
+  function prefillNew(o) {
+    $('#foldNew').open = true;
+    $('#nNo').value = o.no || '';
+    if (o.amount) $('#nAmount').value = o.amount;
+    if (o.person) $('#nPerson').value = String(o.person).replace(/^(A?订单负责人|负责人|派单员|设计师|A)[-·:：\s]*/, '');
+    const u = UP.find(x => x.team === o.src);
+    if (u) { $('#nTeam').value = u.team; $('#nTeam').dispatchEvent(new Event('change')); }
+    $('#nNote').value = '来自 ' + (o.src || '上游') + '：' + ($('#nNote').value || '');
+    onNoInput();
+    $('#nNo').focus();
+    toast('已把这行填进记一单，核对完再点「存进台账」——我没替你录');
+  }
+
   async function mergeLocal(j) {
     if (!j) return;
     const no = noCandidates(j.no)[0] || '';
@@ -639,16 +672,19 @@ export function mount(host) {
       const u = UP.find(x => x.id === i.dataset.id); if (!u) return;
       const k = i.dataset.up;
       u[k] = (k === 'rate' || k === 'dueDraft' || k === 'dueFinal') ? (Number(i.value) || 0) : i.value.trim();
-      LS.write(LS_UP, UP); paintNewTeam(); paintTeamFilter(); paintSum(); paintList(); paintHead();
+      LS.write(LS_UP, UP); paintNewTeam(true); paintTeamFilter(); paintSum(); paintList(); paintHead();
     });
     $$('#upBox [data-updel]').forEach(b => b.onclick = () => {
       if (!confirm('删掉这行渠道？已建的单不受影响。')) return;
-      UP = UP.filter(u => u.id !== b.dataset.updel); LS.write(LS_UP, UP); paintUpstream(); paintNewTeam(); paintTeamFilter();
+      UP = UP.filter(u => u.id !== b.dataset.updel); LS.write(LS_UP, UP); paintUpstream(); paintNewTeam(true); paintTeamFilter();
     });
   }
-  function paintNewTeam() {
+  function paintNewTeam(keepDue) {
+    const cur = $('#nTeam') ? $('#nTeam').value : '';
     $('#nTeam').innerHTML = '<option value="">（先在下面「渠道/上游设置」里加）</option>' + UP.map(u => `<option value="${esc(u.team)}">${esc(u.team)}${u.person ? ' · ' + esc(u.person) : ''} · ${Number(u.rate) || 45}%</option>`).join('');
-    syncNewDue();
+    if (cur) $('#nTeam').value = cur;
+    // 重画时不要把他填过的交期盖掉：只有首次建骨架和换渠道/换接单日时才推默认值
+    if (!keepDue) syncNewDue();
   }
   // 默认交期跟着所选渠道走
   function syncNewDue() {
@@ -948,14 +984,21 @@ export function mount(host) {
     ['all', '全部'], ['miss', '还缺东西的'], ['channel', '缺渠道'], ['group', '缺群名'],
     ['draft', '缺初稿'], ['final', '缺终稿'], ['writer', '缺派单员'],
     ['up', '上游有这单'], ['noUp', '这批上游没这单'], ['flag', '两侧对不上的'], ['noKey', '台账没单号的'],
+    ['migLed', '台账有 · 这批没有'], ['migUp', '这批有 · 台账没录'], ['migOut', '区间外 · 判不了'],
+    ['manual', '手工号（自动对不上）'], ['noteAmt', '金额 0 · 备注里有数'],
   ];
+  // 迁移要的就是"谁有谁没有"：MIGV 把筛子对上服务端算出来的那几堆
+  const MIGV = { migLed: 'ledOnly', migUp: 'upOnly', migOut: 'outSpan', manual: 'manualNo', noteAmt: 'noteAmt' };
   const SUG_LABEL = { channel: '渠道', group: '群名', draft: '初稿', final: '终稿', writer: '派单员' };
 
   function fullFilter() {
     const rows = (FULL && FULL.rows) || [];
     const kw = FQ.trim().toLowerCase();
-    return rows.filter(r => {
-      if (FVIEW === 'miss') { if (!(r.miss.length || !r.writer)) return false; }
+    // 「台账有 · 这批没有」服务端已经算好（且只在批次覆盖的日期区间内判），这里照形状接进来，批量补建议仍能用
+    const base = FVIEW === 'migLed' ? ((FULL.migrate || {}).ledOnly || []) : rows;
+    return base.filter(r => {
+      if (FVIEW === 'all' || FVIEW === 'migLed') { /* 不再加条件 */ }
+      else if (FVIEW === 'miss') { if (!(r.miss.length || !r.writer)) return false; }
       else if (FVIEW === 'channel' || FVIEW === 'group' || FVIEW === 'draft' || FVIEW === 'final') { if (!r.miss.includes(FVIEW)) return false; }
       else if (FVIEW === 'writer') { if (r.writer) return false; }
       else if (FVIEW === 'up') { if (!r.up) return false; }
@@ -965,6 +1008,39 @@ export function mount(host) {
       if (kw && ![r.no, r.writer, r.group, r.note, r.channel, (r.up || {}).person || ''].some(x => String(x || '').toLowerCase().includes(kw))) return false;
       return true;
     });
+  }
+
+  // 迁移专用小表：这几堆不是"台账的一行"，形状各不一样，硬塞进主表只会误导
+  function migHtml(key, mg) {
+    const kw = FQ.trim().toLowerCase();
+    const hit = r => !kw || Object.keys(r).some(k => String(r[k] || '').toLowerCase().includes(kw));
+    const head = (cols) => `<table><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>`;
+    const td = v => `<td class="sub">${v === '' || v === undefined || v === null ? '—' : esc(v)}</td>`;
+    if (key === 'migUp') {
+      const arr = (mg.upOnly || []).filter(hit);
+      return `<div class="sub" style="margin-bottom:6px">这批上游给了、但<b>你台账里查不到这个号</b>：${arr.length} 行。要么漏录，要么上游那格写的号本身不对（一格塞多号 / 手工号）。<b>我不替你录</b>：点「拿去录一单」把它填进记一单，你核对完再存。</div>`
+        + head(['单号', '来源', '订单金额', '已发/佣金', '上游状态', '负责人', '群名', '接单日', '上游自己就异常', '操作'])
+        + `<tbody>${arr.slice(0, 200).map(x => `<tr><td class="mono">${esc(x.raw || x.no || '（没给号）')}</td>${td(x.src)}${td(x.amount)}${td(x.paid)}${td(x.status)}${td(x.person)}${td(x.group)}${td(x.takeDate)}${td(x.odd)}<td>${x.no ? `<button class="btn sm g" data-newone="${esc(JSON.stringify({ no: x.no, amount: x.amount, src: x.src, person: x.person }))}">拿去录一单</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+        + (arr.length > 200 ? `<div class="sub">只列前 200 行，共 ${arr.length} 行。</div>` : '');
+    }
+    if (key === 'migOut') {
+      const arr = (mg.outSpan || []).filter(hit);
+      const sp = mg.span || {};
+      return `<div class="sub" style="margin-bottom:6px">这些单的接单日<b>在这批表覆盖区间（${esc(sp.from || '?')} ~ ${esc(sp.to || '?')}）之外</b>，所以"这批没有"根本判不了 —— 不是漏录，是人家表里本来就没这个月。要判就粘那个月的表进来。</div>`
+        + head(['接单日', '单号', '金额', '状态']) + `<tbody>${arr.slice(0, 200).map(r => `<tr>${td(r.date)}<td class="mono">${esc(r.no || '—')}</td>${td(r.amount)}${td(r.status)}</tr>`).join('')}</tbody></table>`
+        + (arr.length > 200 ? `<div class="sub">共 ${arr.length} 单，只列前 200。</div>` : '');
+    }
+    if (key === 'manual') {
+      const arr = (mg.manualNo || []).filter(hit);
+      return `<div class="sub" style="margin-bottom:6px">订单编号<b>不是纯数字</b>的那些行（微信：LM003415 这类手工号）：自动匹配永远碰不到上游，只能人工认。它们不该被算进"上游没这单"。</div>`
+        + head(['接单日', '单号（手工）', '金额', '状态', '备注']) + `<tbody>${arr.slice(0, 200).map(r => `<tr>${td(r.date)}<td class="mono">${esc(r.no)}</td>${td(r.amount)}${td(r.status)}${td(r.note)}<td><button class="btn sm g" data-goto="${esc(r.no)}">在台账里看</button></td></tr>`).join('')}</tbody></table>`;
+    }
+    if (key === 'noteAmt') {
+      const arr = (mg.noteAmt || []).filter(hit);
+      return `<div class="sub" style="margin-bottom:6px">台账金额录成 <b>0</b>、真实数字写在<b>备注</b>里的那些行（你样例里的 1000 / 50 / 840）。金额是钱、也是红线，<b>这里只列出来，不批量改</b>；要改就逐单在台账里编辑。</div>`
+        + head(['接单日', '单号', '状态', '备注原文', '备注里的数']) + `<tbody>${arr.slice(0, 200).map(r => `<tr>${td(r.date)}<td class="mono">${esc(r.no || '—')}</td>${td(r.status)}${td(r.note)}<td><b>${esc(r.inNote)}</b></td><td><button class="btn sm g" data-goto="${esc(r.no)}">去台账改</button></td></tr>`).join('')}</tbody></table>`;
+    }
+    return '';
   }
 
   async function runFull(keep) {
@@ -978,6 +1054,12 @@ export function mount(host) {
       FBUSY = '';
       paintFull();
       toast('完整单子：台账 ' + j.scanned + ' 单，其中 ' + j.stats.withUp + ' 单在这批上游里');
+      const mg = j.migrate || {};
+      saveArchive('full', {
+        name: j.sources.map(s => s.src).join('+') || '完整单子', sources: j.sources, stats: j.stats,
+        counts: { ledOnly: mg.ledOnlyN || 0, upOnly: mg.upOnlyN || 0, manualNo: mg.manualNoN || 0, noteAmt: mg.noteAmtN || 0 },
+        span: mg.span || null, rateMode: j.rateMode || null,
+      });
     } catch (e) { FBUSY = e.message || String(e); paintFull(); }
   }
 
@@ -990,14 +1072,30 @@ export function mount(host) {
       stats.innerHTML = ''; bar.style.display = 'none'; $('#fPrevBox').innerHTML = '';
       return;
     }
-    const s = FULL.stats, mc = FULL.missCnt;
-    stats.innerHTML = FCHIPS.map(([k, n]) => `<button class="chip${FVIEW === k ? ' on' : ''}" data-fv="${k}">${n}${k === 'all' ? '（' + s.total + '）' : ''}</button>`).join('');
+    const s = FULL.stats, mc = FULL.missCnt, mg = FULL.migrate || {};
+    const chipN = k => k === 'all' ? s.total : (MIGV[k] ? (mg[MIGV[k] + 'N'] !== undefined ? mg[MIGV[k] + 'N'] : (mg[MIGV[k]] || []).length) : null);
+    stats.innerHTML = FCHIPS.map(([k, n]) => {
+      const c = chipN(k);
+      return `<button class="chip${FVIEW === k ? ' on' : ''}" data-fv="${k}">${n}${c === null ? '' : '（' + c + '）'}</button>`;
+    }).join('');
     const rm = Object.entries(FULL.rateMode || {});
     $('#fBusy').innerHTML = `<span class="tag">台账 ${s.total} 单 · 上游有 ${s.withUp} · 这批没有 ${s.noUp} · 跨源重复 ${s.crossDup}</span>`
       + `<span class="tag">缺：渠道 ${mc.channel} · 群名 ${mc.group} · 初稿 ${mc.draft} · 终稿 ${mc.final} · 派单员 ${mc.writer}</span>`
       + `<span class="tag">对不上：派单员 ${s.personBad} · 比例 ${s.rateBad} · 状态 ${s.statusBad} · 金额 ${s.amtBad}</span>`
       + rm.map(([k, v]) => `<span class="tag">${esc(k)} 这批分成比例众数 = <b>${v.rate}%</b>（${v.n}/${v.of} 行）</span>`).join('')
       + (FULL.truncated ? '<span class="est">台账超过 1 万单，这里只翻了前 1 万</span>' : '');
+
+    // 迁移那几堆形状各不相同，走专用小表；批量按钮对它们没意义（「台账有·这批没有」本来就是台账行，仍走主表）
+    if (MIGV[FVIEW] && FVIEW !== 'migLed') {
+      bar.style.display = '';
+      bar.innerHTML = `<b>${esc((FCHIPS.find(c => c[0] === FVIEW) || ['', '迁移对照'])[1])}</b><span class="sub">这一堆只用来认账，不改数据；要批量补字段请切回「全部 / 还缺东西的」</span>`;
+      out.innerHTML = migHtml(FVIEW, mg);
+      $('#fPrevBox').innerHTML = '';
+      $$('#fStats [data-fv]').forEach(x => x.onclick = () => { FVIEW = x.dataset.fv; FPAGE = 0; paintFull(); });
+      $$('#fOut [data-goto]').forEach(x => x.onclick = () => gotoLedger(x.dataset.goto));
+      $$('#fOut [data-newone]').forEach(x => x.onclick = () => prefillNew(JSON.parse(x.dataset.newone)));
+      return;
+    }
 
     const rows = fullFilter();
     const pages = Math.max(1, Math.ceil(rows.length / 100));
@@ -1083,6 +1181,75 @@ export function mount(host) {
     } catch (e) { $('#fPrevBox').innerHTML = '<div class="sub">预览失败：' + esc(e.message || String(e)) + '</div>'; }
   }
 
+  /* ============ 批次档案：切个窗口不该把粘了半天的表弄丢 ============ */
+  let ARCHIVES = [];
+  async function loadArchives() {
+    try { const j = await api('/api/upstream/batches'); ARCHIVES = j.batches || []; paintArchives(); } catch (e) { /* 读不到档案不影响对账本身，别在这里报错吓人 */ }
+  }
+  function paintArchives() {
+    const sel = $('#archSel');
+    if (!sel) return;
+    sel.innerHTML = ARCHIVES.length ? ARCHIVES.map(a => `<option value="${esc(a.id)}">${esc(String(a.at || '').slice(0, 16).replace('T', ' '))} · ${esc(a.name)} · ${a.kind === 'full' ? '完整单子' : '对账'} · ${(a.sources || []).reduce((t, s) => t + (s.rows || 0), 0)} 行 · ${Math.round((a.bytes || 0) / 1024)}KB</option>`).join('')
+      : '<option value="">（还没有档案）</option>';
+    const n = $('#archN');
+    if (n) n.textContent = ARCHIVES.length ? `共 ${ARCHIVES.length} 批 · 只留最近 60 批 · 原文在你自己的库里，不在代码仓库` : '';
+  }
+  function bucketCounts(b) {
+    const o = {};
+    Object.keys(b || {}).forEach(k => { if (Array.isArray(b[k])) o[k] = b[k].length; });
+    return o;
+  }
+  async function saveArchive(kind, meta) {
+    const texts = [];
+    if ($('#rPaste') && $('#rPaste').checked && $('#rText').value.trim()) texts.push($('#rText').value);
+    try {
+      const j = await api('/api/upstream/batch', {
+        method: 'POST', body: JSON.stringify({
+          name: meta.name || ($('#rName') ? $('#rName').value.trim() : '') || (kind === 'full' ? '完整单子' : '对账'),
+          kind, sources: meta.sources || [], stats: meta.stats || null, counts: meta.counts || null,
+          span: meta.span || null, rateMode: meta.rateMode || null, texts,
+        }),
+      });
+      ARCHIVES.unshift({ id: j.id, at: new Date().toISOString(), name: meta.name || '这批', kind, sources: meta.sources || [], bytes: j.bytes || 0 });
+      paintArchives();
+      toast(j.removed ? '已存档案（顺手清掉超期的 ' + j.removed + ' 批）' : '已存档案，切窗口不会再丢');
+    } catch (e) { toast('档案没存上：' + (e.message || e)); }
+  }
+  async function useArchive(re) {
+    const id = $('#archSel').value;
+    if (!id) return toast('先在下拉里选一批档案');
+    try {
+      const j = await api('/api/upstream/batch?id=' + encodeURIComponent(id));
+      const b = j.batch;
+      // 来源勾法照这批存档时的样子还原：那批只粘了表就别再默认去连几何（会白等一次外网）
+      const kinds = new Set((b.sources || []).map(s => s.kind));
+      if (kinds.size) {
+        $('#rJihe').checked = kinds.has('jihe');
+        $('#rPaste').checked = kinds.has('paste');
+        $('#rPaste').dispatchEvent(new Event('change'));
+      }
+      if (b.texts && b.texts.length) {
+        $('#rPaste').checked = true; $('#rPaste').dispatchEvent(new Event('change'));
+        $('#rText').value = b.texts.join('\n\n');
+        if (b.name) $('#rName').value = b.name;
+        toast('已回填这批原文（' + b.texts.join('').length + ' 字）' + (re ? '，开始重跑' : ''));
+      } else toast('这批没有粘贴原文（是几何接口拉取的那批，本来就没有文本）');
+      // 存的是完整单子那批就重跑完整单子，别拿对账那套去跑它
+      if (re) b.kind === 'full' ? runFull(false) : runRecon();
+    } catch (e) { toast('取不到这批档案：' + (e.message || e)); }
+  }
+  async function delArchive() {
+    const id = $('#archSel').value;
+    if (!id) return toast('先选要删的批次');
+    if (!confirm('删掉这批档案？（只删档案，你台账一行没动）')) return;
+    try {
+      await api('/api/upstream/batch', { method: 'DELETE', body: JSON.stringify({ id }) });
+      ARCHIVES = ARCHIVES.filter(a => a.id !== id);
+      paintArchives();
+      toast('已删掉这批档案');
+    } catch (e) { toast('没删掉：' + (e.message || e)); }
+  }
+
   /* ============ 上游对账：一次合并「几何拉取 + 粘贴表格」，判定全在服务端一份规则里 ============ */
   const BUCKETS = [
     ['missLedger', '① 上游有 · 你台账没录', 'bad'],
@@ -1119,6 +1286,7 @@ export function mount(host) {
       $('#rBusy').textContent = '';
       renderRecon();
       toast('对完：配上 ' + j.matched + ' / ' + j.uniqueNo + ' 个单号');
+      saveArchive('recon', { name: j.sources.map(s => s.src).join('+'), sources: j.sources, counts: bucketCounts(j.buckets), span: j.span });
     } catch (e) { $('#rBusy').textContent = ''; toast('对账失败：' + (e.message || e)); }
   }
 
@@ -1246,10 +1414,14 @@ export function mount(host) {
       });
       LS.write(LS_UP, UP);
       ['#upTeam', '#upPerson', '#upNote'].forEach(s => $(s).value = '');
-      paintUpstream(); paintNewTeam(); paintTeamFilter(); toast('已加一行渠道（只存这台浏览器）');
+      paintUpstream(); paintNewTeam(true); paintTeamFilter(); toast('已加一行渠道（只存这台浏览器）');
     };
     $('#rGo').onclick = runRecon;
     $('#fGo').onclick = () => runFull(false);
+    $('#archUse').onclick = () => useArchive(false);
+    $('#archRe').onclick = () => useArchive(true);
+    $('#archDel').onclick = delArchive;
+    loadArchives();
     $('#fFq').oninput = () => { FQ = $('#fFq').value; FPAGE = 0; paintFull(); };
     $('#rCsv').onclick = exportCsv;
     $('#rAccSave').onclick = saveAccount;
