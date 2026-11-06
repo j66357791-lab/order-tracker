@@ -128,6 +128,19 @@ textarea{width:100%;border:1px solid #cbd5e1;border-radius:9px;padding:9px;font:
 .bfIn{width:100%;padding:4px 6px;font-size:12px}
 tr.dirty td{background:#f5f3ff}
 tr.done-row td{opacity:.6}
+/* 对账卡片：一单一卡，两侧并排，状态就地改 */
+.rcard{border:1px solid #e2e8f0;border-left:4px solid #cbd5e1;border-radius:11px;background:#fff;padding:9px 12px;margin-bottom:8px}
+.rcard.bad{border-left-color:#dc2626}.rcard.warn{border-left-color:#d97706}.rcard.info{border-left-color:#0891b2}
+.rh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rh .no{font-size:14.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.r2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:7px;font-size:12.5px}
+.r2 .side{background:#f8fafc;border-radius:8px;padding:6px 9px}
+.r2 .side b{font-size:13px}
+.rdiff{margin-top:6px;font-size:12.5px;color:#b91c1c}
+.rdiff.ok{color:#15803d}
+.rdet{margin-top:7px;font-size:12px;background:#fffdf5;border:1px solid #fde68a;border-radius:8px;padding:7px 9px}
+.rdet table{font-size:12px}
+.ract{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px}
 `;
 
 const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
@@ -172,6 +185,7 @@ export function mount(host) {
   let LED = [], TRUNC = false, LOADING = true, LOADERR = '';
   let VIEW = 'doing', Q = '', TEAM = '';
   let RECON = null, COLMAPS = [];
+  let RVIEW = 'card', RDET = {};     // 对账结果默认卡片；RDET 存"就地查这单"的台账详情
   let SEL = new Set(), FIX = new Set();
   let BFONLY = true, BFALL = false;
   let FULL = null, FVIEW = 'all', FQ = '', FPAGE = 0, FSEL = new Set(), FBUSY = '';
@@ -1315,6 +1329,92 @@ export function mount(host) {
         <button class="btn sm g" data-copyno="${esc(x.no || '')}">复制</button></td></tr>`;
   }
 
+  // 一单一卡：上游侧、台账侧并排，差异一句话，状态就在这张卡上改（改前先按单号取回整行，避免把备注/完单日写空）
+  function reconCard(x, kind, cls) {
+    const up = x.src ? `订单 <b>${money(x.extAmount)}</b> 元${x.extPaid ? ' · 已发 ' + money(x.extPaid) : ''}${x.extStatus ? ' · ' + esc(x.extStatus) : ''}${x.extDate ? ' · ' + esc(x.extDate) : ''}${x.raw ? '<div class="sub" style="margin-top:3px">原文：' + esc(String(x.raw).slice(0, 60)) + '</div>' : ''}` : '—';
+    const led = x.ledId
+      ? `${esc(x.ledStatus || '')} · ${money(x.ledAmount)} × ${x.ledRate || 0}% = <b>${money(x.ledShare)}</b>${x.ledDate ? ' · 接单 ' + esc(x.ledDate) : ''}${x.ledWriter ? ' · 派单员 ' + esc(x.ledWriter) : ''}`
+      : (kind === 'missUp' ? `${esc(x.ledStatus || '')} · ${money(x.ledAmount)} × ${x.ledRate || 0}% = <b>${money(x.ledShare)}</b>` : '<span class="miss">台账没有这单</span>');
+    const diff = kind === 'amtBad' ? `金额差 ${x.diff > 0 ? '+' : ''}${money(x.diff)} 元`
+      : kind === 'shareBad' ? `到账比台账分成${x.diff > 0 ? '多' : '少'} ${money(Math.abs(x.diff))} 元`
+        : kind === 'stBad' ? `状态：上游 ${esc(x.extStatus || '')} / 台账 ${esc(x.ledStatus || '')}`
+          : kind === 'dup' ? `台账里这个号出现 ${x.count + 1} 次`
+            : kind === 'multiNo' ? `这一格塞了多个号：${esc((x.extNosText || '').replace(/、/g, ' , '))}`
+              : kind === 'odd' ? `上游自己就异常：${esc(x.odd || '')}`
+                : kind === 'noKey' ? '上游这行没给单号，只能人工认'
+                  : kind === 'amtNoise' ? `只差 ${money(Math.abs(x.diff))} 元（录台账取整，一般不是错）` : '';
+    const steps = x.ledId && x.no ? ST.map(s => `<button class="step${s === x.ledStatus ? ' hit' : ''}" data-rst="${esc(x.no)}" data-rid="${esc(x.ledId)}" data-to="${esc(s)}" title="把台账这单改成「${s}」">${s}</button>`).join('') : '';
+    return `<div class="rcard ${cls}">
+      <div class="rh"><span class="no">${esc(x.no || '（没单号）')}</span><span class="tag">${esc(x.src || '—')}</span>
+        <span class="grow"></span>
+        ${x.no ? `<button class="btn sm g" data-rdet="${esc(x.no)}">${RDET[x.no] ? '收起台账详情' : '查这单（就地）'}</button>` : ''}
+        <button class="btn sm g" data-copyno="${esc(x.no || '')}">复制</button></div>
+      <div class="r2"><div class="side">上游侧<br>${up}</div><div class="side">台账侧<br>${led}</div></div>
+      ${diff ? `<div class="rdiff ${kind === 'amtNoise' ? 'ok' : ''}">${diff}</div>` : ''}
+      ${RDET[x.no] ? detHtml(x.no) : ''}
+      ${steps ? `<div class="ract"><span class="sub">改台账状态：</span>${steps}</div>` : ''}
+    </div>`;
+  }
+
+  // 就地检索：直接在本屏按单号取台账整行，不用切面板再搜一遍
+  function detHtml(no) {
+    const d = RDET[no];
+    if (d.loading) return '<div class="rdet">查台账中…</div>';
+    if (d.err) return '<div class="rdet">查不到：' + esc(d.err) + '</div>';
+    if (!d.rows.length) return '<div class="rdet">台账里没有单号 ' + esc(no) + ' —— 这单还没录。</div>';
+    return `<div class="rdet">台账里 ${d.rows.length} 行命中 ${esc(no)}：
+      <table><thead><tr><th>接单日</th><th>单号</th><th class="num">金额</th><th class="num">比例</th><th class="num">分成</th><th>分类</th><th>完单日</th><th>派单员</th><th>备注</th></tr></thead>
+      <tbody>${d.rows.map(o => `<tr><td>${esc(o.date)}</td><td class="mono">${esc(o.orderNo)}</td><td class="num">${money(o.amount)}</td>
+        <td class="num">${Number(o.shareRate) || 0}%</td><td class="num">${money((Number(o.amount) || 0) * (Number(o.shareRate) || 0) / 100)}</td>
+        <td>${esc(o.status)}</td><td>${esc(o.doneDate || '—')}</td><td>${esc(o.writer || '—')}</td><td class="sub">${esc(o.note || '')}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  async function toggleDet(no) {
+    if (RDET[no]) { delete RDET[no]; return renderRecon(); }
+    RDET[no] = { loading: true, rows: [] };
+    renderRecon();
+    try {
+      const j = await api('/api/orders?q=' + encodeURIComponent(no));
+      RDET[no] = { rows: (j.orders || []).filter(o => String(o.orderNo || '').trim() === no) };
+    } catch (e) { RDET[no] = { rows: [], err: e.message || String(e) }; }
+    renderRecon();
+  }
+  // 卡片上改状态：先按单号取回整行再 PUT（只换 status），否则会把备注/完单日/派单员写空
+  async function reconSet(no, id, to) {
+    if (!no) return toast('这行没有单号，改不了');
+    const cur = ((RECON.buckets.stBad || []).concat(RECON.buckets.amtBad || [], RECON.buckets.shareBad || [], RECON.buckets.dup || [], RECON.buckets.missUp || [])
+      .find(x => String(x.ledId) === String(id)) || {}).ledStatus;
+    if (to === cur) return;
+    if (to === '已结算' && !confirm('把 ' + no + ' 改成「已结算」？\n\n已结算按你定的规矩只逐单点，这一步会写进台账。')) return;
+    try {
+      const j = await api('/api/orders?q=' + encodeURIComponent(no));
+      const rows = (j.orders || []).filter(o => String(o.orderNo || '').trim() === no);
+      if (rows.length !== 1) return toast(rows.length ? '这个号在台账里有 ' + rows.length + ' 行，一键改会打到多行 —— 去数据中心逐单点' : '台账里查不到这单了，刷新看看');
+      const o = rows[0];
+      const body = {
+        date: String(o.date || '').slice(0, 10), orderNo: o.orderNo, amount: Number(o.amount) || 0,
+        shareRate: Number(o.shareRate) || 0, status: to, doneDate: o.doneDate || '', note: o.note || '',
+      };
+      if (String(o.writer || '').trim()) body.writer = o.writer;
+      await api('/api/orders/' + o._id, { method: 'PUT', body: JSON.stringify(body) });
+      Object.values(RECON.buckets || {}).forEach(arr => (arr || []).forEach(x => { if (String(x.ledId) === String(o._id)) x.ledStatus = to; }));
+      if (RDET[no]) RDET[no] = { rows: [{ ...o, status: to }] };
+      toast(no + ' → ' + to + '（已写进台账，卡片就地更新，没重跑外网）');
+      renderRecon();
+    } catch (e) { toast('状态没改成：' + (e.message || e)); }
+  }
+
+  function bucketBlock(k, title, cls, arr) {
+    const moneyK = ['missLedger', 'amtBad', 'shareBad', 'stBad'].includes(k);
+    const open = (k === 'stBad' || k === 'missLedger' || k === 'amtBad' || k === 'shareBad');
+    const sum = arr.reduce((t, x) => t + (x.extAmount || x.ledAmount || 0), 0);
+    const body = RVIEW === 'card'
+      ? arr.slice(0, 120).map(x => reconCard(x, k, cls)).join('') + (arr.length > 120 ? `<div class="sub">只列前 120 张卡，共 ${arr.length} 条。</div>` : '')
+      : `<table><thead><tr><th>单号</th><th>来源</th><th>上游侧</th><th>台账侧</th><th>差在哪</th><th style="width:110px">操作</th></tr></thead>
+         <tbody>${arr.map(x => rowHtml(x, k)).join('')}</tbody></table>`;
+    return `<details class="bk ${cls}"${open ? ' open' : ''}><summary>${title}：<b>${arr.length}</b> 条${moneyK ? ' · 涉及金额 ' + money(sum) + ' 元' : ''}</summary>
+      <div class="bkb">${body}</div></details>`;
+  }
+
   function renderRecon() {
     if (!RECON) return;
     const b = RECON.buckets || {};
@@ -1340,24 +1440,26 @@ export function mount(host) {
 
     const total = BUCKETS.reduce((t, [k]) => t + rowsOf(k).length, 0);
     const noise = rowsOf('amtNoise').length;
-    $('#rOut').innerHTML = (total ? '' : '<div class="empty">这批上游跟你台账对得上，没问题单。</div>')
+    $('#rOut').innerHTML = `<div class="row2" style="margin-bottom:8px">
+        <button class="chip${RVIEW === 'card' ? ' on' : ''}" data-rv="card">卡片（一单一卡，状态就地改）</button>
+        <button class="chip${RVIEW === 'table' ? ' on' : ''}" data-rv="table">表格（扫得快）</button>
+        <span class="sub">卡片上「查这单」是就地按单号取台账整行，不用切去数据中心；改状态也是在这张卡上点。</span>
+      </div>`
+      + (total ? '' : '<div class="empty">这批上游跟你台账对得上，没问题单。</div>')
       + BUCKETS.map(([k, title, cls]) => {
         const arr = rowsOf(k);
-        if (!arr.length) return '';
-        return `<details class="bk ${cls}"${(k === 'stBad' || k === 'missLedger' || k === 'amtBad' || k === 'shareBad') ? ' open' : ''}><summary>${title}：<b>${arr.length}</b> 条`
-          + `${['missLedger', 'amtBad', 'shareBad', 'stBad'].includes(k) ? ' · 涉及金额 ' + money(sumMoney(k)) + ' 元' : ''}</summary>
-          <div class="bkb"><table><thead><tr><th>单号</th><th>来源</th><th>上游侧</th><th>台账侧</th><th>差在哪</th><th style="width:110px">操作</th></tr></thead>
-          <tbody>${arr.map(x => rowHtml(x, k)).join('')}</tbody></table></div></details>`;
+        return arr.length ? bucketBlock(k, title, cls, arr) : '';
       }).join('')
-      + (noise ? `<details class="bk quiet"><summary>⑩ 只差 ≤1 元：<b>${noise}</b> 条（你录台账时把金额取整了，不是错，展开看看就行）</summary>
-        <div class="bkb"><table><thead><tr><th>单号</th><th>来源</th><th>上游侧</th><th>台账侧</th><th>差在哪</th><th style="width:110px">操作</th></tr></thead>
-        <tbody>${rowsOf('amtNoise').map(x => rowHtml(x, 'amtNoise')).join('')}</tbody></table></div></details>` : '');
+      + (noise ? bucketBlock('amtNoise', '⑩ 只差 ≤1 元（你录台账时把金额取整了，不是错）', 'quiet', rowsOf('amtNoise')) : '');
+    $$('#rOut [data-rv]').forEach(b2 => b2.onclick = () => { RVIEW = b2.dataset.rv; renderRecon(); });
     $$('#rOut [data-copyno]').forEach(b2 => b2.onclick = () => {
       const v = b2.dataset.copyno; if (!v) return;
       (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject())
         .then(() => toast('已复制单号 ' + v), () => toast('浏览器不让复制，手动选：' + v));
     });
     $$('#rOut [data-goto]').forEach(b2 => b2.onclick = () => gotoLedger(b2.dataset.goto));
+    $$('#rOut [data-rdet]').forEach(b2 => b2.onclick = () => toggleDet(b2.dataset.rdet));
+    $$('#rOut [data-rst]').forEach(b2 => b2.onclick = () => reconSet(b2.dataset.rst, b2.dataset.rid, b2.dataset.to));
     $('#rCsv').disabled = !total && !noise;
   }
 

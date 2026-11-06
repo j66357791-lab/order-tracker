@@ -16,16 +16,29 @@ export default function mount(ctx) {
   const splitLine = (l, d) => l.split(d).map(s => String(s || '').trim());
 
   /* ---------- 解析粘贴文本：Tab 优先，逗号兜底；带引号的 CSV 也吃得下 ---------- */
+  // 【2026-11-07 修】他从 kdocs 复制有时带表头（224 行）有时不带（223 行）。
+  // 原先无条件把第一行当表头 → 不带表头时整批列全认错，200 行掉进「上游没给单号」。
+  // 现在先判第一行像不像表头，不像就改用"按内容认列"，并把判定结果回给前端说明。
+  const HEADER_RX = /(订单号|单号|编号|金额|工资|状态|日期|收货|付款|派单|负责人|备注|渠道|群|创建|判断|是否|参考|预估|打款|实名|身份证|授权|查询|order|amount|date|status|note)/i;
+  const looksLikeHeader = cells => {
+    const hit = cells.filter(c => HEADER_RX.test(String(c))).length;
+    const num = cells.filter(c => /^\d{6,}$/.test(String(c).trim())).length;
+    return hit >= 2 && num === 0;
+  };
+
   function parsePaste(text) {
     const lines = String(text || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n')
       .map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
-    if (lines.length < 2) return { error: '至少要表头 + 1 行数据' };
+    if (lines.length < 2) return { error: '至少要表头 + 1 行数据（或没表头时至少 2 行数据）' };
     const delim = (lines[0].match(/\t/g) || []).length >= 1 ? '\t' : ',';
     const unq = s => { s = String(s || '').trim(); return s.length > 1 && s[0] === '"' && s[s.length - 1] === '"' ? s.slice(1, -1).replace(/""/g, '"') : s; };
-    const headers = splitLine(lines[0], delim).map(unq);
+    const first = splitLine(lines[0], delim).map(unq);
+    const headerDetected = looksLikeHeader(first);
+    const ncol = Math.max(...lines.map(l => splitLine(l, delim).length));
+    const headers = headerDetected ? first : Array.from({ length: ncol }, (_, i) => '列' + (i + 1));
     if (headers.length < 2) return { error: '只识别出 ' + headers.length + ' 列，请用 Tab 或逗号分隔' };
     const rows = [];
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerDetected ? 1 : 0; i < lines.length; i++) {
       const cells = splitLine(lines[i], delim).map(unq);
       if (String(cells[0] || '').trim() === '合计' || /^\d+\s*单$/.test(String(cells[1] || '').trim())) continue;  // 他 CSV 末尾的合计行在第一列
       const o = {};
@@ -33,7 +46,65 @@ export default function mount(ctx) {
       rows.push(o);
     }
     if (!rows.length) return { error: '剔掉合计行后没数据了' };
-    return { headers, rows, delim };
+    return { headers, rows, delim, headerDetected };
+  }
+
+  /* ---------- 没表头时按内容认列：每列取样本，看它长得像单号/钱/日期/状态/人名 ---------- */
+  function guessByContent(rows, headers) {
+    const col = i => rows.map(r => String(r[headers[i]] || '').trim()).filter(Boolean);
+    const share = arr => { const n = arr.length; if (!n) return () => 0; return f => arr.filter(f).length / n; };
+    const med = arr => { const a = arr.map(Number).filter(isFinite).sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : NaN; };
+    const n = headers.length;
+    const info = [];
+    for (let i = 0; i < n; i++) {
+      const v = col(i), s = share(v);
+      info.push({
+        i, v,
+        digits: s(x => /^\d{10,24}$/.test(x)),
+        phone: s(x => /^1[3-9]\d{9}$/.test(x)),
+        money: s(x => /^[¥￥]?\d+(\.\d{1,2})?$/.test(x)),
+        hasYen: s(x => /^[¥￥]/.test(x)),
+        date: s(x => /^\d{4}-\d{2}-\d{2}([ T]|$)/.test(x)),
+        audit: s(x => /审核|已打款|结算|到账/.test(x)),
+        trade: s(x => /交易|关闭|退款|收货/.test(x)),
+        person: s(x => /负责人|派单|设计师/.test(x)),
+        note: s(x => /技术服务|补[：:]|工资-/.test(x)),
+        yesno: s(x => /^(正确|错误|是|否)$/.test(x)),
+        median: med(v.map(x => x.replace(/[¥￥]/g, ''))),
+      });
+    }
+    const map = new Array(n).fill('');
+    // 占用记在 used 里：忽略列在 map 里是空串（falsy），后面 !map[i] 挡不住，会被当成"还没分配"再抢走
+    const used = new Set();
+    const take = (c, role) => { if (!c || used.has(c.i)) return; used.add(c.i); map[c.i] = role; };
+    const best = (arr, key) => arr.slice().sort((a, b) => b[key] - a[key])[0];
+    // 先占掉最独特的（人名/备注/收款资料/校验列），剩下的才轮到单号与钱，避免互相抢
+    info.filter(c => c.person >= 0.5).forEach(c => take(c, 'person'));
+    info.filter(c => c.note >= 0.5).forEach(c => take(c, 'note'));
+    info.filter(c => c.phone >= 0.5).forEach(c => take(c, ''));                 // 收款资料：不进对账
+    info.filter(c => c.yesno >= 0.6).forEach(c => take(c, ''));                 // 「正确/错误」那种校验列
+    // 单号列和身份证列都是"整格长数字"，所以单号先抢：它排在前面，抢到后身份证自然落到忽略
+    take(best(info.filter(c => !used.has(c.i) && c.audit >= 0.5), 'audit'), 'status');
+    take(best(info.filter(c => !used.has(c.i) && c.trade >= 0.5), 'trade'), 'orderStatus');
+    take(best(info.filter(c => !used.has(c.i) && c.digits >= 0.5), 'digits'), 'no');
+    // 钱：带 ¥ 的那列是已发工资，另一列是订单金额；都不带符号就按中位数小的算工资
+    const moneys = info.filter(c => !used.has(c.i) && c.money >= 0.5);
+    take(best(moneys.filter(c => c.hasYen >= 0.3), 'hasYen')
+      || (moneys.length >= 2 ? moneys.slice().sort((a, b) => a.median - b.median)[0] : null), 'paid');
+    take(moneys.filter(c => !used.has(c.i)).sort((a, b) => b.median - a.median)[0], 'amount');
+    // 日期：同一行里较早的是接单/付款，较晚的是收货/完单；剩下的（预估收货/预估打款）不参与判定
+    const dates = info.filter(c => !used.has(c.i) && c.date >= 0.4);
+    if (dates.length >= 2) {
+      const [a, b] = dates;
+      const both = rows.filter(r => String(r[headers[a.i]]) && String(r[headers[b.i]]));
+      const aEarlier = both.filter(r => String(r[headers[a.i]]) < String(r[headers[b.i]])).length;
+      const first = aEarlier >= both.length - aEarlier ? a : b, last = first === a ? b : a;
+      take(first, 'takeDate'); take(last, 'doneDate');
+      dates.filter(c => !used.has(c.i)).forEach(c => take(c, ''));
+    } else if (dates.length === 1) take(dates[0], 'takeDate');
+    info.filter(c => !used.has(c.i) && /群|客户/.test(c.v[0] || '')).forEach(c => take(c, 'group'));
+    info.filter(c => !used.has(c.i) && /渠道|来源|平台/.test(c.v[0] || '')).forEach(c => take(c, 'team'));
+    return map;
   }
 
   /* ---------- 认列：按他真表（18 列那张）与几何字段调过 ---------- */
@@ -201,9 +272,14 @@ export default function mount(ctx) {
           const nm = String(s.name || '').trim() || '粘贴表';
           const src = blocks.length > 1 ? nm + ' ' + (k + 1) : nm;
           const colmap = Array.isArray(s.colmaps) && Array.isArray(s.colmaps[k]) && s.colmaps[k].length === p.headers.length
-            ? s.colmaps[k] : p.headers.map(guess);            // 每段都可以单独修正列映射，不传就按表头猜
+            ? s.colmaps[k] : (p.headerDetected ? p.headers.map(guess) : guessByContent(p.rows, p.headers));
           normPaste(p.rows, p.headers, colmap).forEach(x => { x.src = src; ext.push(x); });
-          cols.push({ src, kind: 'paste', rows: p.rows.length, headers: p.headers, colmap, delim: p.delim });
+          // mapped 回给前端：没表头时他要能看见"我把第几列当成了什么"，不然又是一头雾水
+          cols.push({
+            src, kind: 'paste', rows: p.rows.length, headers: p.headers, colmap, delim: p.delim,
+            headerDetected: p.headerDetected,
+            mapped: colmap.map((r, i) => r ? r + '→第' + (i + 1) + '列' : '').filter(Boolean),
+          });
         }
       }
     }
@@ -229,6 +305,7 @@ export default function mount(ctx) {
       const perSrc = cols.map(c => {
         const rows = ext.filter(x => x.src === c.src);
         return { src: c.src, kind: c.kind, rows: rows.length, headers: c.headers || null, colmap: c.colmap || null, delim: c.delim || null,
+          headerDetected: c.headerDetected !== false, mapped: c.mapped || null,
           amount: r2(rows.reduce((t, x) => t + x.amount, 0)), paid: r2(rows.reduce((t, x) => t + x.paid, 0)), noKey: rows.filter(x => !x.no).length };
       });
       res.json({
