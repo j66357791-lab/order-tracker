@@ -742,97 +742,104 @@ app.put('/api/orders/:id', auth, adminOnly, async (req, res) => {
   }
 });
 
-// ============ 【v26.88】做单中心 4 个新字段的唯一写入口 ============
-// 他要「老单补录」「批量修正」，但红线是历史单的金额/分类/备注/完单日/状态不能被顺手改掉。
-// 所以这 4 个键单独开一条口，白名单硬编码在路由里，parseOrder 一个字都不参与；
-// 默认只预览，真写必须显式带 apply:true，且只走一单一单的 updateOne（中途挂了也只脏那一行，报告看得出写到第几单）。
-const JOB_KEYS = ['channel', 'group', 'draft', 'final'];
-const JOB_LABEL = { channel: '渠道', group: '群名', draft: '初稿', final: '终稿' };
-const JOB_MAX_PATCH = 600;
+// ============ 【v26.88】窄字段批量写入口（做单中心用） ============
+// 他要「老单补录」「批量修正」「把上游的派单员搬过来」，但红线是历史单的金额/分类/备注/完单日/状态不能被顺手改掉。
+// 所以按"键"开两条独立窄口，白名单写死在调用处，parseOrder 一个字都不参与；
+// 默认只预览，真写必须显式带 apply:true，且一单一单 updateOne（中途挂了也只脏那一行，报告看得出写到第几单）。
+// 分成比例（shareRate）故意不开口：那是钱，且 45%/自留 的口径还没定，只给他在完整单子里看。
+const MAX_PATCH = 600;
 
-app.post('/api/orders/jobfields', auth, adminOnly, async (req, res) => {
-  const b = req.body || {};
-  const apply = b.apply === true;              // 不带 = 纯预览，一行都不写
-  const onlyEmpty = b.onlyEmpty !== false;     // 默认不覆盖已经填过的值
-  const list = Array.isArray(b.patches) ? b.patches.slice(0, JOB_MAX_PATCH) : [];
-  if (!list.length) return res.status(400).json({ ok: false, error: 'patches 是空的' });
-  try {
-    const db = await getDb();
-    const ids = [], nos = [];
-    for (const p of list) {
-      const id = String((p && p.id) || '').trim();
-      const no = String((p && p.orderNo) || '').trim();
-      if (ObjectId.isValid(id)) ids.push(id);
-      else if (/^\d{6,24}$/.test(no)) nos.push(no);   // 老单补录那边可能只有单号
-    }
-    const proj = { projection: { date: 1, orderNo: 1, status: 1, channel: 1, group: 1, draft: 1, final: 1 } };
-    const hit = new Map();
-    for (let i = 0; i < ids.length; i += 500) {
-      const rs = await db.collection(CONFIG.collection)
-        .find({ _id: { $in: ids.slice(i, i + 500).map(s => new ObjectId(s)) } }, proj).toArray();
-      rs.forEach(r => hit.set('i:' + r._id, r));
-    }
-    const uniqNos = [...new Set(nos)];
-    for (let i = 0; i < uniqNos.length; i += 500) {
-      const rs = await db.collection(CONFIG.collection)
-        .find({ orderNo: { $in: uniqNos.slice(i, i + 500) } }, proj).toArray();
-      // 单号在库里不唯一（实测过同号两行），按号补只能命中第一行，其余照实在 skipped 里说出来
-      rs.forEach(r => { if (!hit.has('n:' + r.orderNo)) hit.set('n:' + r.orderNo, r); });
-    }
+function fieldPatchRoute(path, keys, labels, dateKeys) {
+  app.post(path, auth, adminOnly, async (req, res) => {
+    const b = req.body || {};
+    const apply = b.apply === true;              // 不带 = 纯预览，一行都不写
+    const onlyEmpty = b.onlyEmpty !== false;     // 默认不覆盖已经填过的值
+    const list = Array.isArray(b.patches) ? b.patches.slice(0, MAX_PATCH) : [];
+    if (!list.length) return res.status(400).json({ ok: false, error: 'patches 是空的' });
+    try {
+      const db = await getDb();
+      const ids = [], nos = [];
+      for (const p of list) {
+        const id = String((p && p.id) || '').trim();
+        const no = String((p && p.orderNo) || '').trim();
+        if (ObjectId.isValid(id)) ids.push(id);
+        else if (/^\d{6,24}$/.test(no)) nos.push(no);   // 老单补录那边可能只有单号
+      }
+      const proj = { projection: Object.assign({ date: 1, orderNo: 1, status: 1 }, keys.reduce((m, k) => (m[k] = 1, m), {})) };
+      const hit = new Map();
+      for (let i = 0; i < ids.length; i += 500) {
+        const rs = await db.collection(CONFIG.collection)
+          .find({ _id: { $in: ids.slice(i, i + 500).map(s => new ObjectId(s)) } }, proj).toArray();
+        rs.forEach(r => hit.set('i:' + r._id, r));
+      }
+      const uniqNos = [...new Set(nos)];
+      for (let i = 0; i < uniqNos.length; i += 500) {
+        const rs = await db.collection(CONFIG.collection)
+          .find({ orderNo: { $in: uniqNos.slice(i, i + 500) } }, proj).toArray();
+        // 单号在库里不唯一（实测过同号两行），按号补只能命中第一行，其余照实在 skipped 里说出来
+        rs.forEach(r => { if (!hit.has('n:' + r.orderNo)) hit.set('n:' + r.orderNo, r); });
+      }
 
-    const rows = [], skipped = [], bad = [];
-    for (const p of list) {
-      const id = String((p && p.id) || '').trim();
-      const no = String((p && p.orderNo) || '').trim();
-      const doc = hit.get('i:' + id) || hit.get('n:' + no);
-      if (!doc) { skipped.push({ id, orderNo: no, why: '台账里查不到这单' }); continue; }
-      const before = {}, after = {}, changed = [];
-      for (const k of JOB_KEYS) {
-        if (!p.fields || !(k in p.fields)) continue;
-        let v = p.fields[k];
-        v = v === null || v === undefined ? '' : String(v).trim();
-        if ((k === 'draft' || k === 'final') && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-          bad.push({ orderNo: doc.orderNo || no, field: JOB_LABEL[k], value: v.slice(0, 20), why: '日期要 YYYY-MM-DD' });
-          continue;
+      const rows = [], skipped = [], bad = [];
+      for (const p of list) {
+        const id = String((p && p.id) || '').trim();
+        const no = String((p && p.orderNo) || '').trim();
+        const doc = hit.get('i:' + id) || hit.get('n:' + no);
+        if (!doc) { skipped.push({ id, orderNo: no, why: '台账里查不到这单' }); continue; }
+        const before = {}, after = {}, changed = [];
+        for (const k of keys) {
+          if (!p.fields || !(k in p.fields)) continue;
+          let v = p.fields[k];
+          v = v === null || v === undefined ? '' : String(v).trim();
+          if (dateKeys.includes(k) && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+            bad.push({ orderNo: doc.orderNo || no, field: labels[k], value: v.slice(0, 20), why: '日期要 YYYY-MM-DD' });
+            continue;
+          }
+          v = k === 'writer' ? cleanName(v) : v.slice(0, 40);
+          const cur = String(doc[k] === undefined || doc[k] === null ? '' : doc[k]).trim();
+          before[k] = cur; after[k] = v;
+          if (v === cur) continue;
+          if (onlyEmpty && cur) { skipped.push({ id: String(doc._id), orderNo: doc.orderNo || '', why: `${labels[k]}已有「${cur}」，没勾覆盖就不动` }); continue; }
+          changed.push(k);
         }
-        if (v.length > 40) v = v.slice(0, 40);
-        const cur = String(doc[k] === undefined || doc[k] === null ? '' : doc[k]).trim();
-        before[k] = cur; after[k] = v;
-        if (v === cur) continue;
-        if (onlyEmpty && cur) { skipped.push({ id: String(doc._id), orderNo: doc.orderNo || '', why: `${JOB_LABEL[k]}已有「${cur}」，没勾覆盖就不动` }); continue; }
-        changed.push(k);
+        if (!changed.length) continue;
+        rows.push({
+          id: String(doc._id), orderNo: doc.orderNo || '', date: doc.date || '',
+          status: normalizeStatus(doc.status), before, after, changed, labels: changed.map(k => labels[k]),
+        });
       }
-      if (!changed.length) continue;
-      rows.push({
-        id: String(doc._id), orderNo: doc.orderNo || '', date: doc.date || '',
-        status: normalizeStatus(doc.status), before, after, changed, labels: changed.map(k => JOB_LABEL[k]),
-      });
-    }
 
-    let wrote = 0;
-    if (apply) {
-      for (const r of rows) {
-        const set = {};
-        r.changed.forEach(k => { set[k] = r.after[k]; });
-        set.jobUpdatedAt = new Date();
-        const u = await db.collection(CONFIG.collection).updateOne({ _id: new ObjectId(r.id) }, { $set: set });
-        if (!u.matchedCount) { r.failed = '订单不存在'; continue; }
-        r.wrote = true; wrote++;
+      let wrote = 0;
+      if (apply) {
+        for (const r of rows) {
+          const set = {};
+          r.changed.forEach(k => { set[k] = r.after[k]; });
+          set.jobUpdatedAt = new Date();
+          const u = await db.collection(CONFIG.collection).updateOne({ _id: new ObjectId(r.id) }, { $set: set });
+          if (!u.matchedCount) { r.failed = '订单不存在'; continue; }
+          r.wrote = true; wrote++;
+        }
+        cacheClearPrefix('orders:');
       }
-      cacheClearPrefix('orders:');
+      res.json({
+        ok: true, apply, onlyEmpty, keys,
+        willWrite: rows.filter(r => !r.failed).length, wrote,
+        skipped: skipped.slice(0, 80), skippedCount: skipped.length,
+        bad: bad.slice(0, 40), badCount: bad.length,
+        capped: Array.isArray(b.patches) && b.patches.length > MAX_PATCH,
+        rows: rows.slice(0, 400),
+      });
+    } catch (e) {
+      console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
     }
-    res.json({
-      ok: true, apply, onlyEmpty,
-      willWrite: rows.filter(r => !r.failed).length, wrote,
-      skipped: skipped.slice(0, 80), skippedCount: skipped.length,
-      bad: bad.slice(0, 40), badCount: bad.length,
-      capped: Array.isArray(b.patches) && b.patches.length > JOB_MAX_PATCH,
-      rows: rows.slice(0, 400),
-    });
-  } catch (e) {
-    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
-  }
-});
+  });
+}
+
+// 做单中心的四个新字段
+fieldPatchRoute('/api/orders/jobfields', ['channel', 'group', 'draft', 'final'],
+  { channel: '渠道', group: '群名', draft: '初稿', final: '终稿' }, ['draft', 'final']);
+// 派单员：台账 writer 与上游「A订单负责人-××」/几何 designer_name 现在各有一份，搬运只走这条
+fieldPatchRoute('/api/orders/writer-patch', ['writer'], { writer: '派单员' }, []);
 
 // 删除
 app.delete('/api/orders/:id', auth, adminOnly, async (req, res) => {

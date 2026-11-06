@@ -279,6 +279,89 @@ export default function mount(ctx) {
     } catch (e) { console.error('[upstream-derive]', e); res.status(e.userFacing ? 400 : 500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
+  // 【v26.89】完整单子：台账【全量】（内部翻页，不吃列表接口那个 500 上限）× 这批上游 → 一行一单，两侧并排。
+  // 他要的是"先把老单子全部整理"，所以这里不是差异清单，是总账：每单都给「缺什么 / 上游有没有 / 建议补什么」。
+  // 比例不让他再填一遍：他说"粘贴这些数据都是 45%"，那就从这批的 工资÷订单金额 里取众数读出来。
+  // 红线不变：这里只读；写由前端预览后走 /api/orders/jobfields 与 /api/orders/writer-patch，shareRate 不开口。
+  app.post('/api/upstream/full', auth, adminOnly, async (req, res) => {
+    try {
+      const b = req.body || {};
+      const { ext, cols } = await collectSources(b);
+      const db = await getDb();
+      const all = [];
+      const PAGES = 20, PAGE = 500;              // 最多 1 万单；现在他 300 多单，一页就够
+      for (let i = 0; i < PAGES; i++) {
+        const rs = await db.collection(CONFIG.collection).find({}).sort({ date: -1, _id: -1 }).skip(i * PAGE).limit(PAGE).toArray();
+        all.push(...rs);
+        if (rs.length < PAGE) break;
+      }
+      const byNo = new Map();
+      ext.forEach(x => (x.nos || []).forEach(n => { const a = byNo.get(n) || []; a.push(x); byNo.set(n, a); }));
+
+      const rateMode = {};
+      cols.filter(c => c.kind === 'paste').forEach(c => {
+        const rr = ext.filter(x => x.src === c.src && x.paid > 0 && x.amount > 0);
+        const m = {};
+        rr.forEach(x => { const r = Math.round(x.paid / x.amount * 1000) / 10; m[r] = (m[r] || 0) + 1; });
+        const best = Object.entries(m).sort((a, z) => z[1] - a[1])[0];
+        if (best && Number(best[0]) > 0 && Number(best[0]) < 100) rateMode[c.src] = { rate: Number(best[0]), n: best[1], of: rr.length };
+      });
+
+      const isD = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+      const dadd = (ds, n) => { const d = new Date(ds + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+      // 上游那列写的是「A订单负责人-钦钦」，台账 writer 里存的是「钦钦」——不剥前缀两边永远对不上
+      const person = s => String(s || '').replace(/^(A?订单负责人|负责人|派单员|设计师|A)[-·:：\s]*/, '').trim().slice(0, 30);
+      const DD = Number(b.dueDraft) > 0 ? Number(b.dueDraft) : 2;
+      const DF = Number(b.dueFinal) > 0 ? Number(b.dueFinal) : 4;
+
+      const rows = [];
+      const stats = { total: all.length, withUp: 0, noUp: 0, noKey: 0, crossDup: 0, personBad: 0, rateBad: 0, statusBad: 0, amtBad: 0 };
+      const missCnt = { channel: 0, group: 0, draft: 0, final: 0, writer: 0 };
+      all.forEach(o => {
+        const no = String(o.orderNo || '').trim();
+        const ups = no ? (byNo.get(no) || []) : [];
+        const u = ups[0] || null;
+        const srcs = [...new Set(ups.map(x => x.src))];
+        if (!no) stats.noKey++;
+        if (u) stats.withUp++; else stats.noUp++;
+        if (srcs.length > 1) stats.crossDup++;
+        const rate = num(o.shareRate), share = r2(num(o.amount) * rate / 100);
+        const miss = [];
+        ['channel', 'group', 'draft', 'final'].forEach(k => { if (!String(o[k] || '').trim()) { miss.push(k); missCnt[k]++; } });
+        if (!String(o.writer || '').trim()) missCnt.writer++;
+        const upRate = u && rateMode[u.src] ? rateMode[u.src].rate : null;
+        const flags = [];
+        if (u) {
+          const upPerson = person(u.person);
+          if (String(o.writer || '').trim() && upPerson && o.writer !== upPerson && !String(o.writer || '').includes(upPerson)) flags.push('personBad'), stats.personBad++;
+          if (upRate !== null && Math.abs(rate - upRate) > 0.5) flags.push('rateBad'), stats.rateBad++;
+          if (u.status && normalizeStatus(o.status) !== u.status) flags.push('statusBad'), stats.statusBad++;
+          if (u.amount > 0 && Math.abs(u.amount - num(o.amount)) > 1) flags.push('amtBad'), stats.amtBad++;
+        }
+        const suggest = {};
+        if (!String(o.channel || '').trim() && (u ? u.src : '')) suggest.channel = u.src;
+        if (!String(o.group || '').trim() && u && u.group) suggest.group = String(u.group).slice(0, 40);
+        if (!String(o.writer || '').trim() && u && person(u.person)) suggest.writer = person(u.person);
+        if (!isD(o.draft) && isD(o.date)) suggest.draft = dadd(String(o.date).slice(0, 10), DD);
+        if (!isD(o.final) && isD(o.date)) suggest.final = dadd(String(o.date).slice(0, 10), DF);
+        rows.push({
+          id: String(o._id), no, date: String(o.date || '').slice(0, 10), amount: num(o.amount), rate, share,
+          status: normalizeStatus(o.status), doneDate: String(o.doneDate || '').slice(0, 10),
+          writer: String(o.writer || ''), note: String(o.note || '').slice(0, 60),
+          channel: String(o.channel || ''), group: String(o.group || ''), draft: String(o.draft || ''), final: String(o.final || ''),
+          miss, flags, suggest, srcs,
+          up: u ? { src: u.src, amount: u.amount, paid: u.paid, status: u.status, person: String(u.person || ''), group: String(u.group || ''), upRate } : null,
+          upN: ups.length,
+        });
+      });
+      res.json({
+        ok: true, scanned: all.length, truncated: all.length >= PAGES * PAGE,
+        sources: cols.map(c => ({ src: c.src, kind: c.kind, rows: c.rows })),
+        rateMode, missCnt, stats, rows,
+      });
+    } catch (e) { console.error('[upstream-full]', e); res.status(e.userFacing ? 400 : 500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+  });
+
   async function fetchJihe(account) {
     if (!/^\d{6,20}$/.test(String(account || ''))) throw Object.assign(new Error('结算账号要是 6-20 位数字'), { userFacing: true });
     const acc = new URLSearchParams(); acc.set('type', 'alipay'); acc.set('q', String(account));
