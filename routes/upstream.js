@@ -79,6 +79,7 @@ export default function mount(ctx) {
         no: n.primary, nos: n.all, multi: n.multi, raw: String(g('no') || '').trim(),
         amount: num(g('amount')), paid: num(g('paid')), group: g('group'), team: g('team') || g('person'),
         person: g('person'), doneDate: g('doneDate').slice(0, 10), takeDate: g('takeDate').slice(0, 10),
+        draft: g('draft').slice(0, 10), final: g('final').slice(0, 10),
         status: toStatus(g('status'), g('orderStatus'), g('doneDate').trim()),
         trade: g('orderStatus'), audit: g('status'),
         odd: (/交易关闭|关闭|退款/.test(g('orderStatus')) || (num(g('amount')) === 0 && !!n.primary)) ? '金额 ' + num(g('amount')) + '、状态「' + (g('orderStatus') || '空') + '」' : '',
@@ -239,6 +240,43 @@ export default function mount(ctx) {
         },
       });
     } catch (e) { console.error('[upstream]', e); res.status(e.userFacing ? 400 : 500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
+  });
+
+  // 【v26.88】从上游数据带出台账缺的新字段（渠道/群名/初稿/终稿）。
+  // 仍然只读上游：这里只给「这一单还缺什么、上游有值」的候选，写不写由前端预览后决定。
+  // 已有值的键不会进 fill —— 覆盖要走显式的 onlyEmpty:false，不能靠这条路偷偷改。
+  app.post('/api/upstream/derive', auth, adminOnly, async (req, res) => {
+    try {
+      const { ext } = await collectSources(req.body || {});
+      const nos = [...new Set(ext.filter(x => x.no).flatMap(x => x.nos || []))];
+      const db = await getDb();
+      const byNo = new Map();
+      for (let i = 0; i < nos.length; i += 500) {
+        const found = await db.collection(CONFIG.collection)
+          .find({ orderNo: { $in: nos.slice(i, i + 500) } },
+            { projection: { orderNo: 1, channel: 1, group: 1, draft: 1, final: 1 } }).limit(5000).toArray();
+        found.forEach(o => { const k = String(o.orderNo || '').trim(); if (k && !byNo.has(k)) byNo.set(k, o); });
+      }
+      const DATE = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? String(s).slice(0, 10) : '';
+      const out = [];
+      ext.forEach(x => {
+        const l = x.no ? byNo.get(x.no) : null;
+        if (!l) return;
+        const channel = String(x.team || x.src || '').trim().slice(0, 40);
+        const group = String(x.group || '').trim().slice(0, 40);
+        const fill = {};
+        if (!String(l.channel || '').trim() && channel) fill.channel = channel;
+        if (!String(l.group || '').trim() && group) fill.group = group;
+        if (!String(l.draft || '').trim() && DATE(x.draft)) fill.draft = DATE(x.draft);
+        if (!String(l.final || '').trim() && DATE(x.final)) fill.final = DATE(x.final);
+        if (!Object.keys(fill).length) return;
+        out.push({ id: String(l._id), orderNo: x.no, src: x.src, fill });
+      });
+      res.json({
+        ok: true, scannedNos: nos.length, matchedLedger: byNo.size,
+        total: out.length, candidates: out.slice(0, 600), capped: out.length > 600,
+      });
+    } catch (e) { console.error('[upstream-derive]', e); res.status(e.userFacing ? 400 : 500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' }); }
   });
 
   async function fetchJihe(account) {

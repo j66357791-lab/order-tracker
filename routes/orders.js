@@ -742,6 +742,98 @@ app.put('/api/orders/:id', auth, adminOnly, async (req, res) => {
   }
 });
 
+// ============ 【v26.88】做单中心 4 个新字段的唯一写入口 ============
+// 他要「老单补录」「批量修正」，但红线是历史单的金额/分类/备注/完单日/状态不能被顺手改掉。
+// 所以这 4 个键单独开一条口，白名单硬编码在路由里，parseOrder 一个字都不参与；
+// 默认只预览，真写必须显式带 apply:true，且只走一单一单的 updateOne（中途挂了也只脏那一行，报告看得出写到第几单）。
+const JOB_KEYS = ['channel', 'group', 'draft', 'final'];
+const JOB_LABEL = { channel: '渠道', group: '群名', draft: '初稿', final: '终稿' };
+const JOB_MAX_PATCH = 600;
+
+app.post('/api/orders/jobfields', auth, adminOnly, async (req, res) => {
+  const b = req.body || {};
+  const apply = b.apply === true;              // 不带 = 纯预览，一行都不写
+  const onlyEmpty = b.onlyEmpty !== false;     // 默认不覆盖已经填过的值
+  const list = Array.isArray(b.patches) ? b.patches.slice(0, JOB_MAX_PATCH) : [];
+  if (!list.length) return res.status(400).json({ ok: false, error: 'patches 是空的' });
+  try {
+    const db = await getDb();
+    const ids = [], nos = [];
+    for (const p of list) {
+      const id = String((p && p.id) || '').trim();
+      const no = String((p && p.orderNo) || '').trim();
+      if (ObjectId.isValid(id)) ids.push(id);
+      else if (/^\d{6,24}$/.test(no)) nos.push(no);   // 老单补录那边可能只有单号
+    }
+    const proj = { projection: { date: 1, orderNo: 1, status: 1, channel: 1, group: 1, draft: 1, final: 1 } };
+    const hit = new Map();
+    for (let i = 0; i < ids.length; i += 500) {
+      const rs = await db.collection(CONFIG.collection)
+        .find({ _id: { $in: ids.slice(i, i + 500).map(s => new ObjectId(s)) } }, proj).toArray();
+      rs.forEach(r => hit.set('i:' + r._id, r));
+    }
+    const uniqNos = [...new Set(nos)];
+    for (let i = 0; i < uniqNos.length; i += 500) {
+      const rs = await db.collection(CONFIG.collection)
+        .find({ orderNo: { $in: uniqNos.slice(i, i + 500) } }, proj).toArray();
+      // 单号在库里不唯一（实测过同号两行），按号补只能命中第一行，其余照实在 skipped 里说出来
+      rs.forEach(r => { if (!hit.has('n:' + r.orderNo)) hit.set('n:' + r.orderNo, r); });
+    }
+
+    const rows = [], skipped = [], bad = [];
+    for (const p of list) {
+      const id = String((p && p.id) || '').trim();
+      const no = String((p && p.orderNo) || '').trim();
+      const doc = hit.get('i:' + id) || hit.get('n:' + no);
+      if (!doc) { skipped.push({ id, orderNo: no, why: '台账里查不到这单' }); continue; }
+      const before = {}, after = {}, changed = [];
+      for (const k of JOB_KEYS) {
+        if (!p.fields || !(k in p.fields)) continue;
+        let v = p.fields[k];
+        v = v === null || v === undefined ? '' : String(v).trim();
+        if ((k === 'draft' || k === 'final') && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+          bad.push({ orderNo: doc.orderNo || no, field: JOB_LABEL[k], value: v.slice(0, 20), why: '日期要 YYYY-MM-DD' });
+          continue;
+        }
+        if (v.length > 40) v = v.slice(0, 40);
+        const cur = String(doc[k] === undefined || doc[k] === null ? '' : doc[k]).trim();
+        before[k] = cur; after[k] = v;
+        if (v === cur) continue;
+        if (onlyEmpty && cur) { skipped.push({ id: String(doc._id), orderNo: doc.orderNo || '', why: `${JOB_LABEL[k]}已有「${cur}」，没勾覆盖就不动` }); continue; }
+        changed.push(k);
+      }
+      if (!changed.length) continue;
+      rows.push({
+        id: String(doc._id), orderNo: doc.orderNo || '', date: doc.date || '',
+        status: normalizeStatus(doc.status), before, after, changed, labels: changed.map(k => JOB_LABEL[k]),
+      });
+    }
+
+    let wrote = 0;
+    if (apply) {
+      for (const r of rows) {
+        const set = {};
+        r.changed.forEach(k => { set[k] = r.after[k]; });
+        set.jobUpdatedAt = new Date();
+        const u = await db.collection(CONFIG.collection).updateOne({ _id: new ObjectId(r.id) }, { $set: set });
+        if (!u.matchedCount) { r.failed = '订单不存在'; continue; }
+        r.wrote = true; wrote++;
+      }
+      cacheClearPrefix('orders:');
+    }
+    res.json({
+      ok: true, apply, onlyEmpty,
+      willWrite: rows.filter(r => !r.failed).length, wrote,
+      skipped: skipped.slice(0, 80), skippedCount: skipped.length,
+      bad: bad.slice(0, 40), badCount: bad.length,
+      capped: Array.isArray(b.patches) && b.patches.length > JOB_MAX_PATCH,
+      rows: rows.slice(0, 400),
+    });
+  } catch (e) {
+    console.error('[api]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '服务器开小差，请稍后再试' });
+  }
+});
+
 // 删除
 app.delete('/api/orders/:id', auth, adminOnly, async (req, res) => {
   if (!ObjectId.isValid(req.params.id)) return res.status(400).json({ ok: false, error: '无效的订单ID' });
