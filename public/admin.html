@@ -105,6 +105,7 @@
          保留 .embed-panel/.sk-overlay 样式与 ensureFrame 逻辑，万一以后还要临时挂外部页可直接用。 -->
 
     <!-- ③ 模块面板容器（挂载后显示） -->
+    <div id="panel-jobs" style="display:none"></div>
     <div id="panel-orders" style="display:none"></div>
     <div id="panel-dispatch" style="display:none"></div>
     <div id="panel-ads" style="display:none"></div>
@@ -126,6 +127,7 @@ import { TOKEN, ME, guardAdmin, api, renderNav, updateNav, esc } from '/admin/ap
 // 【v20.8】面板模块按需加载：原来是 5 个 mod-* 静态 import，首屏就把本次根本不点的也一起下载了。
 // 现在点哪个下哪个；导航悬停/聚焦时提前下载（用户从移动到点下通常有 300~800ms，够下完）。
 const LAZY = {
+  jobs:     () => import('/admin/mod-jobs.js'),
   orders:   () => import('/admin/mod-orders.js'),
   dispatch: () => import('/admin/mod-chat.js'),
   overview: () => import('/admin/mod-cards.js').then(m => ({ mount: m.mountOverview })),

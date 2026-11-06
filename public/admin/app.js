@@ -88,7 +88,8 @@ export async function copyText(text) {
 // 迁移进度：已完成 ads / withdraw / overview / recon；剩余 2 项（台账 orders / 派单聊天 dispatch）
 export const NAV_ITEMS = [
   { key: 'home',     icon: '🏠', title: '工作台',     type: 'panel' },
-  { key: 'orders',   icon: '📒', title: '台账',           type: 'frame', href: '/index.html?embed=1', desc: '接单台账与利润统计' },
+  { key: 'jobs',     icon: '🛠', title: '做单中心',   type: 'panel', desc: '原型：按上游做单、交期提醒、上游设置、平台只读对账' },
+  { key: 'orders',   icon: '📒', title: '兼职数据中心', type: 'frame', href: '/index.html?embed=1', desc: '数据整理与对账（原台账，历史数据不动）' },
   { key: 'dispatch', icon: '🎧', title: '派单聊天',   type: 'frame', href: '/dispatch.html?embed=1', desc: '与写手沟通 / 发派单卡' },
   { key: 'overview', icon: '📋', title: '派单总览',   type: 'panel', desc: '全部派单卡进度与审核' },
   { key: 'withdraw', icon: '💳', title: '提现审批',   type: 'panel', desc: '写手提现申请处理' },

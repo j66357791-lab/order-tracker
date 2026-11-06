@@ -100,6 +100,8 @@ const DEPLOY_CHECK_FILES = [
   'public/admin/mod-withdraw.js',
   'public/admin/mod-cards.js',
   'public/admin/mod-orders.js', 'public/admin/ledger.css',
+  // 【v26.87】做单中心 + 上游对账：这仨漏传任何一个，点「做单中心」就是一片空白或 404
+  'public/admin/mod-jobs.js',
   'public/admin/mod-chat.js', 'public/admin/chat.css',
   'public/admin_packages.html', 'public/admin_game.html', 'public/admin_security.html',
   'public/robots.txt', 'public/service-worker.js', 'public/manifest.json',
@@ -192,6 +194,10 @@ try {
 (await import('./routes/misc.js')).default(ctx);
 (await import('./routes/authx.js')).default(ctx);
 (await import('./routes/cards.js')).default(ctx);
+// 【v26.87】上游对账（只读）：粘贴上游表格 / 拉几何视传 → 只回有问题的行。
+// 单独 try 住：这个模块要外连第三方，万一它自己出问题，不能把整站启动带走。
+try { (await import('./routes/upstream.js')).default(ctx); }
+catch (e) { console.error('[上游对账] 模块加载失败，粘贴对账不可用:', e.message); }
 (await import('./routes/worktime.js')).default(ctx);
 (await import('./routes/gameadmin.js')).default(ctx);
 (await import('./routes/dbadmin.js')).default(ctx);   // 【v24.0】数据库占用与清理
