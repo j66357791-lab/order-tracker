@@ -159,16 +159,22 @@ export function mount(host) {
   };
 
   /* ============ 状态 ============ */
+  // 两条窄写入口，各自一份预览与撤销快照：新字段一条、派单员一条。分成比例没有入口（口径未决，只在完整单子里列出来）
+  const CH = {
+    jf: { path: '/api/orders/jobfields', ls: LS_UNDO, label: '渠道/群名/初稿/终稿' },
+    w: { path: '/api/orders/writer-patch', ls: 'jobs_undo_writer_v1', label: '派单员' },
+  };
   let UP = LS.read(LS_UP, []);
   let LOCAL = LS.read(LS_LOCAL, []);
   let DRAFT = LS.read(LS_DRAFT, {});
-  let UNDO = LS.read(LS_UNDO, null);
+  let UNDO = { jf: LS.read(CH.jf.ls, null), w: LS.read(CH.w.ls, null) };
+  let PREV = { jf: null, w: null };
   let LED = [], TRUNC = false, LOADING = true, LOADERR = '';
   let VIEW = 'doing', Q = '', TEAM = '';
   let RECON = null, COLMAPS = [];
   let SEL = new Set(), FIX = new Set();
   let BFONLY = true, BFALL = false;
-  let PREVIEW = null;
+  let FULL = null, FVIEW = 'all', FQ = '', FPAGE = 0, FSEL = new Set(), FBUSY = '';
   let DUPRES = null, DUPT = null, DUPSEQ = 0;
   let MIGRATED = 0;
 
@@ -308,6 +314,21 @@ export function mount(host) {
         </div>
       </details>
 
+      <details class="fold" id="foldFull"><summary>🗂 完整单子 · 全量整理<span class="sub">台账全部老单 + 上游两侧并排：每单缺什么、建议补什么，一次整理完</span></summary>
+        <div class="fbody">
+          <div class="row2">
+            <span class="sub">来源勾法跟上面「上游对账」共用，改完直接拉：</span>
+            <button class="btn p" id="fGo">拉全量并合并</button>
+            <input id="fFq" style="width:200px" placeholder="搜单号 / 派单员 / 群名 / 备注">
+            <span class="sub" id="fBusy"></span>
+          </div>
+          <div class="chips" id="fStats" style="margin-top:8px"></div>
+          <div class="bar" id="fBar" style="display:none"></div>
+          <div id="fPrevBox"></div>
+          <div class="bwrap" id="fOut"></div>
+        </div>
+      </details>
+
       <div id="list"></div>
 
       <details class="fold" id="foldBackfill"><summary>🧾 老单补录 / 批量修正<span class="sub">历史单缺的渠道·群名·初稿·终稿：完全展示、按月折叠、勾选批量，先预览再写库</span></summary>
@@ -326,7 +347,7 @@ export function mount(host) {
             <button class="btn p" id="upAdd">＋ 添加</button>
           </div></div>
       </details>`;
-    paintHead(); paintSum(); paintViews(); paintTeamFilter(); paintList(); paintUpstream(); paintNewTeam(); paintBackfill();
+    paintHead(); paintSum(); paintViews(); paintTeamFilter(); paintList(); paintUpstream(); paintNewTeam(); paintBackfill(); paintFull();
     bind();
   }
 
@@ -694,7 +715,7 @@ export function mount(host) {
         <button class="btn p" id="bfPrev">预览改动（不写库）</button>
         <button class="btn g" id="bfDrop">丢弃全部草稿</button>
         <button class="btn g" id="bfDerive">用上游数据带出渠道/群名</button>
-        ${UNDO ? `<button class="btn g" id="bfUndo">撤销上一批（${(UNDO.rows || []).length} 单）</button>` : ''}
+        ${UNDO.jf ? `<button class="btn g" id="bfUndo">撤销上一批新字段（${(UNDO.jf.rows || []).length} 单）</button>` : ''}
       </div>
       <div class="sub" style="margin:8px 0">写库只碰 <b>渠道 / 群名 / 初稿 / 终稿</b> 四个字段：金额、状态（分类）、备注、完单日、单号、接单日、分成、派单员都由台账原有接口管，这条路进不去。已结算的老单同样能批量补，状态不动。</div>
       <div id="bfPrevBox"></div>
@@ -755,7 +776,7 @@ export function mount(host) {
       if (v === bfLive(o, k)) delete DRAFT[id][k]; else DRAFT[id][k] = v;
       if (!Object.keys(DRAFT[id]).length) delete DRAFT[id];
       LS.write(LS_DRAFT, DRAFT);
-      PREVIEW = null;                 // 草稿又变了，旧预览作废，免得拿着过期对照表去点写入
+      PREV.jf = null;                 // 草稿又变了，旧预览作废，免得拿着过期对照表去点写入
       paintBackfill(); paintHead();
     });
     const teams = [...new Set(UP.map(u => u.team).filter(Boolean))];
@@ -765,10 +786,10 @@ export function mount(host) {
     $('#bfDrop').onclick = () => {
       if (!draftCount()) return toast('没有待写入的草稿');
       if (!confirm('丢弃全部草稿？（还没写库的改动会没掉；台账本来就一行没动）')) return;
-      DRAFT = {}; LS.write(LS_DRAFT, DRAFT); PREVIEW = null; paintBackfill(); paintHead();
+      DRAFT = {}; LS.write(LS_DRAFT, DRAFT); PREV.jf = null; paintBackfill(); paintHead();
     };
     $('#bfDerive').onclick = runDerive;
-    if (UNDO && $('#bfUndo')) $('#bfUndo').onclick = runUndo;
+    if (UNDO.jf && $('#bfUndo')) $('#bfUndo').onclick = () => undoPatches('jf');
     paintSelN();
   }
   function paintSelN() { const el = $('#bfSelN'); if (el) el.textContent = `已勾 ${SEL.size} 单`; }
@@ -800,31 +821,23 @@ export function mount(host) {
     });
     Object.keys(DRAFT).forEach(id => { if (!Object.keys(DRAFT[id] || {}).length) delete DRAFT[id]; });
     LS.write(LS_DRAFT, DRAFT);
-    PREVIEW = null;
+    PREV.jf = null;
     paintBackfill(); paintHead();
     toast(`已写进草稿 ${n} 单${skip ? `（跳过 ${skip} 处：已有值且没勾「覆盖已填的」）` : ''}　下一步点「预览改动」`);
   }
 
-  async function runPreview() {
-    const patches = bfPatches();
-    if (!patches.length) return toast('没有待写入的改动');
-    const ov = $('#bOv') ? $('#bOv').checked : false;
-    $('#bfPrevBox').innerHTML = '<div class="sub">正在算这 ' + patches.length + ' 单会改成什么（只是预览，一行都没写）…</div>';
-    try {
-      const j = await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches, apply: false, onlyEmpty: !ov }) });
-      PREVIEW = { j, patches, onlyEmpty: !ov };
-      paintBfPrev();
-    } catch (e) { $('#bfPrevBox').innerHTML = '<div class="sub">预览失败：' + esc(e.message || String(e)) + '</div>'; }
+  // 预览 → 写入 → 撤销：两条通道（新字段 / 派单员）共用一套流程，差别只在走哪个端点、快照存哪个键
+  async function patchPreview(ch, patches, onlyEmpty) {
+    const j = await api(ch.path, { method: 'POST', body: JSON.stringify({ patches, apply: false, onlyEmpty }) });
+    return { ch, j, patches, onlyEmpty };
   }
 
-  function paintBfPrev() {
-    const box = $('#bfPrevBox');
-    if (!box) return;
-    if (!PREVIEW) { box.innerHTML = ''; return; }
-    const j = PREVIEW.j, rows = j.rows || [];
-    box.innerHTML = `<details class="bk ${rows.length ? 'info' : 'quiet'}" open><summary>预览：<b>${rows.length}</b> 单将要写入（共 ${rows.reduce((t, r) => t + (r.changed || []).length, 0)} 处字段）${j.skippedCount ? ' · 跳过 ' + j.skippedCount + ' 处' : ''}${j.badCount ? ' · 日期格式不对 ' + j.badCount + ' 处' : ''}</summary><div class="bkb">
-      ${rows.length ? `<div class="row2"><button class="btn p" id="bfWrite">确认写入台账（${rows.length} 单）</button>
-        <span class="sub">一单一单写，写完留快照可「撤销上一批」。${j.onlyEmpty ? '这次是「不覆盖」：已有值的字段服务端直接跳过。' : '这次勾了「覆盖已填的」。'}</span></div>
+  function prevBlock(tag, p) {
+    const j = p.j, rows = j.rows || [];
+    return `<details class="bk ${rows.length ? 'info' : 'quiet'}" open><summary>预览 ${esc(p.ch.label)}：<b>${rows.length}</b> 单将要写入（共 ${rows.reduce((t, r) => t + (r.changed || []).length, 0)} 处）${j.skippedCount ? ' · 跳过 ' + j.skippedCount + ' 处' : ''}${j.badCount ? ' · 格式不对 ' + j.badCount + ' 处' : ''}</summary><div class="bkb">
+      ${rows.length ? `<div class="row2"><button class="btn p" data-pw="${tag}">确认写入台账（${rows.length} 单）</button>
+        <button class="btn g" data-pdrop="${tag}">丢弃这次预览</button>
+        <span class="sub">一单一单写，写完留快照可撤销。${j.onlyEmpty ? '这次是「不覆盖」：已有值的字段服务端直接跳过。' : '这次勾了「覆盖已填的」。'}</span></div>
         <table><thead><tr><th>单号</th><th>接单日</th><th>状态</th><th>改哪些</th><th>现在</th><th>将要</th></tr></thead>
         <tbody>${rows.slice(0, 120).map(r => `<tr><td class="mono">${esc(r.orderNo || '—')}</td><td class="sub">${esc(r.date || '')}</td><td class="sub">${esc(r.status || '')}</td>
           <td>${esc((r.labels || []).join('、'))}</td>
@@ -833,43 +846,75 @@ export function mount(host) {
         ${rows.length > 120 ? '<div class="sub">只列前 120 行，写入是全部 ' + rows.length + ' 行。</div>' : ''}`
         : '<div class="empty">没有可写入的改动：要么值本来就一样，要么都被「不覆盖」挡住了。</div>'}
       ${j.capped ? '<div class="est">一次最多 600 单，这次被截断了，请分批写。</div>' : ''}
-      ${(j.bad || []).length ? '<div class="dup bad">日期格式不对：' + esc(j.bad.map(x => x.field + '「' + x.value + '」').join('；')) + '</div>' : ''}
+      ${(j.bad || []).length ? '<div class="dup bad">格式不对：' + esc(j.bad.map(x => x.field + '「' + x.value + '」').join('；')) + '</div>' : ''}
       ${(j.skipped || []).length ? '<div class="sub" style="margin-top:6px">跳过（前 20 条）：' + esc(j.skipped.slice(0, 20).map(s => (s.orderNo || s.id || '') + ' ' + s.why).join('　|　')) + '</div>' : ''}
       </div></details>`;
-    if ($('#bfWrite')) $('#bfWrite').onclick = writeDraft;
   }
 
-  async function writeDraft() {
-    if (!PREVIEW) return toast('先预览');
-    const rows = PREVIEW.j.rows || [];
+  // 预览表上的按钮都在重绘出来的 DOM 里，统一在这里挂：data-pw=写入，data-pdrop=丢弃
+  function bindPrev(root) {
+    $$('[data-pw]', root).forEach(b => b.onclick = () => writePatches(b.dataset.pw));
+    $$('[data-pdrop]', root).forEach(b => b.onclick = () => {
+      PREV[b.dataset.pdrop] = null;
+      b.dataset.pdrop === 'jf' ? paintBackfill() : paintFull();
+    });
+  }
+
+  async function writePatches(tag) {
+    const p = PREV[tag];
+    if (!p) return toast('先预览');
+    const rows = p.j.rows || [];
     if (!rows.length) return toast('预览里没有可写的行');
-    if (!confirm('确认写入台账？\n\n' + rows.length + ' 单 · ' + rows.reduce((t, r) => t + (r.changed || []).length, 0) + ' 处字段\n只写渠道/群名/初稿/终稿，其余一律不动。')) return;
+    if (!confirm('确认写入台账？\n\n' + rows.length + ' 单 · ' + rows.reduce((t, r) => t + (r.changed || []).length, 0) + ' 处\n只改「' + p.ch.label + '」；金额 / 状态 / 备注 / 完单日 / 单号 / 接单日 / 分成一律不动。')) return;
     try {
-      const j = await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: PREVIEW.patches, apply: true, onlyEmpty: PREVIEW.onlyEmpty }) });
+      const j = await api(p.ch.path, { method: 'POST', body: JSON.stringify({ patches: p.patches, apply: true, onlyEmpty: p.onlyEmpty }) });
       const done = (j.rows || []).filter(r => r.wrote);
       if (done.length) {   // 快照：存这次真正改动的键的旧值，撤销按旧值写回（原来空着就清成空）
-        UNDO = { at: new Date().toISOString(), rows: done.map(r => ({ id: r.id, orderNo: r.orderNo, before: r.before, changed: r.changed })) };
-        LS.write(LS_UNDO, UNDO);
+        UNDO[tag] = { at: new Date().toISOString(), label: p.ch.label, rows: done.map(r => ({ id: r.id, orderNo: r.orderNo, before: r.before, changed: r.changed })) };
+        LS.write(p.ch.ls, UNDO[tag]);
       }
-      done.forEach(r => { delete DRAFT[r.id]; });
-      Object.keys(DRAFT).forEach(id => { if (!Object.keys(DRAFT[id] || {}).length) delete DRAFT[id]; });
-      LS.write(LS_DRAFT, DRAFT);
-      PREVIEW = null;
+      if (tag === 'jf') {
+        done.forEach(r => { delete DRAFT[r.id]; });
+        Object.keys(DRAFT).forEach(id => { if (!Object.keys(DRAFT[id] || {}).length) delete DRAFT[id]; });
+        LS.write(LS_DRAFT, DRAFT);
+      }
+      PREV[tag] = null;
       toast('已写入 ' + done.length + ' 单' + (j.skippedCount ? '，跳过 ' + j.skippedCount + ' 处' : ''));
       await loadLedger(true);
+      if (FULL) await runFull(true);
     } catch (e) { toast('写入失败：' + (e.message || e) + '（可能只写进去一部分，展开台账核对一下）'); }
   }
 
-  async function runUndo() {
-    if (!UNDO || !(UNDO.rows || []).length) return toast('没有上一批记录');
-    const patches = UNDO.rows.map(r => ({ id: r.id, fields: Object.fromEntries((r.changed || []).map(k => [k, (r.before || {})[k] || ''])) }));
-    if (!confirm('把上一批 ' + patches.length + ' 单的这几个字段改回写入前的值？\n\n原来空着的会改回空。')) return;
+  async function undoPatches(tag) {
+    const u = UNDO[tag];
+    if (!u || !(u.rows || []).length) return toast('没有上一批记录');
+    const patches = u.rows.map(r => ({ id: r.id, fields: Object.fromEntries((r.changed || []).map(k => [k, (r.before || {})[k] || ''])) }));
+    if (!confirm('把上一批「' + (u.label || '') + '」' + patches.length + ' 单改回写入前的值？\n\n原来空着的会改回空。')) return;
     try {
-      const j = await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches, apply: true, onlyEmpty: false }) });
-      UNDO = null; try { localStorage.removeItem(LS_UNDO); } catch (e) { }
+      const j = await api(CH[tag].path, { method: 'POST', body: JSON.stringify({ patches, apply: true, onlyEmpty: false }) });
+      UNDO[tag] = null; try { localStorage.removeItem(CH[tag].ls); } catch (e) { }
       toast('已回退 ' + (j.wrote || 0) + ' 单');
       await loadLedger(true);
+      if (FULL) await runFull(true);
     } catch (e) { toast('回退失败：' + (e.message || e)); }
+  }
+
+  async function runPreview() {
+    const patches = bfPatches();
+    if (!patches.length) return toast('没有待写入的改动');
+    const ov = $('#bOv') ? $('#bOv').checked : false;
+    $('#bfPrevBox').innerHTML = '<div class="sub">正在算这 ' + patches.length + ' 单会改成什么（只是预览，一行都没写）…</div>';
+    try {
+      PREV.jf = await patchPreview(CH.jf, patches, !ov);
+      paintBfPrev();
+    } catch (e) { $('#bfPrevBox').innerHTML = '<div class="sub">预览失败：' + esc(e.message || String(e)) + '</div>'; }
+  }
+
+  function paintBfPrev() {
+    const box = $('#bfPrevBox');
+    if (!box) return;
+    box.innerHTML = PREV.jf ? prevBlock('jf', PREV.jf) : '';
+    bindPrev(box);
   }
 
   // 「我不是可以导出别处的数据吗」：粘的表 / 几何拉取里带的渠道、群名，直接带成台账缺的字段
@@ -887,11 +932,155 @@ export function mount(host) {
         Object.entries(x.fill || {}).forEach(([k, v]) => { if (!DRAFT[x.id][k]) { DRAFT[x.id][k] = v; n++; } });
       });
       LS.write(LS_DRAFT, DRAFT);
-      PREVIEW = null;
+      PREV.jf = null;
       paintBackfill();
       await runPreview();
       toast('从上游带出 ' + c.length + ' 单、' + n + ' 处字段，已进草稿并算好预览（还没写库）');
     } catch (e) { $('#bfPrevBox').innerHTML = '<div class="sub">带出失败：' + esc(e.message || String(e)) + '</div>'; }
+  }
+
+  /* ============ 完整单子 · 全量整理：台账全部老单 × 上游两侧并排 ============ */
+  // 他要的是"先把老单子全部整理"，所以这张表不是差异清单，是总账：每单一行，两侧都在，缺什么一目了然。
+  // 派单员三处各有一份（台账 writer / 金山「A订单负责人-钦钦」/ 几何 designer_name），这里并排给出来，
+  // 搬运只走 /api/orders/writer-patch；分成比例故意只列出不写（45% 与自留 100% 的口径还没定）。
+  const FLAG_LABEL = { personBad: '两边派单员不一致', rateBad: '比例≠这批众数', statusBad: '状态与上游不一致', amtBad: '金额差>1元' };
+  const FCHIPS = [
+    ['all', '全部'], ['miss', '还缺东西的'], ['channel', '缺渠道'], ['group', '缺群名'],
+    ['draft', '缺初稿'], ['final', '缺终稿'], ['writer', '缺派单员'],
+    ['up', '上游有这单'], ['noUp', '这批上游没这单'], ['flag', '两侧对不上的'], ['noKey', '台账没单号的'],
+  ];
+  const SUG_LABEL = { channel: '渠道', group: '群名', draft: '初稿', final: '终稿', writer: '派单员' };
+
+  function fullFilter() {
+    const rows = (FULL && FULL.rows) || [];
+    const kw = FQ.trim().toLowerCase();
+    return rows.filter(r => {
+      if (FVIEW === 'miss') { if (!(r.miss.length || !r.writer)) return false; }
+      else if (FVIEW === 'channel' || FVIEW === 'group' || FVIEW === 'draft' || FVIEW === 'final') { if (!r.miss.includes(FVIEW)) return false; }
+      else if (FVIEW === 'writer') { if (r.writer) return false; }
+      else if (FVIEW === 'up') { if (!r.up) return false; }
+      else if (FVIEW === 'noUp') { if (r.up) return false; }
+      else if (FVIEW === 'flag') { if (!r.flags.length) return false; }
+      else if (FVIEW === 'noKey') { if (r.no) return false; }
+      if (kw && ![r.no, r.writer, r.group, r.note, r.channel, (r.up || {}).person || ''].some(x => String(x || '').toLowerCase().includes(kw))) return false;
+      return true;
+    });
+  }
+
+  async function runFull(keep) {
+    const sources = reconSources();
+    if (!sources) return;
+    FBUSY = '正在翻台账全量并合并上游…'; paintFull();
+    try {
+      const j = await api('/api/upstream/full', { method: 'POST', body: JSON.stringify({ sources, dueDraft: DEF_DUE.draft, dueFinal: DEF_DUE.final }) });
+      FULL = j;
+      if (!keep) { FSEL = new Set(); FPAGE = 0; }
+      FBUSY = '';
+      paintFull();
+      toast('完整单子：台账 ' + j.scanned + ' 单，其中 ' + j.stats.withUp + ' 单在这批上游里');
+    } catch (e) { FBUSY = e.message || String(e); paintFull(); }
+  }
+
+  function paintFull() {
+    const out = $('#fOut'), stats = $('#fStats'), bar = $('#fBar');
+    if (!out) return;
+    if (FBUSY) { out.innerHTML = '<div class="empty">' + esc(FBUSY) + '</div>'; bar.style.display = 'none'; return; }
+    if (!FULL) {
+      out.innerHTML = '<div class="empty">还没拉。上面勾好来源（几何拉取 / 粘贴表格），点「拉全量并合并」。<br>这张表是<b>台账全部老单</b>一行一单，不是只列差异 —— 服务端翻页读，不吃列表接口那个 500 上限。</div>';
+      stats.innerHTML = ''; bar.style.display = 'none'; $('#fPrevBox').innerHTML = '';
+      return;
+    }
+    const s = FULL.stats, mc = FULL.missCnt;
+    stats.innerHTML = FCHIPS.map(([k, n]) => `<button class="chip${FVIEW === k ? ' on' : ''}" data-fv="${k}">${n}${k === 'all' ? '（' + s.total + '）' : ''}</button>`).join('');
+    const rm = Object.entries(FULL.rateMode || {});
+    $('#fBusy').innerHTML = `<span class="tag">台账 ${s.total} 单 · 上游有 ${s.withUp} · 这批没有 ${s.noUp} · 跨源重复 ${s.crossDup}</span>`
+      + `<span class="tag">缺：渠道 ${mc.channel} · 群名 ${mc.group} · 初稿 ${mc.draft} · 终稿 ${mc.final} · 派单员 ${mc.writer}</span>`
+      + `<span class="tag">对不上：派单员 ${s.personBad} · 比例 ${s.rateBad} · 状态 ${s.statusBad} · 金额 ${s.amtBad}</span>`
+      + rm.map(([k, v]) => `<span class="tag">${esc(k)} 这批分成比例众数 = <b>${v.rate}%</b>（${v.n}/${v.of} 行）</span>`).join('')
+      + (FULL.truncated ? '<span class="est">台账超过 1 万单，这里只翻了前 1 万</span>' : '');
+
+    const rows = fullFilter();
+    const pages = Math.max(1, Math.ceil(rows.length / 100));
+    if (FPAGE >= pages) FPAGE = pages - 1;
+    const view = rows.slice(FPAGE * 100, FPAGE * 100 + 100);
+    bar.style.display = '';
+    bar.innerHTML = `<b>批量按建议补</b>
+      <span class="sub">只填台账空着的位置，已有值的一律不动；先预览再写，写完能撤销</span>
+      <span class="grow"></span>
+      <button class="btn sm g" id="fSelAll">全选这批 ${rows.length} 单</button>
+      <button class="btn sm g" id="fSelNo">清空勾选</button>
+      <span class="sub" id="fSelN"></span>
+      <button class="btn g" id="fSugJf">按建议补「渠道/群名/初稿/终稿」</button>
+      <button class="btn g" id="fSugW">把上游派单员搬进台账</button>
+      ${UNDO.w ? `<button class="btn g" id="fUndoW">撤销上一批派单员（${(UNDO.w.rows || []).length} 单）</button>` : ''}`;
+
+    out.innerHTML = `<table><thead><tr><th style="width:34px">选</th><th>接单日</th><th>单号</th><th class="num">金额</th><th class="num">比例</th><th class="num">分成</th><th>状态</th><th>派单员(台账)</th><th>上游侧</th><th>渠道</th><th>群名</th><th>初稿</th><th>终稿</th><th>问题</th><th>建议补</th></tr></thead>
+      <tbody>${view.length ? view.map(r => {
+        const up = r.up ? `${esc(r.up.src)} ${money(r.up.amount)}元${r.up.paid && r.up.paid !== r.up.amount ? ' · 发 ' + money(r.up.paid) : ''}${r.up.person ? ' · ' + esc(r.up.person) : ''}${r.up.status ? ' · ' + esc(r.up.status) : ''}` : '<span class="miss">这批没有</span>';
+        const flags = r.flags.map(f => `<span class="tag" style="background:#fef3c7;color:#b45309">${esc(FLAG_LABEL[f] || f)}</span>`).join('')
+          + (r.srcs.length > 1 ? `<span class="tag" style="background:#fee2e2;color:#b91c1c">跨源 ${esc(r.srcs.join('+'))}</span>` : '')
+          + (!r.no ? '<span class="tag" style="background:#fee2e2;color:#b91c1c">没单号</span>' : '');
+        const sug = Object.entries(r.suggest || {}).map(([k, v]) => `<span class="tag">${esc(SUG_LABEL[k])}=${esc(v)}</span>`).join('') || '<span class="miss">—</span>';
+        const cell = (k, v) => v ? esc(v) : '<span class="miss">缺</span>';
+        return `<tr${r.miss.length || !r.writer ? '' : ' class="done-row"'}>
+          <td><input type="checkbox" data-fsel="${esc(r.id)}"${FSEL.has(r.id) ? ' checked' : ''}></td>
+          <td class="sub">${esc(r.date)}</td><td class="mono">${esc(r.no || '—')}</td>
+          <td class="num">${money(r.amount)}</td><td class="num">${r.rate}%</td><td class="num">${money(r.share)}</td>
+          <td class="sub">${esc(r.status)}</td>
+          <td>${r.writer ? esc(r.writer) : '<span class="miss">缺</span>'}</td>
+          <td class="sub">${up}</td>
+          <td>${cell('channel', r.channel)}</td><td>${cell('group', r.group)}</td>
+          <td>${cell('draft', r.draft)}</td><td>${cell('final', r.final)}</td>
+          <td>${flags || '<span class="miss">—</span>'}</td>
+          <td>${sug}</td></tr>`;
+      }).join('') : '<tr><td colspan="15" class="sub" style="padding:12px">这批筛选下没有单。</td></tr>'}</tbody></table>
+      <div class="row2" style="margin-top:8px">
+        <button class="btn sm g" id="fPrevPg" ${FPAGE ? '' : 'disabled'}>‹ 上一页</button>
+        <span class="sub">第 ${FPAGE + 1} / ${pages} 页（每页 100 行，共 ${rows.length} 单）</span>
+        <button class="btn sm g" id="fNextPg" ${FPAGE + 1 < pages ? '' : 'disabled'}>下一页 ›</button>
+        <span class="sub">一次只画 100 行是给眼睛看的，批量勾选和写入按<b>全部筛选结果</b>算，不受这一页限制。</span>
+      </div>`;
+    $('#fPrevBox').innerHTML = PREV.jf ? prevBlock('jf', PREV.jf) : PREV.w ? prevBlock('w', PREV.w) : '';
+    bindPrev($('#fPrevBox'));
+    bindFull(rows);
+  }
+
+  function bindFull(rows) {
+    $$('#fStats [data-fv]').forEach(b => b.onclick = () => { FVIEW = b.dataset.fv; FPAGE = 0; paintFull(); });
+    $('#fSelAll').onclick = () => { rows.forEach(r => FSEL.add(r.id)); paintFull(); };
+    $('#fSelNo').onclick = () => { FSEL = new Set(); paintFull(); };
+    $$('#fOut [data-fsel]').forEach(x => x.onchange = () => { x.checked ? FSEL.add(x.dataset.fsel) : FSEL.delete(x.dataset.fsel); paintSelN2(); });
+    $('#fPrevPg').onclick = () => { FPAGE--; paintFull(); };
+    $('#fNextPg').onclick = () => { FPAGE++; paintFull(); };
+    $('#fSugJf').onclick = () => previewSuggest('jf');
+    $('#fSugW').onclick = () => previewSuggest('writer');
+    if (UNDO.w && $('#fUndoW')) $('#fUndoW').onclick = () => undoPatches('w');
+    paintSelN2();
+  }
+  function paintSelN2() { const el = $('#fSelN'); if (el) el.textContent = `已勾 ${FSEL.size} 单`; }
+
+  // 「建议」是服务端算出来的（渠道=来源名、群名/派单员=上游那格、交期=接单+N），这里只负责把它变成补丁
+  function suggestPatches(kind) {
+    const out = [];
+    fullFilter().forEach(r => {
+      if (!FSEL.has(r.id)) return;
+      const f = {};
+      if (kind === 'jf') ['channel', 'group', 'draft', 'final'].forEach(k => { if (r.suggest[k]) f[k] = r.suggest[k]; });
+      else if (r.suggest.writer) f.writer = r.suggest.writer;
+      if (Object.keys(f).length) out.push({ id: r.id, fields: f });
+    });
+    return out;
+  }
+  async function previewSuggest(kind) {
+    const tag = kind === 'writer' ? 'w' : 'jf';
+    if (!FSEL.size) return toast('先勾选要处理的单');
+    const patches = suggestPatches(kind);
+    if (!patches.length) return toast('这批里没有可带的建议：要么台账已经有值，要么这批上游没给这一项');
+    $('#fPrevBox').innerHTML = '<div class="sub">正在算这 ' + patches.length + ' 单会改成什么（只是预览，一行都没写）…</div>';
+    try {
+      PREV[tag] = await patchPreview(CH[tag], patches, true);   // 这条路上只Empty=true：建议永远不覆盖已有值
+      paintFull();
+    } catch (e) { $('#fPrevBox').innerHTML = '<div class="sub">预览失败：' + esc(e.message || String(e)) + '</div>'; }
   }
 
   /* ============ 上游对账：一次合并「几何拉取 + 粘贴表格」，判定全在服务端一份规则里 ============ */
@@ -1060,6 +1249,8 @@ export function mount(host) {
       paintUpstream(); paintNewTeam(); paintTeamFilter(); toast('已加一行渠道（只存这台浏览器）');
     };
     $('#rGo').onclick = runRecon;
+    $('#fGo').onclick = () => runFull(false);
+    $('#fFq').oninput = () => { FQ = $('#fFq').value; FPAGE = 0; paintFull(); };
     $('#rCsv').onclick = exportCsv;
     $('#rAccSave').onclick = saveAccount;
     $('#rReCalc').onclick = runRecon;
