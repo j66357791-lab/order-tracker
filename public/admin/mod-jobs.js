@@ -41,6 +41,35 @@ h1{font-size:20px;margin:0 0 2px}
 .sc.late b{color:#dc2626}.sc.soon b{color:#d97706}.sc.doing b{color:#2563eb}.cash b{color:#0f766e}
 .sc:hover{border-color:#94a3b8}
 .sc.on{border-color:#1e293b;box-shadow:inset 0 0 0 1px #1e293b;background:#f8fafc}
+/* 【v26.95】做单情况：紧凑指标 + 7 天时间轴 */
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.st{border:1px solid #e2e8f0;background:#fff;border-radius:10px;padding:7px 12px;cursor:pointer;font:inherit;color:#1e293b;display:flex;align-items:baseline;gap:6px}
+.st b{font-size:19px;font-variant-numeric:tabular-nums}
+.st span{font-size:11.5px;color:#64748b}
+.st.on{border-color:#1e293b;box-shadow:inset 0 0 0 1px #1e293b;background:#f8fafc}
+.st.late b{color:#dc2626}.st.soon b{color:#d97706}.st.doing b{color:#2563eb}.st.cash b{color:#0f766e;font-size:17px}
+.week{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin:2px 0 12px}
+.day{border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:6px 4px 7px;text-align:center;cursor:pointer;font:inherit;color:#1e293b}
+.day .d{font-size:11px;color:#64748b}
+.day .n{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.3}
+.day .k{font-size:10.5px;color:#94a3b8}
+.day.on{border-color:#1e293b;box-shadow:inset 0 0 0 1px #1e293b;background:#f8fafc}
+.day.late .n{color:#dc2626}.day.today .n{color:#d97706}
+.day.empty .n{color:#cbd5e1}
+@media (max-width:700px){.week{grid-template-columns:repeat(4,minmax(0,1fr))}}
+/* 列表的时间轴分组 */
+.grp{display:flex;align-items:center;gap:8px;margin:13px 0 6px;font-size:12px;color:#475569}
+.grp b{font-size:12.5px;font-weight:600}
+.grp::after{content:"";flex:1;height:1px;background:#e2e8f0}
+.grp.late b{color:#dc2626}.grp.today b{color:#b45309}
+/* 卡片内时间轴：接单 → 初稿 → 终稿 */
+.tl{display:flex;align-items:flex-start;margin-top:9px;font-size:11px;color:#64748b}
+.tl .node{display:flex;flex-direction:column;align-items:center;min-width:70px;text-align:center}
+.tl .dot{width:9px;height:9px;border-radius:99px;background:#cbd5e1;margin-bottom:2px}
+.tl .node.ok .dot{background:#16a34a}.tl .node.late .dot{background:#dc2626}.tl .node.today .dot{background:#f59e0b}
+.tl .line{flex:1;height:2px;background:#e2e8f0;margin-top:4px}
+.tl .node.late .t{color:#dc2626;font-weight:600}
+.tl .node.today .t{color:#b45309;font-weight:600}
 /* 进度卡 */
 .jc{display:grid;grid-template-columns:1fr auto;gap:12px;border:1px solid #e2e8f0;border-left:5px solid #cbd5e1;border-radius:12px;background:#fff;padding:11px 14px;margin-bottom:9px}
 .jc.late{border-left-color:#dc2626;background:#fff8f8}
@@ -195,6 +224,7 @@ export function mount(host) {
   let PREV = { jf: null, w: null };
   let LED = [], TRUNC = false, LOADING = true, LOADERR = '';
   let VIEW = 'doing', Q = '', TEAM = '';
+  let DAY = '';   // 【v26.95】时间轴：点某一天只看那天到期的（'' / 'overdue' / 'YYYY-MM-DD'）
   // 【v26.91】提醒排序：默认按初稿应交时间先后跟进；可切终稿顺序或原来的紧急度。选择存本机。
   let SORT = LS.read('jobs_sort_v0', 'draft');
   if (!['draft', 'final', 'heat'].includes(SORT)) SORT = 'draft';
@@ -279,6 +309,13 @@ export function mount(host) {
     else if (VIEW === 'est') { if (CLOSED.has(j.status) || !(j.draftEst || j.finalEst)) return false; }
     else if (!WIP.has(j.status)) return false;   // 默认「在做的」= 待结算之前，台账里这几档自动进来
     if (TEAM && j.channel !== TEAM) return false;
+    // 时间轴选了一天：初稿或终稿应交落在那天（逾期档＝终稿已经过了还没闭环）
+    if (DAY) {
+      const hit = DAY === 'overdue'
+        ? (isDate(j.finalDue) && daysLeft(j.finalDue) < 0 && !CLOSED.has(j.status))
+        : (j.draftDue === DAY || j.finalDue === DAY);
+      if (!hit) return false;
+    }
     const q = Q.trim().toLowerCase();
     if (q && ![j.no, j.group, j.person, j.note, j.channel].some(x => String(x || '').toLowerCase().includes(q))) return false;
     return true;
@@ -299,15 +336,17 @@ export function mount(host) {
   // 他粘进框里的表格、勾好的来源、刚跑出来的对账结果就这么没了。现在骨架只建一次，切回来只重画数据。
   let BUILT = false;
   function paintAll() {
-    paintHead(); paintSum(); paintViews(); paintTeamFilter(); paintList();
+    paintHead(); paintSum(); paintWeek(); paintViews(); paintTeamFilter(); paintList();
     paintUpstream(); paintNewTeam(true); paintBackfill(); paintFull(); paintArchives();
   }
   function skeleton() {
     if (BUILT) { paintAll(); return; }
     $('#app').innerHTML = `
-      <h1>🛠 做单中心 <span class="sub">做到哪了 + 还剩多久 · 主数据读台账真单</span></h1>
+      <h1>🛠 做单中心 <span class="sub">今天该做什么 · 一眼看完</span></h1>
       <div class="banner" id="head">正在读台账…</div>
-      <div class="sum" id="sum"></div>
+      <div class="stats" id="sum"></div>
+      <div class="week" id="week"></div>
+      <div class="sub" style="margin:-8px 0 10px">时间轴＝初稿/终稿任一到期日；点一天只看那天，再点一次取消。卡片上「编辑整单」就地改，不用切去数据中心。</div>
       <div class="chips" id="views"></div>
       <div class="chips" style="margin-top:-6px">
         <select id="fTeam" style="max-width:180px"></select>
@@ -337,6 +376,25 @@ export function mount(host) {
           <button class="btn g" id="nLocal">只留本机</button>
           <span class="sub">初/终稿留空 = 按接单日 + 渠道默认天数推算，卡片上会标「推算」。</span>
         </div></div>
+      </details>
+
+      <div id="list"></div>
+
+      <details class="fold" id="foldBackfill"><summary>🧾 老单补录 / 批量修正<span class="sub">历史单缺的渠道·群名·初稿·终稿：完全展示、按月折叠、勾选批量，先预览再写库</span></summary>
+        <div class="fbody"><div id="bfBox"><div class="sub">正在读台账…</div></div></div>
+      </details>
+
+      <details class="fold" id="foldUp"><summary>⚙️ 渠道 / 上游设置<span class="sub">渠道、派单员、分成比例、默认交期天数 —— 配一次长期用</span></summary>
+        <div class="fbody"><div id="upBox"></div><hr style="border:0;border-top:1px solid #f1f5f9;margin:12px 0">
+          <div class="form">
+            <div class="f"><label>渠道（上游团队）*</label><input id="upTeam" placeholder="例：几何团队"></div>
+            <div class="f"><label>派单员</label><input id="upPerson" placeholder="给这单派活的人"></div>
+            <div class="f"><label>分成比例 %</label><input id="upRate" type="number" min="1" max="100" step="0.5" value="45"></div>
+            <div class="f"><label>初稿默认 + 天</label><input id="upDD" type="number" min="1" max="60" value="2"></div>
+            <div class="f"><label>终稿默认 + 天</label><input id="upDF" type="number" min="1" max="60" value="4"></div>
+            <div class="f"><label>备注</label><input id="upNote"></div>
+            <button class="btn p" id="upAdd">＋ 添加</button>
+          </div></div>
       </details>
 
       <details class="fold" id="foldRecon"><summary>🔎 上游对账（只读）<span class="sub">就在这里 · 几何视传拉取 + 粘贴表格合并比对，只列有问题的行</span></summary>
@@ -394,25 +452,6 @@ export function mount(host) {
         </div>
       </details>
 
-      <div id="list"></div>
-
-      <details class="fold" id="foldBackfill"><summary>🧾 老单补录 / 批量修正<span class="sub">历史单缺的渠道·群名·初稿·终稿：完全展示、按月折叠、勾选批量，先预览再写库</span></summary>
-        <div class="fbody"><div id="bfBox"><div class="sub">正在读台账…</div></div></div>
-      </details>
-
-      <details class="fold" id="foldUp"><summary>⚙️ 渠道 / 上游设置<span class="sub">渠道、派单员、分成比例、默认交期天数 —— 配一次长期用</span></summary>
-        <div class="fbody"><div id="upBox"></div><hr style="border:0;border-top:1px solid #f1f5f9;margin:12px 0">
-          <div class="form">
-            <div class="f"><label>渠道（上游团队）*</label><input id="upTeam" placeholder="例：几何团队"></div>
-            <div class="f"><label>派单员</label><input id="upPerson" placeholder="给这单派活的人"></div>
-            <div class="f"><label>分成比例 %</label><input id="upRate" type="number" min="1" max="100" step="0.5" value="45"></div>
-            <div class="f"><label>初稿默认 + 天</label><input id="upDD" type="number" min="1" max="60" value="2"></div>
-            <div class="f"><label>终稿默认 + 天</label><input id="upDF" type="number" min="1" max="60" value="4"></div>
-            <div class="f"><label>备注</label><input id="upNote"></div>
-            <button class="btn p" id="upAdd">＋ 添加</button>
-          </div></div>
-      </details>
-
       <div class="mask" id="edMask"><div class="modal" id="edBox"></div></div>`;
     BUILT = true;
     $('#fSort').value = SORT;
@@ -439,7 +478,7 @@ export function mount(host) {
       + (TRUNC ? `<br><b style="color:#b45309">接口一次最多返回 500 单，现在拿到 ${LED.length} 单，列表被截断</b>：提醒和补录只覆盖拿到的这部分，服务端分页排在下一期。` : '');
   }
 
-  /* ============ 到期汇总（点=筛） ============ */
+  /* ============ 做单情况（紧凑指标，点=筛） + 7 天时间轴 ============ */
   function paintSum() {
     const all = rowsAll();
     const open = all.filter(j => !CLOSED.has(j.status));
@@ -448,17 +487,36 @@ export function mount(host) {
     const draftBad = open.filter(j => { const n = daysLeft(j.draftDue); return n !== null && n < 0; });
     const est = open.filter(j => j.draftEst || j.finalEst);
     const waitPay = all.filter(j => j.status === '待结算');
-    const cell = (cls, n, label, view) => `<button class="sc ${cls}${VIEW === view ? ' on' : ''}" data-view="${view}"><b>${n}</b><span>${label}</span></button>`;
+    const cell = (cls, n, label, view) => `<button class="st ${cls}${VIEW === view ? ' on' : ''}" data-view="${view}"><b>${n}</b><span>${label}</span></button>`;
     $('#sum').innerHTML =
-      cell('late', late.length, '终稿已逾期', 'late') +
+      cell('doing', open.length, '在做的', 'doing') +
       cell('soon', soon.length, '今天/明天到期', 'soon') +
-      cell('doing', open.length, '在做的（待结算之前）', 'doing') +
-      `<button class="sc cash${VIEW === 'pay' ? ' on' : ''}" data-view="pay"><b>${money(waitPay.reduce((t, j) => t + j.amount * j.rate / 100, 0))}</b><span>待结算应得（${waitPay.length} 单）</span></button>` +
-      cell('', draftBad.length, '初稿早过还没交', 'draft') +
-      cell('', est.length, '交期还是推算的', 'est');
+      cell('', draftBad.length, '初稿过期未交', 'draft') +
+      cell('late', late.length, '终稿逾期', 'late') +
+      `<button class="st cash${VIEW === 'pay' ? ' on' : ''}" data-view="pay"><b>¥${money(waitPay.reduce((t, j) => t + j.amount * j.rate / 100, 0))}</b><span>待结算应得（${waitPay.length} 单）</span></button>` +
+      cell('', est.length, '交期靠推算', 'est');
     $$('#sum [data-view]').forEach(x => x.onclick = () => {
       VIEW = VIEW === x.dataset.view ? 'doing' : x.dataset.view;   // 再点一次=取消
       paintSum(); paintViews(); paintList();
+    });
+  }
+
+  // 【v26.95】7 天时间轴：每天有几单到期（初稿或终稿），点一天只看那天
+  function paintWeek() {
+    const box = $('#week');
+    if (!box) return;
+    const open = rowsAll().filter(j => !CLOSED.has(j.status));
+    const overdue = open.filter(j => isDate(j.finalDue) && daysLeft(j.finalDue) < 0).length;
+    const cells = [`<button class="day late${DAY === 'overdue' ? ' on' : ''}" data-day="overdue"><div class="d">逾期</div><div class="n">${overdue}</div><div class="k">单</div></button>`];
+    for (let i = 0; i < 7; i++) {
+      const d = dadd(localDate(), i);
+      const n = open.filter(j => j.draftDue === d || j.finalDue === d).length;
+      cells.push(`<button class="day${DAY === d ? ' on' : ''}${i === 0 ? ' today' : ''}${n ? '' : ' empty'}" data-day="${d}"><div class="d">${i === 0 ? '今天' : i === 1 ? '明天' : d.slice(5)}</div><div class="n">${n}</div><div class="k">单</div></button>`);
+    }
+    box.innerHTML = cells.join('');
+    $$('#week [data-day]').forEach(b => b.onclick = () => {
+      DAY = DAY === b.dataset.day ? '' : b.dataset.day;
+      paintWeek(); paintList();
     });
   }
 
@@ -482,13 +540,38 @@ export function mount(host) {
     if (LOADING) { $('#list').innerHTML = '<div class="empty">正在读台账…</div>'; return; }
     const rows = listed();
     const sortTxt = SORT === 'draft' ? '初稿应交时间从早到晚' : SORT === 'final' ? '终稿应交时间从早到晚' : '逾期最久的在最上面';
-    $('#cnt').textContent = `台账+本机共 ${rowsAll().length} 单，这里 ${rows.length} 单（${sortTxt}）`;
+    $('#cnt').textContent = `台账+本机共 ${rowsAll().length} 单，这里 ${rows.length} 单（${sortTxt}${DAY ? ' · 只看 ' + (DAY === 'overdue' ? '逾期' : DAY) : ''}）`;
     if (!rows.length) {
       $('#list').innerHTML = `<div class="empty">${LED.length || LOCAL.length ? '这个视图/筛选下没有单。切「全部」看看，或点上面数字换个筛。' : '台账里读不到单（也可能还没交付的确实是 0 单）。展开「老单补录」可以直接翻全部历史单。'}</div>`;
       return;
     }
-    $('#list').innerHTML = rows.map(j => card(j)).join('');
+    $('#list').innerHTML = (() => {
+      if (SORT === 'heat') return rows.map(j => card(j)).join('');
+      // 按交期分组：同一天的单排在一起，像时间轴一样往下走
+      const keyOf = j => {
+        if (CLOSED.has(j.status)) return '已闭环';
+        const v = SORT === 'draft' ? j.draftDue : j.finalDue;
+        if (!isDate(v)) return '没填交期';
+        const dl = daysLeft(v);
+        if (dl < 0) return v + ' · 已逾期 ' + (-dl) + ' 天';
+        if (dl === 0) return v + ' · 今天';
+        if (dl === 1) return v + ' · 明天';
+        return v;
+      };
+      let html = '', last = null;
+      rows.forEach(j => {
+        const g = keyOf(j);
+        if (g !== last) {
+          const cls = g.includes('逾期') ? ' late' : g.includes('今天') ? ' today' : '';
+          html += `<div class="grp${cls}"><b>${esc(g)}</b></div>`;
+          last = g;
+        }
+        html += card(j);
+      });
+      return html;
+    })();
     $$('#list [data-st-to]').forEach(x => x.onclick = () => setStatus(jOf(x.dataset.key), x.dataset.stTo));
+    $$('#list [data-jedit]').forEach(x => x.onclick = () => openEdit(x.dataset.jedit, x.dataset.jno));
     $$('#list [data-fixtog]').forEach(x => x.onclick = () => { FIX.has(x.dataset.fixtog) ? FIX.delete(x.dataset.fixtog) : FIX.add(x.dataset.fixtog); paintList(); });
     $$('#list [data-wone]').forEach(x => x.onclick = () => writeOne(x, x.dataset.wone));
     $$('#list [data-merge]').forEach(x => x.onclick = () => mergeLocal(jOf(x.dataset.key)));
@@ -511,6 +594,22 @@ export function mount(host) {
     const dk = k => j.dirty.includes(k) ? '<span class="dft">草稿</span>' : '';
     const ledger = j.src === 'ledger';
     const chips = ledger ? `　<button class="btn sm g" data-fixtog="${esc(j.key)}">补字段${j.missing.length ? '（还缺 ' + j.missing.length + '）' : ''}</button>` : '';
+    // 【v26.95】卡片上直接整单编辑：金额/备注/派单员/渠道/初稿/终稿错了不用再去数据中心
+    const editBtn = ledger ? `<button class="btn sm p" data-jedit="${esc(j.id)}" data-jno="${esc(j.no || '')}">编辑整单</button>` : '';
+    // 卡片内的小时间轴：接单 → 初稿 → 终稿
+    const nodeCls = (v) => {
+      if (!isDate(v)) return '';
+      if (CLOSED.has(j.status)) return 'ok';
+      const dl = daysLeft(v);
+      return dl < 0 ? 'late' : dl <= 1 ? 'today' : '';
+    };
+    const tl = `<div class="tl">
+      <div class="node ok"><span class="dot"></span><span class="t">接单<br>${esc(j.takeDate || '—')}</span></div>
+      <div class="line"></div>
+      <div class="node ${nodeCls(j.draftDue)}"><span class="dot"></span><span class="t">初稿<br>${isDate(j.draftDue) ? esc(j.draftDue) : '未填'}${j.draftEst ? ' 推算' : ''}</span></div>
+      <div class="line"></div>
+      <div class="node ${nodeCls(j.finalDue)}"><span class="dot"></span><span class="t">终稿<br>${isDate(j.finalDue) ? esc(j.finalDue) : '未填'}${j.finalEst ? ' 推算' : ''}</span></div>
+    </div>`;
     const fix = (ledger && FIX.has(j.key)) ? `<div class="fix">
         <input placeholder="渠道" data-fixin="channel" value="${esc(j.channel || '')}">
         <input placeholder="群名" data-fixin="group" value="${esc(j.group || '')}">
@@ -522,7 +621,8 @@ export function mount(host) {
       <div>
         <div class="no">${esc(j.no || '（没填单号）')}<span class="sub">　${esc(j.channel || '没填渠道')}${dk('channel')}</span>${ledger ? '' : '<span class="dft">本机</span>'}</div>
         <div class="who">👥 ${esc(j.group || '没填群名')}${dk('group')}　·　派单员 ${esc(j.person || '未记')}　·　接单 ${esc(j.takeDate || '未记')}${j.note ? '　·　📝 ' + esc(j.note) : ''}</div>
-        <div class="steps">${steps}${chips}</div>
+        <div class="steps">${steps}${chips}${editBtn}</div>
+        ${tl}
         ${fix}
       </div>
       <div class="right">
