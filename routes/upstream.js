@@ -130,13 +130,14 @@ export default function mount(ctx) {
     return '';
   }
 
-  /* ---------- 状态合成：审核完成已打款=已结算；审核中+有确认收货=待结算；审核中+没收货=进行中 ---------- */
+  /* ---------- 状态合成：审核完成已打款=已结算；其余（审核中/进行中/已收货没打款）=待结算 ----------
+     他的口径（11-07）：上游表里出现这行＝已经提交了，没打款就是台账的「待结算」。
+     原来「审核中+没收确认收货→进行中」把一大批正常单误报成状态不一致，已改。 */
   function toStatus(audit, trade, doneDate) {
     const s = String(audit || '') + ' ' + String(trade || '');
     if (/审核完成|已打款|已结算|结算完|已到账/.test(s)) return '已结算';
-    if (/审核中/.test(String(audit || ''))) return doneDate ? '待结算' : '进行中';
-    if (/待结算|已交付|已收货|待打款/.test(s)) return '待结算';
-    if (/进行中|制作/.test(s)) return '进行中';
+    if (/审核中|待结算|已交付|已收货|待打款/.test(s)) return '待结算';
+    if (/进行中|制作/.test(s)) return '待结算';
     if (/待开始|未开始|排队/.test(s)) return '待开始';
     return '';
   }
@@ -164,7 +165,8 @@ export default function mount(ctx) {
       amount: num(o.amount), paid: num(o.amount), group: String(o.customer_group_id || ''),
       team: String(o.channel_name || ''), person: String(o.designer_name || ''),
       doneDate: String(o.delivered_at || '').slice(0, 10), takeDate: String(o.created_at || '').slice(0, 10),
-      status: o.settled ? '已结算' : o.production_status === 'delivered' ? '待结算' : o.production_status === 'final' ? '进行中' : '待开始',
+      // 几何：未打款一律对台账「待结算」；制作阶段（进行中/终稿）不再是差异来源
+      status: o.settled ? '已结算' : '待结算',
       trade: String(o.settled_label || ''), audit: String(o.settlement || ''),
       odd: n.primary && num(o.amount) === 0 ? '金额 0、结算「' + (o.settled_label || '空') + '」' : (!n.primary ? '上游没给订单号（need_order_no=' + !!o.need_order_no + '）' : ''),
     };
@@ -206,7 +208,9 @@ export default function mount(ctx) {
         if (Math.abs(x.paid - share) > 0.05) out.shareBad.push({ ext: x, ledger: l, share, diff: r2(x.paid - share) });
       }
       const ls = normalizeStatus(l.status);
-      if (x.status && ls !== x.status) out.stBad.push({ ext: x, ledger: l, ledgerStatus: ls, extStatus: x.status });
+      // 【11-07 口径】只有「打款状态」不一致才报：上游已结算 vs 台账没结算、或反过来。
+      // 上游还没打款（进行中/审核中/待结算）跟台账待开始/进行中/待结算之间只是制作阶段差，不算错。
+      if (x.status && (x.status === '已结算') !== (ls === '已结算')) out.stBad.push({ ext: x, ledger: l, ledgerStatus: ls, extStatus: x.status });
     });
     // 「台账有、这批外部数据没有」：只在这次粘贴覆盖的日期区间里找，跨月历史不冤枉他
     const days = ext.map(x => String(x.takeDate || x.doneDate || '')).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
@@ -479,7 +483,8 @@ export default function mount(ctx) {
           const upPerson = person(u.person);
           if (String(o.writer || '').trim() && upPerson && o.writer !== upPerson && !String(o.writer || '').includes(upPerson)) flags.push('personBad'), stats.personBad++;
           if (upRate !== null && Math.abs(rate - upRate) > 0.5) flags.push('rateBad'), stats.rateBad++;
-          if (u.status && normalizeStatus(o.status) !== u.status) flags.push('statusBad'), stats.statusBad++;
+          // 同上：只报打款状态不一致（上游已结算 vs 台账没结算，或反过来）
+          if (u.status && (u.status === '已结算') !== (normalizeStatus(o.status) === '已结算')) flags.push('statusBad'), stats.statusBad++;
           if (u.amount > 0 && Math.abs(u.amount - num(o.amount)) > 1) flags.push('amtBad'), stats.amtBad++;
         }
         const suggest = {};
