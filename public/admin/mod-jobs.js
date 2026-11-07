@@ -20,6 +20,9 @@ const LS_DRAFT = 'jobs_draft_v1';    // 补录草稿：改动先进这里，预�
 const LS_UNDO = 'jobs_undo_v1';      // 上一批写入的 before 快照
 const LS_OLD = 'jobs_backfill_v0';   // 旧版「补录只存浏览器」用的键，迁一次就挪走
 const ST = ['待开始', '进行中', '待结算', '已结算'];
+// 【v26.96】做单工序：时间限制全部从「初稿开始」起算；终稿只需要一个预计
+const STAGES = ['制作初稿', '修改初稿', '确认初稿制作正文', '正式稿修改', '交付正式稿', '售后修改'];
+const STAGE_DAYS_DEF = [2, 3, 4, 6, 7, 9];   // 初稿开始 +N 天 = 该工序截止
 const CLOSED = new Set(['待结算', '已结算']);
 const WIP = new Set(['待开始', '进行中']);   // 「待结算之前」= 该出现在做单中心的
 const JF = [['channel', '渠道'], ['group', '群名'], ['draft', '初稿'], ['final', '终稿']];
@@ -70,6 +73,20 @@ h1{font-size:20px;margin:0 0 2px}
 .tl .line{flex:1;height:2px;background:#e2e8f0;margin-top:4px}
 .tl .node.late .t{color:#dc2626;font-weight:600}
 .tl .node.today .t{color:#b45309;font-weight:600}
+/* 【v26.96】做单工序标签（时间从初稿开始起算） */
+.stages{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.stage{border:1px solid #e2e8f0;background:#fff;border-radius:99px;padding:2px 9px;font:inherit;font-size:11.5px;cursor:pointer;color:#64748b}
+.stage:hover{border-color:#2563eb;color:#2563eb}
+.stage.on{background:#0f766e;border-color:#0f766e;color:#fff;font-weight:600}
+.stage.past{background:#f0fdf4;border-color:#86efac;color:#15803d}
+.stagedue{font-size:11.5px;color:#64748b;margin-top:4px}
+.stagedue.bad{color:#dc2626;font-weight:600}
+/* 分组可折叠 */
+details.gfold{margin:8px 0 0}
+details.gfold > summary{list-style:none;cursor:pointer;padding:3px 0}
+details.gfold > summary::-webkit-details-marker{display:none}
+details.gfold > summary::before{content:"▸";color:#94a3b8;font-size:11px;margin-right:2px}
+details.gfold[open] > summary::before{content:"▾"}
 /* 进度卡 */
 .jc{display:grid;grid-template-columns:1fr auto;gap:12px;border:1px solid #e2e8f0;border-left:5px solid #cbd5e1;border-radius:12px;background:#fff;padding:11px 14px;margin-bottom:9px}
 .jc.late{border-left-color:#dc2626;background:#fff8f8}
@@ -225,6 +242,9 @@ export function mount(host) {
   let LED = [], TRUNC = false, LOADING = true, LOADERR = '';
   let VIEW = 'doing', Q = '', TEAM = '';
   let DAY = '';   // 【v26.95】时间轴：点某一天只看那天到期的（'' / 'overdue' / 'YYYY-MM-DD'）
+  // 【v26.96】工序默认天数（本机可改）：初稿开始 +N 天 = 该工序截止
+  let STAGE_DAYS = LS.read('jobs_stage_days_v0', STAGE_DAYS_DEF);
+  if (!Array.isArray(STAGE_DAYS) || STAGE_DAYS.length !== STAGES.length) STAGE_DAYS = STAGE_DAYS_DEF.slice();
   // 【v26.91】提醒排序：默认按初稿应交时间先后跟进；可切终稿顺序或原来的紧急度。选择存本机。
   let SORT = LS.read('jobs_sort_v0', 'draft');
   if (!['draft', 'final', 'heat'].includes(SORT)) SORT = 'draft';
@@ -268,14 +288,20 @@ export function mount(host) {
     const f = {};
     JF_KEYS.forEach(k => { f[k] = effOf(o, k); });
     const u = upOf(f.channel);
+    // 工序时间从「初稿开始」起算；没填初稿开始就退回接单日
+    const start = isDate(liveOf(o, 'draftStart')) ? String(liveOf(o, 'draftStart')).slice(0, 10)
+      : (isDate(o.date) ? String(o.date).slice(0, 10) : null);
     const est = (v, n) => isDate(v) ? { v: String(v), est: false }
-      : (isDate(o.date) ? { v: dadd(String(o.date).slice(0, 10), n), est: true } : { v: null, est: false });
+      : (start ? { v: dadd(start, n), est: true } : { v: null, est: false });
     const D = est(f.draft, numOr(u.dueDraft, DEF_DUE.draft)), F = est(f.final, numOr(u.dueFinal, DEF_DUE.final));
+    const stage = String(o.stage || '').trim();
+    const si = STAGES.indexOf(stage);
     return {
       key: 'L' + o._id, src: 'ledger', id: String(o._id), o,
       no: o.orderNo || '', amount: Number(o.amount) || 0, rate: Number(o.shareRate) || 0,
       status: o.status || '待开始', note: o.note || '', person: o.writer || '',
       channel: f.channel, group: f.group, draft: f.draft, final: f.final,
+      draftStart: start, stage, stageDue: si >= 0 && start ? dadd(start, STAGE_DAYS[si]) : null,
       draftDue: D.v, draftEst: D.est, finalDue: F.v, finalEst: F.est,
       takeDate: String(o.date || '').slice(0, 10), doneDate: o.doneDate || null,
       missing: JF_KEYS.filter(k => !liveOf(o, k)),
@@ -289,6 +315,7 @@ export function mount(host) {
       no: j.no || '', amount: Number(j.amount) || 0, rate: Number(j.rate) || 0,
       status: j.status || '待开始', note: j.note || '', person: j.person || '',
       channel: j.team || '', group: j.group || '',
+      stage: '', stageDue: null, draftStart: isDate(j.takeDate) ? j.takeDate : null,
       draftDue: isDate(j.draftDue) ? j.draftDue : null, draftEst: false,
       finalDue: isDate(j.finalDue) ? j.finalDue : null, finalEst: false,
       takeDate: isDate(j.takeDate) ? j.takeDate : '', missing: [], dirty: [],
@@ -302,6 +329,7 @@ export function mount(host) {
     const h = heat(j);
     const dDraft = daysLeft(j.draftDue);
     if (VIEW === 'all') { /* 全部含已闭环 */ }
+    else if (VIEW === 'nonum') { if (String(j.no || '').trim()) return false; }   // 候补区：所有缺单号的
     else if (VIEW === 'pay') { if (j.status !== '待结算') return false; }
     else if (VIEW === 'late') { if (CLOSED.has(j.status) || h.cls !== 'late') return false; }
     else if (VIEW === 'soon') { if (CLOSED.has(j.status) || h.cls !== 'soon') return false; }
@@ -325,7 +353,15 @@ export function mount(host) {
     // 【v26.91】已闭环的沉底；没填日期的排在有日期的后面；同日再按紧急度
     const closedLast = (a, b) => (CLOSED.has(a.status) ? 1 : 0) - (CLOSED.has(b.status) ? 1 : 0);
     const due = (j, k) => isDate(j[k]) ? String(j[k]) : '9999-12-31';
-    if (SORT === 'draft') arr.sort((a, b) => closedLast(a, b) || due(a, 'draftDue').localeCompare(due(b, 'draftDue')) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || heat(a).score - heat(b).score);
+    if (SORT === 'draft') {
+      // 【v26.96】今天的初稿优先：今天 → 已逾期 → 明天 → 以后
+      const pri = j => {
+        if (CLOSED.has(j.status)) return 9;
+        const dl = daysLeft(j.draftDue);
+        return dl === 0 ? 0 : dl !== null && dl < 0 ? 1 : dl === 1 ? 2 : 3;
+      };
+      arr.sort((a, b) => pri(a) - pri(b) || due(a, 'draftDue').localeCompare(due(b, 'draftDue')) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || heat(a).score - heat(b).score);
+    }
     else if (SORT === 'final') arr.sort((a, b) => closedLast(a, b) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || due(a, 'draftDue').localeCompare(due(b, 'draftDue')) || heat(a).score - heat(b).score);
     else arr.sort((a, b) => heat(a).score - heat(b).score);
     return arr;
@@ -368,13 +404,15 @@ export function mount(host) {
           <div class="f"><label>派单员</label><input id="nPerson" placeholder="自动带，可改"></div>
           <div class="f"><label>平台单号（填了才写得进台账，也才能与上游对上）</label><input id="nNo" placeholder="19 位平台号，可直接粘贴"><div class="dup" id="dupLine"></div></div>
           <div class="f"><label>接单日</label><input id="nTake" type="date" value="${localDate()}"></div>
+          <div class="f"><label>初稿开始（工序起算日）</label><input id="nStart" type="date" value="${localDate()}"></div>
           <div class="f"><label>初稿应交</label><input id="nDraft" type="date"></div>
-          <div class="f"><label>终稿应交</label><input id="nFinal" type="date"></div>
+          <div class="f"><label>终稿预计（可不填）</label><input id="nFinal" type="date"></div>
+          <div class="f"><label>当前工序</label><select id="nStage">${STAGES.map((s, i) => `<option${i === 0 ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
           <div class="f"><label>起始状态</label><select id="nStatus">${ST.map(s => `<option${s === '待开始' ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
           <div class="f" style="grid-column:1/-1"><label>备注</label><input id="nNote" placeholder="内容要求、客户要求、群里原话…"></div>
           <button class="btn p" id="nAdd">＋ 存进台账</button>
           <button class="btn g" id="nLocal">只留本机</button>
-          <span class="sub">初/终稿留空 = 按接单日 + 渠道默认天数推算，卡片上会标「推算」。</span>
+          <span class="sub">没单号也能存台账（进候补区补号）；初/终稿留空 = 按初稿开始 + 渠道默认天数推算。</span>
         </div></div>
       </details>
 
@@ -394,6 +432,11 @@ export function mount(host) {
             <div class="f"><label>终稿默认 + 天</label><input id="upDF" type="number" min="1" max="60" value="4"></div>
             <div class="f"><label>备注</label><input id="upNote"></div>
             <button class="btn p" id="upAdd">＋ 添加</button>
+          </div>
+          <div class="sub" style="margin-top:12px"><b>工序时间</b>（从「初稿开始」起算，改完点保存；本机保存）</div>
+          <div class="form">
+            ${STAGES.map((s, i) => `<div class="f"><label>${s} + 天</label><input id="sd${i}" type="number" min="1" max="60" value="${STAGE_DAYS[i]}"></div>`).join('')}
+            <button class="btn g" id="sdSave">保存工序天数</button>
           </div></div>
       </details>
 
@@ -522,9 +565,11 @@ export function mount(host) {
   }
 
   function paintViews() {
-    const named = { doing: '在做的（待结算之前）', late: '终稿逾期', soon: '今天/明天到期', pay: '待结算', draft: '初稿过期未交', est: '交期靠推算' };
+    const named = { doing: '在做的（待结算之前）', late: '终稿逾期', soon: '今天/明天到期', pay: '待结算', draft: '初稿过期未交', est: '交期靠推算', nonum: '候补区（缺单号）' };
+    const nonum = rowsAll().filter(j => !String(j.no || '').trim()).length;
     $('#views').innerHTML = `<button class="chip${VIEW === 'all' ? ' on' : ''}" data-v="all">全部（含已闭环）</button>`
       + `<button class="chip${VIEW === 'doing' ? ' on' : ''}" data-v="doing">在做的</button>`
+      + `<button class="chip${VIEW === 'nonum' ? ' on' : ''}" data-v="nonum">候补区·缺单号${nonum ? '（' + nonum + '）' : ''}</button>`
       + `<span class="sub">当前视图：<b style="color:#1e293b">${VIEW === 'all' ? '全部（含已闭环）' : named[VIEW]}</b>　·　卡片上四个圈就是状态，点一下写进台账；上面数字点一下就是筛。</span>`;
     $$('#views [data-v]').forEach(x => x.onclick = () => { VIEW = x.dataset.v; paintSum(); paintViews(); paintList(); });
   }
@@ -548,7 +593,7 @@ export function mount(host) {
     }
     $('#list').innerHTML = (() => {
       if (SORT === 'heat') return rows.map(j => card(j)).join('');
-      // 按交期分组：同一天的单排在一起，像时间轴一样往下走
+      // 按交期分组：同一天的单排在一起，像时间轴一样往下走；只有「今天」默认展开
       const keyOf = j => {
         if (CLOSED.has(j.status)) return '已闭环';
         const v = SORT === 'draft' ? j.draftDue : j.finalDue;
@@ -559,19 +604,21 @@ export function mount(host) {
         if (dl === 1) return v + ' · 明天';
         return v;
       };
-      let html = '', last = null;
+      const groups = [];
       rows.forEach(j => {
         const g = keyOf(j);
-        if (g !== last) {
-          const cls = g.includes('逾期') ? ' late' : g.includes('今天') ? ' today' : '';
-          html += `<div class="grp${cls}"><b>${esc(g)}</b></div>`;
-          last = g;
-        }
-        html += card(j);
+        if (!groups.length || groups[groups.length - 1].key !== g) groups.push({ key: g, rows: [] });
+        groups[groups.length - 1].rows.push(j);
       });
-      return html;
+      const anyToday = groups.some(g => g.key.includes('今天'));
+      return groups.map((g, i) => {
+        const open = anyToday ? g.key.includes('今天') : i === 0;
+        const cls = g.key.includes('逾期') ? ' late' : g.key.includes('今天') ? ' today' : '';
+        return `<details class="gfold"${open ? ' open' : ''}><summary class="grp${cls}"><b>${esc(g.key)}</b><span class="sub">${g.rows.length} 单</span></summary>${g.rows.map(card).join('')}</details>`;
+      }).join('');
     })();
     $$('#list [data-st-to]').forEach(x => x.onclick = () => setStatus(jOf(x.dataset.key), x.dataset.stTo));
+    $$('#list [data-stage-to]').forEach(x => x.onclick = () => setStage(jOf(x.dataset.stage), x.dataset.stageTo));
     $$('#list [data-jedit]').forEach(x => x.onclick = () => openEdit(x.dataset.jedit, x.dataset.jno));
     $$('#list [data-fixtog]').forEach(x => x.onclick = () => { FIX.has(x.dataset.fixtog) ? FIX.delete(x.dataset.fixtog) : FIX.add(x.dataset.fixtog); paintList(); });
     $$('#list [data-wone]').forEach(x => x.onclick = () => writeOne(x, x.dataset.wone));
@@ -611,6 +658,15 @@ export function mount(host) {
       <div class="line"></div>
       <div class="node ${nodeCls(j.finalDue)}"><span class="dot"></span><span class="t">终稿<br>${isDate(j.finalDue) ? esc(j.finalDue) : '未填'}${j.finalEst ? ' 推算' : ''}</span></div>
     </div>`;
+    // 工序：点标签就改，截止＝初稿开始 + 该工序天数
+    const si = STAGES.indexOf(j.stage || '');
+    const stageHtml = ledger ? `<div class="stages">${STAGES.map((s, i) => `<button class="stage${s === j.stage ? ' on' : ''}${si > i ? ' past' : ''}" data-stage="${esc(j.key)}" data-stage-to="${esc(s)}" title="把工序改成「${s}」">${s}</button>`).join('')}</div>`
+      + (j.stage
+        ? `<div class="stagedue${j.stageDue && daysLeft(j.stageDue) < 0 && !CLOSED.has(j.status) ? ' bad' : ''}">工序「${esc(j.stage)}」截止 ${esc(j.stageDue || '—')}${j.stageDue && !CLOSED.has(j.status) ? '（' + cdText(daysLeft(j.stageDue)) + '）' : ''}</div>`
+        : '<div class="stagedue">未设工序：点上面的标签设置，截止按「初稿开始 + 天数」算</div>')
+      : '';
+    const nonum = !String(j.no || '').trim();
+    const abnormal = nonum && (j.status === '待结算' || j.status === '已结算');
     const fix = (ledger && FIX.has(j.key)) ? `<div class="fix">
         <input placeholder="渠道" data-fixin="channel" value="${esc(j.channel || '')}">
         <input placeholder="群名" data-fixin="group" value="${esc(j.group || '')}">
@@ -620,9 +676,10 @@ export function mount(host) {
         <span class="sub">只写这 4 个字段；这里只填不清，要清空去「老单补录」勾覆盖。</span></div>` : '';
     return `<div class="jc ${h.cls}${closedSoft}">
       <div>
-        <div class="no">${esc(j.no || '（没填单号）')}<span class="sub">　${esc(j.channel || '没填渠道')}${dk('channel')}</span>${ledger ? '' : '<span class="dft">本机</span>'}</div>
+        <div class="no">${esc(j.no || '（没填单号）')}<span class="sub">　${esc(j.channel || '没填渠道')}${dk('channel')}</span>${ledger ? '' : '<span class="dft">本机</span>'}${abnormal ? '<span class="tag" style="background:#fee2e2;color:#b91c1c">异常·缺单号</span>' : ''}</div>
         <div class="who">👥 ${esc(j.group || '没填群名')}${dk('group')}　·　派单员 ${esc(j.person || '未记')}　·　接单 ${esc(j.takeDate || '未记')}${j.note ? '　·　📝 ' + esc(j.note) : ''}</div>
         <div class="steps">${steps}${chips}${editBtn}</div>
+        ${stageHtml}
         ${tl}
         ${fix}
       </div>
@@ -643,8 +700,8 @@ export function mount(host) {
       return toast((j.no || '这单') + ' → ' + to + '（本机单，还没进台账）');
     }
     const o = j.o;
-    if (!String(o.orderNo || '').trim()) return toast('这单在台账里没有订单号，接口不收；先在兼职数据中心把号补上');
-    if (to === '已结算' && !confirm('把 ' + o.orderNo + ' 改成「已结算」？\n\n已结算按你定的规矩只逐单点，这一步会写进台账。')) return;
+    // 【v26.96】没单号也能改状态：走到待结算会自动进候补区（标异常）
+    if (to === '已结算' && !confirm('把 ' + (o.orderNo || '这单') + ' 改成「已结算」？\n\n已结算按你定的规矩只逐单点，这一步会写进台账。')) return;
     const body = {
       date: String(o.date || '').slice(0, 10), orderNo: o.orderNo, amount: Number(o.amount) || 0,
       shareRate: Number(o.shareRate) || 0, status: to, doneDate: o.doneDate || '', note: o.note || '',
@@ -652,9 +709,22 @@ export function mount(host) {
     if (String(o.writer || '').trim()) body.writer = o.writer;
     try {
       await api('/api/orders/' + o._id, { method: 'PUT', body: JSON.stringify(body) });
-      toast(o.orderNo + ' → ' + to + '（已写进台账）');
+      const noNum = !String(o.orderNo || '').trim();
+      toast((o.orderNo || '（没号）') + ' → ' + to + '（已写进台账）' + (noNum && to === '待结算' ? ' · 缺单号已进候补区、标异常' : ''));
       await loadLedger(true);
     } catch (e) { toast('状态没改成：' + (e.message || e)); }
+  }
+
+  /* ============ 工序写库：只碰 stage 一个键 ============ */
+  async function setStage(j, to) {
+    if (!j || j.stage === to) return;
+    if (j.src !== 'ledger') return toast('本机单先并入台账才能记工序');
+    try {
+      await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id: j.id, fields: { stage: to } }], apply: true }) });
+      j.o.stage = to;
+      toast((j.no || '这单') + ' 工序 → ' + to);
+      paintList();
+    } catch (e) { toast('工序没改成：' + (e.message || e)); }
   }
 
   /* ============ 单号查重：边打边查，别等存了才发现重复 ============ */
@@ -706,14 +776,16 @@ export function mount(host) {
       amount: Number($('#nAmount').value) || 0, rate: Number($('#nRate').value) || 45,
       person: $('#nPerson').value.trim(), no: noCandidates($('#nNo').value)[0] || '',
       note: $('#nNote').value.trim(), takeDate: isDate($('#nTake').value) ? $('#nTake').value : localDate(),
-      draft: $('#nDraft').value, final: $('#nFinal').value, status: $('#nStatus').value,
+      start: isDate($('#nStart').value) ? $('#nStart').value : (isDate($('#nTake').value) ? $('#nTake').value : localDate()),
+      draft: $('#nDraft').value, final: $('#nFinal').value, stage: $('#nStage').value, status: $('#nStatus').value,
     };
   }
   async function addJob() {
     const d = formDraft();
     if (!(d.amount > 0)) return toast('接单金额要大于 0');
-    if (!d.no) return saveLocal(d);
-    if (DUPRES && DUPRES.no === d.no && DUPRES.state !== 'miss' &&
+    // 【v26.96】没单号也能进台账：进候补区，等号到手再补
+    if (!d.no && !confirm('这单还没有平台单号。\n\n存进台账后它会进「候补区」等补号；状态走到待结算时会自动标异常。这样存吗？')) return;
+    if (d.no && DUPRES && DUPRES.no === d.no && DUPRES.state !== 'miss' &&
       !confirm('单号 ' + d.no + ' 台账里已经有 ' + DUPRES.count + ' 条。\n\n确定这是另一单、真要再存一条吗？（点了就写进台账）')) return;
     const body = { date: d.takeDate, orderNo: d.no, amount: d.amount, shareRate: d.rate, status: d.status, doneDate: '', note: d.note };
     if (d.person) body.writer = d.person;
@@ -723,14 +795,16 @@ export function mount(host) {
       const fields = {};
       if (d.channel) fields.channel = d.channel;
       if (d.group) fields.group = d.group;
+      if (isDate(d.start)) fields.draftStart = d.start;
       if (isDate(d.draft)) fields.draft = d.draft;
       if (isDate(d.final)) fields.final = d.final;
+      if (d.stage) fields.stage = d.stage;
       let filled = 0;
       if (id && Object.keys(fields).length) {
         const k = await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id, fields }], apply: true }) });
         filled = (k.rows || []).length;
       }
-      toast('已写进台账：' + d.no + '（' + d.status + '）' + (filled ? ' · 新字段一并填好' : ''));
+      toast((d.no ? '已写进台账：' + d.no : '已写进台账（没单号，进候补区）') + '（' + d.status + '）' + (filled ? ' · 渠道/工序一并填好' : ''));
       ['#nNo', '#nGroup', '#nAmount', '#nNote'].forEach(s => $(s).value = '');
       DUPRES = null; paintDup('');
       await loadLedger(true);
@@ -842,11 +916,11 @@ export function mount(host) {
     // 重画时不要把他填过的交期盖掉：只有首次建骨架和换渠道/换接单日时才推默认值
     if (!keepDue) syncNewDue();
   }
-  // 默认交期跟着所选渠道走
+  // 默认交期跟着所选渠道走；起算日是「初稿开始」
   function syncNewDue() {
     if (!$('#nTeam') || !$('#nDraft')) return;
     const u = upOf($('#nTeam').value);
-    const base = isDate($('#nTake').value) ? $('#nTake').value : localDate();
+    const base = isDate($('#nStart').value) ? $('#nStart').value : (isDate($('#nTake').value) ? $('#nTake').value : localDate());
     $('#nDraft').value = dadd(base, numOr(u.dueDraft, DEF_DUE.draft));
     $('#nFinal').value = dadd(base, numOr(u.dueFinal, DEF_DUE.final));
   }
@@ -1590,10 +1664,12 @@ export function mount(host) {
         <div class="f"><label>渠道</label><input id="eTeam" list="eTeamList" value="${esc(o.channel || '')}"><datalist id="eTeamList">${teams.map(t => `<option value="${esc(t)}">`).join('')}</datalist></div>
         <div class="f"><label>群名</label><input id="eGroup" value="${esc(o.group || '')}"></div>
         <div class="f"><label>初稿</label><input id="eDraft" type="date" value="${esc(String(o.draft || '').slice(0, 10))}"></div>
-        <div class="f"><label>终稿</label><input id="eFinal" type="date" value="${esc(String(o.final || '').slice(0, 10))}"></div>
+        <div class="f"><label>终稿（预计）</label><input id="eFinal" type="date" value="${esc(String(o.final || '').slice(0, 10))}"></div>
+        <div class="f"><label>初稿开始（工序起算）</label><input id="eStart" type="date" value="${esc(String(o.draftStart || '').slice(0, 10))}"></div>
+        <div class="f"><label>工序</label><select id="eStage"><option value="">（未设）</option>${STAGES.map(s => `<option${s === (o.stage || '') ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
         <div class="f"><label>备注</label><input id="eNote" value="${esc(o.note || '')}"></div>
       </div>
-      <div class="sub" style="margin-top:8px">金额/比例/分类/备注/派单员走台账原来的整单保存；渠道/群名/初稿/终稿只写这 4 个键。<b>新字段留空＝不改</b>；分类改成待结算/已结算时完单日会自动补今天。</div>
+      <div class="sub" style="margin-top:8px">金额/比例/分类/备注/派单员走台账原来的整单保存；渠道/群名/初稿/终稿/工序/初稿开始只写这几个键。<b>留空＝不改</b>；分类改成待结算/已结算时完单日会自动补今天。</div>
       <div class="mfoot"><button class="btn p" id="eSave">保存</button><button class="btn g" id="eCancel">取消</button></div>`;
     $('#eSt').onchange = () => {
       const done = CLOSED.has($('#eSt').value);
@@ -1627,10 +1703,13 @@ export function mount(host) {
       const fields = {};
       const team = $('#eTeam').value.trim(), group = $('#eGroup').value.trim();
       const draft = $('#eDraft').value, final = $('#eFinal').value;
+      const start = $('#eStart').value, stage = $('#eStage').value;
       if (team && team !== String(o.channel || '')) fields.channel = team;
       if (group && group !== String(o.group || '')) fields.group = group;
       if (isDate(draft) && draft !== String(o.draft || '')) fields.draft = draft;
       if (isDate(final) && final !== String(o.final || '')) fields.final = final;
+      if (isDate(start) && start !== String(o.draftStart || '')) fields.draftStart = start;
+      if (stage && stage !== String(o.stage || '')) fields.stage = stage;
       let jfErr = '';
       if (Object.keys(fields).length) {
         try { await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id: o._id, fields }], apply: true }) }); }
@@ -1803,8 +1882,8 @@ export function mount(host) {
       syncNewDue();
     };
     $('#nTake').onchange = syncNewDue;
-    $('#upAdd').onclick = () => {
-      const team = $('#upTeam').value.trim();
+    $('#nStart').onchange = syncNewDue;
+    $('#upAdd').onclick = () => {      const team = $('#upTeam').value.trim();
       if (!team) return toast('渠道名必填');
       UP.push({
         id: 'u' + Date.now(), team, person: $('#upPerson').value.trim(), rate: Number($('#upRate').value) || 45,
@@ -1813,6 +1892,12 @@ export function mount(host) {
       LS.write(LS_UP, UP);
       ['#upTeam', '#upPerson', '#upNote'].forEach(s => $(s).value = '');
       paintUpstream(); paintNewTeam(true); paintTeamFilter(); toast('已加一行渠道（只存这台浏览器）');
+    };
+    $('#sdSave').onclick = () => {
+      const v = STAGES.map((s, i) => Number($('#sd' + i).value));
+      if (v.some(n => !(n > 0 && n <= 60))) return toast('工序天数要填 1-60');
+      STAGE_DAYS = v; LS.write('jobs_stage_days_v0', v);
+      paintList(); toast('工序天数已保存（本机）');
     };
     $('#rGo').onclick = runRecon;
     $('#fGo').onclick = () => runFull(false);
@@ -1833,5 +1918,15 @@ export function mount(host) {
 
   skeleton();
   loadLedger();
+  // 【v26.96】实时：45 秒自动拉一次台账（页面可见、没开弹窗、没在输入时），录完不用手动刷新
+  setInterval(() => {
+    if (document.hidden) return;
+    if (LOADING) return;
+    if (sh.querySelector('#edMask.show') || sh.querySelector('.mask.show')) return;
+    const ae = sh.activeElement || document.activeElement;
+    if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
+    loadLedger(true);
+  }, 45000);
+
   return { refresh: () => { skeleton(); loadLedger(true); } };
 }

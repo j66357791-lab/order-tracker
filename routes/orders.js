@@ -14,8 +14,8 @@ function parseOrder(body) {
   const shareRate = Number(body.shareRate);
   let doneDate = String(body.doneDate || '').trim();
 
+  // 【v26.96】允许没单号先入台账：会进「候补区」等补号，状态到待结算自动标异常
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) errors.push('日期格式应为 YYYY-MM-DD');
-  if (!orderNo) errors.push('订单编号不能为空');
   if (!isFinite(amount) || amount < 0) errors.push('订单金额必须是非负数字');
   if (!isFinite(shareRate) || shareRate <= 0 || shareRate > 100) errors.push('分成比例必须是 1-100 之间的数字（%）');
   if (!status) errors.push('订单进度不合法');
@@ -835,9 +835,9 @@ function fieldPatchRoute(path, keys, labels, dateKeys) {
   });
 }
 
-// 做单中心的四个新字段
-fieldPatchRoute('/api/orders/jobfields', ['channel', 'group', 'draft', 'final'],
-  { channel: '渠道', group: '群名', draft: '初稿', final: '终稿' }, ['draft', 'final']);
+// 做单中心的字段：四个基本信息 + 工序 + 初稿开始（工序时间从初稿开始起算）
+fieldPatchRoute('/api/orders/jobfields', ['channel', 'group', 'draft', 'final', 'stage', 'draftStart'],
+  { channel: '渠道', group: '群名', draft: '初稿', final: '终稿', stage: '工序', draftStart: '初稿开始' }, ['draft', 'final', 'draftStart']);
 // 派单员：台账 writer 与上游「A订单负责人-××」/几何 designer_name 现在各有一份，搬运只走这条
 fieldPatchRoute('/api/orders/writer-patch', ['writer'], { writer: '派单员' }, []);
 
