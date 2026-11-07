@@ -231,6 +231,7 @@ export default function mount(ctx) {
     extNosText: x.ext && x.ext.multi ? (x.ext.nos || []).join('、') : undefined,
     extAmount: x.ext ? x.ext.amount : undefined, extPaid: x.ext ? x.ext.paid : undefined,
     extStatus: x.ext ? x.ext.status : undefined, extTeam: x.ext ? x.ext.team : undefined, extDate: x.ext ? (x.ext.takeDate || x.ext.doneDate) : undefined,
+    extGroup: x.ext ? x.ext.group : undefined, extPerson: x.ext ? x.ext.person : undefined,
     odd: x.ext ? x.ext.odd : undefined,
     ledId: x.ledger ? String(x.ledger._id) : undefined, ledAmount: x.ledger ? num(x.ledger.amount) : undefined,
     ledRate: x.ledger ? num(x.ledger.shareRate) : undefined, ledShare: x.ledger ? r2(num(x.ledger.amount) * num(x.ledger.shareRate) / 100) : undefined,

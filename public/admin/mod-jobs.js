@@ -1358,22 +1358,26 @@ export function mount(host) {
       ? `台账 ${x.ledStatus} · ${money(x.ledAmount)}×${x.ledRate || 0}% = ${money(x.ledShare)}`
       : (kind === 'missUp' ? `台账 ${x.ledStatus || ''} · ${money(x.ledAmount)}×${x.ledRate || 0}% = ${money(x.ledShare)}` : '台账没有这单');
     const up = x.src ? `${x.src}：订单 ${money(x.extAmount)}${x.extPaid ? ' · 已发 ' + money(x.extPaid) : ''}${x.extStatus ? ' · ' + x.extStatus : ''}` : '';
+    // 【v26.93】表格里也带群名/派单员，没单号的行能拿去上游后台查
+    const upMeta = [x.extGroup ? '群名 ' + x.extGroup : '', x.extPerson ? '派单员 ' + x.extPerson : ''].filter(Boolean).join(' · ');
     const tail = kind === 'amtBad' ? `差 ${x.diff > 0 ? '+' : ''}${money(x.diff)} 元`
       : kind === 'shareBad' ? `差 ${x.diff > 0 ? '+' : ''}${money(x.diff)} 元（台账分成 ${money(x.share)}）`
         : kind === 'dup' ? `台账里出现 ${x.count + 1} 次`
           : kind === 'multiNo' ? `这格是 ${(x.extNosText || '').replace(/、/g, ' , ')}` : '';
     return `<tr>
       <td class="mono">${esc(x.no || '（没单号）')}</td>
-      <td>${esc(x.src || '—')}</td><td>${esc(up || '—')}</td><td>${esc(led)}${x.ledDate ? ' · 接单 ' + esc(x.ledDate) : ''}</td>
+      <td>${esc(x.src || '—')}</td><td>${esc(up || '—')}${upMeta ? '<div class="sub">' + esc(upMeta) + '</div>' : ''}</td><td>${esc(led)}${x.ledDate ? ' · 接单 ' + esc(x.ledDate) : ''}</td>
       <td class="sub">${esc(tail)}</td>
       <td>${x.ledId ? `<button class="btn sm p" data-redit="${esc(x.ledId)}" data-rno="${esc(x.no || '')}">编辑</button>
         <button class="btn sm g" data-goto="${esc(x.no || '')}">定位</button>` : (x.no ? `<button class="btn sm g" data-rnew="${esc(x.no)}" data-ramt="${Number(x.extAmount) || 0}">录进台账</button>` : '')}
-        <button class="btn sm g" data-copyno="${esc(x.no || '')}">复制</button></td></tr>`;
+        ${x.no ? `<button class="btn sm g" data-copyno="${esc(x.no)}">复制</button>` : (x.extGroup ? `<button class="btn sm g" data-copyg="${esc(x.extGroup)}">复制群名</button>` : '')}</td></tr>`;
   }
 
   // 一单一卡：上游侧、台账侧并排，差异一句话，状态就在这张卡上改（改前先按单号取回整行，避免把备注/完单日写空）
   function reconCard(x, kind, cls) {
     const up = x.src ? `订单 <b>${money(x.extAmount)}</b> 元${x.extPaid ? ' · 已发 ' + money(x.extPaid) : ''}${x.extStatus ? ' · ' + esc(x.extStatus) : ''}${x.extDate ? ' · ' + esc(x.extDate) : ''}${x.raw ? '<div class="sub" style="margin-top:3px">原文：' + esc(String(x.raw).slice(0, 60)) + '</div>' : ''}` : '—';
+    // 【v26.93】没单号的行要能拿去上游后台查：把群名/派单员/渠道带出来
+    const meta = [x.extGroup ? '群名 ' + esc(x.extGroup) : '', x.extPerson ? '派单员 ' + esc(x.extPerson) : '', x.extTeam ? '渠道 ' + esc(x.extTeam) : ''].filter(Boolean).join(' · ');
     const led = x.ledId
       ? `${esc(x.ledStatus || '')} · ${money(x.ledAmount)} × ${x.ledRate || 0}% = <b>${money(x.ledShare)}</b>${x.ledDate ? ' · 接单 ' + esc(x.ledDate) : ''}${x.ledWriter ? ' · 派单员 ' + esc(x.ledWriter) : ''}`
       : (kind === 'missUp' ? `${esc(x.ledStatus || '')} · ${money(x.ledAmount)} × ${x.ledRate || 0}% = <b>${money(x.ledShare)}</b>` : '<span class="miss">台账没有这单</span>');
@@ -1383,7 +1387,7 @@ export function mount(host) {
           : kind === 'dup' ? `台账里这个号出现 ${x.count + 1} 次`
             : kind === 'multiNo' ? `这一格塞了多个号：${esc((x.extNosText || '').replace(/、/g, ' , '))}`
               : kind === 'odd' ? `上游自己就异常：${esc(x.odd || '')}`
-                : kind === 'noKey' ? '上游这行没给单号，只能人工认'
+                : kind === 'noKey' ? '上游这行没给单号：拿群名/派单员去几何后台查到单号，再回「记一单」录进来'
                   : kind === 'amtNoise' ? `只差 ${money(Math.abs(x.diff))} 元（录台账取整，一般不是错）` : '';
     const steps = x.ledId && x.no ? ST.map(s => `<button class="step${s === x.ledStatus ? ' hit' : ''}" data-rst="${esc(x.no)}" data-rid="${esc(x.ledId)}" data-to="${esc(s)}" title="把台账这单改成「${s}」">${s}</button>`).join('') : '';
     return `<div class="rcard ${cls}">
@@ -1391,8 +1395,9 @@ export function mount(host) {
         <span class="grow"></span>
         ${x.no ? `<button class="btn sm g" data-rdet="${esc(x.no)}">${RDET[x.no] ? '收起台账详情' : '查这单（就地）'}</button>` : ''}
         ${x.ledId ? `<button class="btn sm p" data-redit="${esc(x.ledId)}" data-rno="${esc(x.no || '')}">编辑</button>` : (x.no ? `<button class="btn sm g" data-rnew="${esc(x.no)}" data-ramt="${Number(x.extAmount) || 0}">录进台账</button>` : '')}
-        <button class="btn sm g" data-copyno="${esc(x.no || '')}">复制</button></div>
-      <div class="r2"><div class="side">上游侧<br>${up}</div><div class="side">台账侧<br>${led}</div></div>
+        ${!x.no && x.extGroup ? `<button class="btn sm g" data-copyg="${esc(x.extGroup)}">复制群名</button>` : ''}
+        ${x.no ? `<button class="btn sm g" data-copyno="${esc(x.no)}">复制</button>` : ''}</div>
+      <div class="r2"><div class="side">上游侧<br>${up}${meta ? '<div class="sub" style="margin-top:3px">' + meta + '</div>' : ''}</div><div class="side">台账侧<br>${led}</div></div>
       ${diff ? `<div class="rdiff ${kind === 'amtNoise' ? 'ok' : ''}">${diff}</div>` : ''}
       ${RDET[x.no] ? detHtml(x.no) : ''}
       ${steps ? `<div class="ract"><span class="sub">改台账状态：</span>${steps}</div>` : ''}
@@ -1635,6 +1640,11 @@ export function mount(host) {
       const v = b2.dataset.copyno; if (!v) return;
       (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject())
         .then(() => toast('已复制单号 ' + v), () => toast('浏览器不让复制，手动选：' + v));
+    });
+    $$('#rOut [data-copyg]').forEach(b2 => b2.onclick = () => {
+      const v = b2.dataset.copyg; if (!v) return;
+      (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject())
+        .then(() => toast('已复制群名 ' + v), () => toast('浏览器不让复制，手动选：' + v));
     });
     $$('#rOut [data-goto]').forEach(b2 => b2.onclick = () => gotoLedger(b2.dataset.goto));
     $$('#rOut [data-rdet]').forEach(b2 => b2.onclick = () => toggleDet(b2.dataset.rdet));
