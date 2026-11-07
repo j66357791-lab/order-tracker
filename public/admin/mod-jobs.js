@@ -81,6 +81,12 @@ h1{font-size:20px;margin:0 0 2px}
 .stage.past{background:#f0fdf4;border-color:#86efac;color:#15803d}
 .stagedue{font-size:11.5px;color:#64748b;margin-top:4px}
 .stagedue.bad{color:#dc2626;font-weight:600}
+/* 挂起：不算催办，灰一档 */
+.jc.susp{opacity:.68;background:#fbfbfc;border-left-color:#94a3b8}
+/* 编辑弹窗：居中，✕/Esc 关，点空白不关 */
+.modal{position:relative}
+.modal .mx{position:absolute;top:8px;right:10px;border:0;background:transparent;font-size:16px;line-height:1;color:#94a3b8;cursor:pointer}
+.modal .mx:hover{color:#dc2626}
 /* 分组可折叠 */
 details.gfold{margin:8px 0 0}
 details.gfold > summary{list-style:none;cursor:pointer;padding:3px 0}
@@ -302,6 +308,7 @@ export function mount(host) {
       status: o.status || '待开始', note: o.note || '', person: o.writer || '',
       channel: f.channel, group: f.group, draft: f.draft, final: f.final,
       draftStart: start, stage, stageDue: si >= 0 && start ? dadd(start, STAGE_DAYS[si]) : null,
+      suspended: /^1$|true/.test(String(o.suspended || '').trim()),
       draftDue: D.v, draftEst: D.est, finalDue: F.v, finalEst: F.est,
       takeDate: String(o.date || '').slice(0, 10), doneDate: o.doneDate || null,
       missing: JF_KEYS.filter(k => !liveOf(o, k)),
@@ -315,7 +322,7 @@ export function mount(host) {
       no: j.no || '', amount: Number(j.amount) || 0, rate: Number(j.rate) || 0,
       status: j.status || '待开始', note: j.note || '', person: j.person || '',
       channel: j.team || '', group: j.group || '',
-      stage: '', stageDue: null, draftStart: isDate(j.takeDate) ? j.takeDate : null,
+      stage: '', stageDue: null, draftStart: isDate(j.takeDate) ? j.takeDate : null, suspended: false,
       draftDue: isDate(j.draftDue) ? j.draftDue : null, draftEst: false,
       finalDue: isDate(j.finalDue) ? j.finalDue : null, finalEst: false,
       takeDate: isDate(j.takeDate) ? j.takeDate : '', missing: [], dirty: [],
@@ -330,6 +337,7 @@ export function mount(host) {
     const dDraft = daysLeft(j.draftDue);
     if (VIEW === 'all') { /* 全部含已闭环 */ }
     else if (VIEW === 'nonum') { if (String(j.no || '').trim()) return false; }   // 候补区：所有缺单号的
+    else if (VIEW === 'susp') { if (!j.suspended) return false; }                 // 挂起中
     else if (VIEW === 'pay') { if (j.status !== '待结算') return false; }
     else if (VIEW === 'late') { if (CLOSED.has(j.status) || h.cls !== 'late') return false; }
     else if (VIEW === 'soon') { if (CLOSED.has(j.status) || h.cls !== 'soon') return false; }
@@ -337,11 +345,12 @@ export function mount(host) {
     else if (VIEW === 'est') { if (CLOSED.has(j.status) || !(j.draftEst || j.finalEst)) return false; }
     else if (!WIP.has(j.status)) return false;   // 默认「在做的」= 待结算之前，台账里这几档自动进来
     if (TEAM && j.channel !== TEAM) return false;
-    // 时间轴选了一天：初稿或终稿应交落在那天（逾期档＝终稿已经过了还没闭环）
+    // 时间轴选了一天：当前工序截止（没设工序按初稿）落在那天
     if (DAY) {
+      const nd = j.stageDue || j.draftDue || j.finalDue;
       const hit = DAY === 'overdue'
-        ? (isDate(j.finalDue) && daysLeft(j.finalDue) < 0 && !CLOSED.has(j.status))
-        : (j.draftDue === DAY || j.finalDue === DAY);
+        ? (isDate(nd) && daysLeft(nd) < 0 && !CLOSED.has(j.status) && !j.suspended)
+        : (j.stageDue === DAY || j.draftDue === DAY || j.finalDue === DAY);
       if (!hit) return false;
     }
     const q = Q.trim().toLowerCase();
@@ -354,16 +363,18 @@ export function mount(host) {
     const closedLast = (a, b) => (CLOSED.has(a.status) ? 1 : 0) - (CLOSED.has(b.status) ? 1 : 0);
     const due = (j, k) => isDate(j[k]) ? String(j[k]) : '9999-12-31';
     if (SORT === 'draft') {
-      // 【v26.96】今天的初稿优先：今天 → 已逾期 → 明天 → 以后
+      // 【v26.99】按「当前工序截止」排：今天 → 已逾期 → 明天 → 以后；挂起的沉底
+      const dueOf = j => j.stageDue || j.draftDue;
       const pri = j => {
+        if (j.suspended) return 10;
         if (CLOSED.has(j.status)) return 9;
-        const dl = daysLeft(j.draftDue);
+        const dl = daysLeft(dueOf(j));
         return dl === 0 ? 0 : dl !== null && dl < 0 ? 1 : dl === 1 ? 2 : 3;
       };
-      arr.sort((a, b) => pri(a) - pri(b) || due(a, 'draftDue').localeCompare(due(b, 'draftDue')) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || heat(a).score - heat(b).score);
+      arr.sort((a, b) => pri(a) - pri(b) || String(dueOf(a) || '9999').localeCompare(String(dueOf(b) || '9999')) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || heat(a).score - heat(b).score);
     }
-    else if (SORT === 'final') arr.sort((a, b) => closedLast(a, b) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || due(a, 'draftDue').localeCompare(due(b, 'draftDue')) || heat(a).score - heat(b).score);
-    else arr.sort((a, b) => heat(a).score - heat(b).score);
+    else if (SORT === 'final') arr.sort((a, b) => (a.suspended ? 1 : 0) - (b.suspended ? 1 : 0) || closedLast(a, b) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || due(a, 'draftDue').localeCompare(due(b, 'draftDue')) || heat(a).score - heat(b).score);
+    else arr.sort((a, b) => (a.suspended ? 1 : 0) - (b.suspended ? 1 : 0) || heat(a).score - heat(b).score);
     return arr;
   };
 
@@ -524,20 +535,22 @@ export function mount(host) {
   /* ============ 做单情况（紧凑指标，点=筛） + 7 天时间轴 ============ */
   function paintSum() {
     const all = rowsAll();
-    const open = all.filter(j => !CLOSED.has(j.status));
+    const open = all.filter(j => !CLOSED.has(j.status) && !j.suspended);
+    const susp = all.filter(j => !CLOSED.has(j.status) && j.suspended).length;
     const late = open.filter(j => heat(j).cls === 'late');
     const soon = open.filter(j => heat(j).cls === 'soon');
-    const draftBad = open.filter(j => { const n = daysLeft(j.draftDue); return n !== null && n < 0; });
+    const draftBad = open.filter(j => { const n = daysLeft(j.stageDue || j.draftDue); return n !== null && n < 0; });
     const est = open.filter(j => j.draftEst || j.finalEst);
     const waitPay = all.filter(j => j.status === '待结算');
     const cell = (cls, n, label, view) => `<button class="st ${cls}${VIEW === view ? ' on' : ''}" data-view="${view}"><b>${n}</b><span>${label}</span></button>`;
     $('#sum').innerHTML =
       cell('doing', open.length, '在做的', 'doing') +
       cell('soon', soon.length, '今天/明天到期', 'soon') +
-      cell('', draftBad.length, '初稿过期未交', 'draft') +
+      cell('', draftBad.length, '工序/初稿过期', 'draft') +
       cell('late', late.length, '终稿逾期', 'late') +
       `<button class="st cash${VIEW === 'pay' ? ' on' : ''}" data-view="pay"><b>¥${money(waitPay.reduce((t, j) => t + j.amount * j.rate / 100, 0))}</b><span>待结算应得（${waitPay.length} 单）</span></button>` +
-      cell('', est.length, '交期靠推算', 'est');
+      cell('', est.length, '交期靠推算', 'est') +
+      (susp ? cell('', susp, '挂起中', 'susp') : '');
     $$('#sum [data-view]').forEach(x => x.onclick = () => {
       VIEW = VIEW === x.dataset.view ? 'doing' : x.dataset.view;   // 再点一次=取消
       paintSum(); paintViews(); paintList();
@@ -549,12 +562,14 @@ export function mount(host) {
   function paintWeek() {
     const box = $('#week');
     if (!box) return;
-    const open = rowsAll().filter(j => !CLOSED.has(j.status));
-    const overdue = open.filter(j => isDate(j.finalDue) && daysLeft(j.finalDue) < 0).length;
+    const open = rowsAll().filter(j => !CLOSED.has(j.status) && !j.suspended);
+    // 当前里程碑＝当前工序截止；没设工序就按初稿
+    const nextDue = j => j.stageDue || j.draftDue || j.finalDue;
+    const overdue = open.filter(j => isDate(nextDue(j)) && daysLeft(nextDue(j)) < 0).length;
     const cells = [`<button class="day late${DAY === 'overdue' ? ' on' : ''}" data-day="overdue"><div class="d">逾期</div><div class="n">${overdue}</div><div class="k">单</div></button>`];
     for (let i = 0; i < 7; i++) {
       const d = dadd(localDate(), i);
-      const n = open.filter(j => j.draftDue === d || j.finalDue === d).length;
+      const n = open.filter(j => nextDue(j) === d).length;
       cells.push(`<button class="day${DAY === d ? ' on' : ''}${i === 0 ? ' today' : ''}${n ? '' : ' empty'}" data-day="${d}"><div class="d">${i === 0 ? '今天' : i === 1 ? '明天' : d.slice(5)}</div><div class="n">${n}</div><div class="k">单</div></button>`);
     }
     box.innerHTML = cells.join('');
@@ -565,11 +580,13 @@ export function mount(host) {
   }
 
   function paintViews() {
-    const named = { doing: '在做的（待结算之前）', late: '终稿逾期', soon: '今天/明天到期', pay: '待结算', draft: '初稿过期未交', est: '交期靠推算', nonum: '候补区（缺单号）' };
+    const named = { doing: '在做的（待结算之前）', late: '终稿逾期', soon: '今天/明天到期', pay: '待结算', draft: '工序/初稿过期', est: '交期靠推算', nonum: '候补区（缺单号）', susp: '挂起中' };
     const nonum = rowsAll().filter(j => !String(j.no || '').trim()).length;
+    const susp = rowsAll().filter(j => j.suspended && !CLOSED.has(j.status)).length;
     $('#views').innerHTML = `<button class="chip${VIEW === 'all' ? ' on' : ''}" data-v="all">全部（含已闭环）</button>`
       + `<button class="chip${VIEW === 'doing' ? ' on' : ''}" data-v="doing">在做的</button>`
       + `<button class="chip${VIEW === 'nonum' ? ' on' : ''}" data-v="nonum">候补区·缺单号${nonum ? '（' + nonum + '）' : ''}</button>`
+      + (susp ? `<button class="chip${VIEW === 'susp' ? ' on' : ''}" data-v="susp">挂起中（${susp}）</button>` : '')
       + `<span class="sub">当前视图：<b style="color:#1e293b">${VIEW === 'all' ? '全部（含已闭环）' : named[VIEW]}</b>　·　卡片上四个圈就是状态，点一下写进台账；上面数字点一下就是筛。</span>`;
     $$('#views [data-v]').forEach(x => x.onclick = () => { VIEW = x.dataset.v; paintSum(); paintViews(); paintList(); });
   }
@@ -595,8 +612,9 @@ export function mount(host) {
       if (SORT === 'heat') return rows.map(j => card(j)).join('');
       // 按交期分组：同一天的单排在一起，像时间轴一样往下走；只有「今天」默认展开
       const keyOf = j => {
+        if (j.suspended) return '⏸ 挂起中（不计入提醒）';
         if (CLOSED.has(j.status)) return '已闭环';
-        const v = SORT === 'draft' ? j.draftDue : j.finalDue;
+        const v = SORT === 'draft' ? (j.stageDue || j.draftDue) : j.finalDue;
         if (!isDate(v)) return '没填交期';
         const dl = daysLeft(v);
         if (dl < 0) return v + ' · 已逾期 ' + (-dl) + ' 天';
@@ -619,6 +637,7 @@ export function mount(host) {
     })();
     $$('#list [data-st-to]').forEach(x => x.onclick = () => setStatus(jOf(x.dataset.key), x.dataset.stTo));
     $$('#list [data-stage-to]').forEach(x => x.onclick = () => setStage(jOf(x.dataset.stage), x.dataset.stageTo));
+    $$('#list [data-suspend]').forEach(x => x.onclick = () => setSuspend(jOf(x.dataset.suspend), x.dataset.suspendTo === '1'));
     $$('#list [data-jedit]').forEach(x => x.onclick = () => openEdit(x.dataset.jedit, x.dataset.jno));
     $$('#list [data-fixtog]').forEach(x => x.onclick = () => { FIX.has(x.dataset.fixtog) ? FIX.delete(x.dataset.fixtog) : FIX.add(x.dataset.fixtog); paintList(); });
     $$('#list [data-wone]').forEach(x => x.onclick = () => writeOne(x, x.dataset.wone));
@@ -667,6 +686,7 @@ export function mount(host) {
       : '';
     const nonum = !String(j.no || '').trim();
     const abnormal = nonum && (j.status === '待结算' || j.status === '已结算');
+    const suspBtn = ledger ? `<button class="btn sm g" data-suspend="${esc(j.key)}" data-suspend-to="${j.suspended ? '' : '1'}">${j.suspended ? '恢复' : '挂起'}</button>` : '';
     const fix = (ledger && FIX.has(j.key)) ? `<div class="fix">
         <input placeholder="渠道" data-fixin="channel" value="${esc(j.channel || '')}">
         <input placeholder="群名" data-fixin="group" value="${esc(j.group || '')}">
@@ -674,11 +694,11 @@ export function mount(host) {
         <input type="date" data-fixin="final" value="${esc(j.final || '')}">
         <button class="btn sm p" data-wone="${esc(j.id)}">写这一单</button>
         <span class="sub">只写这 4 个字段；这里只填不清，要清空去「老单补录」勾覆盖。</span></div>` : '';
-    return `<div class="jc ${h.cls}${closedSoft}">
+    return `<div class="jc ${h.cls}${closedSoft}${j.suspended ? ' susp' : ''}">
       <div>
-        <div class="no">${esc(j.no || '（没填单号）')}<span class="sub">　${esc(j.channel || '没填渠道')}${dk('channel')}</span>${ledger ? '' : '<span class="dft">本机</span>'}${abnormal ? '<span class="tag" style="background:#fee2e2;color:#b91c1c">异常·缺单号</span>' : ''}</div>
+        <div class="no">${esc(j.no || '（没填单号）')}<span class="sub">　${esc(j.channel || '没填渠道')}${dk('channel')}</span>${ledger ? '' : '<span class="dft">本机</span>'}${abnormal ? '<span class="tag" style="background:#fee2e2;color:#b91c1c">异常·缺单号</span>' : ''}${j.suspended ? '<span class="tag" style="background:#f1f5f9;color:#475569">挂起</span>' : ''}</div>
         <div class="who">👥 ${esc(j.group || '没填群名')}${dk('group')}　·　派单员 ${esc(j.person || '未记')}　·　接单 ${esc(j.takeDate || '未记')}${j.note ? '　·　📝 ' + esc(j.note) : ''}</div>
-        <div class="steps">${steps}${chips}${editBtn}</div>
+        <div class="steps">${steps}${chips}${editBtn}${suspBtn}</div>
         ${stageHtml}
         ${tl}
         ${fix}
@@ -715,15 +735,27 @@ export function mount(host) {
     } catch (e) { toast('状态没改成：' + (e.message || e)); }
   }
 
+  /* ============ 挂起：临时不催办（不影响台账状态），恢复就回来 ============ */
+  async function setSuspend(j, to) {
+    if (!j) return;
+    if (j.src !== 'ledger') return toast('本机单先并入台账才能挂起');
+    try {
+      await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id: j.id, fields: { suspended: to ? '1' : '' } }], apply: true, onlyEmpty: false }) });
+      j.o.suspended = to ? '1' : '';
+      toast((j.no || '这单') + (to ? ' 已挂起（不计入提醒和时间轴，点「恢复」回来）' : ' 已恢复'));
+      paintSum(); paintViews(); paintWeek(); paintList();
+    } catch (e) { toast('挂起没改成：' + (e.message || e)); }
+  }
+
   /* ============ 工序写库：只碰 stage 一个键 ============ */
   async function setStage(j, to) {
     if (!j || j.stage === to) return;
     if (j.src !== 'ledger') return toast('本机单先并入台账才能记工序');
     try {
-      await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id: j.id, fields: { stage: to } }], apply: true }) });
+      await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id: j.id, fields: { stage: to } }], apply: true, onlyEmpty: false }) });
       j.o.stage = to;
       toast((j.no || '这单') + ' 工序 → ' + to);
-      paintList();
+      paintSum(); paintWeek(); paintList();
     } catch (e) { toast('工序没改成：' + (e.message || e)); }
   }
 
@@ -801,7 +833,7 @@ export function mount(host) {
       if (d.stage) fields.stage = d.stage;
       let filled = 0;
       if (id && Object.keys(fields).length) {
-        const k = await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id, fields }], apply: true }) });
+        const k = await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id, fields }], apply: true, onlyEmpty: false }) });
         filled = (k.rows || []).length;
       }
       toast((d.no ? '已写进台账：' + d.no : '已写进台账（没单号，进候补区）') + '（' + d.status + '）' + (filled ? ' · 渠道/工序一并填好' : ''));
@@ -854,7 +886,7 @@ export function mount(host) {
       if (j.group) fields.group = j.group;
       if (isDate(j.j.draftDue)) fields.draft = j.j.draftDue;
       if (isDate(j.j.finalDue)) fields.final = j.j.finalDue;
-      if (id && Object.keys(fields).length) await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id, fields }], apply: true }) });
+      if (id && Object.keys(fields).length) await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id, fields }], apply: true, onlyEmpty: false }) });
       LOCAL = LOCAL.filter(x => String(x.id) !== String(j.id)); LS.write(LS_LOCAL, LOCAL);
       toast('已并入台账：' + (no || '（没号，已进候补区）'));
       await loadLedger(true);
@@ -1655,6 +1687,7 @@ export function mount(host) {
     const o = ED; if (!o) return;
     const teams = [...new Set(UP.map(u => u.team).concat([String(o.channel || '')]))].filter(Boolean);
     $('#edBox').innerHTML = `
+      <button class="mx" id="edX" title="关闭（Esc）">✕</button>
       <h3>编辑台账单 <span class="mono">${esc(o.orderNo || '')}</span></h3>
       <div class="form">
         <div class="f"><label>接单日</label><input id="eDate" type="date" value="${esc(String(o.date || '').slice(0, 10))}"></div>
@@ -1680,6 +1713,7 @@ export function mount(host) {
       if (done && !d.value) d.value = localDate();
     };
     $('#eCancel').onclick = closeEdit;
+    $('#edX').onclick = closeEdit;
     $('#eSave').onclick = saveEdit;
   }
   async function saveEdit() {
@@ -1715,7 +1749,7 @@ export function mount(host) {
       if (stage && stage !== String(o.stage || '')) fields.stage = stage;
       let jfErr = '';
       if (Object.keys(fields).length) {
-        try { await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id: o._id, fields }], apply: true }) }); }
+        try { await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id: o._id, fields }], apply: true, onlyEmpty: false }) }); }
         catch (e) { jfErr = '（渠道/初稿这些没写上：' + (e.message || e) + '）'; }
       }
       Object.assign(o, doc, fields);
@@ -1871,8 +1905,6 @@ export function mount(host) {
   function bind() {
     $('#fQ').oninput = () => { Q = $('#fQ').value; paintList(); };
     $('#rFind').oninput = () => { RQ = $('#rFind').value; paintFind(); };
-    const edm = $('#edMask');
-    if (edm) edm.onclick = e => { if (e.target === edm) closeEdit(); };
     $('#fSort').onchange = () => { SORT = $('#fSort').value; LS.write('jobs_sort_v0', SORT); paintList(); };
     $('#fTeam').onchange = () => { TEAM = $('#fTeam').value; paintList(); };
     $('#nAdd').onclick = addJob;
@@ -1921,6 +1953,13 @@ export function mount(host) {
 
   skeleton();
   loadLedger();
+  // 编辑弹窗只认 ✕ / Esc / 取消，点空白（遮罩）不关，避免误触丢改动
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('#edMask') && $('#edMask').classList.contains('show')) {
+      e.preventDefault(); e.stopPropagation(); closeEdit();
+    }
+  }, true);
+
   // 【v26.96】实时：45 秒自动拉一次台账（页面可见、没开弹窗、没在输入时），录完不用手动刷新
   setInterval(() => {
     if (document.hidden) return;

@@ -421,7 +421,7 @@ export function mount(host) {
       if (u && _id.indexOf('loc-') !== 0) {
         const fields = { channel: u.team, draft: daddDays(doc.date, Number(u.dueDraft) > 0 ? Number(u.dueDraft) : 2), final: daddDays(doc.date, Number(u.dueFinal) > 0 ? Number(u.dueFinal) : 4) };
         try {
-          await fetch('/api/orders/jobfields', { method: 'POST', headers: { 'Content-Type': 'application/json', ...AH() }, body: JSON.stringify({ patches: [{ id: _id, fields }], apply: true }) });
+          await fetch('/api/orders/jobfields', { method: 'POST', headers: { 'Content-Type': 'application/json', ...AH() }, body: JSON.stringify({ patches: [{ id: _id, fields }], apply: true, onlyEmpty: false }) });
         } catch (e) { /* 新字段没写上不影响这单入账 */ }
       }
       page = 1;
