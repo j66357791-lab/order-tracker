@@ -622,8 +622,8 @@ export function mount(host) {
     $$('#list [data-jedit]').forEach(x => x.onclick = () => openEdit(x.dataset.jedit, x.dataset.jno));
     $$('#list [data-fixtog]').forEach(x => x.onclick = () => { FIX.has(x.dataset.fixtog) ? FIX.delete(x.dataset.fixtog) : FIX.add(x.dataset.fixtog); paintList(); });
     $$('#list [data-wone]').forEach(x => x.onclick = () => writeOne(x, x.dataset.wone));
-    $$('#list [data-merge]').forEach(x => x.onclick = () => mergeLocal(jOf(x.dataset.key)));
-    $$('#list [data-jdel]').forEach(x => x.onclick = () => delLocal(jOf(x.dataset.key)));
+    $$('#list [data-merge]').forEach(x => x.onclick = () => mergeLocal(jOf(x.dataset.merge)));
+    $$('#list [data-jdel]').forEach(x => x.onclick = () => delLocal(jOf(x.dataset.jdel)));
     window.scrollTo(0, _keepY);
   }
 
@@ -839,8 +839,11 @@ export function mount(host) {
   async function mergeLocal(j) {
     if (!j) return;
     const no = noCandidates(j.no)[0] || '';
-    if (!no) return toast('这单还没有平台单号：回「记一单」把号填上再并入，台账接口不收空号');
-    if (!confirm('把这单写进台账？\n\n单号 ' + no + ' · ' + money(j.amount) + ' 元 × ' + j.rate + '% · ' + j.status)) return;
+    // 【v26.97】没单号也能并入：进候补区补号（v26.96 起台账收缺号）
+    const tip = no
+      ? '把这单写进台账？\n\n单号 ' + no + ' · ' + money(j.amount) + ' 元 × ' + j.rate + '% · ' + j.status
+      : '这单还没有平台单号。\n\n并入台账后会进「候补区」等补号；状态走到待结算会自动标异常。要并入吗？';
+    if (!confirm(tip)) return;
     const body = { date: isDate(j.takeDate) ? j.takeDate : localDate(), orderNo: no, amount: j.amount, shareRate: j.rate, status: j.status, doneDate: '', note: j.note || '' };
     if (j.person) body.writer = j.person;
     try {
@@ -853,7 +856,7 @@ export function mount(host) {
       if (isDate(j.j.finalDue)) fields.final = j.j.finalDue;
       if (id && Object.keys(fields).length) await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id, fields }], apply: true }) });
       LOCAL = LOCAL.filter(x => String(x.id) !== String(j.id)); LS.write(LS_LOCAL, LOCAL);
-      toast('已并入台账：' + no);
+      toast('已并入台账：' + (no || '（没号，已进候补区）'));
       await loadLedger(true);
     } catch (e) { toast('并入失败：' + (e.message || e)); }
   }
