@@ -499,6 +499,7 @@ export function mount(host) {
       VIEW = VIEW === x.dataset.view ? 'doing' : x.dataset.view;   // 再点一次=取消
       paintSum(); paintViews(); paintList();
     });
+    paintWeek();   // 数据变了就跟着重画，否则加载完还是第一次的空时间轴
   }
 
   // 【v26.95】7 天时间轴：每天有几单到期（初稿或终稿），点一天只看那天
