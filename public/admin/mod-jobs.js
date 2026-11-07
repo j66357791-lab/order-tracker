@@ -261,6 +261,7 @@ export function mount(host) {
   let BFONLY = true, BFALL = false;
   let FULL = null, FVIEW = 'all', FQ = '', FPAGE = 0, FSEL = new Set(), FBUSY = '';
   let DUPRES = null, DUPT = null, DUPSEQ = 0;
+  let DUPG = null, DUPTG = null;   // 【v27.0】同群名+同金额的重复识别（没单号时也能查）
   let MIGRATED = 0;
 
   // 旧版「补录只存浏览器」的草稿搬进新草稿区：搬一次就把原件挪到 *_moved，免得下次又当新数据重复计
@@ -421,6 +422,7 @@ export function mount(host) {
           <div class="f"><label>当前工序</label><select id="nStage">${STAGES.map((s, i) => `<option${i === 0 ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
           <div class="f"><label>起始状态</label><select id="nStatus">${ST.map(s => `<option${s === '待开始' ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
           <div class="f" style="grid-column:1/-1"><label>备注</label><input id="nNote" placeholder="内容要求、客户要求、群里原话…"></div>
+          <div class="dup" id="dupG" style="grid-column:1/-1"></div>
           <button class="btn p" id="nAdd">＋ 存进台账</button>
           <button class="btn g" id="nLocal">只留本机</button>
           <span class="sub">没单号也能存台账（进候补区补号）；初/终稿留空 = 按初稿开始 + 渠道默认天数推算。</span>
@@ -800,6 +802,21 @@ export function mount(host) {
     el.innerHTML = `⚠ 单号 ${esc(d.no)} 台账里已有 <b>${d.count}</b> 条：${esc(r)}。<br>你台账确实有合法同号单（实测过同号两行），确认不是重复再存。 <button class="btn sm g" data-goto="${esc(d.no)}">在台账里看</button>`;
     $$('[data-goto]', el).forEach(x => x.onclick = () => gotoLedger(x.dataset.goto));
   }
+  // 【v27.0】同群名 + 同金额：没单号时也能识别疑似重复（用本页已读到的台账单比，500 单以内全量）
+  function checkDupG() {
+    const el = $('#dupG');
+    if (!el) return;
+    const group = $('#nGroup').value.trim();
+    const amount = Number($('#nAmount').value);
+    if (!group || !(amount > 0)) { el.textContent = ''; el.className = 'dup'; DUPG = null; return; }
+    const hits = LED.filter(o => String(o.group || '').trim() === group && Math.abs(Number(o.amount) - amount) < 0.01);
+    DUPG = hits.length ? hits : null;
+    if (!hits.length) { el.className = 'dup ok'; el.textContent = '✓ 台账里没有同群名+同金额的单'; return; }
+    el.className = 'dup bad';
+    el.innerHTML = `⚠ 台账里已有 <b>${hits.length}</b> 单同群名 + 同金额：`
+      + hits.slice(0, 3).map(o => esc((o.orderNo || '（没号）') + ' · ' + String(o.date || '').slice(0, 10) + ' · ' + o.status)).join('；')
+      + (hits.length > 3 ? ' …' : '') + '。确认不是重复再存。';
+  }
 
   /* ============ 建单 ============ */
   function formDraft() {
@@ -819,6 +836,11 @@ export function mount(host) {
     if (!d.no && !confirm('这单还没有平台单号。\n\n存进台账后它会进「候补区」等补号；状态走到待结算时会自动标异常。这样存吗？')) return;
     if (d.no && DUPRES && DUPRES.no === d.no && DUPRES.state !== 'miss' &&
       !confirm('单号 ' + d.no + ' 台账里已经有 ' + DUPRES.count + ' 条。\n\n确定这是另一单、真要再存一条吗？（点了就写进台账）')) return;
+    if (!d.no) {
+      const gHits = LED.filter(o => String(o.group || '').trim() === d.group && Math.abs(Number(o.amount) - d.amount) < 0.01);
+      if (gHits.length && !confirm('台账里已有 ' + gHits.length + ' 单同群名+同金额（'
+        + gHits.slice(0, 2).map(o => (o.orderNo || '没号') + ' ' + String(o.date || '').slice(0, 10)).join('；') + '）。\n\n仍要再存一单吗？')) return;
+    }
     const body = { date: d.takeDate, orderNo: d.no, amount: d.amount, shareRate: d.rate, status: d.status, doneDate: '', note: d.note };
     if (d.person) body.writer = d.person;
     try {
@@ -839,6 +861,7 @@ export function mount(host) {
       toast((d.no ? '已写进台账：' + d.no : '已写进台账（没单号，进候补区）') + '（' + d.status + '）' + (filled ? ' · 渠道/工序一并填好' : ''));
       ['#nNo', '#nGroup', '#nAmount', '#nNote'].forEach(s => $(s).value = '');
       DUPRES = null; paintDup('');
+      DUPG = null; const dg = $('#dupG'); if (dg) { dg.textContent = ''; dg.className = 'dup'; }
       await loadLedger(true);
     } catch (e) { toast('没存上：' + (e.message || e)); }
   }
@@ -1911,6 +1934,9 @@ export function mount(host) {
     $('#nLocal').onclick = () => saveLocal(formDraft());
     $('#nNo').oninput = onNoInput;
     $('#nNo').onpaste = () => setTimeout(onNoInput, 30);
+    ['#nGroup', '#nAmount'].forEach(s => $(s).addEventListener('input', () => {
+      clearTimeout(DUPTG); DUPTG = setTimeout(checkDupG, 350);
+    }));
     $('#nTeam').onchange = () => {
       const u = upOf($('#nTeam').value);
       if (u.team) { $('#nRate').value = u.rate || 45; $('#nPerson').value = u.person || ''; }
