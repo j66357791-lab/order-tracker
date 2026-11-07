@@ -358,7 +358,7 @@ export function mount(host) {
   function entryPreview(dOver) {
     const d = dOver || readEntry();
     const errs = [];
-    if (!d.orderNo) errs.push('订单编号不能为空');
+    // 【v26.99】单号可以留空：没号先入台账，进做单中心的候补区补号
     if (!(d.amount > 0)) errs.push('金额要大于 0');
     if (!(d.shareRate > 0 && d.shareRate <= 100)) errs.push('分成比例须在 1-100');
     if (errs.length) { renderEntry(Object.assign({}, d, { err: errs.join('；') })); return; }
@@ -2024,7 +2024,7 @@ export function mount(host) {
     };
     const errs = [];
     if (!/^\d{4}-\d{2}-\d{2}$/.test(doc.date)) errs.push('请选择接单日期');
-    if (!doc.orderNo) errs.push('订单编号不能为空');
+    // 【v26.99】单号可以留空（进候补区补号）
     if (!(doc.amount >= 0) || isNaN(doc.amount)) errs.push('金额必须是非负数字');
     if (!(doc.shareRate > 0 && doc.shareRate <= 100)) errs.push('分成比例须为 1-100');
     if (DONE_SET.has(st) && !/^\d{4}-\d{2}-\d{2}$/.test(doc.doneDate)) errs.push('请填写完单日期');
