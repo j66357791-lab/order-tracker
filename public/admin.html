@@ -161,18 +161,23 @@ if (guardAdmin()) {
   const mounted = {};     // key -> { mode:'panel'|'frame', refresh? }
   const prefetched = {};
   let current = 'home';
+  // 【v26.91】每个面板各自记住滚动位置：切走时存、切回时还。
+  // 以前切面板会把窗口滚动夹断（面板一隐藏文档高度就塌），翻记录翻到一半回去就在最前面。
+  const panelScroll = {};
 
   const SKELETON = '<div class="skeleton"><i></i><i></i><i></i><i></i></div>';
 
   function hideSk(key) { const s = skEl(key); if (s) s.style.display = 'none'; }
 
   function show(key) {
+    panelScroll[current] = window.scrollY;
     current = key;
     const home = el('panel-home');
     if (home) home.style.display = key === 'home' ? '' : 'none';
     ALL_KEYS.forEach(k => { const p = hostEl(k); if (p) p.style.display = k === key ? '' : 'none'; });
     updateNav(key, badges);   // 【v20.8】只切高亮与角标，不再重建整块导航 DOM
-    // 【v20.8】去掉了原来每次切换都执行的 window.scrollTo({top:0})：内容在面板里滚动，外壳本来就没滚动过
+    // 【v26.91】切回老面板时还它自己的滚动位置；首次打开的面板从顶开始
+    window.scrollTo(0, panelScroll[key] || 0);
     history.replaceState(null, '', key === 'home' ? '/admin.html' : '/admin.html#' + key);
   }
 

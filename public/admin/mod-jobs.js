@@ -184,6 +184,9 @@ export function mount(host) {
   let PREV = { jf: null, w: null };
   let LED = [], TRUNC = false, LOADING = true, LOADERR = '';
   let VIEW = 'doing', Q = '', TEAM = '';
+  // 【v26.91】提醒排序：默认按初稿应交时间先后跟进；可切终稿顺序或原来的紧急度。选择存本机。
+  let SORT = LS.read('jobs_sort_v0', 'draft');
+  if (!['draft', 'final', 'heat'].includes(SORT)) SORT = 'draft';
   let RECON = null, COLMAPS = [];
   let RVIEW = 'card', RDET = {};     // 对账结果默认卡片；RDET 存"就地查这单"的台账详情
   let SEL = new Set(), FIX = new Set();
@@ -268,7 +271,16 @@ export function mount(host) {
     if (q && ![j.no, j.group, j.person, j.note, j.channel].some(x => String(x || '').toLowerCase().includes(q))) return false;
     return true;
   };
-  const listed = () => rowsAll().filter(inList).sort((a, b) => heat(a).score - heat(b).score);
+  const listed = () => {
+    const arr = rowsAll().filter(inList);
+    // 【v26.91】已闭环的沉底；没填日期的排在有日期的后面；同日再按紧急度
+    const closedLast = (a, b) => (CLOSED.has(a.status) ? 1 : 0) - (CLOSED.has(b.status) ? 1 : 0);
+    const due = (j, k) => isDate(j[k]) ? String(j[k]) : '9999-12-31';
+    if (SORT === 'draft') arr.sort((a, b) => closedLast(a, b) || due(a, 'draftDue').localeCompare(due(b, 'draftDue')) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || heat(a).score - heat(b).score);
+    else if (SORT === 'final') arr.sort((a, b) => closedLast(a, b) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || due(a, 'draftDue').localeCompare(due(b, 'draftDue')) || heat(a).score - heat(b).score);
+    else arr.sort((a, b) => heat(a).score - heat(b).score);
+    return arr;
+  };
 
   /* ============ 骨架 ============ */
   // 【v26.90】外壳每次切回本面板都会调 refresh()，以前它等于重建整块 DOM ——
@@ -287,6 +299,11 @@ export function mount(host) {
       <div class="chips" id="views"></div>
       <div class="chips" style="margin-top:-6px">
         <select id="fTeam" style="max-width:180px"></select>
+        <select id="fSort" title="提醒按什么顺序排" style="max-width:170px">
+          <option value="draft">按初稿时间顺序</option>
+          <option value="final">按终稿时间顺序</option>
+          <option value="heat">按紧急度（逾期优先）</option>
+        </select>
         <input id="fQ" style="width:230px" placeholder="搜单号 / 群名 / 派单员 / 备注">
         <span class="sub" id="cnt"></span>
       </div>
@@ -379,6 +396,7 @@ export function mount(host) {
           </div></div>
       </details>`;
     BUILT = true;
+    $('#fSort').value = SORT;
     paintAll();
     if (!$('#nDraft').value) syncNewDue();
     bind();
@@ -440,9 +458,12 @@ export function mount(host) {
 
   /* ============ 进度卡列表 ============ */
   function paintList() {
+    // 【v26.91】重画卡片前记住滚动位置，画完还回去：点状态圈写库后不再跳顶
+    const _keepY = window.scrollY;
     if (LOADING) { $('#list').innerHTML = '<div class="empty">正在读台账…</div>'; return; }
     const rows = listed();
-    $('#cnt').textContent = `台账+本机共 ${rowsAll().length} 单，这里 ${rows.length} 单（逾期最久的在最上面）`;
+    const sortTxt = SORT === 'draft' ? '初稿应交时间从早到晚' : SORT === 'final' ? '终稿应交时间从早到晚' : '逾期最久的在最上面';
+    $('#cnt').textContent = `台账+本机共 ${rowsAll().length} 单，这里 ${rows.length} 单（${sortTxt}）`;
     if (!rows.length) {
       $('#list').innerHTML = `<div class="empty">${LED.length || LOCAL.length ? '这个视图/筛选下没有单。切「全部」看看，或点上面数字换个筛。' : '台账里读不到单（也可能还没交付的确实是 0 单）。展开「老单补录」可以直接翻全部历史单。'}</div>`;
       return;
@@ -453,6 +474,7 @@ export function mount(host) {
     $$('#list [data-wone]').forEach(x => x.onclick = () => writeOne(x, x.dataset.wone));
     $$('#list [data-merge]').forEach(x => x.onclick = () => mergeLocal(jOf(x.dataset.key)));
     $$('#list [data-jdel]').forEach(x => x.onclick = () => delLocal(jOf(x.dataset.key)));
+    window.scrollTo(0, _keepY);
   }
 
   function card(j) {
@@ -1496,6 +1518,7 @@ export function mount(host) {
   /* ============ 事件绑定（骨架只建一次，之后都局部重绘） ============ */
   function bind() {
     $('#fQ').oninput = () => { Q = $('#fQ').value; paintList(); };
+    $('#fSort').onchange = () => { SORT = $('#fSort').value; LS.write('jobs_sort_v0', SORT); paintList(); };
     $('#fTeam').onchange = () => { TEAM = $('#fTeam').value; paintList(); };
     $('#nAdd').onclick = addJob;
     $('#nLocal').onclick = () => saveLocal(formDraft());

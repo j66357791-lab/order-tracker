@@ -225,6 +225,18 @@ export function mount(host) {
   const ORDERNO_LEN = 19;   // 平台单号常见位数：只提示不拦（你台账里确有 11/14/18 位的历史号）
   const ENTRY = { step: 1, last: null, writers: [], writersAt: 0 };
 
+  // 【v26.91】录单卡同步做单中心的「渠道/上游设置」（同一个 localStorage 键 jobs_upstream_v0）：
+  // 选渠道 → 自动带派单员/分成比例；填派单员 → 反认渠道（雪糕这类配了人的归该渠道，其余归没配人的渠道）。
+  // 比例与配置不一致时快照弹窗提醒，可一键同步；确认后渠道+初/终稿应交走 jobfields 窄口写库。
+  const readUpCfg = () => { try { const a = JSON.parse(localStorage.getItem('jobs_upstream_v0') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+  const upTeam = (cfg, t) => cfg.find(u => u.team === t) || null;
+  const upOfWriter = (cfg, w) => {
+    w = String(w || '').trim();
+    if (!w) return null;
+    return cfg.find(u => u.person && (w.includes(u.person) || u.person.includes(w))) || cfg.find(u => !u.person) || null;
+  };
+  const daddDays = (base, n) => { const d = new Date(base + 'T00:00:00'); d.setDate(d.getDate() + (Number(n) > 0 ? Number(n) : 0)); return localDate(d); };
+
   async function ensureWriters(force) {
     if (!force && Date.now() - ENTRY.writersAt < 60000) return ENTRY.writers;
     try {
@@ -251,27 +263,57 @@ export function mount(host) {
   function renderEntry(d) {
     const cur = d || {};
     const ws = ENTRY.writers;
+    const cfg = readUpCfg();
+    const initTeam = cur.channel || (upOfWriter(cfg, cur.writer) || {}).team || '';
     $('entryTitle').textContent = '✒️ 录单';
     $('entryHint').textContent = '接单日 ' + localDate() + ' · 分类默认待开始';
     $('entryBody').innerHTML = `
       <div class="en-grid">
         <label class="en-wide">订单编号 *<input id="enNo" value="${esc(cur.orderNo || '')}" placeholder="平台单号，可直接粘贴" autocomplete="off"></label>
         <label>订单金额（元）*<input id="enAmt" type="number" min="0" step="0.01" value="${cur.amount == null ? '' : cur.amount}"></label>
-        <label>分成比例（%）<input id="enRate" type="number" min="1" max="100" step="0.1" value="${cur.shareRate == null ? DEFAULT_RATE : cur.shareRate}" title="默认取后台设置的比例"></label>
+        <label>分成比例（%）<input id="enRate" type="number" min="1" max="100" step="0.1" value="${cur.shareRate == null ? DEFAULT_RATE : cur.shareRate}" title="默认取后台设置的比例；选渠道后跟渠道配置"></label>
         <label>分类<select id="enSt">${STATUSES.map(s => `<option ${s === (cur.status || '待开始') ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+        <label>渠道（上游）<select id="enTeam"><option value="">（按派单员自动认）</option>${cfg.map(u => `<option value="${esc(u.team)}"${u.team === initTeam ? ' selected' : ''}>${esc(u.team)}${u.person ? ' · ' + esc(u.person) : ''} · ${Number(u.rate) || 45}%</option>`).join('')}</select></label>
         <label class="en-wide">派单员<input id="enWriter" value="${esc(cur.writer || '')}" placeholder="手打，或点下面常用的" autocomplete="off" list="enWriterList"><datalist id="enWriterList">${ws.map(w => `<option value="${esc(w.name)}">${w.n} 单</option>`).join('')}</datalist></label>
         <label class="en-wide">备注<input id="enNote" value="${esc(cur.note || '')}" placeholder="可留空"></label>
       </div>
+      <div class="hint" id="enTeamHint"></div>
       ${ws.length
         ? `<div class="en-chips">` + ws.slice(0, 12).map(w => `<button class="en-chip" data-w="${esc(w.name)}">${esc(w.name)}<em>${w.n} 单</em></button>`).join('') + `</div>
-           <div class="hint">常用派单员按你用过的次数往上排（次数直接从历史订单的派单员字段统计，不另存一份计数，所以删单改单都不会对不上）。</div>`
+           <div class="hint">常用派单员按你用过的次数往上排（次数直接从历史订单的派单员字段统计，不另存一份计数，所以删单改单都不会对不上）。点了派单员会自动认渠道、带分成比例。</div>`
         : '<div class="hint">还没有派单员记录：填过一次，这里就会出现常用chip。</div>'}
       <div class="form-err" id="enErr">${esc(cur.err || '')}</div>
       <div class="modal-actions"><button class="btn-primary" id="enNext">确定 →</button><span class="find-sub">下一步先给你看快照，确认了才入账</span></div>`;
-    [...shDoc.querySelectorAll('.en-chip')].forEach(b => b.onclick = () => { $('enWriter').value = b.dataset.w; $('enWriter').focus(); });
+    [...shDoc.querySelectorAll('.en-chip')].forEach(b => b.onclick = () => { $('enWriter').value = b.dataset.w; $('enWriter').dispatchEvent(new Event('input')); $('enWriter').focus(); });
+    // 渠道 → 带派单员/比例；派单员 → 反认渠道（只在认出的渠道变化时动比例，别盖手改的值）
+    const et = $('enTeam');
+    const syncTeamHint = () => {
+      const h = $('enTeamHint');
+      if (!h) return;
+      const u = upTeam(cfg, et ? et.value : '');
+      h.innerHTML = u
+        ? `已同步「${esc(u.team)}」配置：${u.person ? '派单员 ' + esc(u.person) + ' · ' : ''}分成 <b>${Number(u.rate) || 45}%</b> · 初稿接单+${Number(u.dueDraft) > 0 ? Number(u.dueDraft) : 2}天 / 终稿+${Number(u.dueFinal) > 0 ? Number(u.dueFinal) : 4}天（入账时自动写进台账）。配置在做单中心「渠道/上游设置」改。`
+        : (cfg.length ? '渠道留空 = 按派单员自动认；认出来就同步该渠道的分成比例。' : '还没配渠道：去做单中心「渠道/上游设置」配一次，这里就能自动带派单员和比例。');
+    };
+    const applyTeam = (t, fillPerson) => {
+      const u = upTeam(cfg, t);
+      if (!u) return;
+      if (fillPerson && u.person) $('enWriter').value = u.person;
+      const er = $('enRate');
+      if (er && Number(u.rate) > 0) { er.value = u.rate; delete er.dataset.touched; }
+    };
+    if (et) et.onchange = () => { applyTeam(et.value, true); syncTeamHint(); };
+    const ew = $('enWriter');
+    if (ew) ew.addEventListener('input', () => {
+      const u = upOfWriter(cfg, ew.value);
+      if (u && et && et.value !== u.team) { et.value = u.team; applyTeam(u.team, false); }
+      syncTeamHint();
+    });
+    if (et && et.value) applyTeam(et.value, !cur.writer);
+    syncTeamHint();
     const er = $('enRate');
     if (er) er.addEventListener('input', () => { er.dataset.touched = '1'; });   // 手改过就别被默认值覆盖
-    $('enNext').onclick = entryPreview;
+    $('enNext').onclick = () => entryPreview();   // 不能直接挂 entryPreview：点击事件对象会被当成"传入的快照数据"
     ['enNo', 'enAmt', 'enWriter', 'enNote'].forEach(id => {
       const el = $(id);
       if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') entryPreview(); });
@@ -284,19 +326,25 @@ export function mount(host) {
       amount: parseFloat($('enAmt').value),
       shareRate: parseFloat($('enRate').value),
       status: $('enSt').value,
+      channel: $('enTeam') ? $('enTeam').value : '',
       writer: $('enWriter').value.trim().slice(0, 30),
       note: $('enNote').value.trim().slice(0, 200),
     };
   }
 
-  function entryPreview() {
-    const d = readEntry();
+  function entryPreview(dOver) {
+    const d = dOver || readEntry();
     const errs = [];
     if (!d.orderNo) errs.push('订单编号不能为空');
     if (!(d.amount > 0)) errs.push('金额要大于 0');
     if (!(d.shareRate > 0 && d.shareRate <= 100)) errs.push('分成比例须在 1-100');
     if (errs.length) { renderEntry(Object.assign({}, d, { err: errs.join('；') })); return; }
     if (d.orderNo.length !== ORDERNO_LEN) d.warn = `这串是 ${d.orderNo.length} 位，常见是 ${ORDERNO_LEN} 位 —— 不一定是错，确认没截断就行`;
+    // 【v26.91】渠道没选就按派单员认；比例与渠道配置不一致 → 快照里弹窗提醒，可一键同步
+    const cfg = readUpCfg();
+    const u = upTeam(cfg, d.channel) || upOfWriter(cfg, d.writer);
+    if (u && !d.channel) d.channel = u.team;
+    const mismatch = u && Number(u.rate) > 0 && Math.abs(Number(u.rate) - d.shareRate) > 1e-9 && !d.rateAck;
     ENTRY.step = 2; ENTRY.last = d;
     const sh = Math.round(d.amount * d.shareRate) / 100;
     $('entryTitle').textContent = '✒️ 核对快照';
@@ -309,9 +357,12 @@ export function mount(host) {
         <div class="en-row"><span>分成比例</span><b>${d.shareRate}%</b></div>
         <div class="en-row hi"><span>分成金额</span><b>${fmt(sh)} 元</b></div>
         <div class="en-row"><span>派单员</span><b>${esc(d.writer || '—')}</b></div>
+        <div class="en-row"><span>渠道（上游）</span><b>${esc(d.channel || '—（没认出来，可返回手选）')}</b></div>
+        ${u ? `<div class="en-row"><span>初稿 / 终稿应交</span><b>${daddDays(localDate(), Number(u.dueDraft) > 0 ? Number(u.dueDraft) : 2)} / ${daddDays(localDate(), Number(u.dueFinal) > 0 ? Number(u.dueFinal) : 4)}（按渠道配置自动填）</b></div>` : ''}
         <div class="en-row"><span>分类</span><b><span class="tag ${esc(d.status)}">${esc(d.status)}</span></b></div>
         ${d.note ? `<div class="en-row"><span>备注</span><b>${esc(d.note)}</b></div>` : ''}
       </div>
+      ${mismatch ? `<div class="rc-warn">⚠ 分成比例跟渠道配置对不上：<b>${esc(u.team)}</b> 配的是 <b>${Number(u.rate)}%</b>，你填的是 <b>${d.shareRate}%</b>。<button class="btn-ghost" id="enSyncRate">按配置改成 ${Number(u.rate)}%</button>　这单若确实特殊，就直接点下面确认。</div>` : ''}
       ${d.warn ? `<div class="rc-warn">${esc(d.warn)}</div>` : ''}
       <div class="form-err" id="enErr"></div>
       <div class="modal-actions">
@@ -319,6 +370,8 @@ export function mount(host) {
         <button class="btn-ghost" id="enBack">← 返回修改</button>
         <span class="grow"></span><span class="find-sub">回车 = 确认录入</span>
       </div>`;
+    const sb = $('enSyncRate');
+    if (sb) sb.onclick = () => entryPreview(Object.assign({}, d, { shareRate: Number(u.rate), rateAck: true }));
     $('enBack').onclick = () => { ENTRY.step = 1; renderEntry(d); };
     $('enSave').onclick = entryCommit;
     // 自动聚焦「确认录入」：回车就是浏览器对聚焦按钮的原生点击，不用另挂键盘监听
@@ -338,12 +391,22 @@ export function mount(host) {
       const _id = r && r._id ? String(r._id) : 'loc-' + Date.now();
       orders.unshift(Object.assign({ _id, createdAt: new Date().toISOString() }, doc));
       persistLocal();
+      // 【v26.91】渠道配置同步落库：渠道 + 初/终稿应交，走做单中心同一条 jobfields 窄口；
+      // 失败不挡录单（号已经入账），新字段事后在做单中心补。
+      const cfg = readUpCfg();
+      const u = upTeam(cfg, d.channel) || upOfWriter(cfg, d.writer);
+      if (u && _id.indexOf('loc-') !== 0) {
+        const fields = { channel: u.team, draft: daddDays(doc.date, Number(u.dueDraft) > 0 ? Number(u.dueDraft) : 2), final: daddDays(doc.date, Number(u.dueFinal) > 0 ? Number(u.dueFinal) : 4) };
+        try {
+          await fetch('/api/orders/jobfields', { method: 'POST', headers: { 'Content-Type': 'application/json', ...AH() }, body: JSON.stringify({ patches: [{ id: _id, fields }], apply: true }) });
+        } catch (e) { /* 新字段没写上不影响这单入账 */ }
+      }
       page = 1;
       render();
       ENTRY.writersAt = 0;
       await ensureWriters(true);
       // 连续录同一批：留住派单员和比例，只清空会变的订单号与金额
-      ENTRY.last = { writer: d.writer, shareRate: d.shareRate, status: d.status };
+      ENTRY.last = { writer: d.writer, shareRate: d.shareRate, status: d.status, channel: d.channel || (u ? u.team : '') };
       cpyToast('已录入 ' + d.orderNo + ' · 分成 ' + fmt(Math.round(d.amount * d.shareRate) / 100) + ' 元');
       shDoc.getElementById('tableCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
       setTimeout(() => {
@@ -653,6 +716,9 @@ export function mount(host) {
   const effShare = o => share(o) - (o.dispatch && o.dispatch.reward ? o.dispatch.reward : 0);
 
   function render() {
+    // 【v26.91】重画前记住滚动位置，重画后还回去：改状态/刷新不再把人拉回最前面。
+    // 调用方若想主动跳（录单后看表、翻页到底），在 render() 之后自己 scroll，会覆盖这里。
+    const _keepY = window.scrollY;
     const P = getPeriod();
     const fStatus = shDoc.getElementById('fStatus').value;
     const kw = shDoc.getElementById('fKeyword').value.trim();
@@ -752,6 +818,7 @@ export function mount(host) {
     renderStatusChart(view.length ? view : scope);
     renderTodo();
     renderSidebar();
+    window.scrollTo(0, _keepY);
   }
 
   /* ================= 【v26.66】批量修改分成比例 ================= */
