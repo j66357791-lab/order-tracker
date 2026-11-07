@@ -1558,8 +1558,9 @@ export function mount(host) {
     if (!out) return;
     const q = RQ.trim().toLowerCase();
     if (!q) { out.innerHTML = ''; if (n) n.textContent = ''; return; }
-    const hit = LED.filter(o => [o.orderNo, o.group, o.writer, o.note, o.channel].some(v => String(v || '').toLowerCase().includes(q))).slice(0, 30);
-    if (n) n.textContent = `命中 ${hit.length} 单` + (LED.length >= 500 ? '（列表只拿到 500 单，可能不全）' : '');
+    const all = LED.filter(o => [o.orderNo, o.group, o.writer, o.note, o.channel].some(v => String(v || '').toLowerCase().includes(q)));
+    const hit = all.slice(0, 30);
+    if (n) n.textContent = `命中 ${all.length} 单` + (all.length > 30 ? '（显示前 30）' : '') + (LED.length >= 500 ? '（列表只拿到 500 单，可能不全）' : '');
     out.innerHTML = hit.length ? `<div class="bwrap"><table><thead><tr><th>接单日</th><th>单号</th><th class="num">金额</th><th class="num">比例</th><th>分类</th><th>派单员</th><th>渠道</th><th>初稿</th><th>终稿</th><th>备注</th><th style="width:64px">操作</th></tr></thead><tbody>${hit.map(o => `<tr>
       <td>${esc(String(o.date || '').slice(0, 10))}</td><td class="mono">${esc(o.orderNo || '')}</td>
       <td class="num">${money(o.amount)}</td><td class="num">${Number(o.shareRate) || 0}%</td><td>${esc(o.status || '')}</td>
