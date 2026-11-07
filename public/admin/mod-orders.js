@@ -715,16 +715,12 @@ export function mount(host) {
   // 实际结算口径：已分单（绑定派单卡）的订单，收入统计用「分成 − 写手报酬」
   const effShare = o => share(o) - (o.dispatch && o.dispatch.reward ? o.dispatch.reward : 0);
 
-  function render() {
-    // 【v26.91】重画前记住滚动位置，重画后还回去：改状态/刷新不再把人拉回最前面。
-    // 调用方若想主动跳（录单后看表、翻页到底），在 render() 之后自己 scroll，会覆盖这里。
-    const _keepY = window.scrollY;
+  // 【v26.94】当前筛选/排序下的全部行（不分页）——表格和「导出 CSV」共用同一份口径
+  function currentView() {
     const P = getPeriod();
     const fStatus = shDoc.getElementById('fStatus').value;
     const kw = shDoc.getElementById('fKeyword').value.trim();
     const nLen = P.start.length;
-
-    // 跨期口径：订单按「接单日 或 完单日」落范围
     const inP = d => d && d.slice(0, nLen) >= P.start && d.slice(0, nLen) <= P.end;
     const kwHit = o => !kw ||
       (o.orderNo || '').toLowerCase().includes(kw.toLowerCase()) ||
@@ -735,6 +731,19 @@ export function mount(host) {
       kwHit(o)
     );
     view.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b._id > a._id ? 1 : -1));
+    return view;
+  }
+
+  function render() {
+    // 【v26.91】重画前记住滚动位置，重画后还回去：改状态/刷新不再把人拉回最前面。
+    // 调用方若想主动跳（录单后看表、翻页到底），在 render() 之后自己 scroll，会覆盖这里。
+    const _keepY = window.scrollY;
+    const P = getPeriod();
+    const nLen = P.start.length;
+
+    // 跨期口径：订单按「接单日 或 完单日」落范围
+    const inP = d => d && d.slice(0, nLen) >= P.start && d.slice(0, nLen) <= P.end;
+    const view = currentView();
 
     const scope = orders.filter(o => inP(o.date) || inP(o.doneDate));
 
@@ -2031,19 +2040,27 @@ export function mount(host) {
 
   function persistLocal() { try { localStorage.setItem(LS_KEY, JSON.stringify(orders)); } catch (e) {} }
 
+  // 【v26.94】导出跟表格列一一对应（含「分单」），导出当前筛选下的全部页，不是只有当前页
   function exportCSV() {
-    const rows = [['接单日期', '订单编号', '订单金额', '分成比例(%)', '分成金额', '分类', '完单日期', '备注']];
+    const view = currentView();
+    const dispatchText = o => o.dispatch ? '已分单·' + o.dispatch.toName : (o.writer ? '派单员·' + o.writer : '—');
+    const rows = [['接单日', '订单编号', '订单金额（元）', '分成比例', '分成金额（元）', '分类', '完单日', '分单', '备注']];
     let ta = 0, ts = 0;
-    orders.forEach(o => {
-      rows.push([o.date, o.orderNo, o.amount, o.shareRate, share(o).toFixed(2), stLabel(o.status), o.doneDate || '', o.note || '']);
-      ta += o.amount; ts += share(o);
+    view.forEach(o => {
+      rows.push([
+        o.date || '', o.orderNo || '', o.amount == null ? '' : o.amount,
+        o.shareRate == null ? '' : o.shareRate + '%', share(o).toFixed(2),
+        stLabel(o.status), o.doneDate || '', dispatchText(o), o.note || '',
+      ]);
+      ta += Number(o.amount) || 0; ts += share(o);
     });
-    rows.push(['合计', orders.length + ' 单', ta.toFixed(2), '', ts.toFixed(2), '', '', '']);
+    rows.push(['合计', view.length + ' 单', ta.toFixed(2), '', ts.toFixed(2), '', '', '', '']);
     const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     a.download = '订单台账_' + localDate() + '.csv';
     a.click();
+    cpyToast('已导出 ' + view.length + ' 单（当前筛选范围，全部页）');
   }
 
   /* ================= 初始化 ================= */
