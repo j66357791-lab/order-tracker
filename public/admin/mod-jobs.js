@@ -1728,7 +1728,7 @@ export function mount(host) {
     };
     const errs = [];
     if (!/^\d{4}-\d{2}-\d{2}$/.test(doc.date)) errs.push('接单日要选');
-    if (!doc.orderNo) errs.push('单号不能为空');
+    // 【v26.99】单号留空允许保存：没号的单进候补区补号
     if (!(doc.amount >= 0) || isNaN(doc.amount)) errs.push('金额要是非负数字');
     if (!(doc.shareRate > 0 && doc.shareRate <= 100)) errs.push('比例要在 1-100');
     if (errs.length) return toast(errs.join('；'));
