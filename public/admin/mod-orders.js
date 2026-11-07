@@ -43,9 +43,25 @@ export function mount(host) {
   const localDate = (d = new Date()) =>
     d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 
+  // 【v26.98】连不上时自动重试 + 可点横幅重连：Render 免费档冷启动常超过 6 秒，
+  // 以前一超时就永久掉本地模式，只能手动刷新。现在放宽到 20 秒，每 15 秒自动重连。
+  let RETRY = null, RETRY_N = 0, FELL_BACK = false;
+  function updateDbState() {
+    const el = $('dbState');
+    if (!el) return;
+    if (USE_REMOTE) {
+      el.textContent = 'MongoDB 云端已连接';
+      el.className = ''; el.style.cursor = ''; el.onclick = null;
+    } else {
+      el.textContent = '本地模式（连不上服务器，点这里重试）· 数据暂存本浏览器';
+      el.className = 'offline'; el.style.cursor = 'pointer';
+      el.onclick = () => { cpyToast('正在重连…'); loadOrders(); };
+    }
+  }
   async function loadOrders() {
+    const wasRemote = USE_REMOTE;
     try {
-      const r = await fetch(API + '?' + Math.random(), { signal: AbortSignal.timeout(6000), headers: AH() });
+      const r = await fetch(API + '?' + Math.random(), { signal: AbortSignal.timeout(20000), headers: AH() });
       if (r.status === 401) {
         // 401：交给外壳统一处理（setToken 失效时 app.js 会跳登录）
         localStorage.removeItem('jdy_token');
@@ -55,19 +71,26 @@ export function mount(host) {
       const j = await r.json();
       orders = j.orders || [];
       USE_REMOTE = true;
+      RETRY_N = 0;
+      if (RETRY) { clearTimeout(RETRY); RETRY = null; }
+      if (FELL_BACK) { FELL_BACK = false; cpyToast('已连上服务器，台账已刷新'); }
     } catch (e) {
-      const wasRemote = USE_REMOTE;
       USE_REMOTE = false;
       try { orders = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch (e2) { orders = []; }
       // 【v26.71】降级要喊出来：接口一超时/一报 500，台账就会整表换成「本浏览器暂存」的数据，
       // 而页面长相完全没变 —— 只有角落里一行小字。管理员很容易把这份本地空表当成云端账本，
       // 或是在上面继续录入（录入内容只进 localStorage，永远不会到账本里）。
-      // 只在「从云端模式掉下来」这一刻提示一次，避免每 6 秒轮询都弹一条。
+      // 只在「从云端模式掉下来」这一刻提示一次，避免每次重试都弹一条。
       if (wasRemote !== false) {
+        FELL_BACK = true;
         cpyToast('已连不上服务器，台账切为本地暂存模式：当前显示的不是云端账本，此处的改动也不会入账');
+      }
+      if (!RETRY && RETRY_N < 40) {
+        RETRY = setTimeout(() => { RETRY = null; RETRY_N++; loadOrders(); }, 15000);
       }
     }
     render();
+    updateDbState();
   }
 
   async function saveOrder(doc, id) {
@@ -2167,9 +2190,7 @@ export function mount(host) {
     $('payKw').oninput = () => { renderPayList(); if (PAY.sel) renderPayRight(); };
 
     loadOrders().then(() => {
-      const el = $('dbState');
-      if (USE_REMOTE) { el.textContent = 'MongoDB 云端已连接'; el.className = ''; }
-      else { el.textContent = '本地模式（未连上服务器，数据暂存本浏览器）'; el.className = 'offline'; }
+      updateDbState();
       // 复核标记要在明细画出来之后重画一次，否则「需复核」角标第一次是空的
       loadReview().then(render);
     });
