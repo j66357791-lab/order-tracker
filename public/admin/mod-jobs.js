@@ -141,6 +141,17 @@ tr.done-row td{opacity:.6}
 .rdet{margin-top:7px;font-size:12px;background:#fffdf5;border:1px solid #fde68a;border-radius:8px;padding:7px 9px}
 .rdet table{font-size:12px}
 .ract{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px}
+/* 【v26.92】就地编辑弹窗（对账卡片 / 快捷搜索共用） */
+.mask{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:80;align-items:center;justify-content:center;padding:16px}
+.mask.show{display:flex}
+.modal{background:#fff;border-radius:12px;width:640px;max-width:100%;padding:16px 18px;max-height:92vh;overflow:auto;box-shadow:0 18px 50px rgba(15,23,42,.25)}
+.modal h3{font-size:16px;margin:0 0 10px}
+.modal .form{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.mfoot{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+/* 对账区快速查台账 */
+.rfind{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 8px}
+.rfind input{flex:1;min-width:220px}
+.rfind table{font-size:12.5px}
 `;
 
 const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
@@ -189,6 +200,7 @@ export function mount(host) {
   if (!['draft', 'final', 'heat'].includes(SORT)) SORT = 'draft';
   let RECON = null, COLMAPS = [];
   let RVIEW = 'card', RDET = {};     // 对账结果默认卡片；RDET 存"就地查这单"的台账详情
+  let RQ = '';                       // 【v26.92】对账区快速查台账的关键词
   let SEL = new Set(), FIX = new Set();
   let BFONLY = true, BFALL = false;
   let FULL = null, FVIEW = 'all', FQ = '', FPAGE = 0, FSEL = new Set(), FBUSY = '';
@@ -329,6 +341,11 @@ export function mount(host) {
 
       <details class="fold" id="foldRecon"><summary>🔎 上游对账（只读）<span class="sub">就在这里 · 几何视传拉取 + 粘贴表格合并比对，只列有问题的行</span></summary>
         <div class="fbody">
+          <div class="rfind">
+            <input id="rFind" placeholder="🔍 快速查台账：单号 / 群名 / 派单员 / 备注 / 渠道（不用切去数据中心，查到就能就地编辑）" autocomplete="off">
+            <span class="sub" id="rFindN"></span>
+          </div>
+          <div id="rFindOut"></div>
           <div class="row2">
             <label class="ck"><input type="checkbox" id="rJihe" checked>几何视传（接口拉取）</label>
             <label class="ck"><input type="checkbox" id="rPaste">粘贴的表格（金山这类没接口）</label>
@@ -394,7 +411,9 @@ export function mount(host) {
             <div class="f"><label>备注</label><input id="upNote"></div>
             <button class="btn p" id="upAdd">＋ 添加</button>
           </div></div>
-      </details>`;
+      </details>
+
+      <div class="mask" id="edMask"><div class="modal" id="edBox"></div></div>`;
     BUILT = true;
     $('#fSort').value = SORT;
     paintAll();
@@ -1347,7 +1366,8 @@ export function mount(host) {
       <td class="mono">${esc(x.no || '（没单号）')}</td>
       <td>${esc(x.src || '—')}</td><td>${esc(up || '—')}</td><td>${esc(led)}${x.ledDate ? ' · 接单 ' + esc(x.ledDate) : ''}</td>
       <td class="sub">${esc(tail)}</td>
-      <td>${x.ledId ? `<button class="btn sm g" data-goto="${esc(x.no || '')}">定位</button>` : ''}
+      <td>${x.ledId ? `<button class="btn sm p" data-redit="${esc(x.ledId)}" data-rno="${esc(x.no || '')}">编辑</button>
+        <button class="btn sm g" data-goto="${esc(x.no || '')}">定位</button>` : (x.no ? `<button class="btn sm g" data-rnew="${esc(x.no)}" data-ramt="${Number(x.extAmount) || 0}">录进台账</button>` : '')}
         <button class="btn sm g" data-copyno="${esc(x.no || '')}">复制</button></td></tr>`;
   }
 
@@ -1370,6 +1390,7 @@ export function mount(host) {
       <div class="rh"><span class="no">${esc(x.no || '（没单号）')}</span><span class="tag">${esc(x.src || '—')}</span>
         <span class="grow"></span>
         ${x.no ? `<button class="btn sm g" data-rdet="${esc(x.no)}">${RDET[x.no] ? '收起台账详情' : '查这单（就地）'}</button>` : ''}
+        ${x.ledId ? `<button class="btn sm p" data-redit="${esc(x.ledId)}" data-rno="${esc(x.no || '')}">编辑</button>` : (x.no ? `<button class="btn sm g" data-rnew="${esc(x.no)}" data-ramt="${Number(x.extAmount) || 0}">录进台账</button>` : '')}
         <button class="btn sm g" data-copyno="${esc(x.no || '')}">复制</button></div>
       <div class="r2"><div class="side">上游侧<br>${up}</div><div class="side">台账侧<br>${led}</div></div>
       ${diff ? `<div class="rdiff ${kind === 'amtNoise' ? 'ok' : ''}">${diff}</div>` : ''}
@@ -1425,6 +1446,141 @@ export function mount(host) {
     } catch (e) { toast('状态没改成：' + (e.message || e)); }
   }
 
+  /* ============ 【v26.92】就地编辑：对账卡片 / 快捷搜索共用一张弹窗 ============ */
+  // 主字段走台账原来的整单 PUT（同数据中心）；渠道/群名/初稿/终稿走只碰这 4 个键的 jobfields 窄口。
+  // 留空的新字段＝不改，避免把已有值清掉。
+  let ED = null, EDSAVE = false;
+  const findLedger = id => LED.find(o => String(o._id) === String(id));
+  function openEdit(id, no) {
+    let o = findLedger(id);
+    if (!o) {
+      toast('台账列表里没这单，正在按单号取…');
+      if (!no) return;
+      api('/api/orders?q=' + encodeURIComponent(no)).then(j => {
+        const hit = (j.orders || []).find(x => String(x._id) === String(id)) || (j.orders || []).find(x => String(x.orderNo || '').trim() === no);
+        if (!hit) return toast('台账里取不到这单，刷新一下再做');
+        ED = hit; EDSAVE = false; $('#edMask').classList.add('show'); paintEdit();
+      }).catch(e => toast('取这单失败：' + (e.message || e)));
+      return;
+    }
+    ED = o; EDSAVE = false;
+    $('#edMask').classList.add('show');
+    paintEdit();
+  }
+  function closeEdit() { ED = null; const m = $('#edMask'); if (m) m.classList.remove('show'); }
+  function paintEdit() {
+    const o = ED; if (!o) return;
+    const teams = [...new Set(UP.map(u => u.team).concat([String(o.channel || '')]))].filter(Boolean);
+    $('#edBox').innerHTML = `
+      <h3>编辑台账单 <span class="mono">${esc(o.orderNo || '')}</span></h3>
+      <div class="form">
+        <div class="f"><label>接单日</label><input id="eDate" type="date" value="${esc(String(o.date || '').slice(0, 10))}"></div>
+        <div class="f"><label>单号</label><input id="eNo" value="${esc(o.orderNo || '')}"></div>
+        <div class="f"><label>金额（元）</label><input id="eAmt" type="number" step="0.01" value="${o.amount == null ? '' : o.amount}"></div>
+        <div class="f"><label>分成比例 %</label><input id="eRate" type="number" step="0.1" value="${o.shareRate == null ? '' : o.shareRate}"></div>
+        <div class="f"><label>分类</label><select id="eSt">${ST.map(s => `<option${s === (o.status || '') ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
+        <div class="f"><label>完单日（待结算/已结算要填）</label><input id="eDone" type="date" value="${esc(String(o.doneDate || '').slice(0, 10))}"></div>
+        <div class="f"><label>派单员</label><input id="eWriter" value="${esc(o.writer || '')}"></div>
+        <div class="f"><label>渠道</label><input id="eTeam" list="eTeamList" value="${esc(o.channel || '')}"><datalist id="eTeamList">${teams.map(t => `<option value="${esc(t)}">`).join('')}</datalist></div>
+        <div class="f"><label>群名</label><input id="eGroup" value="${esc(o.group || '')}"></div>
+        <div class="f"><label>初稿</label><input id="eDraft" type="date" value="${esc(String(o.draft || '').slice(0, 10))}"></div>
+        <div class="f"><label>终稿</label><input id="eFinal" type="date" value="${esc(String(o.final || '').slice(0, 10))}"></div>
+        <div class="f"><label>备注</label><input id="eNote" value="${esc(o.note || '')}"></div>
+      </div>
+      <div class="sub" style="margin-top:8px">金额/比例/分类/备注/派单员走台账原来的整单保存；渠道/群名/初稿/终稿只写这 4 个键。<b>新字段留空＝不改</b>；分类改成待结算/已结算时完单日会自动补今天。</div>
+      <div class="mfoot"><button class="btn p" id="eSave">保存</button><button class="btn g" id="eCancel">取消</button></div>`;
+    $('#eSt').onchange = () => {
+      const done = CLOSED.has($('#eSt').value);
+      const d = $('#eDone');
+      if (done && !d.value) d.value = localDate();
+    };
+    $('#eCancel').onclick = closeEdit;
+    $('#eSave').onclick = saveEdit;
+  }
+  async function saveEdit() {
+    const o = ED;
+    if (!o || EDSAVE) return;
+    const st = $('#eSt').value;
+    const doc = {
+      date: $('#eDate').value, orderNo: $('#eNo').value.trim(),
+      amount: Number($('#eAmt').value), shareRate: Number($('#eRate').value),
+      status: st, doneDate: CLOSED.has(st) ? ($('#eDone').value || localDate()) : ($('#eDone').value || ''),
+      note: $('#eNote').value.trim(), writer: $('#eWriter').value.trim(),
+    };
+    const errs = [];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(doc.date)) errs.push('接单日要选');
+    if (!doc.orderNo) errs.push('单号不能为空');
+    if (!(doc.amount >= 0) || isNaN(doc.amount)) errs.push('金额要是非负数字');
+    if (!(doc.shareRate > 0 && doc.shareRate <= 100)) errs.push('比例要在 1-100');
+    if (errs.length) return toast(errs.join('；'));
+    if (st === '已结算' && o.status !== '已结算' && !confirm('把 ' + doc.orderNo + ' 改成「已结算」？\n\n这一步会写进台账。')) return;
+    EDSAVE = true;
+    const btn = $('#eSave'); btn.disabled = true; btn.textContent = '保存中…';
+    try {
+      await api('/api/orders/' + o._id, { method: 'PUT', body: JSON.stringify(doc) });
+      const fields = {};
+      const team = $('#eTeam').value.trim(), group = $('#eGroup').value.trim();
+      const draft = $('#eDraft').value, final = $('#eFinal').value;
+      if (team && team !== String(o.channel || '')) fields.channel = team;
+      if (group && group !== String(o.group || '')) fields.group = group;
+      if (isDate(draft) && draft !== String(o.draft || '')) fields.draft = draft;
+      if (isDate(final) && final !== String(o.final || '')) fields.final = final;
+      let jfErr = '';
+      if (Object.keys(fields).length) {
+        try { await api('/api/orders/jobfields', { method: 'POST', body: JSON.stringify({ patches: [{ id: o._id, fields }], apply: true }) }); }
+        catch (e) { jfErr = '（渠道/初稿这些没写上：' + (e.message || e) + '）'; }
+      }
+      Object.assign(o, doc, fields);
+      // 对账结果就地同步：桶里的台账摘要 + 「查这单」详情，不重跑外网
+      Object.values((RECON && RECON.buckets) || {}).forEach(arr => (arr || []).forEach(x => {
+        if (String(x.ledId) === String(o._id)) {
+          x.ledStatus = o.status; x.ledAmount = Number(o.amount) || 0; x.ledRate = Number(o.shareRate) || 0;
+          x.ledShare = Math.round((Number(o.amount) || 0) * (Number(o.shareRate) || 0)) / 100;
+          x.ledDate = doc.date; x.ledWriter = doc.writer;
+        }
+      }));
+      if (RDET[doc.orderNo]) RDET[doc.orderNo] = { rows: [o] };
+      EDSAVE = false; closeEdit();
+      toast('已保存 ' + doc.orderNo + '（写进台账了）' + jfErr);
+      paintHead(); paintSum(); paintList(); paintTeamFilter();
+      if (RECON) renderRecon();
+      paintFind();
+    } catch (e) {
+      EDSAVE = false;
+      toast('没存上：' + (e.message || e));
+      btn.disabled = false; btn.textContent = '保存';
+    }
+  }
+
+  /* ============ 【v26.92】对账区快速查台账（就地搜 + 就地改） ============ */
+  function paintFind() {
+    const out = $('#rFindOut'), n = $('#rFindN');
+    if (!out) return;
+    const q = RQ.trim().toLowerCase();
+    if (!q) { out.innerHTML = ''; if (n) n.textContent = ''; return; }
+    const hit = LED.filter(o => [o.orderNo, o.group, o.writer, o.note, o.channel].some(v => String(v || '').toLowerCase().includes(q))).slice(0, 30);
+    if (n) n.textContent = `命中 ${hit.length} 单` + (LED.length >= 500 ? '（列表只拿到 500 单，可能不全）' : '');
+    out.innerHTML = hit.length ? `<div class="bwrap"><table><thead><tr><th>接单日</th><th>单号</th><th class="num">金额</th><th class="num">比例</th><th>分类</th><th>派单员</th><th>渠道</th><th>初稿</th><th>终稿</th><th>备注</th><th style="width:64px">操作</th></tr></thead><tbody>${hit.map(o => `<tr>
+      <td>${esc(String(o.date || '').slice(0, 10))}</td><td class="mono">${esc(o.orderNo || '')}</td>
+      <td class="num">${money(o.amount)}</td><td class="num">${Number(o.shareRate) || 0}%</td><td>${esc(o.status || '')}</td>
+      <td>${esc(o.writer || '—')}</td><td>${esc(o.channel || '—')}</td><td>${esc(String(o.draft || '').slice(0, 10) || '—')}</td><td>${esc(String(o.final || '').slice(0, 10) || '—')}</td>
+      <td class="sub">${esc((o.note || '').slice(0, 24))}</td><td><button class="btn sm p" data-redit="${esc(o._id)}">编辑</button></td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty">台账里没搜到（单号 / 群名 / 派单员 / 备注 / 渠道都试了）。</div>';
+    $$('#rFindOut [data-redit]').forEach(b => b.onclick = () => openEdit(b.dataset.redit));
+  }
+
+  // 上游有、台账没有的那行：把内容带进「记一单」，录不录由他点头
+  function recordNew(no, amt) {
+    $('#foldNew').open = true;
+    const f = $('#foldNew');
+    if (f && f.scrollIntoView) f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    $('#nNo').value = no || '';
+    if (amt) $('#nAmount').value = amt;
+    onNoInput();
+    $('#nNo').focus();
+    toast('已把这行填进「记一单」，核对完点存进台账——我没替你录');
+  }
+
   function bucketBlock(k, title, cls, arr) {
     const moneyK = ['missLedger', 'amtBad', 'shareBad', 'stBad'].includes(k);
     const open = (k === 'stBad' || k === 'missLedger' || k === 'amtBad' || k === 'shareBad');
@@ -1465,7 +1621,7 @@ export function mount(host) {
     $('#rOut').innerHTML = `<div class="row2" style="margin-bottom:8px">
         <button class="chip${RVIEW === 'card' ? ' on' : ''}" data-rv="card">卡片（一单一卡，状态就地改）</button>
         <button class="chip${RVIEW === 'table' ? ' on' : ''}" data-rv="table">表格（扫得快）</button>
-        <span class="sub">卡片上「查这单」是就地按单号取台账整行，不用切去数据中心；改状态也是在这张卡上点。</span>
+        <span class="sub">卡片上「查这单」是就地按单号取台账整行；「编辑」直接改整单（金额/状态/备注/派单员/渠道/初稿/终稿），不用切去数据中心。</span>
       </div>`
       + (total ? '' : '<div class="empty">这批上游跟你台账对得上，没问题单。</div>')
       + BUCKETS.map(([k, title, cls]) => {
@@ -1482,6 +1638,8 @@ export function mount(host) {
     $$('#rOut [data-goto]').forEach(b2 => b2.onclick = () => gotoLedger(b2.dataset.goto));
     $$('#rOut [data-rdet]').forEach(b2 => b2.onclick = () => toggleDet(b2.dataset.rdet));
     $$('#rOut [data-rst]').forEach(b2 => b2.onclick = () => reconSet(b2.dataset.rst, b2.dataset.rid, b2.dataset.to));
+    $$('#rOut [data-redit]').forEach(b2 => b2.onclick = () => openEdit(b2.dataset.redit, b2.dataset.rno));
+    $$('#rOut [data-rnew]').forEach(b2 => b2.onclick = () => recordNew(b2.dataset.rnew, Number(b2.dataset.ramt) || 0));
     $('#rCsv').disabled = !total && !noise;
   }
 
@@ -1518,6 +1676,9 @@ export function mount(host) {
   /* ============ 事件绑定（骨架只建一次，之后都局部重绘） ============ */
   function bind() {
     $('#fQ').oninput = () => { Q = $('#fQ').value; paintList(); };
+    $('#rFind').oninput = () => { RQ = $('#rFind').value; paintFind(); };
+    const edm = $('#edMask');
+    if (edm) edm.onclick = e => { if (e.target === edm) closeEdit(); };
     $('#fSort').onchange = () => { SORT = $('#fSort').value; LS.write('jobs_sort_v0', SORT); paintList(); };
     $('#fTeam').onchange = () => { TEAM = $('#fTeam').value; paintList(); };
     $('#nAdd').onclick = addJob;
