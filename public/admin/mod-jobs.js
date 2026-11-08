@@ -208,9 +208,11 @@ tr.done-row td{opacity:.6}
 
 const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 const numOr = (v, d) => { const n = Number(v); return n > 0 ? n : d; };
-const localDate = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+// 【v27.2】「今天」统一用北京时间（UTC+8），跟服务端报表一致；不受设备时区/跨天影响
+const localDate = () => new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 const dadd = (ds, n) => { const d = new Date(ds + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + Number(n)); return d.toISOString().slice(0, 10); };
-const daysLeft = s => isDate(s) ? Math.round((new Date(s + 'T23:59:59') - Date.now()) / 86400000) : null;
+// 天数差按日期字符串算（UTC 解析），与设备时区无关
+const daysLeft = s => isDate(s) ? Math.round((Date.parse(s + 'T00:00:00Z') - Date.parse(localDate() + 'T00:00:00Z')) / 86400000) : null;
 const cdText = n => n === null ? '没填交期' : n < 0 ? `逾期 ${-n} 天` : n === 0 ? '今天到期' : n === 1 ? '明天到期' : `还剩 ${n} 天`;
 
 // 一单的紧急度与排序权重：逾期最久 → 今天/明天 → 余下天数 → 没交期 → 已交的沉底
