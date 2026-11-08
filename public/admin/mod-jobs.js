@@ -535,7 +535,8 @@ export function mount(host) {
     const estN = all.filter(j => !CLOSED.has(j.status) && (j.draftEst || j.finalEst)).length;
     const dn = draftCount();
     b.className = 'banner';
-    b.innerHTML = `台账 + 本机共 <b>${all.length}</b> 单，其中 <b>${open}</b> 单还没交付，已自动进下面这张表。`
+    b.innerHTML = `台账 <b>${LED.length}</b> 单 + 本机 <b>${LOCAL.length}</b> 单，其中 <b>${open}</b> 单还没交付，已自动进下面这张表。`
+      + (LOCAL.length ? `　<b style="color:#b45309">本机 ${LOCAL.length} 单只在这台浏览器，数据中心看不到；点卡片「并入台账」才会进数据中心。</b>` : '')
       + `　<span class="est">${estN} 单的交期是按接单日推算的</span>，补录实填后这个标记会消失。`
       + (MIGRATED ? `　已把这台浏览器里旧版补录的 <b>${MIGRATED}</b> 处草稿接过来（还没写库）。` : '')
       + (dn ? `　当前 <b>${dn}</b> 单有改动待写入，展开「老单补录」预览后再写。` : '')
