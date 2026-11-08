@@ -1038,6 +1038,13 @@ export function mount(host) {
         <button class="btn sm g" id="bfSelNo">清空勾选</button>
         <span class="sub" id="bfSelN"></span>
       </div>
+      <div class="bar" style="background:#f0fdf4;border-color:#bbf7d0">
+        <b>一键整理</b>
+        <span class="sub">不用勾行：自动挑「还缺的」单，先预览再写、可撤销</span>
+        <span class="grow"></span>
+        <button class="btn sm p" id="bfAutoChan">按派单员补渠道</button>
+        <button class="btn sm p" id="bfAutoDue">按接单日补初/终稿</button>
+      </div>
       <div class="row2">
         <select id="bCh" style="max-width:150px"></select>
         <input id="bGp" placeholder="群名" style="width:130px">
@@ -1122,10 +1129,48 @@ export function mount(host) {
       DRAFT = {}; LS.write(LS_DRAFT, DRAFT); PREV.jf = null; paintBackfill(); paintHead();
     };
     $('#bfDerive').onclick = runDerive;
+    $('#bfAutoChan').onclick = autoChan;
+    $('#bfAutoDue').onclick = autoDue;
     if (UNDO.jf && $('#bfUndo')) $('#bfUndo').onclick = () => undoPatches('jf');
     paintSelN();
   }
   function paintSelN() { const el = $('#bfSelN'); if (el) el.textContent = `已勾 ${SEL.size} 单`; }
+
+  // 【v27.4】一键整理：不勾行，自动挑还缺的单，走同一套 预览→写入→撤销
+  async function previewDirect(patches, label) {
+    $('#bfPrevBox').innerHTML = '<div class="sub">正在算 ' + patches.length + ' 单会补什么（只预览，一行没写）…</div>';
+    try {
+      PREV.jf = await patchPreview(CH.jf, patches, true);   // onlyEmpty：只补空的，不碰已填的
+      paintBfPrev();
+      toast(label + '：' + patches.length + ' 单待补，看下面预览，确认才写库');
+    } catch (e) { $('#bfPrevBox').innerHTML = '<div class="sub">预览失败：' + esc(e.message || String(e)) + '</div>'; }
+  }
+  async function autoChan() {
+    const patches = [];
+    LED.forEach(o => {
+      if (String(o.channel || '').trim()) return;
+      const w = String(o.writer || '').trim();
+      const hit = UP.find(u => u.person && w && (w.includes(u.person) || u.person.includes(w)));
+      const team = hit ? hit.team : (w ? (UP.find(u => !u.person) || {}).team : '');
+      if (team) patches.push({ id: String(o._id), fields: { channel: team } });
+    });
+    if (!patches.length) return toast('没有可补渠道的单：要么都填了，要么派单员认不出渠道（先在渠道设置里配派单员）');
+    await previewDirect(patches, '按派单员补渠道');
+  }
+  async function autoDue() {
+    const patches = [];
+    LED.forEach(o => {
+      const base = String(o.draftStart || o.date || '').slice(0, 10);
+      if (!isDate(base)) return;
+      const u = upOf(String(o.channel || '').trim());
+      const f = {};
+      if (!String(o.draft || '').trim()) f.draft = dadd(base, numOr(u.dueDraft, DEF_DUE.draft));
+      if (!String(o.final || '').trim()) f.final = dadd(base, numOr(u.dueFinal, DEF_DUE.final));
+      if (Object.keys(f).length) patches.push({ id: String(o._id), fields: f });
+    });
+    if (!patches.length) return toast('没有可补交期的单（初/终稿都填了，或没有接单日）');
+    await previewDirect(patches, '按接单日补初/终稿');
+  }
 
   // 批量只写进草稿，不直接碰库：让「预览」成为写库前唯一那道门
   function applyBatch() {
