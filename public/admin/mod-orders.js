@@ -848,9 +848,56 @@ export function mount(host) {
     renderLineChart(scope, P);
     renderCalendar(scope, P);
     renderStatusChart(view.length ? view : scope);
+    renderChanCompare(scope);
     renderTodo();
     renderSidebar();
     window.scrollTo(0, _keepY);
+  }
+
+  /* ============ 【v27.3】分渠道接单金额对比（当前筛选范围） ============ */
+  function renderChanCompare(scope) {
+    let card = shDoc.getElementById('chanCard');
+    if (!card) {
+      card = document.createElement('section');
+      card.id = 'chanCard';
+      card.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;margin:14px 0';
+      card.innerHTML = '<h2 style="font-size:15px;margin:0 0 10px">📊 渠道接单对比 <span style="font-size:12px;color:#64748b;font-weight:400">（当前筛选范围 · 没填渠道的按派单员归到几何/一堆猫）</span></h2><div id="chanBody"></div>';
+      const tc = shDoc.getElementById('tableCard');
+      if (tc && tc.parentNode) tc.parentNode.insertBefore(card, tc);
+      else return;
+    }
+    const box = shDoc.getElementById('chanBody');
+    if (!box) return;
+    let cfg = [];
+    try { cfg = JSON.parse(localStorage.getItem('jobs_upstream_v0') || '[]'); } catch (e) { cfg = []; }
+    const chanOf = o => {
+      const c = String(o.channel || '').trim();
+      if (c) return c;
+      const w = String(o.writer || '').trim();
+      const hit = cfg.find(u => u.person && w && (w.includes(u.person) || u.person.includes(w)));
+      if (hit) return hit.team;
+      const blank = cfg.find(u => !u.person);
+      if (w && blank) return blank.team;
+      return '未填渠道';
+    };
+    const map = new Map();
+    scope.forEach(o => {
+      const c = chanOf(o);
+      const m = map.get(c) || { n: 0, amt: 0, sh: 0 };
+      m.n++; m.amt += Number(o.amount) || 0; m.sh += share(o);
+      map.set(c, m);
+    });
+    const rows = [...map.entries()].sort((a, b) => b[1].amt - a[1].amt);
+    const total = rows.reduce((t, [, m]) => t + m.amt, 0);
+    if (!rows.length) { box.innerHTML = '<div style="color:#94a3b8;font-size:13px">当前范围没有订单。</div>'; return; }
+    box.innerHTML = '<table><thead><tr><th>渠道</th><th class="num">单数</th><th class="num">接单金额（元）</th><th class="num">分成（元）</th><th style="width:34%">金额占比</th></tr></thead><tbody>'
+      + rows.map(([c, m]) => {
+        const pct = total ? Math.round(m.amt / total * 100) : 0;
+        return `<tr><td><b>${esc(c)}</b></td><td class="num">${m.n}</td><td class="num">${fmt(r2(m.amt))}</td><td class="num">${fmt(r2(m.sh))}</td>
+          <td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;background:#eef2f7;border-radius:4px;height:8px"><div style="width:${pct}%;background:#2563eb;height:8px;border-radius:4px"></div></div><span style="font-size:12px;color:#64748b;min-width:38px;text-align:right">${pct}%</span></div></td></tr>`;
+      }).join('')
+      + `<tr style="font-weight:600"><td>合计</td><td class="num">${scope.length}</td><td class="num">${fmt(r2(total))}</td><td class="num">${fmt(r2(rows.reduce((t, [, m]) => t + m.sh, 0)))}</td><td></td></tr>`
+      + '</tbody></table>';
   }
 
   /* ================= 【v26.66】批量修改分成比例 ================= */
