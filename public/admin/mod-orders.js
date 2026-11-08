@@ -40,8 +40,8 @@ export function mount(host) {
   const ST_LABEL = { '已交付': '待结算' };
   const stLabel = s => ST_LABEL[s] || s;
 
-  const localDate = (d = new Date()) =>
-    d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  // 【v27.2】「今天」统一北京时间（UTC+8），不受设备时区/跨天影响
+  const localDate = () => new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
   // 【v26.98】连不上时自动重试 + 可点横幅重连：Render 免费档冷启动常超过 6 秒，
   // 以前一超时就永久掉本地模式，只能手动刷新。现在放宽到 20 秒，每 15 秒自动重连。
@@ -258,7 +258,7 @@ export function mount(host) {
     if (!w) return null;
     return cfg.find(u => u.person && (w.includes(u.person) || u.person.includes(w))) || cfg.find(u => !u.person) || null;
   };
-  const daddDays = (base, n) => { const d = new Date(base + 'T00:00:00'); d.setDate(d.getDate() + (Number(n) > 0 ? Number(n) : 0)); return localDate(d); };
+  const daddDays = (base, n) => { const d = new Date(base + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + (Number(n) > 0 ? Number(n) : 0)); return d.toISOString().slice(0, 10); };
 
   async function ensureWriters(force) {
     if (!force && Date.now() - ENTRY.writersAt < 60000) return ENTRY.writers;
@@ -2088,7 +2088,7 @@ export function mount(host) {
 
   /* ================= 初始化 ================= */
   (function init() {
-    $('todayStr').textContent = '今天 ' + new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
+    $('todayStr').textContent = '今天 ' + new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'long' });
     const stSel = $('fStatus'), mSel = $('mStatus');
     STATUSES.forEach(s => {
       stSel.insertAdjacentHTML('beforeend', `<option value="${s}">${s}</option>`);
