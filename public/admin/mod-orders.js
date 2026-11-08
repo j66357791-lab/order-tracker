@@ -751,6 +751,7 @@ export function mount(host) {
     const view = orders.filter(o =>
       (inP(o.date) || inP(o.doneDate)) &&
       (!fStatus || o.status === fStatus || (fStatus === '待结算' && o.status === '已交付')) &&
+      (!chanFilter || chanOf(o) === chanFilter) &&
       kwHit(o)
     );
     view.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b._id > a._id ? 1 : -1));
@@ -855,6 +856,20 @@ export function mount(host) {
   }
 
   /* ============ 【v27.3】分渠道接单金额对比（当前筛选范围） ============ */
+  // 【v27.4】点渠道行可筛选下方明细；chanFilter 为空=不筛
+  let chanFilter = '';
+  function chanOf(o) {
+    const c = String(o.channel || '').trim();
+    if (c) return c;
+    let cfg = [];
+    try { cfg = JSON.parse(localStorage.getItem('jobs_upstream_v0') || '[]'); } catch (e) { cfg = []; }
+    const w = String(o.writer || '').trim();
+    const hit = cfg.find(u => u.person && w && (w.includes(u.person) || u.person.includes(w)));
+    if (hit) return hit.team;
+    const blank = cfg.find(u => !u.person);
+    if (w && blank) return blank.team;
+    return '未填渠道';
+  }
   function renderChanCompare(scope) {
     let card = shDoc.getElementById('chanCard');
     if (!card) {
@@ -868,18 +883,6 @@ export function mount(host) {
     }
     const box = shDoc.getElementById('chanBody');
     if (!box) return;
-    let cfg = [];
-    try { cfg = JSON.parse(localStorage.getItem('jobs_upstream_v0') || '[]'); } catch (e) { cfg = []; }
-    const chanOf = o => {
-      const c = String(o.channel || '').trim();
-      if (c) return c;
-      const w = String(o.writer || '').trim();
-      const hit = cfg.find(u => u.person && w && (w.includes(u.person) || u.person.includes(w)));
-      if (hit) return hit.team;
-      const blank = cfg.find(u => !u.person);
-      if (w && blank) return blank.team;
-      return '未填渠道';
-    };
     const map = new Map();
     scope.forEach(o => {
       const c = chanOf(o);
@@ -890,14 +893,22 @@ export function mount(host) {
     const rows = [...map.entries()].sort((a, b) => b[1].amt - a[1].amt);
     const total = rows.reduce((t, [, m]) => t + m.amt, 0);
     if (!rows.length) { box.innerHTML = '<div style="color:#94a3b8;font-size:13px">当前范围没有订单。</div>'; return; }
-    box.innerHTML = '<table><thead><tr><th>渠道</th><th class="num">单数</th><th class="num">接单金额（元）</th><th class="num">分成（元）</th><th style="width:34%">金额占比</th></tr></thead><tbody>'
+    box.innerHTML = (chanFilter ? `<div style="margin:0 0 8px;font-size:13px">明细已筛选渠道：<b>${esc(chanFilter)}</b>　<button class="btn-mini" id="chanClear">清除筛选</button></div>` : '<div style="margin:0 0 8px;font-size:12px;color:#64748b">点渠道行可筛选下方明细。</div>')
+      + '<table><thead><tr><th>渠道</th><th class="num">单数</th><th class="num">接单金额（元）</th><th class="num">分成（元）</th><th style="width:34%">金额占比</th></tr></thead><tbody>'
       + rows.map(([c, m]) => {
         const pct = total ? Math.round(m.amt / total * 100) : 0;
-        return `<tr><td><b>${esc(c)}</b></td><td class="num">${m.n}</td><td class="num">${fmt(r2(m.amt))}</td><td class="num">${fmt(r2(m.sh))}</td>
+        const on = chanFilter === c;
+        return `<tr data-chan="${esc(c)}" style="cursor:pointer;${on ? 'background:#eff6ff' : ''}"><td><b>${esc(c)}</b>${on ? ' ◂' : ''}</td><td class="num">${m.n}</td><td class="num">${fmt(r2(m.amt))}</td><td class="num">${fmt(r2(m.sh))}</td>
           <td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;background:#eef2f7;border-radius:4px;height:8px"><div style="width:${pct}%;background:#2563eb;height:8px;border-radius:4px"></div></div><span style="font-size:12px;color:#64748b;min-width:38px;text-align:right">${pct}%</span></div></td></tr>`;
       }).join('')
       + `<tr style="font-weight:600"><td>合计</td><td class="num">${scope.length}</td><td class="num">${fmt(r2(total))}</td><td class="num">${fmt(r2(rows.reduce((t, [, m]) => t + m.sh, 0)))}</td><td></td></tr>`
       + '</tbody></table>';
+    const cl = shDoc.getElementById('chanClear');
+    if (cl) cl.onclick = () => { chanFilter = ''; page = 1; render(); };
+    [...box.querySelectorAll('[data-chan]')].forEach(tr => tr.onclick = () => {
+      chanFilter = chanFilter === tr.dataset.chan ? '' : tr.dataset.chan;
+      page = 1; render();
+    });
   }
 
   /* ================= 【v26.66】批量修改分成比例 ================= */
