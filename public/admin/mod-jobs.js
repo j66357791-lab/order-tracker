@@ -330,6 +330,13 @@ export function mount(host) {
     };
   }
   const rowsAll = () => LED.map(rowOfLedger).concat(LOCAL.map(rowOfLocal));
+  // 【v27.1】当前应交：还在初稿阶段（制作/修改初稿、或没设工序）按「初稿应交」排最前；
+  // 工序走到确认初稿及以后，才按该工序截止往下放。
+  const DRAFT_PHASE = new Set(['制作初稿', '修改初稿']);
+  const dueNow = j => {
+    if (j.stage && !DRAFT_PHASE.has(j.stage)) return j.stageDue || j.finalDue || j.draftDue;
+    return j.draftDue || j.stageDue || j.finalDue;
+  };
   const jOf = key => rowsAll().find(x => x.key === key);
   const draftCount = () => Object.keys(DRAFT).filter(id => DRAFT[id] && Object.keys(DRAFT[id]).length).length;
 
@@ -346,12 +353,12 @@ export function mount(host) {
     else if (VIEW === 'est') { if (CLOSED.has(j.status) || !(j.draftEst || j.finalEst)) return false; }
     else if (!WIP.has(j.status)) return false;   // 默认「在做的」= 待结算之前，台账里这几档自动进来
     if (TEAM && j.channel !== TEAM) return false;
-    // 时间轴选了一天：当前工序截止（没设工序按初稿）落在那天
+    // 时间轴选了一天：当前应交（初稿阶段按初稿，过了初稿按工序）落在那天
     if (DAY) {
-      const nd = j.stageDue || j.draftDue || j.finalDue;
+      const nd = dueNow(j);
       const hit = DAY === 'overdue'
         ? (isDate(nd) && daysLeft(nd) < 0 && !CLOSED.has(j.status) && !j.suspended)
-        : (j.stageDue === DAY || j.draftDue === DAY || j.finalDue === DAY);
+        : (nd === DAY);
       if (!hit) return false;
     }
     const q = Q.trim().toLowerCase();
@@ -364,15 +371,14 @@ export function mount(host) {
     const closedLast = (a, b) => (CLOSED.has(a.status) ? 1 : 0) - (CLOSED.has(b.status) ? 1 : 0);
     const due = (j, k) => isDate(j[k]) ? String(j[k]) : '9999-12-31';
     if (SORT === 'draft') {
-      // 【v26.99】按「当前工序截止」排：今天 → 已逾期 → 明天 → 以后；挂起的沉底
-      const dueOf = j => j.stageDue || j.draftDue;
+      // 【v27.1】初稿阶段按初稿应交排最前；过了初稿按工序截止。今天 → 已逾期 → 明天 → 以后；挂起沉底
       const pri = j => {
         if (j.suspended) return 10;
         if (CLOSED.has(j.status)) return 9;
-        const dl = daysLeft(dueOf(j));
+        const dl = daysLeft(dueNow(j));
         return dl === 0 ? 0 : dl !== null && dl < 0 ? 1 : dl === 1 ? 2 : 3;
       };
-      arr.sort((a, b) => pri(a) - pri(b) || String(dueOf(a) || '9999').localeCompare(String(dueOf(b) || '9999')) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || heat(a).score - heat(b).score);
+      arr.sort((a, b) => pri(a) - pri(b) || String(dueNow(a) || '9999').localeCompare(String(dueNow(b) || '9999')) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || heat(a).score - heat(b).score);
     }
     else if (SORT === 'final') arr.sort((a, b) => (a.suspended ? 1 : 0) - (b.suspended ? 1 : 0) || closedLast(a, b) || due(a, 'finalDue').localeCompare(due(b, 'finalDue')) || due(a, 'draftDue').localeCompare(due(b, 'draftDue')) || heat(a).score - heat(b).score);
     else arr.sort((a, b) => (a.suspended ? 1 : 0) - (b.suspended ? 1 : 0) || heat(a).score - heat(b).score);
@@ -394,7 +400,7 @@ export function mount(host) {
       <div class="banner" id="head">正在读台账…</div>
       <div class="stats" id="sum"></div>
       <div class="week" id="week"></div>
-      <div class="sub" style="margin:-8px 0 10px">时间轴＝初稿/终稿任一到期日；点一天只看那天，再点一次取消。卡片上「编辑整单」就地改，不用切去数据中心。</div>
+      <div class="sub" style="margin:-8px 0 10px">时间轴＝当前应交：还在做初稿的按初稿时间排最前，工序过了初稿才按工序截止往下放；点一天只看那天，再点取消。</div>
       <div class="chips" id="views"></div>
       <div class="chips" style="margin-top:-6px">
         <select id="fTeam" style="max-width:180px"></select>
@@ -541,7 +547,7 @@ export function mount(host) {
     const susp = all.filter(j => !CLOSED.has(j.status) && j.suspended).length;
     const late = open.filter(j => heat(j).cls === 'late');
     const soon = open.filter(j => heat(j).cls === 'soon');
-    const draftBad = open.filter(j => { const n = daysLeft(j.stageDue || j.draftDue); return n !== null && n < 0; });
+    const draftBad = open.filter(j => { const n = daysLeft(dueNow(j)); return n !== null && n < 0; });
     const est = open.filter(j => j.draftEst || j.finalEst);
     const waitPay = all.filter(j => j.status === '待结算');
     const cell = (cls, n, label, view) => `<button class="st ${cls}${VIEW === view ? ' on' : ''}" data-view="${view}"><b>${n}</b><span>${label}</span></button>`;
@@ -565,8 +571,8 @@ export function mount(host) {
     const box = $('#week');
     if (!box) return;
     const open = rowsAll().filter(j => !CLOSED.has(j.status) && !j.suspended);
-    // 当前里程碑＝当前工序截止；没设工序就按初稿
-    const nextDue = j => j.stageDue || j.draftDue || j.finalDue;
+    // 当前应交：初稿阶段按初稿，过了初稿按工序截止
+    const nextDue = dueNow;
     const overdue = open.filter(j => isDate(nextDue(j)) && daysLeft(nextDue(j)) < 0).length;
     const cells = [`<button class="day late${DAY === 'overdue' ? ' on' : ''}" data-day="overdue"><div class="d">逾期</div><div class="n">${overdue}</div><div class="k">单</div></button>`];
     for (let i = 0; i < 7; i++) {
@@ -604,7 +610,7 @@ export function mount(host) {
     const _keepY = window.scrollY;
     if (LOADING) { $('#list').innerHTML = '<div class="empty">正在读台账…</div>'; return; }
     const rows = listed();
-    const sortTxt = SORT === 'draft' ? '初稿应交时间从早到晚' : SORT === 'final' ? '终稿应交时间从早到晚' : '逾期最久的在最上面';
+    const sortTxt = SORT === 'draft' ? '当前应交（初稿阶段按初稿，过了初稿按工序）从早到晚' : SORT === 'final' ? '终稿应交时间从早到晚' : '逾期最久的在最上面';
     $('#cnt').textContent = `台账+本机共 ${rowsAll().length} 单，这里 ${rows.length} 单（${sortTxt}${DAY ? ' · 只看 ' + (DAY === 'overdue' ? '逾期' : DAY) : ''}）`;
     if (!rows.length) {
       $('#list').innerHTML = `<div class="empty">${LED.length || LOCAL.length ? '这个视图/筛选下没有单。切「全部」看看，或点上面数字换个筛。' : '台账里读不到单（也可能还没交付的确实是 0 单）。展开「老单补录」可以直接翻全部历史单。'}</div>`;
@@ -616,7 +622,7 @@ export function mount(host) {
       const keyOf = j => {
         if (j.suspended) return '⏸ 挂起中（不计入提醒）';
         if (CLOSED.has(j.status)) return '已闭环';
-        const v = SORT === 'draft' ? (j.stageDue || j.draftDue) : j.finalDue;
+        const v = SORT === 'draft' ? dueNow(j) : j.finalDue;
         if (!isDate(v)) return '没填交期';
         const dl = daysLeft(v);
         if (dl < 0) return v + ' · 已逾期 ' + (-dl) + ' 天';
