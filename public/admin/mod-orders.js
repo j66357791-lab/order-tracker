@@ -1021,9 +1021,10 @@ export function mount(host) {
   function fillChanOptions() {
     const cfg = readUpCfg();
     $('chanNew').innerHTML = '<option value="__clear__">（清空渠道＝回到按派单员自动认）</option>'
-      + cfg.map(u => '<option value="' + esc(u.team) + '">' + esc(u.team)
-        + (u.person ? ' · ' + esc(u.person) : '')
-        + (Number(u.rate) > 0 ? ' · ' + Number(u.rate) + '%' : '') + '</option>').join('');
+      + chanUniverse().map(t => { const u = upTeam(cfg, t);
+        return '<option value="' + esc(t) + '">' + esc(t)
+          + (u && u.person ? ' · ' + esc(u.person) : '')
+          + (u && Number(u.rate) > 0 ? ' · ' + Number(u.rate) + '%' : '') + '</option>'; }).join('');
   }
   function renderChanPreview() {
     const mode = $('chanScope').value;
@@ -2126,6 +2127,19 @@ export function mount(host) {
     copyText(txt).then(ok => cpyToast(ok ? '已复制：' + txt : '复制失败，请手动选中文字复制'));
   });
 
+  // 渠道候选 = 配置里的渠道 ∪ 订单里已经出现过的渠道。
+  // 配置(jobs_upstream_v0)存在浏览器本地：换一台浏览器/没配过设置时配置是空的，
+  // 但订单里早就有几何团队/一堆猫这些渠道——不合并就会出现"下拉里没得选"。
+  function chanUniverse() {
+    const set = [];
+    readUpCfg().forEach(u => { if (u.team && set.indexOf(u.team) < 0) set.push(u.team); });
+    orders.forEach(o => {
+      const t = String(o.channel || '').trim();
+      if (t && set.indexOf(t) < 0) set.push(t);
+    });
+    return set;
+  }
+
   // 【渠道补字段】编辑/新增弹窗的渠道下拉。老单的渠道可能已不在配置里 → 补一个选项保住它，
   // 不能因为配置删了就 silently 把历史单的渠道抹掉。
   function fillTeamSelect(cur) {
@@ -2134,7 +2148,7 @@ export function mount(host) {
     if (!sel) return;
     const auto = (upOfWriter(cfg, $('mWriter').value) || {}).team || '';
     const val = cur || auto;
-    const teams = cfg.map(u => u.team);
+    const teams = chanUniverse();
     if (val && teams.indexOf(val) < 0) teams.push(val);
     sel.innerHTML = '<option value="">（留空＝按派单员自动认）</option>' + teams.map(t => {
       const u = upTeam(cfg, t);
