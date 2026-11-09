@@ -1013,6 +1013,18 @@ export function mount(host) {
     }, 280);
   }
 
+  // 渠道不在主接口白名单里（服务端 routes/orders.js 只认 jobfields 窄口），
+  // 塞进主接口 doc 会被静默丢弃 → 界面假成功、刷新回原样。必须走这里。
+  async function writeChannelRemote(patches) {
+    const r = await fetch('/api/orders/jobfields', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, AH()),
+      body: JSON.stringify({ patches: patches, apply: true, onlyEmpty: false }),
+    });
+    const j = await r.json().catch(() => ({ ok: false, error: '响应异常' }));
+    if (!r.ok || !j.ok) throw new Error(j.error || ('请求失败 ' + r.status));
+    return j;
+  }
+
   /* ============ 批量改渠道：复用明细勾选集合 RATE_SEL，逐单保存 ============ */
   function chanTargets(mode) {
     if (mode === 'sel') return orders.filter(o => RATE_SEL.has(String(o._id)));
@@ -1070,20 +1082,44 @@ export function mount(host) {
       + '\n逐单保存，失败的会单独列出来，不会假装成功。')) return;
     btn.disabled = true;
     const okIds = [], failed = [];
-    for (let i = 0; i < list.length; i++) {
-      const o = list[i];
-      btn.textContent = '提交中 ' + (i + 1) + '/' + list.length + '…';
-      const doc = Object.assign({}, o, { channel: newChannel });
-      if (also) doc.shareRate = Number(u.rate);
+    // ① 渠道：一次性走 jobfields 窄口（主接口不收 channel）
+    if (USE_REMOTE) {
+      btn.textContent = '写渠道…';
       try {
-        await saveOrder(doc, o._id);
-        const k = orders.findIndex(x => String(x._id) === String(o._id));
-        if (k > -1) orders[k] = Object.assign({}, orders[k], doc);
-        okIds.push(String(o._id));
+        const j = await writeChannelRemote(list.map(o => ({ id: String(o._id), fields: { channel: newChannel } })));
+        const wrote = new Set(), badIds = new Set();
+        (j.rows || []).forEach(row => {
+          if (row.wrote) wrote.add(String(row.id));
+          else if (row.failed) { badIds.add(String(row.id)); failed.push((row.orderNo || row.id) + '：' + row.failed); }
+        });
+        (j.skipped || []).forEach(sk => { badIds.add(String(sk.id)); failed.push((sk.orderNo || sk.id) + '：' + sk.why); });
+        // 没出现在 rows/skipped 里＝值本来就等于目标（服务端跳过无变化行），算成功
+        list.forEach(o => { const id = String(o._id); if (!badIds.has(id)) okIds.push(id); });
       } catch (e) {
-        failed.push((o.orderNo || o._id) + '：' + (e && e.message ? e.message : e));
+        list.forEach(o => failed.push((o.orderNo || o._id) + '：' + (e && e.message ? e.message : e)));
+      }
+    } else {
+      list.forEach(o => okIds.push(String(o._id)));
+    }
+    // ② 分成比例（可选）：主接口逐单改，只改渠道写成功的那些
+    if (also && okIds.length) {
+      for (let i = 0; i < okIds.length; i++) {
+        const id = okIds[i];
+        const o = orders.find(x => String(x._id) === id);
+        if (!o) continue;
+        btn.textContent = '改比例 ' + (i + 1) + '/' + okIds.length + '…';
+        try {
+          await saveOrder(Object.assign({}, o, { shareRate: Number(u.rate) }), o._id);
+          const k = orders.findIndex(x => String(x._id) === id);
+          if (k > -1) orders[k] = Object.assign({}, orders[k], { shareRate: Number(u.rate) });
+        } catch (e) {
+          failed.push((o.orderNo || id) + '：渠道已改但比例没改成：' + (e && e.message ? e.message : e));
+        }
       }
     }
+    // ③ 本地镜像只更新渠道写成功的
+    const okSet = new Set(okIds);
+    orders = orders.map(o => okSet.has(String(o._id)) ? Object.assign({}, o, { channel: newChannel }) : o);
     okIds.forEach(id => RATE_SEL.delete(id));      // 只清成功的，失败的留着勾选方便重试
     persistLocal();
     render();
@@ -2217,6 +2253,17 @@ export function mount(host) {
       } else {
         const _id = r && r._id ? String(r._id) : 'loc-' + Date.now();
         orders.unshift(Object.assign({ _id, createdAt: new Date().toISOString() }, doc));
+      }
+      // 渠道走窄口补写（主接口不收 channel）；写失败要喊出来，不能装成功
+      const savedId = editingId || (r && r._id ? String(r._id) : '');
+      if (USE_REMOTE && savedId && savedId.indexOf('loc-') !== 0) {
+        try {
+          const j = await writeChannelRemote([{ id: savedId, fields: { channel: doc.channel || '' } }]);
+          const row = (j.rows || []).find(x => String(x.id) === String(savedId));
+          if (row && row.failed) throw new Error(row.failed);
+        } catch (e2) {
+          cpyToast('订单已保存，但渠道没写上：' + (e2 && e2.message ? e2.message : e2) + '（可在做单中心补）');
+        }
       }
       persistLocal();
       render();
