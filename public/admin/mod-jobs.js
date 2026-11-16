@@ -1151,7 +1151,8 @@ export function mount(host) {
       if (String(o.channel || '').trim()) return;
       const w = String(o.writer || '').trim();
       const hit = UP.find(u => u.person && w && (w.includes(u.person) || u.person.includes(w)));
-      const team = hit ? hit.team : (w ? (UP.find(u => !u.person) || {}).team : '');
+      const byName = UP.find(u => w && u.team && u.team.includes(w));   // 子渠道：一堆猫冷岩⊃冷岩
+      const team = hit ? hit.team : (byName ? byName.team : (w ? (UP.find(u => !u.person) || {}).team : ''));
       if (team) patches.push({ id: String(o._id), fields: { channel: team } });
     });
     if (!patches.length) return toast('没有可补渠道的单：要么都填了，要么派单员认不出渠道（先在渠道设置里配派单员）');
