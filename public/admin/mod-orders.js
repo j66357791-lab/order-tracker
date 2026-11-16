@@ -856,6 +856,8 @@ export function mount(host) {
     renderCalendar(scope, P);
     renderStatusChart(view.length ? view : scope);
     renderChanCompare(scope);
+    ensureP2Card();
+    if (!p2 && !p2Loading) loadP2();
     renderTodo();
     renderSidebar();
     window.scrollTo(0, _keepY);
@@ -918,6 +920,54 @@ export function mount(host) {
       chanFilter = chanFilter === tr.dataset.chan ? '' : tr.dataset.chan;
       page = 1; render();
     });
+  }
+
+  /* ============ 【v27.6】平台二（几何视传）专属看板 ============ */
+  let p2 = null, p2Loading = false;
+  function ensureP2Card() {
+    if (shDoc.getElementById('p2Card')) return;
+    const card = document.createElement('section');
+    card.id = 'p2Card';
+    card.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;margin:14px 0';
+    card.innerHTML = '<h2 style="font-size:15px;margin:0 0 10px">📡 平台二看板 · 几何视传 <button class="btn-mini" id="p2Go" style="margin-left:8px">刷新</button></h2><div id="p2Body"><div style="color:#94a3b8;font-size:13px">正在拉取平台二数据…</div></div>';
+    const tc = shDoc.getElementById('tableCard');
+    if (tc && tc.parentNode) tc.parentNode.insertBefore(card, tc);
+    const go = shDoc.getElementById('p2Go'); if (go) go.onclick = loadP2;
+  }
+  async function loadP2() {
+    if (p2Loading) return;
+    p2Loading = true;
+    const body = shDoc.getElementById('p2Body');
+    if (body) body.innerHTML = '<div style="color:#94a3b8;font-size:13px">正在拉取平台二数据…</div>';
+    try {
+      const r = await fetch('/api/upstream/dashboard', { headers: AH() });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || '拉取失败');
+      p2 = j; renderP2();
+    } catch (e) {
+      const b = shDoc.getElementById('p2Body');
+      if (b) b.innerHTML = '<div style="color:#b91c1c;font-size:13px">' + esc(e.message || String(e)) + '</div>';
+    }
+    p2Loading = false;
+  }
+  function renderP2() {
+    const body = shDoc.getElementById('p2Body');
+    if (!body || !p2) return;
+    const today = p2.daily.length ? p2.daily[p2.daily.length - 1] : null;
+    const kpi = (label, val, sub, color) => '<div style="flex:1;min-width:120px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#64748b">' + label + '</div><div style="font-size:20px;font-weight:700;color:' + color + '">' + val + '</div><div style="font-size:11px;color:#94a3b8">' + sub + '</div></div>';
+    let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+      + kpi('最新日成交', today ? fmt(today.amount) : '—', today ? today.date + ' · ' + today.count + ' 单' : '无', '#2563eb')
+      + kpi('待结算金额', fmt(p2.by.pending.amt), p2.by.pending.n + ' 单', '#d97706')
+      + kpi('已结算金额', fmt(p2.by.settled.amt), p2.by.settled.n + ' 单', '#16a34a')
+      + kpi('审核中金额', fmt(p2.by.review.amt), p2.by.review.n + ' 单', '#64748b')
+      + kpi('累计成交', fmt(p2.totalAmt), p2.count + ' 单', '#0f766e')
+      + '</div>';
+    html += '<div style="font-size:13px;font-weight:600;margin:6px 0">每日成交（近 ' + p2.daily.length + ' 天）</div>';
+    const max = Math.max(...p2.daily.map(d => d.amount), 1);
+    html += '<table><thead><tr><th>日期</th><th class="num">单数</th><th class="num">成交金额（元）</th><th style="width:40%">趋势</th></tr></thead><tbody>'
+      + [...p2.daily].reverse().map(d => '<tr><td>' + esc(d.date) + '</td><td class="num">' + d.count + '</td><td class="num">' + fmt(d.amount) + '</td><td><div style="background:#eef2f7;border-radius:4px;height:8px"><div style="width:' + Math.round(d.amount / max * 100) + '%;background:#2563eb;height:8px;border-radius:4px"></div></div></td></tr>').join('')
+      + '</tbody></table>';
+    body.innerHTML = html;
   }
 
   /* ================= 【v26.66】批量修改分成比例 ================= */
