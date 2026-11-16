@@ -614,12 +614,18 @@ export default function mount(ctx) {
       const list = await fetchJihe(account);
       const by = { settled: { n: 0, amt: 0 }, pending: { n: 0, amt: 0 }, review: { n: 0, amt: 0 } };
       const daily = new Map();
+      const statusMap = new Map();
+      const rows = [];
       let totalAmt = 0;
+      const slabel = o => o.settled ? '已结算' : (String(o.settlement || '').trim() || String(o.settled_label || '').trim() || (o.production_status === 'delivered' ? '待结算' : '审核中'));
       list.forEach(o => {
         const amt = num(o.amount); totalAmt += amt;
         const k = o.settled ? 'settled' : (o.production_status === 'delivered' ? 'pending' : 'review');
         by[k].n++; by[k].amt += amt;
+        const sl = slabel(o);
+        const sm = statusMap.get(sl) || { n: 0, amt: 0 }; sm.n++; sm.amt += amt; statusMap.set(sl, sm);
         const d = String(o.created_at || '').slice(0, 10);
+        rows.push({ d, a: amt, s: sl });
         if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
           const m = daily.get(d) || { date: d, amount: 0, count: 0 };
           m.amount += amt; m.count++; daily.set(d, m);
@@ -627,10 +633,11 @@ export default function mount(ctx) {
       });
       const days = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-14)
         .map(x => ({ ...x, amount: r2(x.amount) }));
+      const status = [...statusMap.entries()].map(([label, m]) => ({ label, n: m.n, amt: r2(m.amt) })).sort((a, b) => b.amt - a.amt);
       res.json({
         ok: true, account, count: list.length, totalAmt: r2(totalAmt),
         by: { settled: { n: by.settled.n, amt: r2(by.settled.amt) }, pending: { n: by.pending.n, amt: r2(by.pending.amt) }, review: { n: by.review.n, amt: r2(by.review.amt) } },
-        daily: days,
+        daily: days, status, rows,
       });
     } catch (e) { console.error('[upstream/dashboard]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '拉取失败' }); }
   });
