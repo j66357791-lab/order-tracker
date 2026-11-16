@@ -929,10 +929,11 @@ export function mount(host) {
     const card = document.createElement('section');
     card.id = 'p2Card';
     card.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;margin:14px 0';
-    card.innerHTML = '<h2 style="font-size:15px;margin:0 0 10px">📡 平台二看板 · 几何视传 <button class="btn-mini" id="p2Go" style="margin-left:8px">刷新</button></h2><div id="p2Body"><div style="color:#94a3b8;font-size:13px">正在拉取平台二数据…</div></div>';
+    card.innerHTML = '<h2 style="font-size:15px;margin:0 0 10px">📡 平台二看板 · 几何视传 <button class="btn-mini" id="p2Go" style="margin-left:8px">刷新</button> <button class="btn-mini" id="p2Open" style="margin-left:4px">🖥 详情大屏</button></h2><div id="p2Body"><div style="color:#94a3b8;font-size:13px">正在拉取平台二数据…</div></div>';
     const tc = shDoc.getElementById('tableCard');
     if (tc && tc.parentNode) tc.parentNode.insertBefore(card, tc);
     const go = shDoc.getElementById('p2Go'); if (go) go.onclick = loadP2;
+    const op = shDoc.getElementById('p2Open'); if (op) op.onclick = openP2;
   }
   async function loadP2() {
     if (p2Loading) return;
@@ -969,6 +970,65 @@ export function mount(host) {
       + '</tbody></table>';
     body.innerHTML = html;
   }
+
+  /* ============ 【v27.7】平台二详情大屏（大弹窗 · 年/月/日 · 结算细分） ============ */
+  let p2Gran = 'day';
+  function ensureP2Mask() {
+    if (shDoc.getElementById('p2Mask')) return;
+    const m = document.createElement('div');
+    m.id = 'p2Mask'; m.className = 'mask';
+    m.innerHTML = '<div class="modal" style="width:min(1100px,96vw);max-height:92vh;overflow:auto;position:relative">'
+      + '<button class="btn-ghost" id="p2Close" title="关闭（Esc）" style="position:absolute;top:8px;right:10px">✕</button>'
+      + '<h2 style="font-size:16px;margin:0 0 10px">📡 平台二详情 · 几何视传</h2>'
+      + '<div id="p2ModalBody"></div></div>';
+    shDoc.appendChild(m);
+    shDoc.getElementById('p2Close').onclick = closeP2;
+  }
+  function openP2() {
+    ensureP2Mask();
+    shDoc.getElementById('p2Mask').classList.add('show');
+    if (!p2 && !p2Loading) loadP2().then(() => { if (p2) renderP2Modal(); });
+    renderP2Modal();
+  }
+  function closeP2() { const m = shDoc.getElementById('p2Mask'); if (m) m.classList.remove('show'); }
+  function renderP2Modal() {
+    const body = shDoc.getElementById('p2ModalBody');
+    if (!body) return;
+    if (!p2) { body.innerHTML = '<div style="color:#94a3b8;font-size:13px">正在拉取平台二数据…</div>'; return; }
+    const rows = p2.rows || [];
+    const sum = f => rows.filter(f).reduce((t, r) => t + r.a, 0);
+    const cnt = f => rows.filter(f).length;
+    const applied = sum(r => r.s === '已申请'), waiting = sum(r => r.s === '等待中');
+    const granBtn = (g, label) => '<button class="btn-mini" data-pg="' + g + '" style="' + (p2Gran === g ? 'background:#2563eb;color:#fff' : '') + '">' + label + '</button>';
+    let html = '<div style="display:flex;gap:6px;align-items:center;margin:0 0 10px">时间粒度：' + granBtn('day', '按日') + granBtn('month', '按月') + granBtn('year', '按年') + '<span style="flex:1"></span><span style="font-size:12px;color:#64748b">共 ' + rows.length + ' 单</span></div>';
+    const kpi = (l, v, s, c) => '<div style="flex:1;min-width:110px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px"><div style="font-size:12px;color:#64748b">' + l + '</div><div style="font-size:18px;font-weight:700;color:' + c + '">' + v + '</div><div style="font-size:11px;color:#94a3b8">' + s + '</div></div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+      + kpi('累计成交', fmt(p2.totalAmt), p2.count + ' 单', '#0f766e')
+      + kpi('已结算', fmt(p2.by.settled.amt), p2.by.settled.n + ' 单', '#16a34a')
+      + kpi('已申请', fmt(applied), cnt(r => r.s === '已申请') + ' 单', '#2563eb')
+      + kpi('等待中', fmt(waiting), cnt(r => r.s === '等待中') + ' 单', '#d97706')
+      + kpi('待结算', fmt(p2.by.pending.amt), p2.by.pending.n + ' 单', '#d97706')
+      + kpi('审核中', fmt(p2.by.review.amt), p2.by.review.n + ' 单', '#64748b')
+      + '</div>';
+    const keyOf = r => p2Gran === 'day' ? r.d : p2Gran === 'month' ? r.d.slice(0, 7) : r.d.slice(0, 4);
+    const map = new Map();
+    rows.forEach(r => { if (!/^\d{4}/.test(r.d)) return; const k = keyOf(r); const m = map.get(k) || { k, n: 0, a: 0 }; m.n++; m.a += r.a; map.set(k, m); });
+    const series = [...map.values()].sort((a, b) => b.k.localeCompare(a.k));
+    const max = Math.max(...series.map(x => x.a), 1);
+    html += '<div style="font-size:13px;font-weight:600;margin:6px 0">成交趋势（' + (p2Gran === 'day' ? '按日' : p2Gran === 'month' ? '按月' : '按年') + ' · 全部 ' + series.length + ' 组）</div>';
+    html += '<table><thead><tr><th>' + (p2Gran === 'day' ? '日期' : p2Gran === 'month' ? '月份' : '年份') + '</th><th class="num">单数</th><th class="num">成交金额（元）</th><th style="width:40%">趋势</th></tr></thead><tbody>'
+      + series.map(x => '<tr><td>' + esc(x.k) + '</td><td class="num">' + x.n + '</td><td class="num">' + fmt(r2(x.a)) + '</td><td><div style="background:#eef2f7;border-radius:4px;height:8px"><div style="width:' + Math.round(x.a / max * 100) + '%;background:#2563eb;height:8px;border-radius:4px"></div></div></td></tr>').join('')
+      + '</tbody></table>';
+    html += '<div style="font-size:13px;font-weight:600;margin:12px 0 6px">结算状态细分</div>';
+    html += '<table><thead><tr><th>状态</th><th class="num">单数</th><th class="num">金额（元）</th></tr></thead><tbody>'
+      + (p2.status || []).map(s => '<tr><td>' + esc(s.label) + '</td><td class="num">' + s.n + '</td><td class="num">' + fmt(s.amt) + '</td></tr>').join('')
+      + '</tbody></table>';
+    body.innerHTML = html;
+    [...body.querySelectorAll('[data-pg]')].forEach(b => b.onclick = () => { p2Gran = b.dataset.pg; renderP2Modal(); });
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { const m = shDoc.getElementById('p2Mask'); if (m && m.classList.contains('show')) { e.preventDefault(); e.stopPropagation(); closeP2(); } }
+  }, true);
 
   /* ================= 【v26.66】批量修改分成比例 ================= */
   const unsettled = o => stLabel(o.status) !== '已结算';
