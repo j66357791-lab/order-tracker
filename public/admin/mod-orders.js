@@ -944,7 +944,7 @@ export function mount(host) {
       const r = await fetch('/api/upstream/dashboard', { headers: AH() });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || '拉取失败');
-      p2 = j; renderP2();
+      p2 = j; renderP2(); renderP2Modal();
     } catch (e) {
       const b = shDoc.getElementById('p2Body');
       if (b) b.innerHTML = '<div style="color:#b91c1c;font-size:13px">' + esc(e.message || String(e)) + '</div>';
