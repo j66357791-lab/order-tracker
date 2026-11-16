@@ -605,4 +605,33 @@ export default function mount(ctx) {
       res.json({ ok: true, source: 'jihe', rows: list.length, matched: raw.matched, totals: { extPaid: r2(list.reduce((t, x) => t + num(x.amount), 0)) }, buckets: Object.keys(raw).reduce((m, k) => (m[k] = Array.isArray(raw[k]) ? pick(raw[k]) : raw[k], m), {}) });
     } catch (e) { console.error('[upstream/jihe]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '拉取失败' }); }
   });
+
+  // 【v27.6】平台二（几何视传）专属看板：拉全量后聚合 成交/待结算/已结算/审核中 + 每日成交
+  app.get('/api/upstream/dashboard', auth, adminOnly, async (req, res) => {
+    try {
+      const account = cleanAcc(req.query.account) || await savedAccount();
+      if (!account) return res.status(400).json({ ok: false, error: '还没存几何结算账号：先在做单中心「上游对账」里填一次账号' });
+      const list = await fetchJihe(account);
+      const by = { settled: { n: 0, amt: 0 }, pending: { n: 0, amt: 0 }, review: { n: 0, amt: 0 } };
+      const daily = new Map();
+      let totalAmt = 0;
+      list.forEach(o => {
+        const amt = num(o.amount); totalAmt += amt;
+        const k = o.settled ? 'settled' : (o.production_status === 'delivered' ? 'pending' : 'review');
+        by[k].n++; by[k].amt += amt;
+        const d = String(o.created_at || '').slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          const m = daily.get(d) || { date: d, amount: 0, count: 0 };
+          m.amount += amt; m.count++; daily.set(d, m);
+        }
+      });
+      const days = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-14)
+        .map(x => ({ ...x, amount: r2(x.amount) }));
+      res.json({
+        ok: true, account, count: list.length, totalAmt: r2(totalAmt),
+        by: { settled: { n: by.settled.n, amt: r2(by.settled.amt) }, pending: { n: by.pending.n, amt: r2(by.pending.amt) }, review: { n: by.review.n, amt: r2(by.review.amt) } },
+        daily: days,
+      });
+    } catch (e) { console.error('[upstream/dashboard]', e); res.status(500).json({ ok: false, error: e.userFacing ? e.message : '拉取失败' }); }
+  });
 }
